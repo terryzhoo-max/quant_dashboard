@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlphaCore 投研量化终端</title>
+    <!-- 引入外部样式 -->
+    <link rel="stylesheet" href="./styles.css">
+    <!-- 引入高级无衬线字体 Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- 引入 Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <!-- 左侧导航栏 -->
+    <aside class="sidebar">
+        <div class="logo">
+            <div class="logo-icon"></div>
+            <h1>AlphaCore</h1>
+        </div>
+        <nav class="nav-menu">
+            <a href="./index.html" class="nav-item active">
+                <span class="icon">📊</span>
+                <span>量化总览</span>
+            </a>
+            <a href="#" class="nav-item">
+                <span class="icon">📈</span>
+                <span>因子分析</span>
+            </a>
+            <a href="#" class="nav-item">
+                <span class="icon">🏭</span>
+                <span>产业追踪</span>
+            </a>
+            <a href="./portfolio.html" class="nav-item">
+                <span class="icon">💼</span>
+                <span>投资组合</span>
+            </a>
+            <a href="./strategy.html" class="nav-item">
+                <span class="icon">⚙️</span>
+                <span>策略中心</span>
+            </a>
+        </nav>
+        <div class="user-profile">
+            <img src="https://i.pravatar.cc/150?img=11" alt="User Avatar">
+            <div class="user-info">
+                <span class="name">基金经理 Pro</span>
+                <span class="role">顶级投研权限</span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- 主看板区 -->
+    <main class="dashboard">
+        <header class="topbar">
+            <div class="search-bar">
+                <input type="text" placeholder="搜索标的、宏观周期及因子数据...">
+            </div>
+            <div class="actions">
+                <button class="btn btn-primary" id="refresh-btn">刷新实时量化数据</button>
+            </div>
+        </header>
+
+        <div class="content">
+            <div class="welcome-box">
+                <h2>今日全市场量化信号</h2>
+                <p id="system-time">正在连接 AlphaCore 量化后端引擎拉取实时数据...</p>
+            </div>
+
+            <!-- 数据结构化概览卡片 -->
+            <div class="stats-grid">
+                <div class="stat-card glass-panel" id="card-vix">
+                    <div class="stat-title">VIX 恐慌/避险情绪指数</div>
+                    <div class="stat-value highlight-up" id="val-vix">-- <span class="trend" id="trend-vix">--</span></div>
+                    <div class="stat-desc">接入 Yahoo Finance 实时数据源</div>
+                </div>
+                <div class="stat-card glass-panel" id="card-capital">
+                    <div class="stat-title">全市场主力资金净流入</div>
+                    <div class="stat-value highlight-down" id="val-capital">--亿 <span class="trend" id="trend-capital">--</span></div>
+                    <div class="stat-desc">大盘呈存量博弈向增量过渡</div>
+                </div>
+                <div class="stat-card glass-panel" id="card-dividend">
+                    <div class="stat-title">红利因子溢价/拥挤度</div>
+                    <div class="stat-value highlight-up" id="val-dividend">--% <span class="trend" id="trend-dividend">--</span></div>
+                    <div class="stat-desc">高股息板块当前溢价水位</div>
+                </div>
+                <div class="stat-card glass-panel active-glow">
+                    <div class="stat-title">半导体 Capex 拐点模型</div>
+                    <div class="stat-value highlight-up">信号确立 <span class="trend">▲ 左侧建仓</span></div>
+                    <div class="stat-desc">产能周期触底向上，库存出清</div>
+                </div>
+            </div>
+
+            <!-- 数据可视化深度分析区 -->
+            <div class="analysis-grid">
+                <div class="chart-container glass-panel">
+                    <h3>3-5年产业核心动能追踪 (营收渗透率预测)</h3>
+                    <!-- 相对定位的容器用于Chart.js -->
+                    <div style="position: relative; height: 320px; width: 100%;">
+                        <canvas id="trendChart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="market-radar glass-panel">
+                    <h3>多维量化因子雷达图 (标兵组合 vs 防御组合)</h3>
+                    <div style="position: relative; height: 320px; width: 100%;">
+                        <canvas id="radarChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="lists-grid">
+                <div class="list-panel glass-panel">
+                    <h3>量化估值冰点优选池 (PEG < 1)</h3>
+                    <ul class="stock-list">
+                        <li>
+                            <div class="stock-info">
+                                <span class="stock-name">某AI光通信龙头 (高速光模块)</span>
+                                <span class="stock-code">SH.60XXXX</span>
+                            </div>
+                            <div class="stock-metrics">
+                                <span class="metric">PE: 15.2x</span>
+                                <span class="badge buy">右侧信号</span>
+                            </div>
+                        </li>
+                        <li>
+                            <div class="stock-info">
+                                <span class="stock-name">功率半导体龙头 (车规级)</span>
+                                <span class="stock-code">SZ.00XXXX</span>
+                            </div>
+                            <div class="stock-metrics">
+                                <span class="metric">PE: 22.1x</span>
+                                <span class="badge wait">左侧建仓</span>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+                <div class="list-panel glass-panel">
+                    <h3>高风险预警 (交易拥挤度 > 90%)</h3>
+                    <ul class="stock-list">
+                        <li>
+                            <div class="stock-info">
+                                <span class="stock-name">传统劳动密集型代工集群</span>
+                                <span class="stock-code">SZ.30XXXX</span>
+                            </div>
+                            <div class="stock-metrics">
+                                <span class="metric">PE: 120.5x</span>
+                                <span class="badge sell">减持规避</span>
+                            </div>
+                        </li>
+                        <li>
+                            <div class="stock-info">
+                                <span class="stock-name">非核心建材及高周转链</span>
+                                <span class="stock-code">SH.60XXXX</span>
+                            </div>
+                            <div class="stock-metrics">
+                                <span class="metric">估值陷阱</span>
+                                <span class="badge sell">盈利下修</span>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="./script.js"></script>
+</body>
+</html>
