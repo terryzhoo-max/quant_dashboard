@@ -1,9 +1,16 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 import yfinance as yf
 import tushare as ts
 import uvicorn
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from mean_reversion_engine import run_strategy
+
+executor = ThreadPoolExecutor(max_workers=2)
 
 app = FastAPI(title="AlphaCore Quant API", description="AlphaCore量化终端底层数据接口")
 
@@ -117,8 +124,38 @@ async def get_dashboard_data():
     except Exception as e:
         return {"status": "error", "message": f"获取数据源失败: {str(e)}"}
 
+
+@app.get("/api/v1/strategy")
+async def get_strategy_results():
+    """
+    运行均值回归策略V2.0，返回全标的信号+评分+仓位建议
+    在线程池中执行以避免阻塞async事件循环
+    """
+    try:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(executor, run_strategy)
+        return result
+    except Exception as e:
+        return {"status": "error", "message": f"策略执行失败: {str(e)}"}
+
+
+# 前端页面路由
+@app.get("/")
+async def root():
+    return FileResponse("index.html")
+
+@app.get("/{filename}.html")
+async def serve_html(filename: str):
+    return FileResponse(f"{filename}.html")
+
+# 静态资源（CSS, JS等）
+app.mount("/", StaticFiles(directory="."), name="static")
+
+
 if __name__ == "__main__":
     print("AlphaCore Backend is running!")
-    print("访问 http://127.0.0.1:8000/docs 可以查看 API 自动化文档集")
-    # 启动 Uvicorn ASGI 服务器
+    print("访问 http://127.0.0.1:8000 查看仪表盘")
+    print("访问 http://127.0.0.1:8000/strategy.html 查看策略中心")
+    print("访问 http://127.0.0.1:8000/docs 查看 API 文档")
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+

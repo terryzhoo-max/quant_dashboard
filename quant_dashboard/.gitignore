@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
+.venv/
+env/
+venv/
+*.log
+tmp/
+C:/Users/magas/.gemini/antigravity/brain/
+C:/Users/magas/.gemini/antigravity/brain/*

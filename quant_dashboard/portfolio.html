@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlphaCore · 投资组合</title>
+    <link rel="stylesheet" href="./styles.css">
+    <link rel="stylesheet" href="./portfolio.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <!-- 左侧导航栏 -->
+    <aside class="sidebar">
+        <div class="logo">
+            <div class="logo-icon"></div>
+            <h1>AlphaCore</h1>
+        </div>
+        <nav class="nav-menu">
+            <a href="./index.html" class="nav-item">
+                <span class="icon">📊</span>
+                <span>量化总览</span>
+            </a>
+            <a href="#" class="nav-item">
+                <span class="icon">📈</span>
+                <span>因子分析</span>
+            </a>
+            <a href="#" class="nav-item">
+                <span class="icon">🏭</span>
+                <span>产业追踪</span>
+            </a>
+            <a href="./portfolio.html" class="nav-item active">
+                <span class="icon">💼</span>
+                <span>投资组合</span>
+            </a>
+            <a href="./strategy.html" class="nav-item">
+                <span class="icon">⚙️</span>
+                <span>策略中心</span>
+            </a>
+        </nav>
+        <div class="user-profile">
+            <img src="https://i.pravatar.cc/150?img=11" alt="User Avatar">
+            <div class="user-info">
+                <span class="name">基金经理 Pro</span>
+                <span class="role">顶级投研权限</span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- 主看板区 -->
+    <main class="dashboard">
+        <header class="topbar">
+            <div class="search-bar">
+                <input type="text" placeholder="搜索投资组合、标的及策略...">
+            </div>
+            <div class="actions">
+                <span class="pf-live-tag">🔴 LIVE</span>
+                <span class="pf-timestamp" id="pf-time">2026-03-18 23:57</span>
+            </div>
+        </header>
+
+        <div class="content pf-content">
+
+            <!-- ====== 报告标签切换 ====== -->
+            <div class="pf-tab-bar">
+                <button class="pf-tab active" data-report="report-iran">🔥 伊朗打击海湾石油设施</button>
+                <button class="pf-tab" data-report="report-aicloud">☁️ AI算力需求爆发 · 云厂商涨价</button>
+            </div>
+
+            <!-- ==================== 报告一：伊朗打击海湾石油设施 ==================== -->
+            <div class="pf-report active" id="report-iran">
+
+            <!-- ====== 顶部事件速报 Hero ====== -->
+            <section class="pf-hero glass-panel">
+                <div class="pf-hero-badge">⚠️ 一级地缘风险事件</div>
+                <h2 class="pf-hero-title">🔥 伊朗打击海湾石油设施</h2>
+                <p class="pf-hero-sub">顶级基金经理投资组合分析 · 50年投研视角深度推演</p>
+                <div class="pf-hero-stats">
+                    <div class="pf-hero-stat">
+                        <span class="pf-hs-label">Brent 原油</span>
+                        <span class="pf-hs-value pf-up">$108+ <small>▲</small></span>
+                    </div>
+                    <div class="pf-hero-stat">
+                        <span class="pf-hs-label">VIX 恐慌指数</span>
+                        <span class="pf-hs-value pf-up">极度恐慌 <small>▲</small></span>
+                    </div>
+                    <div class="pf-hero-stat">
+                        <span class="pf-hs-label">霍尔木兹海峡</span>
+                        <span class="pf-hs-value pf-danger">航运中断 <small>⚠</small></span>
+                    </div>
+                    <div class="pf-hero-stat">
+                        <span class="pf-hs-label">事件可信度</span>
+                        <span class="pf-hs-value pf-gold">⭐⭐⭐⭐⭐</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ====== 新闻验证区 ====== -->
+            <section class="pf-section glass-panel">
+                <h3>📋 新闻验证与可信度</h3>
+                <div class="pf-verify-grid">
+                    <div class="pf-verify-item">
+                        <span class="pf-vi-icon">📡</span>
+                        <div class="pf-vi-body">
+                            <strong>信源</strong>
+                            <p>伊朗伊斯兰革命卫队官方声明 → 央视新闻转引</p>
+                        </div>
+                    </div>
+                    <div class="pf-verify-item">
+                        <span class="pf-vi-icon">✅</span>
+                        <div class="pf-vi-body">
+                            <strong>多源交叉验证</strong>
+                            <p>Guardian、Al Jazeera、CBC、Times of Israel、Business Standard 等独立报道</p>
+                        </div>
+                    </div>
+                    <div class="pf-verify-item">
+                        <span class="pf-vi-icon">🔗</span>
+                        <div class="pf-vi-body">
+                            <strong>背景链条</strong>
+                            <p>2月28日美以打击伊朗南帕尔斯气田 → 伊朗报复海湾国家 → 3月18日升级为石油设施打击警告</p>
+                        </div>
+                    </div>
+                    <div class="pf-verify-item">
+                        <span class="pf-vi-icon">💹</span>
+                        <div class="pf-vi-body">
+                            <strong>市场反映</strong>
+                            <p>Brent原油突破$108/桶，霍尔木兹海峡航运严重中断，卡塔尔LNG生产中断</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="pf-caution-banner">
+                    <span>⚠️</span> 这是自1990年海湾战争以来最严重的中东能源危机 — 冲突已从威胁阶段进入实质化阶段
+                </div>
+            </section>
+
+            <!-- ====== 行业影响矩阵 ====== -->
+            <section class="pf-section">
+                <h3>📈📉 行业影响矩阵</h3>
+                <div class="pf-impact-grid">
+                    <!-- 利好行业 -->
+                    <div class="pf-impact-card glass-panel pf-bullish">
+                        <div class="pf-ic-header">
+                            <span class="pf-ic-badge pf-badge-bull">📈 利好行业</span>
+                        </div>
+                        <div class="pf-table-wrap">
+                            <table class="pf-table">
+                                <thead>
+                                    <tr>
+                                        <th>行业</th>
+                                        <th>短期</th>
+                                        <th>中长期</th>
+                                        <th>核心逻辑</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><span class="pf-sector-tag">原油开采</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐⭐⭐</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐⭐</span></td>
+                                        <td class="pf-td-logic">油价飙升直接推高营收，非中东产能获溢价</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="pf-sector-tag">天然气/LNG</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐⭐⭐</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐⭐⭐</span></td>
+                                        <td class="pf-td-logic">卡塔尔LNG中断，全球供需缺口扩大</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="pf-sector-tag">油服/钻井</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐⭐</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐⭐⭐</span></td>
+                                        <td class="pf-td-logic">非OPEC紧急增产 → 资本开支周期上行</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="pf-sector-tag">航运/油运</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐⭐⭐</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐⭐</span></td>
+                                        <td class="pf-td-logic">霍尔木兹绕行 → 运距拉长 → 运费暴增</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="pf-sector-tag">军工/国防</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐⭐</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐⭐⭐</span></td>
+                                        <td class="pf-td-logic">区域军备竞赛加速，防空订单激增</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="pf-sector-tag">黄金/贵金属</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐⭐⭐</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐</span></td>
+                                        <td class="pf-td-logic">避险情绪极致释放</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="pf-sector-tag">新能源/储能</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐⭐⭐</span></td>
+                                        <td class="pf-td-logic">能源安全加速替代，各国加倍投入</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="pf-sector-tag">煤炭</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐⭐</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐</span></td>
+                                        <td class="pf-td-logic">油气价格联动，亚洲替代需求上升</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="pf-sector-tag">粮食/化肥</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐⭐</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐</span></td>
+                                        <td class="pf-td-logic">油价推高农资运输成本 → 粮价上涨</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- 利空行业 -->
+                    <div class="pf-impact-card glass-panel pf-bearish">
+                        <div class="pf-ic-header">
+                            <span class="pf-ic-badge pf-badge-bear">📉 利空行业</span>
+                        </div>
+                        <div class="pf-table-wrap">
+                            <table class="pf-table">
+                                <thead>
+                                    <tr>
+                                        <th>行业</th>
+                                        <th>短期</th>
+                                        <th>中长期</th>
+                                        <th>核心逻辑</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><span class="pf-sector-tag pf-bear-tag">航空</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐⭐⭐</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐</span></td>
+                                        <td class="pf-td-logic">航油暴增 + 中东空域关闭 + 航线大改</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="pf-sector-tag pf-bear-tag">石化/化工</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐⭐</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐</span></td>
+                                        <td class="pf-td-logic">原料成本飙升挤压利润</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="pf-sector-tag pf-bear-tag">汽车(燃油)</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐⭐</span></td>
+                                        <td class="pf-td-logic">用车成本上升抑制需求，加速电动替代</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="pf-sector-tag pf-bear-tag">消费/零售</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐</span></td>
+                                        <td><span class="pf-stars">⭐⭐</span></td>
+                                        <td class="pf-td-logic">通胀传导消费端，削弱购买力</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="pf-sector-tag pf-bear-tag">海湾基建</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐⭐⭐</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐⭐</span></td>
+                                        <td class="pf-td-logic">阿联酋/沙特项目直接受战事冲击</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="pf-sector-tag pf-bear-tag">保险/再保</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐⭐</span></td>
+                                        <td><span class="pf-stars">⭐⭐⭐</span></td>
+                                        <td class="pf-td-logic">巨额战争险理赔</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ====== 三大结构性拐点 ====== -->
+            <section class="pf-section">
+                <h3>🔄 中期产业趋势 · 三大结构性拐点</h3>
+                <div class="pf-inflection-grid">
+                    <div class="pf-inflection-card glass-panel">
+                        <div class="pf-inf-num">01</div>
+                        <h4>非OPEC油气资本开支超级周期</h4>
+                        <div class="pf-inf-chain">
+                            <span>海湾产能受损</span>
+                            <span class="pf-arrow">→</span>
+                            <span>全球供给缺口</span>
+                            <span class="pf-arrow">→</span>
+                            <span>油价维持高位</span>
+                            <span class="pf-arrow">→</span>
+                            <span>非OPEC紧急扩张</span>
+                            <span class="pf-arrow">→</span>
+                            <span>油服订单爆发</span>
+                        </div>
+                        <div class="pf-inf-meta">
+                            <div class="pf-inf-tag pf-tag-cycle">盈利周期：上升期初段</div>
+                            <div class="pf-inf-tag pf-tag-ref">类比：2003-2008油服超级周期</div>
+                        </div>
+                        <p class="pf-inf-note">油服公司2026H2-2027将进入订单确认→收入确认的业绩释放期</p>
+                    </div>
+                    <div class="pf-inflection-card glass-panel">
+                        <div class="pf-inf-num">02</div>
+                        <h4>全球LNG供需格局重塑</h4>
+                        <div class="pf-inf-chain">
+                            <span>卡塔尔LNG中断</span>
+                            <span class="pf-arrow">→</span>
+                            <span>欧亚LNG现货暴涨</span>
+                            <span class="pf-arrow">→</span>
+                            <span>美澳LNG项目FID加速</span>
+                            <span class="pf-arrow">→</span>
+                            <span>LNG船需求激增</span>
+                        </div>
+                        <div class="pf-inf-meta">
+                            <div class="pf-inf-tag pf-tag-cycle">LNG贸易商即刻受益</div>
+                            <div class="pf-inf-tag pf-tag-ref">LNG基建2027-2030投产高峰</div>
+                        </div>
+                        <p class="pf-inf-note">关键指标：JKM亚洲LNG现货价格、美国LNG出口量</p>
+                    </div>
+                    <div class="pf-inflection-card glass-panel">
+                        <div class="pf-inf-num">03</div>
+                        <h4>全球能源安全重新定价</h4>
+                        <div class="pf-inf-chain">
+                            <span>化石能源脆弱性暴露</span>
+                            <span class="pf-arrow">→</span>
+                            <span>能源独立战略升级</span>
+                            <span class="pf-arrow">→</span>
+                            <span>光伏+储能+核能加速</span>
+                            <span class="pf-arrow">→</span>
+                            <span>5-10年结构性趋势</span>
+                        </div>
+                        <div class="pf-inf-meta">
+                            <div class="pf-inf-tag pf-tag-cycle">光伏/储能已过产能过剩最痛苦阶段</div>
+                            <div class="pf-inf-tag pf-tag-ref">地缘事件成为需求催化剂</div>
+                        </div>
+                        <p class="pf-inf-note">关键指标：各国能源安全政策文件、光伏组件出口数据</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ====== 配置可视化 ====== -->
+            <section class="pf-section">
+                <h3>📊 投资组合配置可视化</h3>
+                <div class="pf-charts-row">
+                    <div class="pf-chart-box glass-panel">
+                        <h4>组合仓位配置</h4>
+                        <div style="position:relative;height:300px;width:100%;">
+                            <canvas id="pfAllocationChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="pf-chart-box glass-panel">
+                        <h4>分批建仓时间线</h4>
+                        <div class="pf-timeline">
+                            <div class="pf-tl-item pf-tl-now">
+                                <div class="pf-tl-dot"></div>
+                                <div class="pf-tl-content">
+                                    <span class="pf-tl-label">第一批 · 立即</span>
+                                    <span class="pf-tl-pct">30%</span>
+                                    <ul>
+                                        <li>油气上游核心（中海油、COP）</li>
+                                        <li>油运（Frontline、中远海能）</li>
+                                        <li>黄金（山东黄金）</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <div class="pf-tl-item pf-tl-soon">
+                                <div class="pf-tl-dot"></div>
+                                <div class="pf-tl-content">
+                                    <span class="pf-tl-label">第二批 · 1-2周</span>
+                                    <span class="pf-tl-pct">30%</span>
+                                    <ul>
+                                        <li>油服（SLB、中海油服）</li>
+                                        <li>军工（LMT、沈飞）</li>
+                                        <li>对冲仓位建立</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <div class="pf-tl-item pf-tl-later">
+                                <div class="pf-tl-dot"></div>
+                                <div class="pf-tl-content">
+                                    <span class="pf-tl-label">第三批 · 1-2月</span>
+                                    <span class="pf-tl-pct">25%</span>
+                                    <ul>
+                                        <li>新能源/储能（隆基、宁德时代）</li>
+                                        <li>油气上游加仓</li>
+                                        <li>根据形势调整</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <div class="pf-tl-item pf-tl-reserve">
+                                <div class="pf-tl-dot"></div>
+                                <div class="pf-tl-content">
+                                    <span class="pf-tl-label">预留 · 现金</span>
+                                    <span class="pf-tl-pct">15%</span>
+                                    <ul>
+                                        <li>应对黑天鹅</li>
+                                        <li>捡便宜机会</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ====== 核心标的选股池 ====== -->
+            <section class="pf-section">
+                <h3>🎯 核心标的选股池</h3>
+
+                <!-- 第一梯队 -->
+                <div class="pf-tier">
+                    <div class="pf-tier-header">
+                        <span class="pf-tier-badge pf-tier-1">第一梯队 · 核心配置 60%</span>
+                    </div>
+
+                    <div class="pf-stock-category">
+                        <div class="pf-sc-label">🛢️ 油气上游 — 高确定性受益（25%）</div>
+                        <div class="pf-stock-cards">
+                            <div class="pf-stock-card glass-panel">
+                                <div class="pf-sc-top">
+                                    <span class="pf-sc-name">中国海油</span>
+                                    <span class="pf-sc-code">0883.HK / 600938.SH</span>
+                                </div>
+                                <p class="pf-sc-desc">国内最大海上油气商，油价每涨$10 EPS增约15%</p>
+                                <div class="pf-sc-signal">
+                                    <span class="badge buy">可分批建仓</span>
+                                    <span class="pf-sc-note">油价$108时P/E仍偏低</span>
+                                </div>
+                            </div>
+                            <div class="pf-stock-card glass-panel">
+                                <div class="pf-sc-top">
+                                    <span class="pf-sc-name">中国石油</span>
+                                    <span class="pf-sc-code">601857.SH</span>
+                                </div>
+                                <p class="pf-sc-desc">上游资产被低估，高股息，天然气业务受益</p>
+                                <div class="pf-sc-signal">
+                                    <span class="badge buy">季报超预期催化</span>
+                                    <span class="pf-sc-note">关注季报业绩</span>
+                                </div>
+                            </div>
+                            <div class="pf-stock-card glass-panel">
+                                <div class="pf-sc-top">
+                                    <span class="pf-sc-name">EOG Resources</span>
+                                    <span class="pf-sc-code">NYSE: EOG</span>
+                                </div>
+                                <p class="pf-sc-desc">北美顶级页岩油运营商，低成本高效率</p>
+                                <div class="pf-sc-signal">
+                                    <span class="badge wait">回调可加仓</span>
+                                    <span class="pf-sc-note">$130-140区间</span>
+                                </div>
+                            </div>
+                            <div class="pf-stock-card glass-panel">
+                                <div class="pf-sc-top">
+                                    <span class="pf-sc-name">ConocoPhillips</span>
+                                    <span class="pf-sc-code">NYSE: COP</span>
+                                </div>
+                                <p class="pf-sc-desc">全球独立E&P龙头，储量丰富，股东回报持续</p>
+                                <div class="pf-sc-signal">
+                                    <span class="badge buy">技术突破跟进</span>
+                                    <span class="pf-sc-note">趋势确认后</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="pf-stock-category">
+                        <div class="pf-sc-label">⛏️ 油服 — 最具弹性的β（20%）</div>
+                        <div class="pf-stock-cards">
+                            <div class="pf-stock-card glass-panel">
+                                <div class="pf-sc-top">
+                                    <span class="pf-sc-name">中海油服</span>
+                                    <span class="pf-sc-code">601808.SH / 2883.HK</span>
+                                </div>
+                                <p class="pf-sc-desc">海上油服龙头，作业量将大幅增长</p>
+                                <div class="pf-sc-signal">
+                                    <span class="badge wait">回调分批布局</span>
+                                    <span class="pf-sc-note">订单确认期</span>
+                                </div>
+                            </div>
+                            <div class="pf-stock-card glass-panel">
+                                <div class="pf-sc-top">
+                                    <span class="pf-sc-name">Schlumberger/SLB</span>
+                                    <span class="pf-sc-code">NYSE: SLB</span>
+                                </div>
+                                <p class="pf-sc-desc">全球油服第一，技术壁垒最高，数字化转型领先</p>
+                                <div class="pf-sc-signal">
+                                    <span class="badge wait">突破$60确认</span>
+                                    <span class="pf-sc-note">阻力位突破后</span>
+                                </div>
+                            </div>
+                            <div class="pf-stock-card glass-panel">
+                                <div class="pf-sc-top">
+                                    <span class="pf-sc-name">海油工程</span>
+                                    <span class="pf-sc-code">600583.SH</span>
+                                </div>
+                                <p class="pf-sc-desc">海上工程承包龙头，海外订单+深水能力</p>
+                                <div class="pf-sc-signal">
+                                    <span class="badge buy">估值偏低</span>
+                                    <span class="pf-sc-note">历史中位偏低</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="pf-stock-category">
+                        <div class="pf-sc-label">🚢 油运/LNG运输 — 运费暴利期（15%）</div>
+                        <div class="pf-stock-cards">
+                            <div class="pf-stock-card glass-panel">
+                                <div class="pf-sc-top">
+                                    <span class="pf-sc-name">招商南油</span>
+                                    <span class="pf-sc-code">601975.SH</span>
+                                </div>
+                                <p class="pf-sc-desc">成品油运输龙头，运费与航线变化正相关</p>
+                                <div class="pf-sc-signal">
+                                    <span class="badge buy">运费上行入场</span>
+                                </div>
+                            </div>
+                            <div class="pf-stock-card glass-panel">
+                                <div class="pf-sc-top">
+                                    <span class="pf-sc-name">中远海能</span>
+                                    <span class="pf-sc-code">600026.SH / 1138.HK</span>
+                                </div>
+                                <p class="pf-sc-desc">油运+LNG运输双轮驱动</p>
+                                <div class="pf-sc-signal">
+                                    <span class="badge wait">VLCC日租>$80k</span>
+                                </div>
+                            </div>
+                            <div class="pf-stock-card glass-panel">
+                                <div class="pf-sc-top">
+                                    <span class="pf-sc-name">Frontline</span>
+                                    <span class="pf-sc-code">NYSE: FRO</span>
+                                </div>
+                                <p class="pf-sc-desc">全球最大VLCC船东，股息率极具吸引力</p>
+                                <div class="pf-sc-signal">
+                                    <span class="badge buy">高股息入场</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 第二梯队 -->
+                <div class="pf-tier">
+                    <div class="pf-tier-header">
+                        <span class="pf-tier-badge pf-tier-2">第二梯队 · 趋势配置 25%</span>
+                    </div>
+
+                    <div class="pf-stock-category">
+                        <div class="pf-sc-label">🛡️ 军工/国防（10%）</div>
+                        <div class="pf-stock-cards">
+                            <div class="pf-stock-card glass-panel">
+                                <div class="pf-sc-top">
+                                    <span class="pf-sc-name">中航沈飞</span>
+                                    <span class="pf-sc-code">600760.SH</span>
+                                </div>
+                                <p class="pf-sc-desc">战斗机核心总装厂，需求高确定性</p>
+                                <div class="pf-sc-signal">
+                                    <span class="badge wait">60日均线建仓</span>
+                                </div>
+                            </div>
+                            <div class="pf-stock-card glass-panel">
+                                <div class="pf-sc-top">
+                                    <span class="pf-sc-name">Lockheed Martin</span>
+                                    <span class="pf-sc-code">NYSE: LMT</span>
+                                </div>
+                                <p class="pf-sc-desc">全球最大防务商，F-35+导弹订单饱满</p>
+                                <div class="pf-sc-signal">
+                                    <span class="badge buy">稳定上升分批</span>
+                                </div>
+                            </div>
+                            <div class="pf-stock-card glass-panel">
+                                <div class="pf-sc-top">
+                                    <span class="pf-sc-name">RTX Corp</span>
+                                    <span class="pf-sc-code">NYSE: RTX</span>
+                                </div>
+                                <p class="pf-sc-desc">爱国者导弹系统生产商，海湾防空直接订单</p>
+                                <div class="pf-sc-signal">
+                                    <span class="badge wait">关注中东新订单</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="pf-stock-category">
+                        <div class="pf-sc-label">⚡ 新能源/储能（10%）</div>
+                        <div class="pf-stock-cards">
+                            <div class="pf-stock-card glass-panel">
+                                <div class="pf-sc-top">
+                                    <span class="pf-sc-name">隆基绿能</span>
+                                    <span class="pf-sc-code">601012.SH</span>
+                                </div>
+                                <p class="pf-sc-desc">光伏龙头，产能过剩底部已过，双催化</p>
+                                <div class="pf-sc-signal">
+                                    <span class="badge wait">底部放量入场</span>
+                                </div>
+                            </div>
+                            <div class="pf-stock-card glass-panel">
+                                <div class="pf-sc-top">
+                                    <span class="pf-sc-name">宁德时代</span>
+                                    <span class="pf-sc-code">300750.SZ</span>
+                                </div>
+                                <p class="pf-sc-desc">全球储能电池龙头，储能业务高增长</p>
+                                <div class="pf-sc-signal">
+                                    <span class="badge wait">储能出货数据</span>
+                                </div>
+                            </div>
+                            <div class="pf-stock-card glass-panel">
+                                <div class="pf-sc-top">
+                                    <span class="pf-sc-name">Enphase Energy</span>
+                                    <span class="pf-sc-code">NASDAQ: ENPH</span>
+                                </div>
+                                <p class="pf-sc-desc">分布式光伏+储能微逆变器龙头</p>
+                                <div class="pf-sc-signal">
+                                    <span class="badge wait">反弹信号确认</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="pf-stock-category">
+                        <div class="pf-sc-label">🥇 黄金 — 避险配置（5%）</div>
+                        <div class="pf-stock-cards">
+                            <div class="pf-stock-card glass-panel">
+                                <div class="pf-sc-top">
+                                    <span class="pf-sc-name">山东黄金</span>
+                                    <span class="pf-sc-code">600547.SH / 1787.HK</span>
+                                </div>
+                                <p class="pf-sc-desc">国内黄金龙头，金价每涨$100利润增8-10亿</p>
+                                <div class="pf-sc-signal">
+                                    <span class="badge buy">趋势性持有</span>
+                                </div>
+                            </div>
+                            <div class="pf-stock-card glass-panel">
+                                <div class="pf-sc-top">
+                                    <span class="pf-sc-name">Newmont</span>
+                                    <span class="pf-sc-code">NYSE: NEM</span>
+                                </div>
+                                <p class="pf-sc-desc">全球最大金矿商，估值合理</p>
+                                <div class="pf-sc-signal">
+                                    <span class="badge buy">金价强势背景</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 第三梯队 -->
+                <div class="pf-tier">
+                    <div class="pf-tier-header">
+                        <span class="pf-tier-badge pf-tier-3">第三梯队 · 对冲/防守 15%</span>
+                    </div>
+                    <div class="pf-hedge-grid">
+                        <div class="pf-hedge-card glass-panel">
+                            <div class="pf-hc-icon">💰</div>
+                            <div class="pf-hc-body">
+                                <strong>货币基金/短债</strong>
+                                <span class="pf-hc-pct">10%</span>
+                            </div>
+                            <p>保持流动性，应对波动加剧后的加仓机会</p>
+                        </div>
+                        <div class="pf-hedge-card glass-panel">
+                            <div class="pf-hc-icon">✈️</div>
+                            <div class="pf-hc-body">
+                                <strong>做空航空ETF (JETS)</strong>
+                                <span class="pf-hc-pct">3%</span>
+                            </div>
+                            <p>航空股受燃油+航线双重打击，做对冲</p>
+                        </div>
+                        <div class="pf-hedge-card glass-panel">
+                            <div class="pf-hc-icon">📈</div>
+                            <div class="pf-hc-body">
+                                <strong>VIX看涨期权</strong>
+                                <span class="pf-hc-pct">2%</span>
+                            </div>
+                            <p>波动率对冲，极端事件保护</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ====== 风控与经验 ====== -->
+            <section class="pf-section">
+                <h3>🧠 风控纪律 & 50年经验</h3>
+                <div class="pf-risk-row">
+                    <div class="pf-risk-table glass-panel">
+                        <h4>📏 风控规则</h4>
+                        <table class="pf-table pf-table-risk">
+                            <tbody>
+                                <tr><td>单只个股上限</td><td><strong>≤ 8% 总仓位</strong></td></tr>
+                                <tr><td>止损线</td><td><strong>个股 -15% · 组合 -10%</strong></td></tr>
+                                <tr><td>再平衡频率</td><td>每周评估，每两周调整</td></tr>
+                                <tr><td>关键跟踪</td><td>Brent · JKM LNG · 霍尔木兹海峡 · VIX</td></tr>
+                                <tr><td>退出信号</td><td>停火协议签署 → 减仓能源加仓航空/消费</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="pf-wisdom glass-panel">
+                        <h4>💡 核心提醒</h4>
+                        <div class="pf-wisdom-list">
+                            <div class="pf-wis-item">
+                                <span class="pf-wis-num">1</span>
+                                <div>
+                                    <strong>不要追高</strong>
+                                    <p>$108已含大量恐慌溢价，分批建仓比一把梭安全</p>
+                                </div>
+                            </div>
+                            <div class="pf-wis-item">
+                                <span class="pf-wis-num">2</span>
+                                <div>
+                                    <strong>关注第二层博弈</strong>
+                                    <p>油服>石油公司、LNG运输>LNG本身、零部件>整机厂</p>
+                                </div>
+                            </div>
+                            <div class="pf-wis-item">
+                                <span class="pf-wis-num">3</span>
+                                <div>
+                                    <strong>保持流动性</strong>
+                                    <p>地缘冲突最大特征是波动性，现金是最好的期权</p>
+                                </div>
+                            </div>
+                            <div class="pf-wis-item">
+                                <span class="pf-wis-num">4</span>
+                                <div>
+                                    <strong>做好两手准备</strong>
+                                    <p>降温→能源回撤30%+ ；升级→$150油价并非不可能</p>
+                                </div>
+                            </div>
+                            <div class="pf-wis-item">
+                                <span class="pf-wis-num">5</span>
+                                <div>
+                                    <strong>危机创造机会</strong>
+                                    <p>1973石油危机、1990海湾战争、2022俄乌 —— 每一次都重塑能源格局</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            </div><!-- /report-iran -->
+
+            <!-- ==================== 报告二：AI算力需求爆发 ==================== -->
+            <div class="pf-report" id="report-aicloud">
+
+            <!-- ====== Hero ====== -->
+            <section class="pf-hero glass-panel" style="border-color:rgba(59,130,246,0.25);background:linear-gradient(135deg,rgba(59,130,246,0.08),rgba(20,24,34,0.4),rgba(139,92,246,0.06));">
+                <div class="pf-hero-badge" style="background:rgba(59,130,246,0.2);border-color:rgba(59,130,246,0.35);color:#93c5fd;">☁️ 产业趋势拐点事件</div>
+                <h2 class="pf-hero-title" style="background:linear-gradient(110deg,#fff,#60a5fa,#8b5cf6);-webkit-background-clip:text;background-clip:text;">☁️ AI算力需求爆发 · 阿里云百度智能云联袂涨价</h2>
+                <p class="pf-hero-sub">顶级基金经理投资组合分析 · 50年投研视角 · 涨幅最高34%</p>
+                <div class="pf-hero-stats">
+                    <div class="pf-hero-stat">
+                        <span class="pf-hs-label">阿里云算力涨幅</span>
+                        <span class="pf-hs-value pf-up">5%-34% <small>▲</small></span>
+                    </div>
+                    <div class="pf-hero-stat">
+                        <span class="pf-hs-label">百度云算力涨幅</span>
+                        <span class="pf-hs-value pf-up">5%-30% <small>▲</small></span>
+                    </div>
+                    <div class="pf-hero-stat">
+                        <span class="pf-hs-label">云市场增速</span>
+                        <span class="pf-hs-value pf-up">YoY +24% <small>▲</small></span>
+                    </div>
+                    <div class="pf-hero-stat">
+                        <span class="pf-hs-label">事件可信度</span>
+                        <span class="pf-hs-value pf-gold">⭐⭐⭐⭐⭐</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ====== 新闻验证 ====== -->
+            <section class="pf-section glass-panel">
+                <h3>📋 新闻验证与可信度</h3>
+                <div class="pf-verify-grid">
+                    <div class="pf-verify-item">
+                        <span class="pf-vi-icon">📡</span>
+                        <div class="pf-vi-body">
+                            <strong>信源</strong>
+                            <p>阿里云/百度智能云官网公告 → 科创板日报原创报道</p>
+                        </div>
+                    </div>
+                    <div class="pf-verify-item">
+                        <span class="pf-vi-icon">✅</span>
+                        <div class="pf-vi-body">
+                            <strong>多源交叉验证</strong>
+                            <p>界面新闻、华尔街见闻、21经济、虎嗅、央广网等多家独立报道确认</p>
+                        </div>
+                    </div>
+                    <div class="pf-verify-item">
+                        <span class="pf-vi-icon">🔗</span>
+                        <div class="pf-vi-body">
+                            <strong>背景链条</strong>
+                            <p>腾讯云3月11日MaaS涨价400%+ → 阿里云3月18日涨价至34% → 百度智能云同日跟进5-30%</p>
+                        </div>
+                    </div>
+                    <div class="pf-verify-item">
+                        <span class="pf-vi-icon">💹</span>
+                        <div class="pf-vi-body">
+                            <strong>市场反映</strong>
+                            <p>金山云港股涨18.17%，同有科技/世纪恒通20CM涨停，云计算板块全线上涨</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="pf-caution-banner" style="background:rgba(59,130,246,0.1);border-color:rgba(59,130,246,0.25);color:#93c5fd;">
+                    <span>💡</span> 中国云计算行业持续20年的"降价"逻辑正式松动 — AI算力供需紧张已进入结构性涨价周期
+                </div>
+            </section>
+
+            <!-- ====== 行业影响矩阵 ====== -->
+            <section class="pf-section">
+                <h3>📈📉 行业影响矩阵</h3>
+                <div class="pf-impact-grid">
+                    <div class="pf-impact-card glass-panel pf-bullish">
+                        <div class="pf-ic-header"><span class="pf-ic-badge pf-badge-bull">📈 利好行业</span></div>
+                        <div class="pf-table-wrap">
+                            <table class="pf-table">
+                                <thead><tr><th>行业</th><th>短期</th><th>中长期</th><th>核心逻辑</th></tr></thead>
+                                <tbody>
+                                    <tr><td><span class="pf-sector-tag">AI云服务/IaaS</span></td><td><span class="pf-stars">⭐⭐⭐⭐⭐</span></td><td><span class="pf-stars">⭐⭐⭐⭐⭐</span></td><td class="pf-td-logic">涨价直接提升单位收入，供需紧张持续</td></tr>
+                                    <tr><td><span class="pf-sector-tag">AI芯片/GPU</span></td><td><span class="pf-stars">⭐⭐⭐⭐⭐</span></td><td><span class="pf-stars">⭐⭐⭐⭐⭐</span></td><td class="pf-td-logic">算力供不应求根源，硬件成本推动涨价</td></tr>
+                                    <tr><td><span class="pf-sector-tag">AIDC/IDC</span></td><td><span class="pf-stars">⭐⭐⭐⭐⭐</span></td><td><span class="pf-stars">⭐⭐⭐⭐</span></td><td class="pf-td-logic">AI算力需求→智算中心大规模建设</td></tr>
+                                    <tr><td><span class="pf-sector-tag">算力租赁</span></td><td><span class="pf-stars">⭐⭐⭐⭐</span></td><td><span class="pf-stars">⭐⭐⭐⭐⭐</span></td><td class="pf-td-logic">涨价传导，GPU租赁价格水涨船高</td></tr>
+                                    <tr><td><span class="pf-sector-tag">CDN/边缘计算</span></td><td><span class="pf-stars">⭐⭐⭐⭐</span></td><td><span class="pf-stars">⭐⭐⭐⭐</span></td><td class="pf-td-logic">AI推理分发→CDN成AI应用底层通道</td></tr>
+                                    <tr><td><span class="pf-sector-tag">光模块/光通信</span></td><td><span class="pf-stars">⭐⭐⭐⭐</span></td><td><span class="pf-stars">⭐⭐⭐⭐⭐</span></td><td class="pf-td-logic">数据中心互联带宽需求指数级增长</td></tr>
+                                    <tr><td><span class="pf-sector-tag">服务器/存储</span></td><td><span class="pf-stars">⭐⭐⭐⭐</span></td><td><span class="pf-stars">⭐⭐⭐⭐</span></td><td class="pf-td-logic">CPFS存储涨价30%，AI训练存储需求爆发</td></tr>
+                                    <tr><td><span class="pf-sector-tag">液冷/温控</span></td><td><span class="pf-stars">⭐⭐⭐</span></td><td><span class="pf-stars">⭐⭐⭐⭐⭐</span></td><td class="pf-td-logic">高密度GPU集群→液冷成标配</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="pf-impact-card glass-panel pf-bearish">
+                        <div class="pf-ic-header"><span class="pf-ic-badge pf-badge-bear">📉 利空行业</span></div>
+                        <div class="pf-table-wrap">
+                            <table class="pf-table">
+                                <thead><tr><th>行业</th><th>短期</th><th>中长期</th><th>核心逻辑</th></tr></thead>
+                                <tbody>
+                                    <tr><td><span class="pf-sector-tag pf-bear-tag">AI应用/SaaS</span></td><td><span class="pf-stars">⭐⭐⭐⭐</span></td><td><span class="pf-stars">⭐⭐</span></td><td class="pf-td-logic">算力成本上升挤压应用层利润空间</td></tr>
+                                    <tr><td><span class="pf-sector-tag pf-bear-tag">中小云厂商</span></td><td><span class="pf-stars">⭐⭐⭐⭐</span></td><td><span class="pf-stars">⭐⭐⭐⭐</span></td><td class="pf-td-logic">缺乏自研芯片，算力采购成本刚性上涨</td></tr>
+                                    <tr><td><span class="pf-sector-tag pf-bear-tag">传统IT集成</span></td><td><span class="pf-stars">⭐⭐⭐</span></td><td><span class="pf-stars">⭐⭐⭐⭐</span></td><td class="pf-td-logic">AI云替代传统IT，市场份额被蚕食</td></tr>
+                                    <tr><td><span class="pf-sector-tag pf-bear-tag">纯Token消费型</span></td><td><span class="pf-stars">⭐⭐⭐</span></td><td><span class="pf-stars">⭐⭐</span></td><td class="pf-td-logic">API调用成本上升，但规模效应可对冲</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ====== 三大结构性拐点 ====== -->
+            <section class="pf-section">
+                <h3>🔄 中期产业趋势 · 三大结构性拐点</h3>
+                <div class="pf-inflection-grid">
+                    <div class="pf-inflection-card glass-panel">
+                        <div class="pf-inf-num">01</div>
+                        <h4>AI云从"降价获客"转向"涨价收割" — 商业模式拐点</h4>
+                        <div class="pf-inf-chain">
+                            <span>AI Agent爆发</span><span class="pf-arrow">→</span>
+                            <span>Token调用量暴涨</span><span class="pf-arrow">→</span>
+                            <span>算力严重供不应求</span><span class="pf-arrow">→</span>
+                            <span>云厂商掌握定价权</span><span class="pf-arrow">→</span>
+                            <span>毛利率拐点</span>
+                        </div>
+                        <div class="pf-inf-meta">
+                            <div class="pf-inf-tag pf-tag-cycle">盈利周期：拐点已确认</div>
+                            <div class="pf-inf-tag pf-tag-ref">类比：AWS 2015-2020盈利飞轮</div>
+                        </div>
+                        <p class="pf-inf-note">20年降价逻辑终结 — 头部云厂商AI收入占比将快速超过50%，单位经济模型质变</p>
+                    </div>
+                    <div class="pf-inflection-card glass-panel">
+                        <div class="pf-inf-num">02</div>
+                        <h4>AI算力Capex超级周期 — 从建设到变现</h4>
+                        <div class="pf-inf-chain">
+                            <span>云厂商涨价</span><span class="pf-arrow">→</span>
+                            <span>Capex回报率改善</span><span class="pf-arrow">→</span>
+                            <span>加大算力投入</span><span class="pf-arrow">→</span>
+                            <span>AIDC/服务器/光模块订单潮</span>
+                        </div>
+                        <div class="pf-inf-meta">
+                            <div class="pf-inf-tag pf-tag-cycle">2026-2028 算力基建高峰</div>
+                            <div class="pf-inf-tag pf-tag-ref">阿里/百度/腾讯Capex合计超3000亿</div>
+                        </div>
+                        <p class="pf-inf-note">涨价→盈利改善→更多Capex→更多涨价 — 正向飞轮已启动</p>
+                    </div>
+                    <div class="pf-inflection-card glass-panel">
+                        <div class="pf-inf-num">03</div>
+                        <h4>OpenClaw重塑云分发权 — 平台经济新范式</h4>
+                        <div class="pf-inf-chain">
+                            <span>AI模型平台化</span><span class="pf-arrow">→</span>
+                            <span>云厂商掌控分发</span><span class="pf-arrow">→</span>
+                            <span>MaaS成新增长极</span><span class="pf-arrow">→</span>
+                            <span>平台税逻辑确立</span>
+                        </div>
+                        <div class="pf-inf-meta">
+                            <div class="pf-inf-tag pf-tag-cycle">阿里百炼Q1创历史最高增速</div>
+                            <div class="pf-inf-tag pf-tag-ref">类比：苹果App Store平台税</div>
+                        </div>
+                        <p class="pf-inf-note">云厂商从"卖算力"进化为"卖AI能力" — 单位价值量级跃升</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ====== 配置可视化 ====== -->
+            <section class="pf-section">
+                <h3>📊 投资组合配置可视化</h3>
+                <div class="pf-charts-row">
+                    <div class="pf-chart-box glass-panel">
+                        <h4>组合仓位配置</h4>
+                        <div style="position:relative;height:300px;width:100%;"><canvas id="pfAllocationChart2"></canvas></div>
+                    </div>
+                    <div class="pf-chart-box glass-panel">
+                        <h4>分批建仓时间线</h4>
+                        <div class="pf-timeline">
+                            <div class="pf-tl-item pf-tl-now"><div class="pf-tl-dot"></div><div class="pf-tl-content"><span class="pf-tl-label">第一批 · 立即</span><span class="pf-tl-pct">35%</span><ul><li>头部云厂商（阿里巴巴、金山云）</li><li>AI芯片/GPU设计（寒武纪、海光信息）</li><li>光模块龙头（中际旭创）</li></ul></div></div>
+                            <div class="pf-tl-item pf-tl-soon"><div class="pf-tl-dot"></div><div class="pf-tl-content"><span class="pf-tl-label">第二批 · 1-2周</span><span class="pf-tl-pct">30%</span><ul><li>AIDC/IDC（润泽科技、万国数据）</li><li>服务器/存储（浪潮信息、紫光股份）</li><li>液冷设备</li></ul></div></div>
+                            <div class="pf-tl-item pf-tl-later"><div class="pf-tl-dot"></div><div class="pf-tl-content"><span class="pf-tl-label">第三批 · 1-2月</span><span class="pf-tl-pct">25%</span><ul><li>算力租赁平台</li><li>CDN/边缘计算</li><li>根据季报验证调整</li></ul></div></div>
+                            <div class="pf-tl-item pf-tl-reserve"><div class="pf-tl-dot"></div><div class="pf-tl-content"><span class="pf-tl-label">预留 · 现金</span><span class="pf-tl-pct">10%</span><ul><li>追踪Q2云厂商业绩</li><li>应对回调加仓</li></ul></div></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ====== 核心标的 ====== -->
+            <section class="pf-section">
+                <h3>🎯 核心标的选股池</h3>
+
+                <div class="pf-tier"><div class="pf-tier-header"><span class="pf-tier-badge pf-tier-1">第一梯队 · 核心配置 55%</span></div>
+
+                    <div class="pf-stock-category"><div class="pf-sc-label">☁️ 头部云厂商 — 涨价直接受益（25%）</div>
+                        <div class="pf-stock-cards">
+                            <div class="pf-stock-card glass-panel"><div class="pf-sc-top"><span class="pf-sc-name">阿里巴巴</span><span class="pf-sc-code">9988.HK / BABA</span></div><p class="pf-sc-desc">中国云市场份额第一(36%)，涨价最高34%，百炼MaaS增速创纪录</p><div class="pf-sc-signal"><span class="badge buy">核心持仓</span><span class="pf-sc-note">云业务估值重估中</span></div></div>
+                            <div class="pf-stock-card glass-panel"><div class="pf-sc-top"><span class="pf-sc-name">金山云</span><span class="pf-sc-code">3896.HK / KC</span></div><p class="pf-sc-desc">AI云增速最快，港股当日涨18%，雷军系生态协同</p><div class="pf-sc-signal"><span class="badge buy">突破后跟进</span><span class="pf-sc-note">弹性最大标的</span></div></div>
+                            <div class="pf-stock-card glass-panel"><div class="pf-sc-top"><span class="pf-sc-name">百度集团</span><span class="pf-sc-code">9888.HK / BIDU</span></div><p class="pf-sc-desc">云市场份额第二(22.5%)，智能云涨价5-30%，文心大模型生态</p><div class="pf-sc-signal"><span class="badge wait">估值底部</span><span class="pf-sc-note">关注云收入增速</span></div></div>
+                            <div class="pf-stock-card glass-panel"><div class="pf-sc-top"><span class="pf-sc-name">Microsoft</span><span class="pf-sc-code">NASDAQ: MSFT</span></div><p class="pf-sc-desc">Azure全球第二，AI Copilot变现领先，全球算力涨价受益</p><div class="pf-sc-signal"><span class="badge buy">长线底仓</span><span class="pf-sc-note">全球AI云龙头</span></div></div>
+                        </div>
+                    </div>
+
+                    <div class="pf-stock-category"><div class="pf-sc-label">🧠 AI芯片/算力硬件 — 涨价根源（20%）</div>
+                        <div class="pf-stock-cards">
+                            <div class="pf-stock-card glass-panel"><div class="pf-sc-top"><span class="pf-sc-name">寒武纪</span><span class="pf-sc-code">688256.SH</span></div><p class="pf-sc-desc">国产AI芯片龙头，平头哥真武810E替代需求</p><div class="pf-sc-signal"><span class="badge wait">高波动分批</span><span class="pf-sc-note">估值偏高需耐心</span></div></div>
+                            <div class="pf-stock-card glass-panel"><div class="pf-sc-top"><span class="pf-sc-name">海光信息</span><span class="pf-sc-code">688041.SH</span></div><p class="pf-sc-desc">国产GPU/DCU领军，深算系列进入头部云厂商</p><div class="pf-sc-signal"><span class="badge buy">订单增长确认</span><span class="pf-sc-note">关注出货量</span></div></div>
+                            <div class="pf-stock-card glass-panel"><div class="pf-sc-top"><span class="pf-sc-name">NVIDIA</span><span class="pf-sc-code">NASDAQ: NVDA</span></div><p class="pf-sc-desc">全球AI芯片垄断者，算力涨价的终极受益方</p><div class="pf-sc-signal"><span class="badge buy">回调加仓</span><span class="pf-sc-note">$800-850区间</span></div></div>
+                            <div class="pf-stock-card glass-panel"><div class="pf-sc-top"><span class="pf-sc-name">中际旭创</span><span class="pf-sc-code">300308.SZ</span></div><p class="pf-sc-desc">800G光模块全球龙头，AI数据中心核心供应商</p><div class="pf-sc-signal"><span class="badge buy">业绩高增</span><span class="pf-sc-note">1.6T产品催化</span></div></div>
+                        </div>
+                    </div>
+
+                    <div class="pf-stock-category"><div class="pf-sc-label">🏗️ AIDC/服务器 — 算力基建核心（10%）</div>
+                        <div class="pf-stock-cards">
+                            <div class="pf-stock-card glass-panel"><div class="pf-sc-top"><span class="pf-sc-name">浪潮信息</span><span class="pf-sc-code">000977.SZ</span></div><p class="pf-sc-desc">国内服务器第一，AI服务器出货量领先</p><div class="pf-sc-signal"><span class="badge buy">涨超5%确认</span></div></div>
+                            <div class="pf-stock-card glass-panel"><div class="pf-sc-top"><span class="pf-sc-name">紫光股份</span><span class="pf-sc-code">000938.SZ</span></div><p class="pf-sc-desc">ICT基础设施龙头，新华三云计算+存储完整方案</p><div class="pf-sc-signal"><span class="badge buy">涨超7%跟进</span></div></div>
+                            <div class="pf-stock-card glass-panel"><div class="pf-sc-top"><span class="pf-sc-name">万国数据</span><span class="pf-sc-code">9698.HK / GDS</span></div><p class="pf-sc-desc">中立IDC龙头，AI算力中心大客户绑定</p><div class="pf-sc-signal"><span class="badge wait">上架率提升后</span></div></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pf-tier"><div class="pf-tier-header"><span class="pf-tier-badge pf-tier-2">第二梯队 · 趋势配置 35%</span></div>
+
+                    <div class="pf-stock-category"><div class="pf-sc-label">🔧 算力租赁/CDN — AI云IAAS核心（15%）</div>
+                        <div class="pf-stock-cards">
+                            <div class="pf-stock-card glass-panel"><div class="pf-sc-top"><span class="pf-sc-name">美利云</span><span class="pf-sc-code">000815.SZ</span></div><p class="pf-sc-desc">算力租赁核心标的，涨停板确认市场情绪</p><div class="pf-sc-signal"><span class="badge buy">涨停后回调入</span></div></div>
+                            <div class="pf-stock-card glass-panel"><div class="pf-sc-top"><span class="pf-sc-name">网宿科技</span><span class="pf-sc-code">300017.SZ</span></div><p class="pf-sc-desc">CDN龙头，转型边缘计算+AI推理分发</p><div class="pf-sc-signal"><span class="badge wait">转型验证期</span></div></div>
+                            <div class="pf-stock-card glass-panel"><div class="pf-sc-top"><span class="pf-sc-name">Cloudflare</span><span class="pf-sc-code">NYSE: NET</span></div><p class="pf-sc-desc">全球边缘计算龙头，AI推理网络布局领先</p><div class="pf-sc-signal"><span class="badge wait">增速确认入场</span></div></div>
+                        </div>
+                    </div>
+
+                    <div class="pf-stock-category"><div class="pf-sc-label">❄️ 液冷/电力 — 算力基建刚需（10%）</div>
+                        <div class="pf-stock-cards">
+                            <div class="pf-stock-card glass-panel"><div class="pf-sc-top"><span class="pf-sc-name">英维克</span><span class="pf-sc-code">002837.SZ</span></div><p class="pf-sc-desc">数据中心液冷方案龙头，GPU集群温控刚需</p><div class="pf-sc-signal"><span class="badge buy">液冷订单验证</span></div></div>
+                            <div class="pf-stock-card glass-panel"><div class="pf-sc-top"><span class="pf-sc-name">Vertiv</span><span class="pf-sc-code">NYSE: VRT</span></div><p class="pf-sc-desc">全球数据中心电力/热管理龙头</p><div class="pf-sc-signal"><span class="badge buy">AI Capex受益</span></div></div>
+                        </div>
+                    </div>
+
+                    <div class="pf-stock-category"><div class="pf-sc-label">💾 存储/HBM — CPFS涨价30%（10%）</div>
+                        <div class="pf-stock-cards">
+                            <div class="pf-stock-card glass-panel"><div class="pf-sc-top"><span class="pf-sc-name">同有科技</span><span class="pf-sc-code">300302.SZ</span></div><p class="pf-sc-desc">存储国产替代龙头，20CM涨停确认逻辑</p><div class="pf-sc-signal"><span class="badge buy">涨停后回调入</span></div></div>
+                            <div class="pf-stock-card glass-panel"><div class="pf-sc-top"><span class="pf-sc-name">SK海力士</span><span class="pf-sc-code">000660.KS</span></div><p class="pf-sc-desc">HBM全球份额第一，AI训练核心存储</p><div class="pf-sc-signal"><span class="badge wait">HBM3e放量</span></div></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pf-tier"><div class="pf-tier-header"><span class="pf-tier-badge pf-tier-3">第三梯队 · 对冲/防守 10%</span></div>
+                    <div class="pf-hedge-grid">
+                        <div class="pf-hedge-card glass-panel"><div class="pf-hc-icon">💰</div><div class="pf-hc-body"><strong>货币基金/短债</strong><span class="pf-hc-pct">7%</span></div><p>保持流动性，等Q2财报验证后加仓</p></div>
+                        <div class="pf-hedge-card glass-panel"><div class="pf-hc-icon">📉</div><div class="pf-hc-body"><strong>做空传统IT集成ETF</strong><span class="pf-hc-pct">3%</span></div><p>AI云替代传统IT趋势对冲</p></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ====== 风控 ====== -->
+            <section class="pf-section">
+                <h3>🧠 风控纪律 & 50年经验</h3>
+                <div class="pf-risk-row">
+                    <div class="pf-risk-table glass-panel">
+                        <h4>📏 风控规则</h4>
+                        <table class="pf-table pf-table-risk"><tbody>
+                            <tr><td>单只个股上限</td><td><strong>≤ 8% 总仓位</strong></td></tr>
+                            <tr><td>止损线</td><td><strong>个股 -12% · 组合 -8%</strong></td></tr>
+                            <tr><td>再平衡频率</td><td>每周评估，财报季密切跟踪</td></tr>
+                            <tr><td>关键跟踪</td><td>云厂商Capex · GPU出货量 · Token调用量 · 涨价落地情况</td></tr>
+                            <tr><td>退出信号</td><td>云厂商重启降价 → 减仓IaaS层，转配应用层</td></tr>
+                        </tbody></table>
+                    </div>
+                    <div class="pf-wisdom glass-panel">
+                        <h4>💡 核心提醒</h4>
+                        <div class="pf-wisdom-list">
+                            <div class="pf-wis-item"><span class="pf-wis-num">1</span><div><strong>涨价=最强盈利催化</strong><p>云厂商涨价直接改善毛利率，这是比降本增效更硬的逻辑</p></div></div>
+                            <div class="pf-wis-item"><span class="pf-wis-num">2</span><div><strong>买"卖水人"不买"淘金者"</strong><p>AI应用层竞争激烈，算力基建层确定性更高：GPU>云>应用</p></div></div>
+                            <div class="pf-wis-item"><span class="pf-wis-num">3</span><div><strong>警惕涨停板追高</strong><p>同有科技等20CM涨停后需等回调，不追板是纪律</p></div></div>
+                            <div class="pf-wis-item"><span class="pf-wis-num">4</span><div><strong>紧盯Q2财报验证</strong><p>涨价4月18日生效，Q2-Q3财报是验证期，业绩兑现前保留子弹</p></div></div>
+                            <div class="pf-wis-item"><span class="pf-wis-num">5</span><div><strong>这是5年级别的趋势</strong><p>AI算力需求增长远未见顶，类比2010-2015移动互联网云爆发期</p></div></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            </div><!-- /report-aicloud -->
+
+            <!-- ====== 底部免责 ====== -->
+            <footer class="pf-footer">
+                <p>⚠️ 本分析基于公开信息和历史经验框架，不构成具体投资建议。投资有风险，入市需谨慎。</p>
+                <p class="pf-footer-brand">AlphaCore 投研量化终端 · 投资组合专题报告</p>
+            </footer>
+        </div>
+    </main>
+
+    <script src="./portfolio.js"></script>
+</body>
+</html>

@@ -227,7 +227,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const navItems = document.querySelectorAll('.nav-item');
     navItems.forEach(item => {
         item.addEventListener('click', (e) => {
-            e.preventDefault();
+            const href = item.getAttribute('href');
+            // 只对 # 链接阻止默认行为，真实页面链接允许跳转
+            if (!href || href === '#') {
+                e.preventDefault();
+            }
             navItems.forEach(nav => nav.classList.remove('active'));
             item.classList.add('active');
         });
