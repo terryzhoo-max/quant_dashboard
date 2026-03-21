@@ -66,55 +66,37 @@ ETF_CODE_SET = {e["code"] for e in ETF_POOL}
 
 def fetch_all_etf_data_batch(days: int = 120) -> dict:
     """
-    5000积分用户正确姿势：按trade_date批量获取，不循环ts_code
-    每次调用获取当天ALL基金数据，然后本地过滤目标ETF
+    按ts_code逐只获取历史数据。 
+    35只ETF = 35次API调用，比按交易日（120次调用+大Payload）获取快得多。
     """
-    print(f"[策略引擎] 开始获取{days}个交易日数据...")
-
-    # 1. 获取交易日历，找到最近 days 个交易日
+    print(f"[策略引擎] 开始获取{days}天历史数据(按 ts_code)...")
     end_date = datetime.now().strftime("%Y%m%d")
     start_date = (datetime.now() - timedelta(days=int(days * 2.0))).strftime("%Y%m%d")
 
-    try:
-        cal = pro.trade_cal(exchange='SSE', start_date=start_date, end_date=end_date)
-        trade_dates = cal[cal['is_open'] == 1]['cal_date'].sort_values().tolist()
-        # 只取最近 days 个交易日
-        trade_dates = trade_dates[-days:]
-        print(f"[策略引擎] 获取到{len(trade_dates)}个交易日：{trade_dates[0]} ~ {trade_dates[-1]}")
-    except Exception as e:
-        print(f"[策略引擎] 获取日历失败: {e}")
-        return {}
-
-    # 2. 按日期批量获取 — 一次API拿到当天所有ETF数据
-    all_records = {code: [] for code in ETF_CODE_SET}
-
-    for i, date in enumerate(trade_dates):
-        try:
-            df = pro.fund_daily(trade_date=date)
-            if df is not None and not df.empty:
-                # 过滤目标ETF
-                target = df[df['ts_code'].isin(ETF_CODE_SET)]
-                for _, row in target.iterrows():
-                    all_records[row['ts_code']].append({
-                        'date': pd.to_datetime(row['trade_date']),
-                        'open': row['open'],
-                        'high': row['high'],
-                        'low': row['low'],
-                        'close': row['close'],
-                        'volume': row['vol'],
-                    })
-        except Exception as e:
-            print(f"[策略引擎] 日期 {date} 获取失败: {e}")
-
-        if (i + 1) % 40 == 0:
-            print(f"[策略引擎] 已处理 {i+1}/{len(trade_dates)} 个交易日")
-
-    # 3. 组装为 DataFrame
     result = {}
-    for code, records in all_records.items():
-        if records:
-            df = pd.DataFrame(records).sort_values('date').reset_index(drop=True)
-            result[code] = df
+    total_etfs = len(ETF_POOL)
+    
+    for i, item in enumerate(ETF_POOL):
+        code = item["code"]
+        name = item["name"]
+        try:
+            df = pro.fund_daily(ts_code=code, start_date=start_date, end_date=end_date)
+            if df is not None and not df.empty:
+                df = df.sort_values("trade_date").reset_index(drop=True)
+                df = df.tail(days).reset_index(drop=True)
+                
+                # 重命名列以兼容原有逻辑
+                df = df.rename(columns={'trade_date': 'date', 'vol': 'volume'})
+                df['date'] = pd.to_datetime(df['date'])
+                
+                result[code] = df
+            else:
+                print(f"  [FAIL] {name}({code}): 无数据")
+        except Exception as e:
+            print(f"  [FAIL] {name}({code}): {e}")
+            
+        if (i + 1) % 10 == 0:
+            print(f"[策略引擎] 已获取 {i + 1}/{total_etfs} 只ETF...")
 
     print(f"[策略引擎] 数据获取完成，共{len(result)}只ETF有数据")
     return result

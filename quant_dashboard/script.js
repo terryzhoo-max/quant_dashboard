@@ -1,9 +1,6 @@
-// 全局图表实例，方便后续更新
-let trendChartInstance = null;
-let radarChartInstance = null;
-
+// 移除过期 Chart.js 实例
 // 后端 API 地址
-const API_URL = 'http://127.0.0.1:8000/api/v1/dashboard-data';
+const API_URL = '/api/v1/dashboard-data';
 
 // 格式化函数
 const formatTrend = (change, isInverse = false) => {
@@ -15,16 +12,24 @@ const formatTrend = (change, isInverse = false) => {
 
 const updateCardUI = (cardId, valId, trendId, dataItem) => {
     const valEl = document.getElementById(valId);
-    const trendEl = document.getElementById(trendId);
     
-    // 更新数值和趋势
-    valEl.innerHTML = `${dataItem.value} <span class="trend" id="${trendId}">${formatTrend(dataItem.change)}</span>`;
+    // Update HTML layout based on the design plan
+    valEl.innerHTML = `
+        ${dataItem.value} 
+        <span class="trend" id="${trendId}">${dataItem.trend}</span>
+    `;
     
-    // 动态调整高亮颜色
+    // Dynamically set highlight color based on status (up = green, down = red, neutral = gray etc)
+    const cardEl = document.getElementById(cardId);
     if (dataItem.status === 'up') {
         valEl.className = 'stat-value highlight-up';
-    } else {
+        if (cardEl) cardEl.classList.add('active-glow');
+    } else if (dataItem.status === 'down') {
         valEl.className = 'stat-value highlight-down';
+        if (cardEl) cardEl.classList.remove('active-glow');
+    } else {
+        valEl.className = 'stat-value';
+        if (cardEl) cardEl.classList.remove('active-glow');
     }
 };
 
@@ -58,154 +63,169 @@ async function fetchQuantData() {
 
 // 动态将数据注入到图表和 DOM
 function updateDashboard(marketData) {
-    // 1. 更新顶部卡片数值
-    updateCardUI('card-vix', 'val-vix', 'trend-vix', marketData.vix);
-    updateCardUI('card-capital', 'val-capital', 'trend-capital', marketData.capitalFlow);
-    updateCardUI('card-dividend', 'val-dividend', 'trend-dividend', marketData.dividendYield);
+    if (marketData.macro_cards) {
+        // 1. 更新顶部卡片数值
+        updateCardUI('card-vix', 'val-vix', 'trend-vix', marketData.macro_cards.vix);
+        updateCardUI('card-erp', 'val-erp', 'trend-erp', marketData.macro_cards.erp);
+        updateCardUI('card-capital', 'val-capital', 'trend-capital', marketData.macro_cards.capital);
+        updateCardUI('card-signal', 'val-signal', 'trend-signal', marketData.macro_cards.signal);
+    }
     
-    // 2. 更新折线图
-    if (trendChartInstance) {
-        trendChartInstance.data.labels = marketData.trendChart.labels;
-        trendChartInstance.data.datasets[0].data = marketData.trendChart.aiInfrastructure;
-        trendChartInstance.data.datasets[1].data = marketData.trendChart.traditional;
-        trendChartInstance.update('active');
+    // Render Execution Lists    // 4. 更新情绪仪表盘 (Market Temperature & Advice)
+    if (marketData.macro_cards.market_temp) {
+        const temp = marketData.macro_cards.market_temp;
+        document.getElementById('val-market-temp').innerText = `${temp.value}°`;
+        document.getElementById('label-market-temp').innerText = temp.label;
+        document.getElementById('val-pos-advice').innerText = temp.advice;
+        
+        // 简单正则提取建议比例的平均值用于进度条
+        const match = temp.advice.match(/(\d+)%/);
+        if (match) {
+            const posVal = match[1];
+            document.getElementById('bar-pos-advice').style.width = `${posVal}%`;
+        }
     }
 
-    // 3. 更新雷达图
-    if (radarChartInstance) {
-        radarChartInstance.data.labels = marketData.radarChart.labels;
-        radarChartInstance.data.datasets[0].data = marketData.radarChart.alphaModel;
-        radarChartInstance.data.datasets[1].data = marketData.radarChart.betaModel;
-        radarChartInstance.update();
+    // 5. 更新行业热力图 (Sector Heatmap)
+    if (marketData.sector_heatmap) {
+        renderHeatmap('heatmap-grid', marketData.sector_heatmap);
     }
+    
+    // 6. 更新个股列表
+    if (marketData.execution_lists) {
+        renderExecutionLists(document.getElementById('list-buy-zone'), marketData.execution_lists.buy_zone);
+        renderExecutionLists(document.getElementById('list-danger-zone'), marketData.execution_lists.danger_zone);
+    }
+    
+    // 2. 更新策略监控卡片 (Option C)
+    if (marketData.strategy_status) {
+        updateStrategyCard('mr', marketData.strategy_status.mr);
+        updateStrategyCard('mom', marketData.strategy_status.mom);
+        updateStrategyCard('div', marketData.strategy_status.div);
+    }
+}
+
+function renderExecutionLists(listContainer, listData) {
+    if (!listContainer || !listData) return;
+    
+    listContainer.innerHTML = ''; // Clear processing text
+    
+    if (listData.length === 0) {
+        listContainer.innerHTML = `<li><div style="color: #64748b; padding: 10px;">当前无符合条件标的</div></li>`;
+        return;
+    }
+    
+    listData.forEach(item => {
+        const li = document.createElement('li');
+        // 根据评分和买卖逻辑确定分数颜色
+        let scoreClass = '';
+        if (item.badgeClass === 'buy') {
+            if (item.score >= 75) scoreClass = 'score-high';
+            else if (item.score >= 60) scoreClass = 'score-mid';
+            else scoreClass = 'score-low';
+        } else { // danger_zone or sell
+            if (item.score <= 30) scoreClass = 'score-danger';
+            else scoreClass = 'score-low';
+        }
+            
+        li.innerHTML = `
+            <div class="stock-info">
+                <span class="stock-name">${item.name}</span>
+                <span class="stock-code">${item.code}</span>
+            </div>
+            <div class="stock-metrics">
+                <div class="score-pill ${scoreClass}">评分: ${item.score || '--'}</div>
+                <div class="metric-row">
+                    <span class="metric">${item.metric || 'PE: ' + item.pe + 'x'}</span>
+                    <span class="badge ${item.badgeClass}">${item.badge}</span>
+                </div>
+            </div>
+        `;
+        listContainer.appendChild(li);
+    });
+}
+
+function updateStrategyCard(prefix, data) {
+    if (!data) return;
+    
+    const statusEl = document.getElementById(`strat-status-${prefix}`);
+    if (statusEl) {
+        statusEl.innerText = data.status_text;
+        statusEl.className = `strat-status ${data.status_class}`; // active, warning, dormant
+    }
+    
+    const metric1El = document.getElementById(`strat-metric1-${prefix}`);
+    if (metric1El) metric1El.innerText = data.metric1;
+    
+    const metric2El = document.getElementById(`strat-metric2-${prefix}`);
+    if (metric2El) metric2El.innerText = data.metric2;
 }
 
 function showFallbackData() {
     const fallbackData = {
-        vix: { value: 20.15, change: 5.2, status: "up" },
-        capitalFlow: { value: -124.5, change: -1.5, status: "down" },
-        dividendYield: { value: 4.2, change: 0.3, status: "up" },
-        trendChart: {
-            labels: ['2023Q4', '2024Q2', '2024Q4', '2025Q2', '2025Q4', '2026Q2(E)'],
-            aiInfrastructure: [10, 25, 40, 60, 75, 95], 
-            traditional: [45, 40, 32, 28, 20, 15]
+        macro_cards: {
+            vix: { value: 20.15, trend: "+5.2%", status: "up" },
+            benchmark: { value: "多头排列", trend: "短期均线发散", status: "up" },
+            capital: { value: "-124.5 亿", trend: "缩量流出", status: "down" },
+            signal: { value: "右侧胜率区", trend: "动量与红利共振", status: "up" }
         },
-        radarChart: {
-            labels: ['盈利动量', '资产质量', '估值倍数(倒数)', '成长性', '交易拥挤度(倒数)', '宏观贝塔'],
-            alphaModel: [92, 85, 68, 95, 45, 88],
-            betaModel: [60, 85, 45, 35, 80, 55]
+        execution_lists: {
+            buy_zone: [
+                { name: "某AI行业龙头", code: "60XXXX.SH", pe: 15.2, score: 82.5, badge: "核心资产", badgeClass: "buy" },
+                { name: "车规半导体标的", code: "00XXXX.SZ", pe: 22.1, score: 71.4, badge: "性价比较高", badgeClass: "buy" }
+            ],
+            danger_zone: [
+                { name: "业绩衰退标的", code: "30XXXX.SZ", pe: 120.5, score: 18.2, badge: "严重泡沫", badgeClass: "sell" },
+                { name: "高杠杆爆雷风险", code: "60XXXX.SH", metric: "彻底破位", score: 12.5, badge: "财务预警", badgeClass: "sell" }
+            ]
+        },
+        strategy_status: {
+            mr: { status_text: "发现极值猎物", status_class: "active", metric1: "54只", metric2: "全仓 80%" },
+            mom: { status_text: "动能衰竭", status_class: "warning", metric1: "红利低波", metric2: "拥挤度 92%" },
+            div: { status_text: "稳定防御", status_class: "dormant", metric1: "4.82%", metric2: "62%" }
         }
     };
     updateDashboard(fallbackData);
 }
 
-// 首次渲染图表的基础底座
-function renderCharts() {
-    Chart.defaults.color = '#94a3b8';
-    Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+/**
+ * 渲染行业热力图
+ */
+function renderHeatmap(containerId, data) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
     
-    // ================= Trend Chart =================
-    const trendCtx = document.getElementById('trendChart').getContext('2d');
-    const gradientAI = trendCtx.createLinearGradient(0, 0, 0, 350);
-    gradientAI.addColorStop(0, 'rgba(59, 130, 246, 0.45)');
-    gradientAI.addColorStop(1, 'rgba(59, 130, 246, 0.02)');
-
-    trendChartInstance = new Chart(trendCtx, {
-        type: 'line',
-        data: {
-            labels: [],
-            datasets: [{
-                label: 'AI算力基础设施核心动能',
-                data: [],
-                borderColor: '#3b82f6',
-                backgroundColor: gradientAI,
-                borderWidth: 3,
-                fill: true,
-                tension: 0.4,
-                pointBackgroundColor: '#07090e',
-                pointBorderColor: '#3b82f6',
-                pointBorderWidth: 2,
-                pointRadius: 4,
-                pointHoverRadius: 6
-            },
-            {
-                label: '传统系统集成利润中枢',
-                data: [],
-                borderColor: '#ef4444',
-                borderWidth: 2,
-                borderDash: [5, 5],
-                tension: 0.4,
-                pointRadius: 0,
-                pointHoverRadius: 4
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
-            plugins: {
-                legend: { position: 'top', align: 'end', labels: { boxWidth: 12, usePointStyle: true, padding: 20 } },
-                tooltip: { backgroundColor: 'rgba(13, 16, 23, 0.95)', titleColor: '#fff', bodyColor: '#e2e8f0', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1, padding: 12, boxPadding: 6, usePointStyle: true }
-            },
-            scales: {
-                y: { grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false }, border: { display: false } },
-                x: { grid: { display: false }, border: { display: false } }
-            }
-        }
-    });
-
-    // ================= Radar Chart =================
-    const radarCtx = document.getElementById('radarChart').getContext('2d');
-    radarChartInstance = new Chart(radarCtx, {
-        type: 'radar',
-        data: {
-            labels: [],
-            datasets: [{
-                label: '全市场标兵模型',
-                data: [],
-                backgroundColor: 'rgba(139, 92, 246, 0.25)',
-                borderColor: '#8b5cf6',
-                pointBackgroundColor: '#8b5cf6',
-                pointBorderColor: '#fff',
-                pointHoverBackgroundColor: '#fff',
-                pointHoverBorderColor: '#8b5cf6',
-                borderWidth: 2,
-            }, {
-                label: '大盘防御基准',
-                data: [],
-                backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                borderColor: '#10b981',
-                pointBackgroundColor: '#10b981',
-                pointBorderColor: '#fff',
-                pointHoverBackgroundColor: '#fff',
-                pointHoverBorderColor: '#10b981',
-                borderWidth: 2,
-                borderDash: [5, 5]
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                r: {
-                    angleLines: { color: 'rgba(255,255,255,0.06)' },
-                    grid: { color: 'rgba(255,255,255,0.06)' },
-                    pointLabels: { color: '#cbd5e1', font: { size: 11, family: "'Inter', sans-serif" } },
-                    ticks: { display: false, max: 100, min: 0 }
-                }
-            },
-            plugins: {
-                legend: { position: 'bottom', labels: { boxWidth: 12, usePointStyle: true, padding: 20 } },
-                tooltip: { backgroundColor: 'rgba(13, 16, 23, 0.95)', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1, padding: 10 }
-            }
-        }
-    });
+    container.innerHTML = data.map(sector => {
+        let intensityClass = '';
+        const chg = sector.change;
+        const trend5d = sector.trend_5d || 0;
+        const rps = sector.rps || 0;
+        
+        if (chg >= 1.5) intensityClass = 'up-high';
+        else if (chg >= 0.5) intensityClass = 'up-mid';
+        else if (chg > 0) intensityClass = 'up-low';
+        else if (chg <= -1.5) intensityClass = 'down-high';
+        else if (chg <= -0.5) intensityClass = 'down-mid';
+        else if (chg < 0) intensityClass = 'down-low';
+        
+        const sign = chg > 0 ? '+' : '';
+        const trendSign = trend5d > 0 ? '+' : '';
+        
+        // 提示信息包含 5D 趋势和 RPS (相对强弱)
+        const tooltip = `5日累计: ${trendSign}${trend5d}% | 相对强弱(RPS): ${rps > 0 ? '+' : ''}${rps}`;
+        
+        return `
+            <div class="heatmap-cell ${intensityClass}" title="${tooltip}">
+                <span class="sector-name">${sector.name}</span>
+                <span class="sector-change">${sign}${chg.toFixed(2)}%</span>
+                <span class="sector-trend" style="font-size: 0.75rem; opacity: 0.7;">5D: ${trendSign}${trend5d.toFixed(1)}%</span>
+            </div>
+        `;
+    }).join('');
 }
 
 // Init when DOM loaded
 document.addEventListener('DOMContentLoaded', () => {
-    // 渲染图表空骨架
-    renderCharts();
     
     // 发起网络数据请求
     fetchQuantData();
@@ -216,7 +236,6 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshBtn.addEventListener('click', () => {
             const originalText = refreshBtn.innerText;
             refreshBtn.innerText = '拉取中...';
-            // 添加旋转体动画逻辑也可以放这
             fetchQuantData().then(() => {
                 setTimeout(() => refreshBtn.innerText = originalText, 500);
             });
@@ -228,7 +247,6 @@ document.addEventListener('DOMContentLoaded', () => {
     navItems.forEach(item => {
         item.addEventListener('click', (e) => {
             const href = item.getAttribute('href');
-            // 只对 # 链接阻止默认行为，真实页面链接允许跳转
             if (!href || href === '#') {
                 e.preventDefault();
             }
