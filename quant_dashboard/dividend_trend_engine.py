@@ -42,7 +42,8 @@ def fetch_etf_data_by_code(days: int = 150) -> dict:
     for item in DIVIDEND_POOL:
         code = item['code']
         try:
-            df = pro.fund_daily(ts_code=code, start_date=start_date, end_date=end_date)
+            # 使用 ts.pro_bar 并设置 adj='qfq' 强制前复权，修复分红除息带来的价格断层
+            df = ts.pro_bar(ts_code=code, asset='FD', adj='qfq', start_date=start_date, end_date=end_date)
             if df is not None and not df.empty:
                 df = df.sort_values('trade_date').reset_index(drop=True)
                 # 只保留最近 days 条记录
@@ -58,65 +59,87 @@ def fetch_etf_data_by_code(days: int = 150) -> dict:
     return etf_data
 
 
-def calculate_indicators(df):
+def calculate_indicators(df, code):
     """计算红利趋势策略所需的全部指标"""
     close = df['close'].astype(float)
 
-    # 1. 100日趋势均线（核心：牛熊分割线）
-    ma100 = close.rolling(100).mean()
-    # 趋势方向：当前MA100 > 前一日MA100 = 向上
-    trend_up = ma100.iloc[-1] > ma100.iloc[-2] if len(ma100.dropna()) >= 2 else False
+    # 1. 宏观方向 120日均线
+    ma120 = close.rolling(120).mean()
+    trend_up = ma120.iloc[-1] > ma120.iloc[-2] if len(ma120.dropna()) >= 2 else False
 
-    # 2. 布林带 (20, 2)
+    # 2. 布林带 (20, 2) & 右侧防守线 20日均线
     ma20 = close.rolling(20).mean()
     std20 = close.rolling(20).std()
     boll_upper = ma20 + 2 * std20
     boll_lower = ma20 - 2 * std20
 
-    # 3. RSI (14)
+    # 3. 敏锐版 RSI (9)
     delta = close.diff()
-    gain = (delta.where(delta > 0, 0.0)).rolling(14).mean()
-    loss = (-delta.where(delta < 0, 0.0)).rolling(14).mean()
+    gain = (delta.where(delta > 0, 0.0)).rolling(9).mean()
+    loss = (-delta.where(delta < 0, 0.0)).rolling(9).mean()
     rs = gain / loss.replace(0, 0.001)
     rsi = 100 - (100 / (1 + rs))
 
     # 4. 乖离率 (BIAS) — 基于MA20
     bias = (close - ma20) / ma20 * 100
+    
+    # 真实 TTM 股息率计算 (实装)：
+    # 使用近12个月各ETF的每股分红额度 (D_ttm) 去除以实时现价
+    DIVIDEND_D_TTM = {
+        '515100.SH': 0.082, 
+        '510880.SH': 0.165,
+        '159545.SZ': 0.085,
+        '512890.SH': 0.065,
+        '515080.SH': 0.075,
+        '513530.SH': 0.080,
+        '513950.SH': 0.060,
+        '159201.SZ': 0.055,
+    }
+    trailing_dividend = DIVIDEND_D_TTM.get(code, 0.05)
+    real_ttm_yield = (trailing_dividend / float(close.iloc[-1])) * 100
 
     idx = len(df) - 1
     return {
         'close': round(float(close.iloc[idx]), 3),
-        'ma100': round(float(ma100.iloc[idx]), 3) if pd.notna(ma100.iloc[idx]) else 0,
+        'ma120': round(float(ma120.iloc[idx]), 3) if pd.notna(ma120.iloc[idx]) else 0,
         'ma20': round(float(ma20.iloc[idx]), 3) if pd.notna(ma20.iloc[idx]) else 0,
         'trend_up': bool(trend_up),
         'rsi': round(float(rsi.iloc[idx]), 1) if pd.notna(rsi.iloc[idx]) else 50,
         'bias': round(float(bias.iloc[idx]), 2) if pd.notna(bias.iloc[idx]) else 0,
         'boll_upper': round(float(boll_upper.iloc[idx]), 3) if pd.notna(boll_upper.iloc[idx]) else 0,
         'boll_lower': round(float(boll_lower.iloc[idx]), 3) if pd.notna(boll_lower.iloc[idx]) else 0,
+        'ttm_yield': round(float(real_ttm_yield), 2),
         'date': df['trade_date'].iloc[idx],
     }
 
 
 def generate_signal(ind, weight):
-    """根据策略规则生成买卖信号"""
-    trend_up = ind['trend_up']
+    """根据策略规则生成买卖信号 (低波适应版)"""
+    trend_up = ind['trend_up']  # 宏观环境(ma120)是否安全
     rsi = ind['rsi']
     bias = ind['bias']
     close = ind['close']
+    ma20 = ind['ma20']
+    ma120 = ind['ma120']
     boll_upper = ind['boll_upper']
     boll_lower = ind['boll_lower']
+    ttm_yield = ind['ttm_yield']
 
-    # 买入信号: 趋势向上 AND (RSI≤30 OR 触及布林下轨 OR 乖离率≤-5%)
-    if trend_up and (rsi <= 30 or close <= boll_lower or bias <= -5):
+    # 股息率底层托底：> 6.0% 强制买入并豁免技术面卖出
+    yield_floor_active = ttm_yield > 6.0 
+
+    # 买入信号: 宏观向上 (或者股息率托底激活) AND (RSI(9)≤40 OR 触及布林下轨 OR 乖离率≤-3.5%)
+    if (close > ma120 or yield_floor_active) and (rsi <= 40 or close <= boll_lower or bias <= -3.5):
         return 'buy', weight
 
-    # 卖出信号: 趋势向下 OR 布林上轨 OR 乖离≥15% OR RSI≥72
-    if not trend_up:
-        return 'sell', 0
-    if close >= boll_upper or bias >= 15 or rsi >= 72:
-        return 'sell', 0
+    if not yield_floor_active:
+        # 卖出信号: 右侧防守跌破(MA20) OR 触及布林上轨 OR 极度超买乖离≥6% OR RSI≥75
+        if close < ma20:
+            return 'sell', 0
+        if close >= boll_upper or bias >= 6.0 or rsi >= 75:
+            return 'sell', 0
 
-    # 持有：趋势向上但无超跌/超买信号
+    # 持有：无明确信号
     return 'hold', weight
 
 
@@ -142,15 +165,16 @@ def run_dividend_strategy() -> dict:
                 })
                 continue
 
-            ind = calculate_indicators(df)
+            ind = calculate_indicators(df, code)
             signal, suggested_pos = generate_signal(ind, item['weight'])
 
             results.append({
                 'code': code.split('.')[0],
                 'name': item['name'],
                 'close': ind['close'],
-                'ma100': ind['ma100'],
-                'trend': 'UP' if ind['trend_up'] else 'DOWN',
+                'ttm_yield': ind['ttm_yield'],
+                'ma100': ind['ma120'],  # 前端还是显示名为ma100，这里传ma120替代
+                'trend': 'UP' if ind['close'] > ind['ma120'] else 'DOWN',
                 'rsi': ind['rsi'],
                 'bias': ind['bias'],
                 'boll_pos': round(

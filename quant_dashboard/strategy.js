@@ -203,6 +203,10 @@ function renderDividendTable(signals) {
     const tbody = document.getElementById('dt-table-body');
     if (!tbody) return;
 
+    // 按信号排序：买入 > 持有 > 卖出
+    const order = { 'buy': 1, 'hold': 2, 'sell': 5 };
+    signals.sort((a, b) => (order[a.signal] || 99) - (order[b.signal] || 99));
+
     tbody.innerHTML = signals.map(s => {
         const rowClass = s.signal === 'buy' ? 'st-row-buy' : (s.signal === 'sell' ? 'st-row-sell' : '');
         const signalTag = getSignalTag(s.signal);
@@ -211,12 +215,15 @@ function renderDividendTable(signals) {
             : '<span style="color:#ef4444;font-weight:700;">↓ 向下</span>';
         const rsiColor = s.rsi <= 30 ? '#10b981' : (s.rsi >= 72 ? '#ef4444' : 'inherit');
         const biasColor = s.bias <= -5 ? '#10b981' : (s.bias >= 15 ? '#ef4444' : 'inherit');
+        const yieldColor = s.ttm_yield >= 6.0 ? '#ef4444' : (s.ttm_yield >= 5.0 ? '#f59e0b' : '#10b981');
+        const yieldWeight = s.ttm_yield >= 6.0 ? '800' : '600';
 
         return `<tr class="${rowClass}">
             <td style="font-weight:600;color:#fff;">${s.name}</td>
             <td style="font-family:monospace;color:#60a5fa;font-size:0.75rem;">${s.code}</td>
             <td>${s.close}</td>
-            <td style="color:var(--text-muted)">${s.ma100}</td>
+            <td style="color:${yieldColor};font-weight:${yieldWeight}">${s.ttm_yield}%</td>
+            <td style="color:var(--text-muted)">${s.ma120 || s.ma100}</td>
             <td>${trendTag}</td>
             <td style="color:${rsiColor}">${s.rsi}</td>
             <td style="color:${biasColor}">${s.bias > 0 ? '+' : ''}${s.bias}%</td>
@@ -251,16 +258,20 @@ function renderSignalTable(signals) {
     const tbody = document.getElementById('st-table-body');
     if (!tbody) return;
     
+    // 按信号排序：买入 > 持有 > 减仓/注意 > 卖出
+    const order = { 'buy': 1, 'hold': 2, 'sell_weak': 3, 'sell_half': 4, 'sell': 5 };
+    signals.sort((a, b) => (order[a.signal] || 99) - (order[b.signal] || 99));
+
     tbody.innerHTML = signals.map(s => {
-        const rowClass = s.signal === 'buy' ? 'st-row-buy' : (s.signal === 'sell' || s.signal === 'sell_weak' ? 'st-row-sell' : '');
+        const rowClass = s.signal === 'buy' ? 'st-row-buy' : (s.signal === 'sell' || s.signal === 'sell_weak' || s.signal === 'sell_half' ? 'st-row-sell' : '');
         const signalTag = getSignalTag(s.signal);
 
         return `<tr class="${rowClass}">
             <td style="font-weight:600;color:#fff">${s.name}</td>
             <td style="font-family:monospace;color:#60a5fa;font-size:0.75rem">${s.code}</td>
             <td>${s.close}</td>
-            <td style="color:${s.deviation >= 3 ? '#fbbf24' : 'inherit'};font-weight:${s.deviation >= 3 ? '700' : '400'}">${s.deviation}%</td>
-            <td style="color:${s.rsi <= 28 ? '#10b981' : (s.rsi >= 72 ? '#ef4444' : 'inherit')}">${s.rsi}</td>
+            <td style="color:${s.percent_b <= 0 ? '#10b981' : (s.percent_b >= 1 ? '#ef4444' : 'inherit')};font-weight:${s.percent_b <= 0 || s.percent_b >= 1 ? '700' : '400'}">${s.percent_b}</td>
+            <td style="color:${s.rsi_3 <= 10 ? '#10b981' : (s.rsi_3 >= 90 ? '#ef4444' : 'inherit')}">${s.rsi_3}</td>
             <td>${signalTag}</td>
             <td style="font-weight:600">${s.suggested_position > 0 ? s.suggested_position + '%' : '—'}</td>
         </tr>`;
@@ -270,7 +281,8 @@ function renderSignalTable(signals) {
 function getSignalTag(signal) {
     const map = {
         'buy': '<span class="st-signal-tag st-tag-buy">🟢 买入</span>',
-        'sell': '<span class="st-signal-tag st-tag-sell">🔴 卖出</span>',
+        'sell': '<span class="st-signal-tag st-tag-sell">🔴 清仓</span>',
+        'sell_half': '<span class="st-signal-tag st-tag-sell" style="background:rgba(234,179,8,0.2);color:#eab308;border-color:rgba(234,179,8,0.3)">🟠 减仓止盈</span>',
         'sell_weak': '<span class="st-signal-tag st-tag-weak">⚠️ 注意</span>',
         'hold': '<span class="st-signal-tag st-tag-hold">— 持有</span>'
     };
@@ -348,6 +360,10 @@ function renderMomentumTable(signals) {
         tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-muted);padding:40px;">暂无信号数据</td></tr>';
         return;
     }
+
+    // 按信号排序：买入 > 持有 > 注意 > 卖出
+    const order = { 'buy': 1, 'hold': 2, 'sell_weak': 3, 'sell': 5 };
+    signals.sort((a, b) => (order[a.signal] || 99) - (order[b.signal] || 99));
 
     tbody.innerHTML = signals.map(s => {
         const rowClass = s.signal === 'buy' ? 'st-row-buy' : (s.signal === 'sell' || s.signal === 'sell_weak' ? 'st-row-sell' : '');

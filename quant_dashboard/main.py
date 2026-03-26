@@ -7,6 +7,7 @@ import tushare as ts
 import pandas as pd
 import uvicorn
 import asyncio
+from typing import Dict, List, Optional
 from concurrent.futures import ThreadPoolExecutor
 import time
 import traceback
@@ -14,8 +15,15 @@ from datetime import datetime
 from mean_reversion_engine import run_strategy
 from dividend_trend_engine import run_dividend_strategy
 from momentum_rotation_engine import run_momentum_strategy
+from backtest_engine import AlphaBacktester
+from strategies_backtest import (
+    mean_reversion_strategy_vectorized,
+    dividend_trend_strategy_vectorized,
+    momentum_rotation_strategy_vectorized
+)
+from pydantic import BaseModel
 
-executor = ThreadPoolExecutor(max_workers=2)
+executor = ThreadPoolExecutor(max_workers=10)
 
 app = FastAPI(title="AlphaCore Quant API", description="AlphaCore量化终端底层数据接口")
 
@@ -240,6 +248,82 @@ async def get_momentum_strategy():
     if STRATEGY_CACHE["strategy_results"]["mom"]:
         return STRATEGY_CACHE["strategy_results"]["mom"]
     return await asyncio.get_event_loop().run_in_executor(executor, run_momentum_strategy)
+
+# --- API Routes (Defined BEFORE Static Files to prevent path collision) ---
+
+class BacktestRequest(BaseModel):
+    strategy: str  # 'mr', 'div', 'mom'
+    ts_code: str
+    start_date: str
+    end_date: str
+    initial_cash: float = 1000000.0
+    params: dict = {}
+    order_pct: float = 0.01
+    adj: str = 'qfq'
+    benchmark_code: str = '000300.SH'
+
+class BatchBacktestRequest(BaseModel):
+    items: List[BacktestRequest]
+
+@app.post("/api/v1/backtest")
+async def run_backtest_api(req: BacktestRequest):
+    """
+    工业级回测执行接口 - 强化版 (支持 QFQ, POV, Trade Log)
+    """
+    try:
+        bt = AlphaBacktester(initial_cash=req.initial_cash, benchmark_code=req.benchmark_code)
+        
+        # 1. 获取数据 (Fund 日线数据 + Adj Factors)
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Backtest Req: {req.ts_code} ({req.strategy})")
+        df = await asyncio.get_event_loop().run_in_executor(
+            executor, bt.fetch_tushare_data, req.ts_code, req.start_date, req.end_date, req.adj
+        )
+        
+        if df.empty:
+            return {"status": "error", "message": f"未找到代码 {req.ts_code} 的历史数据，请检查代码或日期范围。"}
+        
+        # 2. 选择并执行策略逻辑 (防崩溃参数过滤)
+        p = req.params
+        if req.strategy == 'mr':
+            valid_keys = ['rsi_period', 'rsi_buy', 'rsi_sell', 'boll_period', 'ma_trend_period']
+            filtered_p = {k: v for k, v in p.items() if k in valid_keys}
+            signals = mean_reversion_strategy_vectorized(df, **filtered_p)
+        elif req.strategy == 'div':
+            valid_keys = ['ma_slow', 'ma_fast', 'rsi_period', 'rsi_buy']
+            filtered_p = {k: v for k, v in p.items() if k in valid_keys}
+            signals = dividend_trend_strategy_vectorized(df, **filtered_p)
+        elif req.strategy == 'mom':
+            valid_keys = ['lookback', 'top_n']
+            filtered_p = {k: v for k, v in p.items() if k in valid_keys}
+            signals = momentum_rotation_strategy_vectorized(df, **filtered_p)
+        else:
+            return {"status": "error", "message": "无效的策略类型"}
+            
+        # 3. 运行回测引擎 (传入 ts_code)
+        results = bt.run_vectorized(df, signals, ts_code=req.ts_code, order_pct=req.order_pct)
+        
+        # 4. 附加蒙特卡洛模拟
+        equity_cv = pd.Series(results['equity_curve'])
+        strat_returns = equity_cv.pct_change().fillna(0)
+        results['monte_carlo'] = bt.run_monte_carlo(strat_returns, iterations=50) 
+            
+        return {
+            "status": "success",
+            "data": results
+        }
+        
+    except Exception as e:
+        print(f"Backtest Error: {traceback.format_exc()}")
+        return {"status": "error", "message": str(e)}
+
+@app.post("/api/v1/batch-backtest")
+async def run_batch_backtest(req: BatchBacktestRequest):
+    """
+    多策略对比 (Strategy PK) 接口
+    """
+    tasks = [run_backtest_api(item) for item in req.items]
+    results = await asyncio.gather(*tasks)
+    return {"status": "success", "data": results}
 
 @app.get("/")
 async def root():

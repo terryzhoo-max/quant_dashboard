@@ -91,30 +91,55 @@ body {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 4px;
+}
+
+.nav-group-title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: rgba(148, 163, 184, 0.4);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin: 24px 0 12px 18px;
+    display: block;
 }
 
 .nav-item {
     display: flex;
     align-items: center;
     gap: 14px;
-    padding: 14px 18px;
+    padding: 12px 18px;
     color: var(--text-muted);
     text-decoration: none;
     border-radius: 12px;
     font-weight: 500;
-    transition: all 0.2s ease;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 1px solid transparent;
 }
 
 .nav-item:hover {
-    background: rgba(255, 255, 255, 0.04);
+    background: rgba(255, 255, 255, 0.05);
     color: var(--text-main);
+    transform: translateX(4px);
 }
 
 .nav-item.active {
-    background: linear-gradient(90deg, rgba(59, 130, 246, 0.15), transparent);
+    background: linear-gradient(90deg, rgba(59, 130, 246, 0.12), transparent);
     color: #fff;
     border-left: 3px solid var(--accent);
+    box-shadow: inset 4px 0 12px rgba(59, 130, 246, 0.08);
+}
+
+.badge-beta {
+    font-size: 0.65rem;
+    background: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
+    padding: 2px 6px;
+    border-radius: 6px;
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    margin-left: auto;
+    text-transform: uppercase;
+    font-weight: 700;
 }
 
 .user-profile {
@@ -296,17 +321,281 @@ body {
     100% { transform: rotate(360deg); }
 }
 
-/* 图表区 */
-.analysis-grid {
+/* 情绪仪表盘：海内外温度与持仓建议 */
+.sentiment-section {
+    margin-bottom: 30px;
+}
+
+.sentiment-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 25px 40px;
+    gap: 40px;
+}
+
+.temp-gauge-container, .advice-container {
+    flex: 1;
+}
+
+.temp-header, .advice-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 15px;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+}
+
+.temp-header h3, .advice-header h3 {
+    margin: 0;
+    font-weight: 500;
+    color: var(--text-muted);
+}
+
+.temp-main {
+    display: flex;
+    align-items: baseline;
+    gap: 20px;
+}
+
+.temp-value {
+    font-size: 3.5rem;
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 0 0 20px rgba(255,255,255,0.1);
+}
+
+.temp-label {
+    font-size: 1.2rem;
+    color: var(--accent-color);
+    font-weight: 600;
+    padding: 4px 12px;
+    background: rgba(59, 130, 246, 0.1);
+    border-radius: 20px;
+}
+
+.advice-value {
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: var(--accent-color);
+    margin-bottom: 15px;
+}
+
+.advice-bar-bg {
+    width: 100%;
+    height: 10px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.advice-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%);
+    box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+    transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 行业热力图 (Sector Heatmap) */
+.heatmap-section {
+    margin-bottom: 30px;
+}
+
+.heatmap-section .section-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+    color: var(--text-muted);
+}
+
+.heatmap-section h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 500;
+}
+
+.heatmap-grid {
     display: grid;
-    grid-template-columns: 2fr 1fr;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+}
+
+.heatmap-cell {
+    padding: 15px;
+    border-radius: 8px;
+    text-align: center;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    transition: all 0.3s ease;
+    cursor: default;
+}
+
+.heatmap-cell:hover {
+    transform: translateY(-3px);
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+}
+
+.heatmap-cell .sector-name {
+    display: block;
+    font-size: 0.9rem;
+    color: #fff;
+    margin-bottom: 6px;
+}
+
+.heatmap-cell .sector-change {
+    font-size: 1.1rem;
+    font-weight: 700;
+    font-family: 'Outfit', sans-serif;
+}
+
+/* 涨跌强度染色 (A股版：红涨绿跌) */
+.heatmap-cell.up-high { background: rgba(239, 68, 68, 0.3); border-color: rgba(239, 68, 68, 0.4); }
+.heatmap-cell.up-mid { background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.2); }
+.heatmap-cell.up-low { background: rgba(239, 68, 68, 0.05); border-color: rgba(239, 68, 68, 0.1); }
+
+.heatmap-cell.down-high { background: rgba(16, 185, 129, 0.3); border-color: rgba(16, 185, 129, 0.4); }
+.heatmap-cell.down-mid { background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.2); }
+.heatmap-cell.down-low { background: rgba(16, 185, 129, 0.05); border-color: rgba(16, 185, 129, 0.1); }
+
+.heatmap-cell.up-high .sector-change { color: #f87171; }
+.heatmap-cell.down-high .sector-change { color: #34d399; }
+
+/* --- Multi-Factor Score Pills (V3.0) --- */
+.score-pill {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 12px;
+    display: inline-block;
+    margin-bottom: 5px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.score-high {
+    color: #10b981;
+    background: rgba(16, 185, 129, 0.15);
+    border-color: rgba(16, 185, 129, 0.3);
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.1);
+}
+
+.score-mid {
+    color: #f59e0b;
+    background: rgba(245, 158, 11, 0.15);
+    border-color: rgba(245, 158, 11, 0.3);
+}
+
+.score-low {
+    color: #94a3b8;
+    background: rgba(148, 163, 184, 0.1);
+    border-color: rgba(148, 163, 184, 0.2);
+}
+
+.score-danger {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.3);
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.1);
+    animation: pulse-danger 2s infinite;
+}
+
+@keyframes pulse-danger {
+    0% { opacity: 1; }
+    50% { opacity: 0.7; }
+    100% { opacity: 1; }
+}
+
+.metric-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+
+/* 响应式调整 */
+@media (max-width: 1200px) {
+    .heatmap-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (max-width: 768px) {
+    .heatmap-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* 策略状态卡片区 (Option C) */
+.strategy-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
     gap: 24px;
 }
 
-.chart-container, .market-radar {
-    padding: 28px;
-    height: 420px;
+.strategy-card {
+    padding: 24px 28px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 180px;
+    position: relative;
+    overflow: hidden;
 }
+
+.strategy-card:hover { border-color: var(--accent); }
+
+.strat-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.strat-icon {
+    font-size: 1.5rem;
+    background: rgba(255,255,255,0.08);
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.strat-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    flex: 1;
+}
+
+.strat-header h3::before { display: none; }
+
+.strat-status {
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 8px;
+}
+
+.strat-status.active { color: var(--success); background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); }
+.strat-status.warning { color: var(--warning); background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.3); }
+.strat-status.dormant { color: #94a3b8; background: rgba(148, 163, 184, 0.15); border: 1px solid rgba(148, 163, 184, 0.3); }
+
+.strat-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.strat-metric {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.95rem;
+}
+
+.strat-metric .label { color: var(--text-muted); font-size: 0.9rem; }
+.strat-metric strong { color: #fff; font-weight: 600; }
 
 h3 {
     font-size: 1.15rem;

@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlphaCore | 工业级回测终端</title>
+    <link rel="stylesheet" href="./styles.css?v=2">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="./echarts.min.js"></script>
+    <style>
+        :root {
+            --terminal-sidebar-width: 320px;
+        }
+        .backtest-container {
+            display: grid;
+            grid-template-columns: var(--terminal-sidebar-width) 1fr;
+            height: calc(100vh - 80px);
+            gap: 20px;
+            padding: 20px;
+        }
+        .config-sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            overflow-y: auto;
+            padding-right: 10px;
+        }
+        .main-terminal {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            overflow-y: auto;
+        }
+        .config-group {
+            padding: 20px;
+        }
+        .config-title {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .input-item {
+            margin-bottom: 15px;
+        }
+        .input-item label {
+            display: block;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+        .input-item select, .input-item input {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 10px;
+            border-radius: 8px;
+            color: #fff;
+            font-family: inherit;
+        }
+        .input-item input:focus {
+            border-color: var(--accent);
+            outline: none;
+        }
+        .chart-panel {
+            min-height: 400px;
+            padding: 24px;
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+        }
+        .metric-mini-card {
+            padding: 15px;
+            text-align: center;
+        }
+        .metric-mini-card .label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: 5px;
+        }
+        .metric-mini-card .value {
+            font-size: 1.25rem;
+            font-weight: 700;
+            font-family: 'Outfit', sans-serif;
+        }
+        .value.pos { color: var(--success); }
+        .value.neg { color: var(--danger); }
+
+        /* Monte Carlo Legend */
+        .mc-legend {
+            display: flex;
+            gap: 15px;
+            font-size: 0.75rem;
+            margin-top: 10px;
+            justify-content: center;
+        }
+        .legend-item { display: flex; align-items: center; gap: 5px; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; }
+
+        #run-backtest-btn {
+            width: 100%;
+            padding: 15px;
+            font-size: 1rem;
+            margin-top: 10px;
+        }
+
+        /* 策略参数面板 */
+        .param-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            gap: 10px;
+        }
+        .param-row label {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+            min-width: 80px;
+        }
+        .param-row input[type="range"] {
+            flex: 1;
+            accent-color: var(--accent);
+            cursor: pointer;
+        }
+        .param-row .param-value {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--accent);
+            min-width: 36px;
+            text-align: right;
+            font-family: 'Outfit', monospace;
+        }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(7, 9, 14, 0.8);
+            backdrop-filter: blur(8px);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid rgba(59, 130, 246, 0.1);
+            border-top: 4px solid var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="logo">
+            <div class="logo-icon"></div>
+            <h1>AlphaCore</h1>
+        </div>
+        <nav class="nav-menu">
+            <div class="nav-group-title">情 报 中 心</div>
+            <a href="./index.html" class="nav-item">
+                <span class="icon">📊</span>
+                <span>量化总览</span>
+            </a>
+            <div class="nav-group-title">策 略 实 验 室</div>
+            <a href="./strategy.html" class="nav-item">
+                <span class="icon">⚙️</span>
+                <span>策略中心</span>
+            </a>
+            <a href="./backtest.html" class="nav-item active">
+                <span class="icon">🧪</span>
+                <span>量化回测</span>
+                <span class="badge-beta">Beta</span>
+            </a>
+            <div class="nav-group-title">账 户 管 理</div>
+            <a href="./portfolio.html" class="nav-item">
+                <span class="icon">💼</span>
+                <span>投资组合</span>
+            </a>
+        </nav>
+    </aside>
+
+    <main class="dashboard">
+        <header class="topbar">
+            <div class="welcome-box" style="margin:0">
+                <h2 style="font-size: 1.5rem">工业级回测工作台 <span style="font-size: 0.8rem; font-weight: 300; opacity: 0.6">/ High-Fidelity Backtest Terminal</span></h2>
+            </div>
+            <div class="actions">
+                <button class="btn btn-primary" id="run-backtest-btn">开始压力测试</button>
+            </div>
+        </header>
+
+        <div class="backtest-container">
+            <!-- 配置侧边栏 -->
+            <div class="config-sidebar">
+                <div class="config-group glass-panel">
+                    <div class="config-title"><span>🎯</span> 策略与标的</div>
+                    <div class="input-item">
+                        <label>选择回测策略</label>
+                        <select id="strategy-select">
+                            <option value="mr">均值回归 V2.0 (Mean Reversion)</option>
+                            <option value="mom">动量轮动 V1.0 (Momentum)</option>
+                            <option value="div">红利防线 V1.0 (Dividend)</option>
+                        </select>
+                    </div>
+                    <div class="input-item">
+                        <label>回测标的代码</label>
+                        <input type="text" id="ts-code" value="510300.SH">
+                    </div>
+                    <div class="input-item">
+                        <label>价格复权类型</label>
+                        <select id="adj-select">
+                            <option value="qfq">前复权 (QFQ)</option>
+                            <option value="hfq">后复权 (HFQ)</option>
+                            <option value="None">不复权 (None)</option>
+                        </select>
+                    </div>
+                    <div class="input-item">
+                        <label>对比基准 (Benchmark)</label>
+                        <select id="benchmark-select">
+                            <option value="000300.SH">沪深300 (000300.SH)</option>
+                            <option value="000001.SH">上证指数 (000001.SH)</option>
+                            <option value="000905.SH">中证500 (000905.SH)</option>
+                            <option value="399006.SZ">创业板指 (399006.SZ)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 策略参数动态面板 -->
+                <div class="config-group glass-panel" id="strategy-params-group">
+                    <div class="config-title"><span>🔧</span> 策略参数调节</div>
+                    <div id="strategy-params-panel">
+                        <!-- 由 JS 动态填充 -->
+                    </div>
+                </div>
+
+                <div class="config-group glass-panel">
+                    <div class="config-title"><span>📅</span> 时间与规模</div>
+                    <div class="input-item">
+                        <label>开始日期</label>
+                        <input type="text" id="start-date" value="20230101">
+                    </div>
+                    <div class="input-item">
+                        <label>结束日期</label>
+                        <input type="text" id="end-date" value="20231231">
+                    </div>
+                    <div class="input-item">
+                        <label>初始资金 (CNY)</label>
+                        <input type="number" id="initial-cash" value="1000000">
+                    </div>
+                    <div class="input-item">
+                        <label>成交占比 (POV Model %)</label>
+                        <input type="number" step="0.01" id="order-pct" value="0.01">
+                        <small style="color: var(--text-muted); font-size: 0.65rem">模拟大额交易对市场的冲击深度</small>
+                    </div>
+                </div>
+
+                <div class="config-group glass-panel">
+                    <div class="config-title"><span>⚔️</span> 竞技场/对比</div>
+                    <div class="input-item" style="display: flex; align-items: center; gap: 10px; margin-bottom: 0;">
+                        <input type="checkbox" id="pk-mode" style="width: 20px; height: 20px; cursor: pointer;">
+                        <label for="pk-mode" style="margin-bottom: 0; cursor: pointer; color: var(--accent); font-weight: 600;">开启多策略 PK 模式</label>
+                    </div>
+                    <p style="font-size: 0.65rem; color: var(--text-muted); margin-top: 5px;">开启后，主标的字段可输入多个代码（逗号分隔）进行横向对比</p>
+                </div>
+
+                <div class="config-group glass-panel">
+                    <div class="config-title"><span>💰</span> 交易成本</div>
+                    <div class="input-item">
+                        <label>佣金 (单边)</label>
+                        <input type="number" step="0.0001" id="commission" value="0.0003">
+                    </div>
+                    <div class="input-item">
+                        <label>印花税 (卖出)</label>
+                        <input type="number" step="0.0001" id="stamp-duty" value="0.0005">
+                    </div>
+                    <div class="input-item">
+                        <label>流动性冲击因子 (Slippage)</label>
+                        <input type="number" step="0.0001" id="slippage" value="0.001">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 主回测终端 -->
+            <div class="main-terminal">
+                <!-- 错误提示容器 -->
+                <div id="error-container" class="glass-panel" style="display: none; padding: 15px; border-color: var(--danger); background: rgba(239, 68, 68, 0.1); margin-bottom: 20px;">
+                    <div style="display: flex; align-items: center; gap: 10px; color: var(--danger); font-weight: 600;">
+                        <span>⚠️ 运行异常:</span>
+                        <span id="error-message" style="font-weight: 400; color: #fff;"></span>
+                    </div>
+                </div>
+
+                <!-- 核心指标摘要 -->
+                <div class="metrics-grid" id="metrics-grid">
+                    <div class="metric-mini-card glass-panel">
+                        <div class="label">累计收益率</div>
+                        <div class="value" id="res-total-return">--%</div>
+                    </div>
+                    <div class="metric-mini-card glass-panel">
+                        <div class="label">夏普比率 (Sharpe)</div>
+                        <div class="value" id="res-sharpe">--</div>
+                    </div>
+                    <div class="metric-mini-card glass-panel">
+                        <div class="label">最大回撤 (MDD)</div>
+                        <div class="value neg" id="res-mdd">--%</div>
+                    </div>
+                    <div class="metric-mini-card glass-panel">
+                        <div class="label">凯利准则 (Kelly)</div>
+                        <div class="value" id="res-kelly">--</div>
+                    </div>
+                </div>
+
+                <!-- 扩展指标 -->
+                <div class="metrics-grid" style="grid-template-columns: repeat(4, 1fr); margin-top: -10px;">
+                    <div class="metric-mini-card glass-panel" style="padding: 10px;">
+                        <div class="label" style="font-size: 0.65rem">偏度 (Skew)</div>
+                        <div class="value" id="res-skew" style="font-size: 1rem">--</div>
+                    </div>
+                    <div class="metric-mini-card glass-panel" style="padding: 10px;">
+                        <div class="label" style="font-size: 0.65rem">峰度 (Kurtosis)</div>
+                        <div class="value" id="res-kurt" style="font-size: 1rem">--</div>
+                    </div>
+                    <div class="metric-mini-card glass-panel" style="padding: 10px;">
+                        <div class="label" style="font-size: 0.65rem">卡玛 (Calmar)</div>
+                        <div class="value" id="res-calmar" style="font-size: 1rem">--</div>
+                    </div>
+                    <div class="metric-mini-card glass-panel" style="padding: 10px;">
+                        <div class="label" style="font-size: 0.65rem">胜率 (Win%)</div>
+                        <div class="value" id="res-win-rate" style="font-size: 1rem">--%</div>
+                    </div>
+                </div>
+
+                <!-- PK 模式对比面板 (仅在 PK 模式下显示) -->
+                <div id="pk-comparison-panel" class="glass-panel" style="display: none; padding: 20px;">
+                    <h3 style="margin-bottom: 20px; font-size: 1.1rem; color: var(--accent);">⚔️ 竞技场: 多标的横向测评</h3>
+                    <div style="overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;" id="pk-table">
+                            <thead>
+                                <tr style="border-bottom: 2px solid rgba(255,255,255,0.1); text-align: left; color: var(--text-muted);">
+                                    <th style="padding: 12px;">标的代码</th>
+                                    <th style="padding: 12px; text-align: right;">累计收益</th>
+                                    <th style="padding: 12px; text-align: right;">年化收益</th>
+                                    <th style="padding: 12px; text-align: right;">夏普比率</th>
+                                    <th style="padding: 12px; text-align: right;">最大回撤</th>
+                                    <th style="padding: 12px; text-align: right;">核心操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pk-table-body">
+                                <!-- 由 JS 动态填充 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 净值曲线图 -->
+                <div class="chart-panel glass-panel" id="equity-chart"></div>
+
+                <!-- 回撤水下图 (Underwater Curve) -->
+                <div class="chart-panel glass-panel" id="drawdown-chart" style="min-height: 250px;"></div>
+
+                <!-- 蒙特卡洛与交易日志 -->
+                <div class="lists-grid">
+                    <div class="list-panel glass-panel">
+                        <h3 style="margin-bottom: 15px">蒙特卡洛置信区间 (Confidence Bands)</h3>
+                        <div id="mc-chart" style="height: 300px;"></div>
+                        <div class="mc-legend">
+                            <div class="legend-item"><span class="dot" style="background:#3b82f6"></span> 策略轨迹</div>
+                            <div class="legend-item"><span class="dot" style="background:rgba(59,130,246,0.1)"></span> 随机扰动域</div>
+                        </div>
+                    </div>
+                    <div class="list-panel glass-panel" style="overflow: hidden; display: flex; flex-direction: column;">
+                        <h3 style="margin-bottom: 15px">交易执行日志 (Trade Log)</h3>
+                        <div style="flex: 1; overflow-y: auto;">
+                            <table style="width: 100%; font-size: 0.8rem; border-collapse: collapse;" id="trade-log-table">
+                                <thead style="position: sticky; top: 0; background: #1e293b; z-index: 1;">
+                                    <tr>
+                                        <th style="text-align: left; padding: 8px;">日期</th>
+                                        <th style="text-align: left; padding: 8px;">类型</th>
+                                        <th style="text-align: right; padding: 8px;">成交价</th>
+                                        <th style="text-align: right; padding: 8px;">仓位</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="trade-log-body">
+                                    <tr><td colspan="4" style="text-align: center; padding: 20px; color: var(--text-muted);">暂无交易数据</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 月度收益热力图 -->
+                <div class="chart-panel glass-panel" style="min-height: 320px;">
+                    <h3 style="margin-bottom: 10px; font-size: 0.95rem;">📅 月度收益热力图 (Monthly Returns Heatmap)</h3>
+                    <div id="monthly-heatmap" style="height: 280px;"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="spinner"></div>
+        <p style="color: #fff; font-weight: 500;">AlphaCore 正在加速计算向量化回测矩阵...</p>
+    </div>
+
+    <script src="./backtest.js?v=8"></script>
+</body>
+</html>
