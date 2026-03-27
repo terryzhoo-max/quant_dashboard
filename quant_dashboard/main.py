@@ -1356,6 +1356,23 @@ async def execute_trade(req: TradeRequest):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+# === 均值回归 V3.0 回测结果 API ===
+import json as _json
+import os as _os
+
+@app.get("/api/v1/mr_backtest_results")
+async def get_mr_backtest_results():
+    """返回均值回归 V3.0 网格搜索 + Regime Overlay 回测结果"""
+    fp = "mr_optimization_results.json"
+    if not _os.path.exists(fp):
+        return {"status": "error", "message": "回测结果文件不存在，请先运行 mr_regime_backtest.py"}
+    try:
+        with open(fp, "r", encoding="utf-8") as f:
+            data = _json.load(f)
+        return data
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 @app.get("/")
 async def root():
     return FileResponse("index.html")

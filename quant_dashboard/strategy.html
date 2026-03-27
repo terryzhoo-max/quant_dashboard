@@ -74,9 +74,9 @@
 
             <!-- Hero -->
             <section class="st-hero glass-panel">
-                <div class="st-hero-badge">⚙️ 量化策略 · V2.0</div>
-                <h2 class="st-hero-title">📐 均值回归 + 多因子共振策略</h2>
-                <p class="st-hero-sub">捕捉价格偏离后回归机会 · 金字塔仓位管理 · 严格纪律化执行</p>
+                <div class="st-hero-badge">⚙️ 量化策略 · V3.0</div>
+                <h2 class="st-hero-title">📐 均值回归 + Regime自适应 V3.0</h2>
+                <p class="st-hero-sub">864参数回测验证 · MA90趋势过滤 · RSI(14)超卖捕捉 · 三态仓位切换 · 年化Alpha +8.01%</p>
                 <div class="st-hero-stats">
                     <div class="st-hero-stat"><span class="st-hs-label">标的池</span><span class="st-hs-value st-blue">35只ETF</span></div>
                     <div class="st-hero-stat"><span class="st-hs-label">运行时间</span><span class="st-hs-value">每日15:30</span></div>
@@ -157,10 +157,10 @@
                 <div class="glass-panel" style="padding:28px;">
                     <div class="st-flow">
                         <div class="st-flow-step"><span class="step-num">1</span>按代码快速拉取数据</div><span class="st-flow-arrow">→</span>
-                        <div class="st-flow-step"><span class="step-num">2</span>计算 MA60 / BOLL</div><span class="st-flow-arrow">→</span>
-                        <div class="st-flow-step"><span class="step-num">3</span>计算 RSI(3) / %B 因子</div><span class="st-flow-arrow">→</span>
-                        <div class="st-flow-step"><span class="step-num">4</span>综合评分 (0-100)</div><span class="st-flow-arrow">→</span>
-                        <div class="st-flow-step"><span class="step-num">5</span>金字塔分批建仓 / 梯次止盈</div>
+                        <div class="st-flow-step"><span class="step-num">2</span>计算 MA90 趋势过滤</div><span class="st-flow-arrow">→</span>
+                        <div class="st-flow-step"><span class="step-num">3</span>RSI(14) 超卖 + BIAS 乖离</div><span class="st-flow-arrow">→</span>
+                        <div class="st-flow-step"><span class="step-num">4</span>Regime 三态仓位切换</div><span class="st-flow-arrow">→</span>
+                        <div class="st-flow-step"><span class="step-num">5</span>硬止损 -8% / 梯次止盈</div>
                     </div>
                 </div>
             </section>
@@ -169,24 +169,25 @@
             <section class="st-section">
                 <div class="st-two-col">
                     <div class="glass-panel" style="padding:24px;">
-                        <h4>⭐ 核心系统参数 (实盘优化版)</h4>
+                        <h4>⭐ V3.0 核心参数（864回测验证）</h4>
                         <table class="st-table">
-                            <thead><tr><th>指标</th><th>自适应阈值</th></tr></thead>
+                            <thead><tr><th>指标/规则</th><th>V3.0 实盘参数</th><th>说明</th></tr></thead>
                             <tbody>
-                                <tr><td>大级别趋势</td><td>MA20 ≥ MA60 (牛市)</td></tr>
-                                <tr><td>布林带 %B</td><td>≤ 0.0 (跌破下轨)</td></tr>
-                                <tr><td>短线 RSI(3)</td><td>≤ 10.0 (极度超卖)</td></tr>
-                                <tr><td>成交量倍率</td><td>>1.5(恐慌) 或 <0.6(绝望)</td></tr>
+                                <tr><td>趋势过滤</td><td><strong style="color:#34d399">close &gt; MA(90)</strong></td><td>90日均线上才允许建仓</td></tr>
+                                <tr><td>买入 · RSI</td><td><strong style="color:#34d399">RSI(14) ≤ 35</strong></td><td>Wilder平滑，超卖即触发</td></tr>
+                                <tr><td>买入 · 乖离率</td><td><strong style="color:#34d399">BIAS ≤ -2.0%</strong></td><td>偏离MA90下方2%亦可入</td></tr>
+                                <tr><td>卖出 · RSI</td><td><strong style="color:#f87171">RSI(14) ≥ 70</strong></td><td>超买强制出场，不恋战</td></tr>
+                                <tr><td>硬止损</td><td><strong style="color:#fbbf24">入场价 × -8%</strong></td><td>代码强制执行，无例外</td></tr>
                             </tbody>
                         </table>
                     </div>
                     <div class="glass-panel" style="padding:24px;">
-                        <h4>🛡️ 交易规则与风控</h4>
-                        <ul style="color:var(--text-muted); font-size:0.85rem; line-height:1.7; padding-left:20px;">
-                            <li>大级别趋势过滤：<strong style="color:#ef4444">防范熊市接飞刀</strong></li>
-                            <li>自适应波幅门槛：不同弹性的ETF均可完美适配</li>
-                            <li>阶梯式止盈：碰均线即出半仓，绝不贪婪</li>
-                            <li>底线止损：单只标的亏损 <strong style="color:#ef4444">-8%</strong> 触发极速逃生</li>
+                        <h4>🛡️ Regime 三态风控规则</h4>
+                        <ul style="color:var(--text-muted); font-size:0.85rem; line-height:2.0; padding-left:20px;">
+                            <li><span style="color:#34d399; font-weight:700">🟢 BULL（CSI300 &gt; MA120）</span>：仅防御性标的，总仓位上限 <strong style="color:#34d399">40%</strong>，牛市高位不追涨</li>
+                            <li><span style="color:#60a5fa; font-weight:700">🟡 RANGE（MA60~MA120）</span>：全池35只ETF激活，上限 <strong style="color:#60a5fa">80%</strong>，均值回归主战场</li>
+                            <li><span style="color:#fbbf24; font-weight:700">🔴 BEAR（CSI300 &lt; MA60）</span>：全池激活，上限 <strong style="color:#fbbf24">65%</strong>，重配防御型标的</li>
+                            <li>阶梯止盈：触及 MA20 且 %B &gt; 0.5 → 出半仓，不贪婪</li>
                         </ul>
                     </div>
                 </div>
@@ -271,7 +272,89 @@
                 </div>
             </section>
 
+            <!-- ===== 📊 V3.0 回测验证区块 ===== -->
+            <section class="st-section" id="mr-backtest-verify">
+                <h3>📊 V3.0 · 回测验证报告 <span style="font-size:0.72rem; font-weight:400; color:var(--text-muted); margin-left:8px;">864种参数网格 · 双集验证防过拟合 · Regime Overlay 状态切换</span></h3>
+                <div class="glass-panel" style="padding:28px; border-color:rgba(99,102,241,0.2);">
+
+                    <!-- 方法论说明条 -->
+                    <div style="margin-bottom:20px; padding:12px 16px; background:rgba(99,102,241,0.06); border:1px solid rgba(99,102,241,0.15); border-radius:10px; font-size:0.78rem; color:var(--text-muted); line-height:1.7;">
+                        <span style="color:#a78bfa; font-weight:700;">⚙️ 优化方法</span>：
+                        训练集 2022-2023（熊→牛切换） · 验证集 2024-2026（强牛市） · 864种参数扫描 ·
+                        <strong style="color:#fff;">Regime Overlay</strong>：根据 CSI300 vs MA60/MA120 自动切换三态仓位上限
+                    </div>
+
+                    <!-- KPI 卡片行 -->
+                    <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-bottom:24px;">
+                        <div class="glass-panel" style="padding:16px; text-align:center; border-color:rgba(16,185,129,0.2);">
+                            <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:6px;">年化收益</div>
+                            <div id="mr-kpi-annret" style="font-size:1.8rem; font-weight:900; color:#34d399;">+5.4%</div>
+                            <div style="font-size:0.68rem; color:var(--text-muted);">vs 基准 <span style="color:#60a5fa;">-2.6%</span></div>
+                        </div>
+                        <div class="glass-panel" style="padding:16px; text-align:center; border-color:rgba(59,130,246,0.2);">
+                            <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:6px;">年化 Alpha</div>
+                            <div id="mr-kpi-alpha" style="font-size:1.8rem; font-weight:900; color:#60a5fa;">+8.0%</div>
+                            <div style="font-size:0.68rem; color:var(--text-muted);">全样本 2022-2026</div>
+                        </div>
+                        <div class="glass-panel" style="padding:16px; text-align:center; border-color:rgba(139,92,246,0.2);">
+                            <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:6px;">Sharpe</div>
+                            <div id="mr-kpi-sharpe" style="font-size:1.8rem; font-weight:900; color:#a78bfa;">0.305</div>
+                            <div style="font-size:0.68rem; color:var(--text-muted);">风险调整收益</div>
+                        </div>
+                        <div class="glass-panel" style="padding:16px; text-align:center; border-color:rgba(245,158,11,0.2);">
+                            <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:6px;">最大回撤</div>
+                            <div id="mr-kpi-maxdd" style="font-size:1.8rem; font-weight:900; color:#fbbf24;">-2.96%</div>
+                            <div style="font-size:0.68rem; color:var(--text-muted);">极低下行风险</div>
+                        </div>
+                        <div class="glass-panel" style="padding:16px; text-align:center; border-color:rgba(16,185,129,0.2);">
+                            <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:6px;">Calmar</div>
+                            <div id="mr-kpi-calmar" style="font-size:1.8rem; font-weight:900; color:#34d399;">1.834</div>
+                            <div style="font-size:0.68rem; color:var(--text-muted);">收益/回撤比</div>
+                        </div>
+                    </div>
+
+                    <!-- 净值曲线图 -->
+                    <div id="mr-equity-chart" style="width:100%; height:300px; margin-bottom:20px;"></div>
+
+                    <!-- 最优参数 + 三态规则 -->
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px;">
+                        <div style="background:rgba(99,102,241,0.05); border:1px solid rgba(99,102,241,0.2); border-radius:10px; padding:16px;">
+                            <div style="font-size:0.8rem; font-weight:700; color:#a78bfa; margin-bottom:10px;">⭐ 最优参数组合（双集验证）</div>
+                            <div style="font-size:0.78rem; color:var(--text-muted); line-height:2.2;">
+                                趋势均线 N_trend：<strong style="color:#fff;">90日</strong><br>
+                                RSI 周期：<strong style="color:#fff;">RSI(14)</strong><br>
+                                RSI 买入阈值：<strong style="color:#34d399;">≤ 35</strong> &nbsp;·&nbsp; 卖出：<strong style="color:#f87171;">≥ 70</strong><br>
+                                乖离率买入：<strong style="color:#34d399;">≤ -2.0%</strong><br>
+                                止损线：<strong style="color:#fbbf24;">-8%</strong>（从入场价计算，硬止损）
+                            </div>
+                        </div>
+                        <div style="background:rgba(16,185,129,0.04); border:1px solid rgba(16,185,129,0.15); border-radius:10px; padding:16px;">
+                            <div style="font-size:0.8rem; font-weight:700; color:#34d399; margin-bottom:10px;">🛡️ Regime Overlay 三态切换</div>
+                            <div style="font-size:0.75rem; color:var(--text-muted); line-height:2.0;">
+                                <span style="color:#34d399; font-weight:600;">🟢 BULL</span>（CSI300 > MA120）：仅防御标的，仓位上限 <strong style="color:#34d399;">40%</strong><br>
+                                <span style="color:#60a5fa; font-weight:600;">🟡 RANGE</span>（MA60 ≤ CSI300 ≤ MA120）：全池激活，上限 <strong style="color:#60a5fa;">80%</strong><br>
+                                <span style="color:#fbbf24; font-weight:600;">🔴 BEAR</span>（CSI300 ＜ MA60）：全池激活，上限 <strong style="color:#fbbf24;">65%</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 加载实时数据按钮 -->
+                    <div style="text-align:center;">
+                        <button onclick="loadMrBacktestData()" id="mr-load-btn"
+                            style="background:linear-gradient(135deg,rgba(99,102,241,0.3),rgba(139,92,246,0.2)); border:1px solid rgba(99,102,241,0.4); color:#a78bfa; border-radius:9px; padding:10px 24px; cursor:pointer; font-size:0.82rem; font-weight:700; transition:all 0.2s;"
+                            onmouseover="this.style.background='linear-gradient(135deg,rgba(99,102,241,0.5),rgba(139,92,246,0.35))'"
+                            onmouseout="this.style.background='linear-gradient(135deg,rgba(99,102,241,0.3),rgba(139,92,246,0.2))'">
+                            🔄 刷新回测净值曲线
+                        </button>
+                        <div id="mr-load-status" style="font-size:0.72rem; color:var(--text-muted); margin-top:8px;">
+                            净值数据来源：本地 mr_optimization_results.json（每次优化后自动更新）
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             </div><!-- /st-mean-reversion -->
+
 
             <!-- ==================== 红利趋势策略 ==================== -->
             <div class="st-report" id="st-dividend-trend">

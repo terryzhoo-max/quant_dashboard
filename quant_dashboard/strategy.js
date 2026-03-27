@@ -169,6 +169,162 @@ function calcDividendScore() {
 }
 
 
+
+// ====== 📊 均值回归 V3.0 回测验证 — 净值曲线渲染 ======
+let _mrBacktestChart = null;
+
+async function loadMrBacktestData() {
+    const btn    = document.getElementById('mr-load-btn');
+    const status = document.getElementById('mr-load-status');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ 加载中...'; }
+    if (status) status.textContent = '正在读取回测结果...';
+
+    try {
+        // 通过后端 API 获取（避免 CORS 限制）
+        const resp = await fetch(`${API_URL}/api/v1/mr_backtest_results`, {
+            signal: AbortSignal.timeout(8000)
+        });
+        if (!resp.ok) throw new Error(`API ${resp.status}`);
+        const data = await resp.json();
+        _renderMrBacktest(data);
+        if (status) status.textContent = `✅ 数据加载成功 · 生成于 ${(data.generated_at || '').slice(0,10)}`;
+    } catch (e) {
+        // Fallback: 请求静态文件
+        try {
+            const resp2 = await fetch('./mr_optimization_results.json?' + Date.now());
+            if (!resp2.ok) throw new Error('本地文件不存在');
+            const data = await resp2.json();
+            _renderMrBacktest(data);
+            if (status) status.textContent = `✅ 本地数据加载成功 · 生成于 ${(data.generated_at || '').slice(0,10)}`;
+        } catch (e2) {
+            if (status) status.textContent = `❌ 加载失败：请先运行 mr_regime_backtest.py 生成数据`;
+        }
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '🔄 刷新回测净值曲线'; }
+    }
+}
+
+function _renderMrBacktest(data) {
+    // 更新 KPI 卡片
+    const kpi = data.regime_overlay_kpi || data.best_valid || {};
+    const fmt  = (v, suffix='%') => v != null ? (v > 0 ? '+' : '') + v.toFixed(1) + suffix : '—';
+
+    const setEl = (id, txt, color) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = txt;
+        if (color) el.style.color = color;
+    };
+
+    setEl('mr-kpi-annret', fmt(kpi.ann_ret), kpi.ann_ret >= 0 ? '#34d399' : '#f87171');
+    setEl('mr-kpi-alpha',  fmt(kpi.alpha),   kpi.alpha  >= 0 ? '#60a5fa' : '#f87171');
+    setEl('mr-kpi-sharpe', kpi.sharpe != null ? kpi.sharpe.toFixed(3) : '—',
+           kpi.sharpe >= 1.0 ? '#34d399' : kpi.sharpe >= 0.5 ? '#a78bfa' : '#fbbf24');
+    setEl('mr-kpi-maxdd',  kpi.max_dd != null ? kpi.max_dd.toFixed(2) + '%' : '—',
+           kpi.max_dd >= -10 ? '#34d399' : kpi.max_dd >= -20 ? '#fbbf24' : '#f87171');
+    setEl('mr-kpi-calmar', kpi.calmar != null ? kpi.calmar.toFixed(3) : '—',
+           kpi.calmar >= 1.5 ? '#34d399' : kpi.calmar >= 0.8 ? '#a78bfa' : '#fbbf24');
+
+    // 净值曲线（ECharts）
+    const chartEl = document.getElementById('mr-equity-chart');
+    if (!chartEl || typeof echarts === 'undefined') return;
+
+    const dates  = data.regime_equity_dates  || data.equity_dates  || [];
+    const equity = data.regime_equity_values || data.equity_values || [];
+    const bm     = data.regime_bm_values     || data.bm_values     || [];
+    const labels = data.regime_labels        || [];
+
+    // 颜色带区：BULL/RANGE/BEAR
+    const markAreas = [];
+    let areaStart = null, prevReg = null;
+    const regColor = { BULL:'rgba(16,185,129,0.07)', RANGE:'rgba(99,102,241,0.05)', BEAR:'rgba(239,68,68,0.07)' };
+
+    dates.forEach((d, i) => {
+        const reg = labels[i] || 'RANGE';
+        if (reg !== prevReg) {
+            if (areaStart !== null && prevReg) {
+                markAreas.push([
+                    { xAxis: areaStart, itemStyle: { color: regColor[prevReg] || 'transparent' } },
+                    { xAxis: dates[i - 1] }
+                ]);
+            }
+            areaStart = d; prevReg = reg;
+        }
+    });
+    if (areaStart && prevReg) {
+        markAreas.push([
+            { xAxis: areaStart, itemStyle: { color: regColor[prevReg] || 'transparent' } },
+            { xAxis: dates[dates.length - 1] }
+        ]);
+    }
+
+    if (_mrBacktestChart) { _mrBacktestChart.dispose(); }
+    _mrBacktestChart = echarts.init(chartEl, 'dark');
+
+    const option = {
+        backgroundColor: 'transparent',
+        tooltip: {
+            trigger: 'axis', axisPointer: { type: 'cross' },
+            backgroundColor: 'rgba(15,23,42,0.95)', borderColor: 'rgba(99,102,241,0.3)',
+            textStyle: { color: '#e2e8f0', fontSize: 12 },
+            formatter: params => {
+                const d = params[0].axisValue;
+                const reg = labels[params[0].dataIndex] || 'RANGE';
+                const regLabel = { BULL:'🟢 牛市', RANGE:'🟡 震荡', BEAR:'🔴 熊市' }[reg] || reg;
+                let html = `<div style="font-weight:700;margin-bottom:4px">${d} · ${regLabel}</div>`;
+                params.forEach(p => {
+                    const v = ((p.value - 1)*100).toFixed(2);
+                    html += `<div>${p.marker}${p.seriesName}: <b>${v > 0 ? '+' : ''}${v}%</b> (净值 ${p.value.toFixed(4)})</div>`;
+                });
+                return html;
+            }
+        },
+        legend: { data: ['策略净值(Regime)', '沪深300ETF'], textStyle: { color:'#94a3b8' }, top: 8 },
+        grid: { left:'3%', right:'4%', bottom:'8%', top:'40px', containLabel: true },
+        xAxis: {
+            type:'category', data: dates,
+            axisLine:{ lineStyle:{ color:'rgba(255,255,255,0.1)' } },
+            axisLabel:{ color:'#64748b', fontSize:10,
+                formatter: v => v.slice(0,7) },
+            splitLine:{ show:false }
+        },
+        yAxis: {
+            type:'value', name:'净值',
+            axisLine:{ lineStyle:{ color:'rgba(255,255,255,0.1)' } },
+            axisLabel:{ color:'#64748b', fontSize:10, formatter: v => v.toFixed(2) },
+            splitLine:{ lineStyle:{ color:'rgba(255,255,255,0.06)' } }
+        },
+        series: [
+            {
+                name:'策略净值(Regime)', type:'line', data: equity,
+                lineStyle:{ width:2.5, color:'#60a5fa' },
+                itemStyle:{ color:'#60a5fa' }, smooth:true, symbol:'none',
+                markArea: markAreas.length ? { silent:true, data: markAreas } : undefined,
+                areaStyle:{ color:{ type:'linear', x:0,y:0,x2:0,y2:1,
+                    colorStops:[{offset:0,color:'rgba(96,165,250,0.18)'},{offset:1,color:'rgba(96,165,250,0.02)'}]}},
+            },
+            {
+                name:'沪深300ETF', type:'line', data: bm,
+                lineStyle:{ width:1.5, color:'#94a3b8', type:'dashed' },
+                itemStyle:{ color:'#94a3b8' }, smooth:true, symbol:'none',
+            }
+        ],
+        dataZoom: [
+            { type:'inside', start:0, end:100 },
+            { type:'slider', height:18, bottom:0, borderColor:'rgba(255,255,255,0.08)',
+              fillerColor:'rgba(99,102,241,0.15)', handleStyle:{ color:'#6366f1' } }
+        ]
+    };
+    _mrBacktestChart.setOption(option);
+    window.addEventListener('resize', () => _mrBacktestChart && _mrBacktestChart.resize());
+}
+
+// 页面加载后自动尝试渲染（如有缓存数据）
+document.addEventListener('DOMContentLoaded', () => {
+    // 延迟200ms等ECharts和DOM就绪
+    setTimeout(loadMrBacktestData, 200);
+});
+
 // ====== ⚡ 红利评分器实时同步系统 ======
 // 缓存最近一次 API 返回的 signals 供切换 ETF 时复用
 let _divRealtimeCache = null;

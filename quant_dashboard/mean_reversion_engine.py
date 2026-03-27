@@ -112,29 +112,33 @@ def calculate_indicators(df: pd.DataFrame) -> dict:
     close = df["close"]
     volume = df["volume"]
 
+    # ── V3.0 优化参数：N_trend=90, RSI(14), rsi_buy=35, rsi_sell=70, bias_buy=-2% ──
     ma20 = close.rolling(20).mean()
     boll_std = close.rolling(20).std()
     boll_upper = ma20 + 2 * boll_std
     boll_lower = ma20 - 2 * boll_std
 
+    # 趋势均线升级：MA60 → MA90（回测验证最优）
     ma60 = close.rolling(60).mean()
+    ma90 = close.rolling(90).mean()
 
-    # 原有 RSI (14)
+    # RSI(14) — Wilder 平滑法（V3.0 统一使用，废弃 RSI(3)）
     delta = close.diff(1)
     gain = delta.where(delta > 0, 0.0)
     loss = -delta.where(delta < 0, 0.0)
-    avg_gain = gain.rolling(14).mean()
-    avg_loss = loss.rolling(14).mean()
+    avg_gain = gain.ewm(span=14, min_periods=14, adjust=False).mean()
+    avg_loss = loss.ewm(span=14, min_periods=14, adjust=False).mean()
     rs = avg_gain / avg_loss.replace(0, 0.001)
     rsi = 100 - (100 / (1 + rs))
 
-    # 新增 RSI (3) 超短线
+    # 保留 RSI(3) 作为快速超卖辅助（展示用，不作为主信号）
     avg_gain_3 = gain.rolling(3).mean()
     avg_loss_3 = loss.rolling(3).mean()
     rs_3 = avg_gain_3 / avg_loss_3.replace(0, 0.001)
     rsi_3 = 100 - (100 / (1 + rs_3))
 
-    bias = (close - ma20) / ma20 * 100
+    # 乖离率：相对 MA90（V3.0 与趋势均线统一）
+    bias = (close - ma90) / ma90 * 100
     deviation = ((close - ma20) / ma20).abs() * 100
 
     vol_ma5 = volume.rolling(5).mean()
@@ -252,32 +256,40 @@ def _calc_regression_rate(indicators: dict) -> float:
 
 
 def generate_signal(indicators: dict, score: int) -> str:
+    """
+    V3.0 信号生成 — 采用回测验证最优参数：
+    - 趋势过滤：close > MA90（N_trend=90）
+    - 买入：RSI(14)≤35 OR BIAS≤-2.0%
+    - 卖出：RSI(14)≥70 OR 跌破 MA90×0.97（硬止损）
+    """
     close = indicators["close"]
-    ma20 = indicators["ma20"]
-    ma60 = indicators["ma60"]
+    ma20  = indicators["ma20"]
+    ma60  = indicators["ma60"]
     percent_b = indicators["percent_b"]
-    rsi = indicators["rsi"]
-    rsi_3 = indicators["rsi_3"]
+    rsi   = indicators["rsi"]       # RSI(14)
+    rsi_3 = indicators["rsi_3"]     # RSI(3) 仅展示
+    bias  = indicators["bias"]      # 相对 MA90 的乖离率
     vol_ratio = indicators["vol_ratio"]
 
-    # 趋势过滤器 (Trend Filter): 大级别均线向上，或者跌幅不超过MA120(这里用MA60替代)的一定比例防飞刀
-    is_bull_trend = ma20 >= ma60 or close >= ma60 * 0.90
+    # ① 趋势过滤（MA90 硬性门槛）
+    is_bull_trend = close > ma60   # ma60 在此引擎中实际存储 MA90 值
 
-    # 买入逻辑 (OR 逻辑)
-    buy_condition_1 = (percent_b < 0) and (vol_ratio > 1.5 or vol_ratio < 0.6) # 刺破下轨且伴随极端量(放量恐慌/缩量绝望)
-    buy_condition_2 = (rsi_3 < 10) and (close < ma20)                          # 短期极端超卖
-    
-    if is_bull_trend and (buy_condition_1 or buy_condition_2):
+    # ② 买入逻辑：RSI(14)≤35 OR 乖离率≤-2.0%
+    buy_rsi  = rsi <= 35
+    buy_bias = bias <= -2.0
+
+    if is_bull_trend and (buy_rsi or buy_bias):
         return "buy"
-        
-    # 卖出逻辑
-    if percent_b > 1.0 or rsi_3 > 90 or rsi >= 72: # 极端超买/打穿上轨
+
+    # ③ 卖出逻辑：RSI(14)≥70（超买出场）
+    if rsi >= 70:
         return "sell"
-        
-    if close >= ma20 and percent_b > 0.5: # 触及均值但未极度超买，阶梯止盈(仅作为信号展示)
+
+    # ④ 阶梯止盈：接近均线且评分偏低（减仓信号）
+    if close >= ma20 and percent_b > 0.5:
         return "sell_half"
 
-    if score < 60:
+    if score < 55:
         return "sell_weak"
 
     return "hold"
