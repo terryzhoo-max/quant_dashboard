@@ -1,0 +1,211 @@
+{
+  "run_time": "2026-03-26T20:42:46.944108",
+  "data_summary": {
+    "available_etfs": 20,
+    "total_etfs": 20,
+    "backtest_start": "20210101",
+    "backtest_end": "20260326",
+    "in_sample_end": "20231231",
+    "oos_start": "20240101"
+  },
+  "optimal_params": {
+    "top_n": 3,
+    "rebalance_days": 5,
+    "mom_s_window": 30,
+    "mom_m_window": 90,
+    "w_mom_s": 0.4,
+    "w_mom_m": 0.3,
+    "w_slope": 0.15,
+    "w_sharpe": 0.15,
+    "stop_loss": -0.08,
+    "position_cap": 0.85,
+    "group_cap": 0.4
+  },
+  "in_sample_performance": {
+    "cagr": -1.33,
+    "excess_cagr": 12.25,
+    "max_dd": -30.27,
+    "sharpe": -0.243,
+    "calmar": -0.044,
+    "ir": 0.675,
+    "win_rate": 55.6,
+    "benchmark_cagr": -13.83,
+    "ann_vol": 15.76
+  },
+  "out_of_sample_performance": {
+    "cagr": 28.94,
+    "excess_cagr": 11.85,
+    "max_dd": -15.58,
+    "sharpe": 1.242,
+    "calmar": 1.858,
+    "ir": 0.638,
+    "win_rate": 63.0,
+    "benchmark_cagr": 14.01,
+    "ann_vol": 21.29
+  },
+  "full_sample_performance": {
+    "cagr": 2.32,
+    "excess_cagr": 4.1,
+    "max_dd": -30.27,
+    "sharpe": -0.009,
+    "calmar": 0.077,
+    "ir": 0.218,
+    "win_rate": 50.8,
+    "benchmark_cagr": -3.19,
+    "ann_vol": 19.29
+  },
+  "composite_score": 0.4846,
+  "top10_params": [
+    {
+      "rank": 1,
+      "params": {
+        "top_n": 3,
+        "rebalance_days": 5,
+        "mom_s_window": 30,
+        "w_mom_s": 0.4,
+        "stop_loss": -0.08
+      },
+      "score": 0.4846,
+      "excess_cagr": 12.25,
+      "sharpe": -0.243,
+      "max_dd": -30.27,
+      "ir": 0.675
+    },
+    {
+      "rank": 2,
+      "params": {
+        "top_n": 3,
+        "rebalance_days": 5,
+        "mom_s_window": 30,
+        "w_mom_s": 0.3,
+        "stop_loss": -0.08
+      },
+      "score": 0.4786,
+      "excess_cagr": 12.15,
+      "sharpe": -0.245,
+      "max_dd": -28.11,
+      "ir": 0.661
+    },
+    {
+      "rank": 3,
+      "params": {
+        "top_n": 3,
+        "rebalance_days": 20,
+        "mom_s_window": 30,
+        "w_mom_s": 0.5,
+        "stop_loss": -0.08
+      },
+      "score": 0.4704,
+      "excess_cagr": 12.08,
+      "sharpe": -0.267,
+      "max_dd": -27.91,
+      "ir": 0.673
+    },
+    {
+      "rank": 4,
+      "params": {
+        "top_n": 3,
+        "rebalance_days": 20,
+        "mom_s_window": 30,
+        "w_mom_s": 0.4,
+        "stop_loss": -0.08
+      },
+      "score": 0.4494,
+      "excess_cagr": 11.75,
+      "sharpe": -0.287,
+      "max_dd": -27.27,
+      "ir": 0.655
+    },
+    {
+      "rank": 5,
+      "params": {
+        "top_n": 3,
+        "rebalance_days": 5,
+        "mom_s_window": 30,
+        "w_mom_s": 0.4,
+        "stop_loss": -0.12
+      },
+      "score": 0.4478,
+      "excess_cagr": 11.66,
+      "sharpe": -0.276,
+      "max_dd": -30.27,
+      "ir": 0.642
+    },
+    {
+      "rank": 6,
+      "params": {
+        "top_n": 3,
+        "rebalance_days": 5,
+        "mom_s_window": 30,
+        "w_mom_s": 0.4,
+        "stop_loss": null
+      },
+      "score": 0.4478,
+      "excess_cagr": 11.66,
+      "sharpe": -0.276,
+      "max_dd": -30.27,
+      "ir": 0.642
+    },
+    {
+      "rank": 7,
+      "params": {
+        "top_n": 3,
+        "rebalance_days": 20,
+        "mom_s_window": 30,
+        "w_mom_s": 0.5,
+        "stop_loss": -0.12
+      },
+      "score": 0.4394,
+      "excess_cagr": 11.58,
+      "sharpe": -0.294,
+      "max_dd": -25.76,
+      "ir": 0.644
+    },
+    {
+      "rank": 8,
+      "params": {
+        "top_n": 3,
+        "rebalance_days": 20,
+        "mom_s_window": 30,
+        "w_mom_s": 0.5,
+        "stop_loss": null
+      },
+      "score": 0.4394,
+      "excess_cagr": 11.58,
+      "sharpe": -0.294,
+      "max_dd": -25.76,
+      "ir": 0.644
+    },
+    {
+      "rank": 9,
+      "params": {
+        "top_n": 3,
+        "rebalance_days": 5,
+        "mom_s_window": 30,
+        "w_mom_s": 0.3,
+        "stop_loss": -0.12
+      },
+      "score": 0.4307,
+      "excess_cagr": 11.38,
+      "sharpe": -0.288,
+      "max_dd": -28.11,
+      "ir": 0.619
+    },
+    {
+      "rank": 10,
+      "params": {
+        "top_n": 3,
+        "rebalance_days": 5,
+        "mom_s_window": 30,
+        "w_mom_s": 0.3,
+        "stop_loss": null
+      },
+      "score": 0.4307,
+      "excess_cagr": 11.38,
+      "sharpe": -0.288,
+      "max_dd": -28.11,
+      "ir": 0.619
+    }
+  ],
+  "total_combinations_tested": 576
+}

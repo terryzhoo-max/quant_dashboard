@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlphaCore | 产业追踪终端</title>
+    <link rel="stylesheet" href="./styles.css?v=2">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="./echarts.min.js"></script>
+    <style>
+        .industry-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: auto auto;
+            gap: 20px;
+            padding: 20px;
+            height: calc(100vh - 80px);
+            overflow-y: auto;
+        }
+        .full-width {
+            grid-column: 1 / -1;
+        }
+        .chart-panel {
+            min-height: 400px;
+            padding: 24px;
+            position: relative;
+        }
+        .metric-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .metric-card {
+            padding: 20px;
+            text-align: center;
+        }
+        .metric-card .label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+        .metric-card .value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--accent);
+            font-family: 'Outfit', sans-serif;
+        }
+        .loading-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(7, 9, 14, 0.9);
+            backdrop-filter: blur(10px);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .badge-hot {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="logo">
+            <div class="logo-icon"></div>
+            <h1>AlphaCore</h1>
+        </div>
+        <nav class="nav-menu">
+            <div class="nav-group-title">情 报 中 心</div>
+            <a href="./index.html" class="nav-item">
+                <span class="icon">📊</span>
+                <span>量化总览</span>
+            </a>
+            <a href="./factor.html" class="nav-item">
+                <span class="icon">📈</span>
+                <span>因子分析</span>
+            </a>
+            <a href="./industry.html" class="nav-item active">
+                <span class="icon">🏭</span>
+                <span>产业追踪</span>
+            </a>
+            <div class="nav-group-title">策 略 实 验 室</div>
+            <a href="./strategy.html" class="nav-item">
+                <span class="icon">⚙️</span>
+                <span>策略中心</span>
+            </a>
+            <a href="./backtest.html" class="nav-item">
+                <span class="icon">🧪</span>
+                <span>量化回测</span>
+            </a>
+            <div class="nav-group-title">账 户 管 理</div>
+            <a href="./portfolio.html" class="nav-item">
+                <span class="icon">💼</span>
+                <span>投资组合</span>
+            </a>
+        </nav>
+    </aside>
+
+    <main class="dashboard">
+        <header class="topbar">
+            <div class="welcome-box" style="margin:0">
+                <h2 style="font-size: 1.5rem">产业深研终端 <span class="badge-beta">PRO</span></h2>
+            </div>
+            <div class="actions" style="display: flex; align-items: center; gap: 15px;">
+                <div class="date-picker-wrapper" style="display: flex; align-items: center; gap: 8px; background: rgba(59, 130, 246, 0.08); padding: 5px 12px; border-radius: 8px; border: 1px solid rgba(59, 130, 246, 0.2);">
+                    <input type="date" id="data-date-picker" style="background: transparent; color: #f8fafc; border: none; outline: none; font-size: 0.85rem;">
+                </div>
+                <button class="btn btn-primary" id="sync-btn" style="padding: 8px 20px;">⚡ 同步情报</button>
+            </div>
+        </header>
+
+        <!-- New: High-Density Sector Pulse Navigator -->
+        <div class="sector-pulse-nav glass-panel" style="margin: 0 24px 24px; padding: 12px; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch;">
+            <div id="sector-nav-container" style="display: flex; gap: 10px;">
+                <!-- Dynamically populated tiles -->
+            </div>
+        </div>
+
+        <div class="industry-grid">
+            <!-- Tier 1: Alpha Pulse Dashboard (Decision Gauges) -->
+            <div class="full-width">
+                <div class="metric-row" style="grid-template-columns: repeat(4, 1fr);">
+                    <div class="stat-card glass-panel" style="text-align: center;">
+                        <div class="stat-title">RPS 强度轨迹</div>
+                        <div id="gauge-rps" style="height: 180px;"></div>
+                        <div class="stat-desc" id="desc-rps">侦测中...</div>
+                    </div>
+                    <div class="stat-card glass-panel" style="text-align: center;">
+                        <div class="stat-title">估值百分位 (5Y)</div>
+                        <div id="gauge-value" style="height: 180px;"></div>
+                        <div class="stat-desc" id="desc-value">侦测中...</div>
+                    </div>
+                    <div class="stat-card glass-panel" style="text-align: center;">
+                        <div class="stat-title">成交拥挤度</div>
+                        <div id="gauge-risk" style="height: 180px;"></div>
+                        <div class="stat-desc" id="desc-risk">侦测中...</div>
+                    </div>
+                    <div class="stat-card glass-panel" style="background: linear-gradient(135deg, rgba(59,130,246,0.1), rgba(16,185,129,0.1));">
+                        <div class="stat-title">北向资金 (5D)</div>
+                        <div class="stat-value highlight-up" id="val-flow" style="font-size: 2.2rem; justify-content: center; margin-top: 30px;">--</div>
+                        <div class="stat-desc" style="text-align: center;">主力净流入估算</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tier 2: Charts & Deep Dive -->
+            <div class="chart-panel glass-panel">
+                <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3 style="font-size: 1rem;">🛰️ 价格 vs 相对强度 (Price vs RS Line)</h3>
+                </div>
+                <div id="rs-line-chart" style="height: 350px;"></div>
+            </div>
+
+            <div class="chart-panel glass-panel">
+                <h3 style="font-size: 1rem; margin-bottom: 20px;">🧬 核心标的掘金 (Top Constituents)</h3>
+                <div class="constituents-list">
+                    <ul id="list-constituents" class="plan-list" style="padding-left: 0;">
+                        <!-- Dynamically populated -->
+                    </ul>
+                </div>
+            </div>
+
+            <div class="chart-panel glass-panel full-width">
+                <h3 style="font-size: 1rem; margin-bottom: 20px;">🌀 行业轮动全景矩阵 (Alpha Universe Rotation)</h3>
+                <div id="rotation-line-chart" style="height: 400px;"></div>
+            </div>
+        </div>
+    </main>
+    </main>
+
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="spinner"></div>
+        <p style="color: #fff; font-weight: 500; margin-top: 20px;">AlphaCore 正在交叉计算全市场行业热力矩阵...</p>
+    </div>
+
+    <script src="./industry.js"></script>
+</body>
+</html>

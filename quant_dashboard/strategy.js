@@ -1,6 +1,510 @@
 // AlphaCore · 策略中心页面 JS
 const API_URL = 'http://127.0.0.1:8000';
 
+// ====== 实时信号评分计算器 (V3.0 · 状态自适应门槛) ======
+function calcSignalScore() {
+    const mom  = parseInt(document.getElementById('calc-mom')?.value  || 0);
+    const reg  = parseInt(document.getElementById('calc-regime')?.value || 0);
+    const vol  = parseInt(document.getElementById('calc-vol')?.value  || 0);
+    const rsi  = parseInt(document.getElementById('calc-rsi')?.value  || 0);
+    const vlt  = parseInt(document.getElementById('calc-vlt')?.value  || 0);
+
+    const total = mom + reg + vol + rsi + vlt;
+
+    // ── 状态自适应门槛 ──
+    // 优先使用 calc-regime 下拉框的值推断市场状态门槛
+    // (下拉框是用户手动控制的主权，要始终响应)
+    let gate;
+    if (reg === 20) {
+        gate = 65; // BULL 牛市
+    } else if (reg === 12) {
+        gate = 68; // RANGE 震荡
+    } else {
+        gate = 75; // BEAR 熊市 (reg === 0)
+    }
+    const halfGate  = Math.round(gate * 0.85);  // 半仓线约在门槛的85%
+    const fullGate  = Math.min(gate + 15, 95);  // 满仓线
+
+    const numEl  = document.getElementById('calc-score-num');
+    const barEl  = document.getElementById('calc-score-bar');
+    const vrdEl  = document.getElementById('calc-verdict');
+    const actEl  = document.getElementById('calc-action');
+    const thEl   = document.getElementById('calc-threshold-hint');
+
+    if (numEl) numEl.textContent = total;
+    if (barEl) barEl.style.width = total + '%';
+    if (thEl)  thEl.textContent  = `当前市场门槛: 全仓≥${fullGate} | 标准≥${gate} | 半仓≥${halfGate}`;
+
+    let color, verdict, action;
+    if (total >= fullGate) {
+        color = '#10b981'; verdict = '🟢 全仓入场';
+        action = `综合评分 ${total} 分（≥${fullGate}满仓线），信号极强。建议建仓至单标的上限，止损按当前状态止损线执行，追踪止盈 T1+15% / T2+25%。`;
+    } else if (total >= gate) {
+        color = '#22d3ee'; verdict = '🔵 标准入场';
+        action = `综合评分 ${total} 分（≥${gate}达标），信号达标。建议建仓 2/3，等候量能确认后加到满仓。`;
+    } else if (total >= halfGate) {
+        color = '#fbbf24'; verdict = '🟡 半仓观察';
+        action = `综合评分 ${total} 分（≥${halfGate}半仓线），信号偏弱。建议建仓上限的 50%，等调仓日重新评估，不主动追涨。`;
+    } else {
+        color = '#f87171'; verdict = '❌ 不入场';
+        action = `综合评分 ${total} 分（<${halfGate}），信号不足。建议观望，等动量 Z 分提升或市场状态改善。`;
+    }
+
+    if (numEl) numEl.style.color = color;
+    if (barEl) {
+        const grad = total >= fullGate
+            ? 'linear-gradient(90deg,#10b981,#6ee7b7)'
+            : total >= gate ? 'linear-gradient(90deg,#06b6d4,#22d3ee)'
+            : total >= halfGate ? 'linear-gradient(90deg,#f59e0b,#fbbf24)'
+            : 'linear-gradient(90deg,#ef4444,#f87171)';
+        barEl.style.background = grad;
+    }
+    if (vrdEl) {
+        vrdEl.textContent = verdict;
+        vrdEl.style.borderColor = color + '44';
+        vrdEl.style.background  = color + '11';
+        vrdEl.style.color = color;
+    }
+    if (actEl) actEl.textContent = action;
+}
+
+// 初始化计算器默认结果 + 事件绑定（用 delegation 防止 tab 隐藏时丢失绑定）
+document.addEventListener('DOMContentLoaded', () => {
+    calcSignalScore();
+    calcDividendScore();
+    // 确保 tab 切换后也能实时响应
+    const calcIds = ['calc-mom','calc-regime','calc-vol','calc-rsi','calc-vlt'];
+    calcIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', calcSignalScore);
+    });
+    const divIds = ['div-calc-regime','div-calc-rsi','div-calc-bias','div-calc-yield','div-calc-boll','div-calc-vol'];
+    divIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', calcDividendScore);
+    });
+});
+
+// ====== 💰 红利策略专属评分器 V3.1 ======
+// 六维因子：市场环境 + RSI(9) + 乖离率 + 股息率估值 + 布林带位置 + 波动率
+// 评分满分：100分，门槛随市场状态自适应
+function calcDividendScore() {
+    const regime  = document.getElementById('div-calc-regime')?.value  || 'RANGE';
+    const rsiVal  = parseInt(document.getElementById('div-calc-rsi')?.value  || 10);
+    const biasVal = parseInt(document.getElementById('div-calc-bias')?.value || 8);
+    const yldVal  = parseInt(document.getElementById('div-calc-yield')?.value || 12);
+    const bollVal = parseInt(document.getElementById('div-calc-boll')?.value  || 6);
+    const volVal  = parseInt(document.getElementById('div-calc-vol')?.value   || 10);
+
+    // 维度1：市场环境得分
+    const envScore = { BULL: 20, RANGE: 12, BEAR: 5, CRASH: 0 }[regime] ?? 12;
+
+    const total = envScore + rsiVal + biasVal + yldVal + bollVal + volVal;
+
+    // 状态自适应门槛
+    const gates = { BULL: 55, RANGE: 65, BEAR: 75, CRASH: 999 };
+    const gate     = gates[regime] ?? 65;
+    const fullGate = Math.min(gate + 15, 95);
+    const halfGate = Math.round(gate * 0.85);
+
+    const numEl = document.getElementById('div-score-num');
+    const barEl = document.getElementById('div-score-bar');
+    const vrdEl = document.getElementById('div-verdict');
+    const actEl = document.getElementById('div-action');
+    const thEl  = document.getElementById('div-threshold-hint');
+
+    if (numEl) numEl.textContent = total;
+    if (barEl) barEl.style.width = Math.min(total, 100) + '%';
+    if (thEl)  thEl.textContent  = `${regime}模式门槛: 全仓≥${fullGate} | 标准≥${gate} | 半仓≥${halfGate}`;
+
+    let color, verdict, action;
+
+    if (regime === 'CRASH') {
+        color = '#f87171';
+        verdict = '💥 熔断禁入';
+        action = '当前处于CRASH熔断状态，禁止任何新建仓。高股息(>6%)已持仓不强制清仓，等待CRASH解除后恢复正常判断。';
+    } else if (total >= fullGate) {
+        color = '#10b981';
+        verdict = '🟢 全仓入场';
+        action = `红利评分 ${total} 分（≥${fullGate}满仓线），信号极强。建议按${regime}模式仓位上限建仓，启动止盈止损追踪。`;
+    } else if (total >= gate) {
+        color = '#60a5fa';
+        verdict = '🔵 标准入场';
+        action = `红利评分 ${total} 分（≥${gate}达标），建议建仓单标的基准权重，等候股息率或RSI进一步改善时加到满仓。`;
+    } else if (total >= halfGate) {
+        color = '#fbbf24';
+        verdict = '🟡 半仓观察';
+        action = `红利评分 ${total} 分（≥${halfGate}半仓线），信号偏弱。建议建仓基准权重的50%，密切关注RSI下探或股息率提升。`;
+    } else {
+        color = '#f87171';
+        verdict = '❌ 不入场';
+        action = `红利评分 ${total} 分（<${halfGate}），信号不足。建议观望，等待RSI下探至35以下或乖离率达到-2%以下。`;
+    }
+
+    if (numEl) numEl.style.color = color;
+    if (barEl) {
+        const grad = total >= fullGate
+            ? 'linear-gradient(90deg,#10b981,#6ee7b7)'
+            : total >= gate   ? 'linear-gradient(90deg,#3b82f6,#60a5fa)'
+            : total >= halfGate ? 'linear-gradient(90deg,#f59e0b,#fbbf24)'
+            : 'linear-gradient(90deg,#ef4444,#f87171)';
+        barEl.style.background = grad;
+    }
+    if (vrdEl) {
+        vrdEl.textContent    = verdict;
+        vrdEl.style.borderColor = color + '44';
+        vrdEl.style.background  = color + '11';
+        vrdEl.style.color       = color;
+    }
+    if (actEl) actEl.textContent = action;
+
+    // 联动红利趋势 tab 的状态高亮
+    ['bull','range','bear','crash'].forEach(r => {
+        const el = document.getElementById(`div-regime-${r}`);
+        if (el) {
+            el.style.opacity = (regime.toLowerCase() === r) ? '1' : '0.4';
+            el.style.transform = (regime.toLowerCase() === r) ? 'scale(1.02)' : 'scale(1)';
+        }
+    });
+}
+
+
+// ====== ⚡ 红利评分器实时同步系统 ======
+// 缓存最近一次 API 返回的 signals 供切换 ETF 时复用
+let _divRealtimeCache = null;
+
+/**
+ * 主同步函数 —— 点击"⚡ 实时同步"按钮触发
+ * 1. 调用 /api/v1/dividend_strategy（当前市场状态）
+ * 2. 把选中 ETF 的 RSI/BIAS/TTM/布林带 自动映射到下拉框
+ * 3. 渲染排行榜
+ */
+async function loadDividendRealtime() {
+    const btn    = document.getElementById('div-sync-btn');
+    const status = document.getElementById('div-sync-status');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ 同步中...'; }
+    if (status) status.textContent = '正在获取实时数据，请稍候...';
+
+    const regime = document.getElementById('div-calc-regime')?.value || 'RANGE';
+
+    try {
+        const resp = await fetch(`/api/v1/dividend_strategy?regime=${regime}`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+
+        const signals = data?.data?.signals;
+        if (!signals || !signals.length) throw new Error('无信号数据');
+
+        _divRealtimeCache = signals;
+
+        // 渲染排行榜
+        renderDivLeaderboard(signals, regime);
+
+        // 自动填充（选中ETF 或 评分最高者）
+        const selected = document.getElementById('div-etf-select')?.value || '';
+        const hit = selected
+            ? signals.find(s => (s.code + '.SH') === selected || (s.code + '.SZ') === selected || s.code === selected.replace(/\.[A-Z]+$/, ''))
+            : [...signals].sort((a, b) => b.signal_score - a.signal_score)[0];
+
+        if (hit) fillDivInputsFromSignal(hit, regime);
+
+        const now = new Date().toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+        if (status) status.innerHTML = `<span style="color:#34d399;">✓ 已同步</span> · ${now} · ${signals.length}/8只ETF`;
+
+    } catch(e) {
+        console.error('[div-sync]', e);
+        if (status) status.innerHTML = `<span style="color:#f87171;">同步失败：${e.message}</span> · 请检查后端服务`;
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '⚡ 实时同步指标'; }
+    }
+}
+
+/** ETF 选择器切换 —— 直接用缓存重填，不重调 API */
+function onDivEtfChange() {
+    if (!_divRealtimeCache) { loadDividendRealtime(); return; }
+    const regime   = document.getElementById('div-calc-regime')?.value || 'RANGE';
+    const selected = document.getElementById('div-etf-select')?.value || '';
+    const hit = selected
+        ? _divRealtimeCache.find(s => (s.code + '.SH') === selected || (s.code + '.SZ') === selected || s.code === selected.replace(/\.[A-Z]+$/, ''))
+        : [..._divRealtimeCache].sort((a, b) => b.signal_score - a.signal_score)[0];
+    if (hit) fillDivInputsFromSignal(hit, regime);
+}
+
+/**
+ * 将 API signal 自动映射到六维下拉框
+ * schema: { rsi, bias, boll_pos, ttm_yield, signal_score, close, name, code }
+ */
+function fillDivInputsFromSignal(sig, regime) {
+    // RSI 映射
+    const rsi = sig.rsi ?? 50;
+    const rsiOpt = rsi <= 30 ? '20' : rsi <= 35 ? '15' : rsi <= 40 ? '10' : rsi <= 50 ? '5' : '0';
+    setSelectValue('div-calc-rsi', rsiOpt);
+
+    // BIAS 映射
+    const bias = sig.bias ?? 0;
+    const biasOpt = bias <= -3.0 ? '20' : bias <= -2.0 ? '15' : bias <= 0 ? '8' : '0';
+    setSelectValue('div-calc-bias', biasOpt);
+
+    // TTM 股息率 映射
+    const ttm = sig.ttm_yield ?? 4.0;
+    const yldOpt = ttm >= 5.0 ? '20' : ttm >= 4.0 ? '12' : ttm >= 3.0 ? '5' : '0';
+    setSelectValue('div-calc-yield', yldOpt);
+
+    // 布林带位置 映射（boll_pos 是 0-100%）
+    const bp = sig.boll_pos ?? 50;
+    const bollOpt = bp <= 5 ? '10' : bp <= 35 ? '6' : bp <= 70 ? '2' : '0';
+    setSelectValue('div-calc-boll', bollOpt);
+
+    // 波动率：红利ETF固有低波，默认满分
+    setSelectValue('div-calc-vol', '10');
+
+    // 触发重新计算
+    calcDividendScore();
+
+    // 高亮排行榜卡片
+    document.querySelectorAll('.div-lb-card').forEach(c => {
+        const isActive = c.dataset.code === sig.code;
+        c.style.borderColor = isActive ? 'rgba(96,165,250,0.6)' : 'rgba(255,255,255,0.08)';
+        c.style.background  = isActive ? 'rgba(59,130,246,0.15)' : 'rgba(255,255,255,0.02)';
+    });
+}
+
+/** 安全设置 select value */
+function setSelectValue(id, val) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    for (let opt of el.options) {
+        if (opt.value === val) { el.value = val; return; }
+    }
+}
+
+/**
+ * 前端补算单只ETF评分（与后端 score_etf() 完全对齐）
+ * 在 signal_score 字段缺失时作为兜底
+ */
+function computeDivScore(s, regime) {
+    const envScore = { BULL: 20, RANGE: 12, BEAR: 5, CRASH: 0 }[regime] ?? 12;
+
+    const rsi = s.rsi ?? 50;
+    const rsiScore = rsi <= 30 ? 20 : rsi <= 35 ? 15 : rsi <= 40 ? 10 : rsi <= 50 ? 5 : 0;
+
+    const bias = s.bias ?? 0;
+    const biasScore = bias <= -3.0 ? 20 : bias <= -2.0 ? 15 : bias <= 0 ? 8 : 0;
+
+    const ttm = s.ttm_yield ?? 4.0;
+    const yldScore = ttm >= 5.0 ? 20 : ttm >= 4.0 ? 12 : ttm >= 3.0 ? 5 : 0;
+
+    const bp = s.boll_pos ?? 50;
+    const bollScore = bp <= 5 ? 10 : bp <= 35 ? 6 : bp <= 70 ? 2 : 0;
+
+    const volScore = 10; // 红利ETF固有低波
+
+    return Math.min(envScore + rsiScore + biasScore + yldScore + bollScore + volScore, 100);
+}
+
+/**
+ * 渲染8只ETF评分排行榜（4列网格，按分降序，可点击切换）
+ */
+function renderDivLeaderboard(signals, regime) {
+    const lb   = document.getElementById('div-leaderboard');
+    const list = document.getElementById('div-leaderboard-list');
+    if (!lb || !list) return;
+
+    // 对每个 signal 补全前端计算的分数（后端缺字段时兜底）
+    const enriched = signals.map(s => ({
+        ...s,
+        _score: (s.signal_score != null) ? s.signal_score : computeDivScore(s, regime)
+    }));
+    const sorted = [...enriched].sort((a, b) => b._score - a._score);
+    const gates  = { BULL: 55, RANGE: 65, BEAR: 75, CRASH: 999 };
+    const gate   = gates[regime] ?? 65;
+
+    list.innerHTML = sorted.map((s, i) => {
+        const score = s._score ?? 0;
+        const sigEl = s.signal === 'buy'  ? '<span style="color:#10b981;font-weight:700;">买入▲</span>'
+                    : s.signal === 'sell' ? '<span style="color:#f87171;font-weight:700;">卖出▼</span>'
+                    :                       '<span style="color:#fbbf24;">持有━</span>';
+        const barColor = score >= gate + 15 ? '#10b981'
+                       : score >= gate      ? '#60a5fa'
+                       : score >= gate * 0.85 ? '#fbbf24' : '#f87171';
+        const rank = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i+1}`;
+
+        return `<div class="div-lb-card" data-code="${s.code}"
+             onclick="selectDivEtfFromBoard('${s.code}')"
+             style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.08);
+                    border-radius:10px; padding:10px 12px; cursor:pointer; transition:all 0.2s;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <span style="font-size:0.7rem; color:#a78bfa; font-weight:700;">${rank}</span>
+                ${sigEl}
+            </div>
+            <div style="font-size:0.72rem; color:#e2e8f0; font-weight:600; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${s.name}">${s.name}</div>
+            <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:8px;">${s.code} · ¥${s.close}</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <span style="font-size:0.65rem; color:var(--text-muted);">评分</span>
+                <span style="font-size:1.05rem; font-weight:900; color:${barColor};">${score}</span>
+            </div>
+            <div style="height:4px; background:rgba(255,255,255,0.06); border-radius:2px; overflow:hidden;">
+                <div style="height:100%; width:${Math.min(score,100)}%; background:${barColor}; border-radius:2px;"></div>
+            </div>
+            <div style="font-size:0.62rem; color:var(--text-muted); margin-top:5px;">RSI ${s.rsi} · TTM ${s.ttm_yield}%</div>
+        </div>`;
+    }).join('');
+
+    lb.style.display = 'block';
+}
+
+/** 排行榜卡片点击 → 更新选择器 + 填充指标 */
+function selectDivEtfFromBoard(code) {
+    // code 形如 "515100"（无后缀），尝试两种后缀
+    const sel = document.getElementById('div-etf-select');
+    if (sel) {
+        const matchSH = code + '.SH';
+        const matchSZ = code + '.SZ';
+        let found = false;
+        for (let opt of sel.options) {
+            if (opt.value === matchSH || opt.value === matchSZ) {
+                sel.value = opt.value; found = true; break;
+            }
+        }
+        if (!found) sel.value = '';
+    }
+    onDivEtfChange();
+}
+
+
+// ====== 市场环境自动识别 ======
+const REGIME_CACHE_KEY = 'alphacore_regime_cache';
+const REGIME_CACHE_TTL = 30 * 60 * 1000; // 30 min
+
+async function loadMarketRegime(forceRefresh = false) {
+    const loadEl  = document.getElementById('regime-loading');
+    const resEl   = document.getElementById('regime-result');
+    const errEl   = document.getElementById('regime-error');
+    const btnEl   = document.getElementById('regime-refresh-btn');
+
+    if (!loadEl) return; // tab not yet rendered
+
+    // Check cache
+    if (!forceRefresh) {
+        try {
+            const cached = JSON.parse(sessionStorage.getItem(REGIME_CACHE_KEY) || 'null');
+            if (cached && (Date.now() - cached._ts) < REGIME_CACHE_TTL) {
+                renderRegime(cached);
+                return;
+            }
+        } catch(_) {}
+    }
+
+    // Show loading
+    loadEl.style.display = 'flex';
+    resEl.style.display  = 'none';
+    errEl.style.display  = 'none';
+    if (btnEl) { btnEl.disabled = true; btnEl.textContent = '⏳ 识别中...'; }
+
+    try {
+        const resp = await fetch(`${API_URL}/api/v1/market/regime`, { cache: 'no-cache' });
+        const data = await resp.json();
+
+        if (data.status !== 'ok') throw new Error(data.message || 'API error');
+
+        data._ts = Date.now();
+        sessionStorage.setItem(REGIME_CACHE_KEY, JSON.stringify(data));
+        renderRegime(data);
+    } catch (err) {
+        loadEl.style.display = 'none';
+        errEl.style.display  = 'block';
+        errEl.innerHTML = `⚠️ 市场识别失败：${err.message || '网络异常'}，请点击「重新识别」。`;
+    } finally {
+        if (btnEl) { btnEl.disabled = false; btnEl.textContent = '🔄 重新识别'; }
+    }
+}
+
+function renderRegime(d) {
+    const loadEl = document.getElementById('regime-loading');
+    const resEl  = document.getElementById('regime-result');
+    if (!resEl) return;
+    loadEl.style.display = 'none';
+    resEl.style.display  = 'block';
+
+    const clr = d.regime_color || '#fbbf24';
+    const p   = d.optimal_params || {};
+
+    // Badge
+    const badge = document.getElementById('regime-badge');
+    if (badge) {
+        badge.style.borderColor = clr + '55';
+        badge.style.background  = clr + '15';
+    }
+    _setText('regime-icon-text', d.regime_icon  || '🟡');
+    _setText('regime-name-cn',   d.regime_cn    || d.regime);
+    _setText('regime-name-en',   (d.regime || 'RANGE') + ' MODE');
+    _setColor('regime-name-cn',  clr);
+    _setText('regime-desc-text', d.regime_desc  || '');
+
+    // Metrics
+    _setText('rm-csi',    d.csi300?.toFixed(0) ?? '—');
+    _setText('rm-ma120',  d.ma120?.toFixed(0)  ?? '—');
+
+    const r5  = d.ret5d  ?? 0;
+    const r20 = d.ret20d ?? 0;
+    const el5  = document.getElementById('rm-ret5');
+    const el20 = document.getElementById('rm-ret20');
+    if (el5)  { el5.textContent  = (r5  >= 0 ? '+' : '') + r5.toFixed(2)  + '%'; el5.style.color  = r5  >= 0 ? '#10b981' : '#f87171'; }
+    if (el20) { el20.textContent = (r20 >= 0 ? '+' : '') + r20.toFixed(2) + '%'; el20.style.color = r20 >= 0 ? '#10b981' : '#f87171'; }
+
+    const slope = d.ma120_slope5 ?? 0;
+    const slopeEl = document.getElementById('rm-slope');
+    if (slopeEl) {
+        slopeEl.textContent = (slope >= 0 ? '↑ +' : '↓ ') + slope.toFixed(2);
+        slopeEl.style.color = slope >= 0 ? '#10b981' : '#f87171';
+    }
+    _setText('rm-vol', (d.vol20d?.toFixed(1) ?? '—') + '%');
+
+    // Adaptive params
+    _setText('rm-p-topn',  p.top_n           ?? 3);
+    _setText('rm-p-rb',    p.rebalance_days  ?? 5);
+    _setText('rm-p-poscap',p.pos_cap         ?? 66);
+    _setText('rm-p-sl',    p.stop_loss       ?? -8);
+    _setText('rm-p-gate',  p.entry_threshold ?? 65);
+    _setText('regime-param-note', p.note || '');
+
+    // Sync gate score display
+    _setText('regime-sync-gate', p.entry_threshold ?? 65);
+    _setColor('regime-sync-gate', clr);
+
+    // Auto-sync to calc-regime dropdown
+    const regEl = document.getElementById('calc-regime');
+    if (regEl) {
+        const regVal = d.regime === 'BULL' ? '20' : d.regime === 'BEAR' ? '0' : '12';
+        regEl.value = regVal;
+        calcSignalScore();
+    }
+
+    // V3.1: 自动同步市场状态到红利专属评分器
+    const divRegEl = document.getElementById('div-calc-regime');
+    if (divRegEl) {
+        const regime = d.regime || 'RANGE';
+        // 映射：BULL/RANGE/BEAR/CRASH
+        const validRegimes = ['BULL', 'RANGE', 'BEAR', 'CRASH'];
+        divRegEl.value = validRegimes.includes(regime) ? regime : 'RANGE';
+        calcDividendScore();
+    }
+
+    // Apply regime-specific color to panel border
+    const panel = document.getElementById('regime-panel');
+    if (panel) panel.style.borderColor = clr + '44';
+}
+
+function _setText(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+}
+function _setColor(id, color) {
+    const el = document.getElementById(id);
+    if (el) el.style.color = color;
+}
+
+
 document.addEventListener('DOMContentLoaded', () => {
     // 导航
     const navItems = document.querySelectorAll('.nav-item');
@@ -35,6 +539,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const target = document.getElementById(targetId);
             if (target) target.classList.add('active');
             document.querySelector('.dashboard').scrollTo({ top: 0, behavior: 'smooth' });
+            // 切换到信号评分系统时自动触发市场识别
+            if (targetId === 'st-signal-rules') {
+                setTimeout(() => loadMarketRegime(), 100);
+            }
         });
     });
 });
@@ -387,4 +895,368 @@ function renderMomentumTable(signals) {
             <td style="font-weight:600">${s.suggested_position > 0 ? s.suggested_position + '%' : '—'}</td>
         </tr>`;
     }).join('');
+}
+
+// ====================================================================
+//  V2.0 回测实验室 JS 函数
+// ====================================================================
+
+async function runMomentumBacktest() {
+    const btn = document.getElementById('bt-run-btn');
+    const statusEl = document.getElementById('bt-status-text');
+    const perfSection = document.getElementById('bt-perf-section');
+    const chartSection = document.getElementById('bt-chart-section');
+    const monthlySection = document.getElementById('bt-monthly-section');
+
+    const topN = document.getElementById('bt-top-n')?.value || 4;
+    const rebalance = document.getElementById('bt-rebalance')?.value || 10;
+    const window_ = document.getElementById('bt-window')?.value || 20;
+    const stopLoss = document.getElementById('bt-stoploss')?.value || -0.08;
+
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ 计算中...'; }
+    if (statusEl) statusEl.textContent = '正在运行向量化回测，请稍候...';
+
+    try {
+        const url = `${API_URL}/api/v1/strategy/momentum-backtest?top_n=${topN}&rebalance_days=${rebalance}&mom_s_window=${window_}&stop_loss=${stopLoss}`;
+        const resp = await fetch(url);
+        const json = await resp.json();
+
+        if (json.status !== 'success') throw new Error(json.message || '回测失败');
+
+        const p = json.performance;
+
+        // 更新状态
+        const excessSign = p.excess_cagr >= 0 ? '+' : '';
+        if (statusEl) statusEl.textContent = `✅ 回测完成 · 超额: ${excessSign}${p.excess_cagr}%/年`;
+
+        // 显示绩效矩阵
+        updateKPIs(p);
+        if (perfSection) perfSection.style.display = 'block';
+
+        // 净值曲线
+        if (chartSection) chartSection.style.display = 'block';
+        renderNavChart(p);
+
+        // 月度热力图
+        renderMonthlyHeatmap(p.monthly_returns || {});
+        if (monthlySection) monthlySection.style.display = 'block';
+
+    } catch (err) {
+        if (statusEl) statusEl.textContent = `❌ 错误: ${err.message}`;
+        console.error('Backtest error:', err);
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '🚀 运行回测'; }
+    }
+}
+
+function updateKPIs(p) {
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    const fmt = (v, suffix = '%', sign = true) => v != null ? `${sign && v > 0 ? '+' : ''}${v}${suffix}` : '—';
+
+    set('kpi-excess-cagr', fmt(p.excess_cagr));
+    set('kpi-cagr', fmt(p.cagr));
+    set('kpi-maxdd', fmt(p.max_drawdown, '%', false));
+    set('kpi-sharpe', p.sharpe ?? '—');
+    set('kpi-ir', p.information_ratio ?? '—');
+    set('kpi-winrate', fmt(p.excess_win_rate));
+    set('kpi-s-cagr', fmt(p.cagr));
+    set('kpi-b-cagr', fmt(p.benchmark_cagr));
+    set('kpi-s-dd', fmt(p.max_drawdown, '%', false));
+    set('kpi-b-dd', fmt(p.benchmark_max_dd, '%', false));
+    set('kpi-te', fmt(p.tracking_error, '%', false));
+    set('kpi-calmar', p.calmar ?? '—');
+    set('kpi-vol', fmt(p.ann_vol, '%', false));
+}
+
+function renderNavChart(p) {
+    const chartEl = document.getElementById('bt-nav-chart');
+    if (!chartEl || !window.echarts) return;
+
+    const chart = echarts.init(chartEl, 'dark');
+    const hasBench = p.benchmark_values && p.benchmark_values.length > 0;
+    const dates = p.dates || [];
+
+    const series = [
+        {
+            name: '动量轮动 V2.0',
+            type: 'line',
+            data: p.portfolio_values || [],
+            smooth: true,
+            symbol: 'none',
+            lineStyle: { width: 2.5, color: '#fbbf24' },
+            areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(251,191,36,0.18)' }, { offset: 1, color: 'rgba(251,191,36,0)' }] } },
+        }
+    ];
+
+    if (hasBench) {
+        series.push({
+            name: '沪深300ETF',
+            type: 'line',
+            data: p.benchmark_values,
+            smooth: true,
+            symbol: 'none',
+            lineStyle: { width: 1.5, color: '#60a5fa', type: 'dashed' },
+        });
+    }
+
+    chart.setOption({
+        backgroundColor: 'transparent',
+        grid: { left: 60, right: 30, top: 40, bottom: 50 },
+        xAxis: { type: 'category', data: dates, axisLabel: { color: '#64748b', fontSize: 10 }, axisLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } } },
+        yAxis: { type: 'value', axisLabel: { color: '#64748b', fontSize: 10, formatter: v => v.toFixed(2) }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.04)' } } },
+        legend: { data: series.map(s => s.name), textStyle: { color: '#94a3b8', fontSize: 11 }, top: 8 },
+        tooltip: { trigger: 'axis', backgroundColor: 'rgba(15,23,42,0.95)', borderColor: 'rgba(255,255,255,0.06)', textStyle: { color: '#fff', fontSize: 11 }, formatter: params => {
+            let html = `<div style="margin-bottom:4px;color:#94a3b8;font-size:10px;">${params[0]?.axisValue}</div>`;
+            params.forEach(p => { html += `<div>${p.seriesName}: <strong>${p.value?.toFixed(4)}</strong></div>`; });
+            return html;
+        }},
+        series
+    });
+
+    window.addEventListener('resize', () => chart.resize());
+}
+
+function renderMonthlyHeatmap(monthlyReturns) {
+    const tbody = document.getElementById('bt-monthly-body');
+    if (!tbody) return;
+
+    // 解析月度数据 -> {year: {month: return}}
+    const byYear = {};
+    for (const [dateStr, val] of Object.entries(monthlyReturns)) {
+        const d = new Date(dateStr);
+        const y = d.getFullYear();
+        const m = d.getMonth() + 1;
+        if (!byYear[y]) byYear[y] = {};
+        byYear[y][m] = val;
+    }
+
+    const years = Object.keys(byYear).sort();
+    const months = [1,2,3,4,5,6,7,8,9,10,11,12];
+
+    tbody.innerHTML = years.map(year => {
+        const yd = byYear[year];
+        const yearTotal = months.reduce((acc, m) => acc + (yd[m] || 0), 0);
+        const cells = months.map(m => {
+            const v = yd[m];
+            if (v == null) return `<td style="padding:8px; text-align:center; color:var(--text-muted)">—</td>`;
+            const intensity = Math.min(Math.abs(v) / 15, 1);
+            const bg = v > 0
+                ? `rgba(16,185,129,${0.1 + intensity * 0.4})`
+                : `rgba(239,68,68,${0.1 + intensity * 0.4})`;
+            const color = v > 0 ? '#10b981' : '#f87171';
+            return `<td style="padding:8px; text-align:center; background:${bg}; border-radius:4px; color:${color}; font-weight:600;">${v > 0 ? '+' : ''}${v.toFixed(1)}%</td>`;
+        }).join('');
+
+        const totalColor = yearTotal > 0 ? '#fcd34d' : '#f87171';
+        return `<tr>
+            <td style="padding:8px; text-align:left; font-weight:700; color:#fff;">${year}</td>
+            ${cells}
+            <td style="padding:8px; text-align:center; font-weight:800; color:${totalColor};">${yearTotal > 0 ? '+' : ''}${yearTotal.toFixed(1)}%</td>
+        </tr>`;
+    }).join('');
+}
+
+async function runMomentumOptimize() {
+    const btn = document.getElementById('bt-opt-btn');
+    const resultsDiv = document.getElementById('bt-opt-results');
+
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ 网格搜索中 (约60秒)...'; }
+
+    try {
+        const resp = await fetch(`${API_URL}/api/v1/strategy/momentum-optimize`);
+        const json = await resp.json();
+
+        if (json.status !== 'success') throw new Error(json.message || '优化失败');
+
+        const d = json.data;
+        const bp = d.best_params;
+        const perf = d.in_sample_perf;
+        const oos = d.out_of_sample_perf || {};
+
+        // 最优参数展示
+        const bestParamsEl = document.getElementById('bt-best-params');
+        if (bestParamsEl) {
+            bestParamsEl.innerHTML = `
+                <div style="display:flex; flex-wrap:wrap; gap:16px; color:#fcd34d; font-weight:600;">
+                    <span>Top N: <strong>${bp.top_n}</strong></span>
+                    <span>调仓周期: <strong>${bp.rebalance_days}日</strong></span>
+                    <span>动量窗口: <strong>${bp.mom_s_window}日</strong></span>
+                    <span>权重_短期: <strong>${bp.w_mom_s}</strong></span>
+                    <span>止损: <strong>${bp.stop_loss != null ? bp.stop_loss * 100 + '%' : '不设置'}</strong></span>
+                </div>
+                <div style="margin-top:12px; display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; font-size:0.8rem;">
+                    <div style="background:rgba(16,185,129,0.05); border:1px solid rgba(16,185,129,0.2); border-radius:8px; padding:12px;">
+                        <div style="color:var(--text-muted); margin-bottom:4px;">样本内 超额CAGR</div>
+                        <div style="font-size:1.2rem; font-weight:800; color:#10b981;">${perf.excess_cagr != null ? '+' + perf.excess_cagr + '%' : '—'}</div>
+                    </div>
+                    <div style="background:rgba(99,102,241,0.05); border:1px solid rgba(99,102,241,0.2); border-radius:8px; padding:12px;">
+                        <div style="color:var(--text-muted); margin-bottom:4px;">样本内 夏普比率</div>
+                        <div style="font-size:1.2rem; font-weight:800; color:#a78bfa;">${perf.sharpe ?? '—'}</div>
+                    </div>
+                    <div style="background:rgba(245,158,11,0.05); border:1px solid rgba(245,158,11,0.2); border-radius:8px; padding:12px;">
+                        <div style="color:var(--text-muted); margin-bottom:4px;">样本外 超额CAGR</div>
+                        <div style="font-size:1.2rem; font-weight:800; color:#fcd34d;">${oos.excess_cagr != null ? (oos.excess_cagr >= 0 ? '+' : '') + oos.excess_cagr + '%' : '待验证'}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Top 10 参数表
+        const top10Body = document.getElementById('bt-top10-body');
+        if (top10Body && d.top10_params) {
+            top10Body.innerHTML = d.top10_params.map((r, idx) => {
+                const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${r.rank}`;
+                return `<tr>
+                    <td style="font-weight:700;color:#fcd34d;">${medal}</td>
+                    <td style="color:#10b981;font-weight:700;">${r.score}</td>
+                    <td style="color:${r.excess_cagr > 0 ? '#10b981' : '#f87171'};">${r.excess_cagr != null ? (r.excess_cagr >= 0 ? '+' : '') + r.excess_cagr + '%' : '—'}</td>
+                    <td>${r.sharpe ?? '—'}</td>
+                    <td style="color:#f87171;">${r.max_dd != null ? r.max_dd + '%' : '—'}</td>
+                    <td>${r.ir ?? '—'}</td>
+                    <td>${r.params.top_n}</td>
+                    <td>${r.params.rebalance_days}</td>
+                    <td>${r.params.mom_s_window}</td>
+                    <td style="color:${r.params.stop_loss ? '#f87171' : 'var(--text-muted)'};">${r.params.stop_loss != null ? r.params.stop_loss * 100 + '%' : '无'}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        if (resultsDiv) resultsDiv.style.display = 'block';
+
+    } catch (err) {
+        alert(`优化失败: ${err.message}`);
+        console.error('Optimize error:', err);
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '🔬 重新搜索'; }
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════
+//  Custom Pool Manager  V1.0
+//  Storage key: alphacore_pool_{strategy}
+//  Only affects real-time execution, NOT backtest
+// ═══════════════════════════════════════════════════════════
+
+const CUSTOM_POOL_CONFIG = {
+    'mean-reversion': { maxCount: 10, stockCap: 8,  etfCap: 15 },
+    'dividend-trend': { maxCount: 8,  stockCap: 8,  etfCap: 15 },
+    'momentum':       { maxCount: 8,  stockCap: 10, etfCap: 15 },
+};
+
+function _poolKey(strategy) { return 'alphacore_pool_' + strategy; }
+function _loadPool(strategy) { try { return JSON.parse(localStorage.getItem(_poolKey(strategy)) || '[]'); } catch { return []; } }
+function _savePool(strategy, items) { localStorage.setItem(_poolKey(strategy), JSON.stringify(items)); }
+
+function _normalizeCode(raw) {
+    raw = raw.trim().toUpperCase().replace(/[^\dA-Z.]/g, '');
+    if (!raw) return null;
+    if (raw.includes('.')) return raw;
+    const num = parseInt(raw, 10);
+    if (isNaN(num)) return null;
+    if ((num >= 600000 && num <= 699999) || (num >= 500000 && num <= 519999)) return raw + '.SH';
+    if ((num >= 0 && num <= 399999) || (num >= 150000 && num <= 169999)) return raw + '.SZ';
+    return raw + '.SH';
+}
+
+async function lookupCustomName(strategy) {
+    const input = document.getElementById('custom-input-' + strategy);
+    const nameDiv = document.getElementById('custom-name-' + strategy);
+    if (!input || !nameDiv) return null;
+    const raw = input.value.trim();
+    if (!raw) { nameDiv.textContent = '请输入代码'; nameDiv.style.color = '#fbbf24'; return null; }
+    const code = _normalizeCode(raw);
+    if (!code) { nameDiv.textContent = '格式错误'; nameDiv.style.color = '#f87171'; return null; }
+    input.value = code;
+    nameDiv.textContent = '查询中...';
+    nameDiv.style.color = 'var(--text-muted)';
+    try {
+        const res = await fetch('/api/v1/stock/name?ts_code=' + encodeURIComponent(code));
+        const data = await res.json();
+        const tc = { stock:'#60a5fa', etf:'#34d399', index:'#a78bfa', unknown:'#fbbf24', cached:'#34d399' };
+        nameDiv.textContent = data.name;
+        nameDiv.style.color = tc[data.type] || '#fff';
+        nameDiv.dataset.resolvedName = data.name;
+        nameDiv.dataset.resolvedType = data.type;
+        return data;
+    } catch {
+        nameDiv.textContent = code; nameDiv.style.color = '#fbbf24';
+        nameDiv.dataset.resolvedName = code; nameDiv.dataset.resolvedType = 'unknown';
+        return { ts_code: code, name: code, type: 'unknown' };
+    }
+}
+
+async function lookupAndAdd(strategy) {
+    const data = await lookupCustomName(strategy);
+    if (!data) return;
+    addCustomStock(strategy, data.ts_code, data.name, data.type);
+}
+
+function addCustomStock(strategy, code, name, type) {
+    const cfg = CUSTOM_POOL_CONFIG[strategy] || { maxCount: 10, stockCap: 8, etfCap: 15 };
+    const items = _loadPool(strategy);
+    if (items.find(function(i){ return i.code === code; })) { alert(code + ' 已在自选池中'); return; }
+    if (items.length >= cfg.maxCount) { alert('当前策略自选池上限为 ' + cfg.maxCount + ' 只'); return; }
+    const capSelect = document.getElementById('custom-cap-' + strategy);
+    const capPct = capSelect ? parseInt(capSelect.value, 10) : (type === 'etf' ? cfg.etfCap : cfg.stockCap);
+    items.push({ code: code, name: name, type: type, cap: capPct, addedAt: new Date().toISOString().slice(0,10) });
+    _savePool(strategy, items);
+    renderCustomChips(strategy);
+}
+
+function removeCustomStock(strategy, code) {
+    _savePool(strategy, _loadPool(strategy).filter(function(i){ return i.code !== code; }));
+    renderCustomChips(strategy);
+}
+
+function clearCustomPool(strategy) {
+    if (!confirm('确认清空「' + strategy + '」策略的全部自选标的？')) return;
+    _savePool(strategy, []);
+    renderCustomChips(strategy);
+}
+
+function renderCustomChips(strategy) {
+    const container = document.getElementById('custom-chips-' + strategy);
+    const countEl = document.getElementById('custom-count-' + strategy);
+    const cfg = CUSTOM_POOL_CONFIG[strategy] || { maxCount: 10 };
+    if (!container) return;
+    const items = _loadPool(strategy);
+    const tc = {
+        stock:   { bg:'rgba(96,165,250,0.12)',  bdr:'rgba(96,165,250,0.3)',  txt:'#93c5fd', lbl:'股' },
+        etf:     { bg:'rgba(52,211,153,0.1)',   bdr:'rgba(52,211,153,0.25)', txt:'#34d399', lbl:'ETF' },
+        index:   { bg:'rgba(167,139,250,0.1)',  bdr:'rgba(167,139,250,0.25)',txt:'#c4b5fd', lbl:'指' },
+        unknown: { bg:'rgba(251,191,36,0.08)',  bdr:'rgba(251,191,36,0.25)', txt:'#fbbf24', lbl:'?' },
+        cached:  { bg:'rgba(52,211,153,0.1)',   bdr:'rgba(52,211,153,0.25)', txt:'#34d399', lbl:'ETF' },
+    };
+    if (items.length === 0) {
+        container.innerHTML = '<span style="color:var(--text-muted);font-size:0.8rem;align-self:center;">暂无自选标的 · 请在上方输入代码并追加</span>';
+    } else {
+        container.innerHTML = items.map(function(item) {
+            const c = tc[item.type] || tc.unknown;
+            return '<div style="display:inline-flex;align-items:center;gap:6px;background:' + c.bg + ';border:1px solid ' + c.bdr + ';border-radius:20px;padding:5px 12px 5px 8px;font-size:0.8rem;">' +
+                '<span style="background:' + c.bdr + ';color:' + c.txt + ';border-radius:10px;padding:0 5px;font-size:0.65rem;font-weight:700;">' + c.lbl + '</span>' +
+                '<span style="color:' + c.txt + ';font-weight:700;">' + item.code.split('.')[0] + '</span>' +
+                '<span style="color:#e2e8f0;">' + item.name + '</span>' +
+                '<span style="color:var(--text-muted);font-size:0.7rem;">&#8804;' + item.cap + '%</span>' +
+                '<button onclick="removeCustomStock(\''+strategy+'\',\''+item.code+'\')" style="background:none;border:none;color:rgba(255,255,255,0.4);cursor:pointer;padding:0 0 0 4px;font-size:1rem;line-height:1;" title="移除">&#x2715;</button>' +
+                '</div>';
+        }).join('');
+    }
+    if (countEl) countEl.textContent = '已追加：' + items.length + ' 只 / 上限 ' + cfg.maxCount + ' 只';
+}
+
+function getFullPool(strategy) {
+    return _loadPool(strategy).map(function(item) {
+        return { ts_code: item.code, name: item.name, type: item.type, cap: item.cap / 100, is_custom: true };
+    });
+}
+
+function initAllCustomPools() {
+    ['mean-reversion', 'dividend-trend', 'momentum'].forEach(function(s) { renderCustomChips(s); });
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initAllCustomPools);
+} else {
+    initAllCustomPools();
 }

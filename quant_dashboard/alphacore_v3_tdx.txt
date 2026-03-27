@@ -1,0 +1,48 @@
+{==============================================================================
+      ALPHACORE V3.0 机构级均值回归共振指标 (实战版)
+      逻辑：RSI(超跌) + BIAS(乖离) + VOL(放量) + MA(趋势) 三重共振
+==============================================================================}
+
+{--- 1. 资产属性自动识别逻辑 ---}
+IS_STABLE:=CODELIKE('000300') OR CODELIKE('510300') OR CODELIKE('510050') OR CODELIKE('510500') OR CODELIKE('000001') OR CODELIKE('399001');
+IS_AGGRESSIVE:=NOT(IS_STABLE);
+
+{--- 3. 核心因子计算 (兼容性修正：预计算模式) ---}
+RSI_STABLE:=RSI(C, 21);
+RSI_AGGR:=RSI(C, 7);
+MY_RSI:=IF(IS_STABLE, RSI_STABLE, RSI_AGGR);
+
+BIAS_STABLE:=(C-MA(C,10))/MA(C,10)*100;
+BIAS_AGGR:=(C-MA(C,10))/MA(C,10)*100; {Bias 周期统一，但限制值不同}
+MY_BIAS:=IF(IS_STABLE, BIAS_STABLE, BIAS_AGGR);
+
+VOL_MA5:=MA(V, 5);
+BOLL_UP:=MA(C,20)+2*STD(C,20);
+
+{--- 4. 动态阈值切换 ---}
+RSI_BUY:=IF(IS_STABLE, 25, 10);
+BIAS_LIMIT:=IF(IS_STABLE, -5, -8);
+VOL_SCALE:=IF(IS_STABLE, 1.2, 1.5);
+
+{--- 4. 趋势过滤 (年线保护) ---}
+MA250:=MA(C, 250);
+TREND_OK:=C > MA250*0.92; {允许在年线下方8%以内的深度坑位，但不能深套}
+
+{--- 5. 三重共振信号触发 ---}
+BUY_SIG:=TREND_OK AND MY_RSI < RSI_BUY AND MY_BIAS < BIAS_LIMIT AND V > VOL_MA5 * VOL_SCALE;
+SELL_SIG:=C > BOLL_UP OR MY_RSI > 85;
+
+{--- 6. 可视化渲染 ---}
+{主图叠加显示}
+DRAWBAND(MA250,RGB(50,0,0),MA250*0.99,RGB(0,0,0)); {年线位置微弱光影}
+
+{图标与文字标注}
+DRAWICON(BUY_SIG, L*0.98, 1); {图标1号红色箭头}
+DRAWTEXT(BUY_SIG, L*0.96, ' 猎杀(HUNT)'), COLORRED;
+
+DRAWICON(SELL_SIG, H*1.02, 2); {图标2号绿色箭头}
+DRAWTEXT(SELL_SIG, H*1.04, ' 撤离(EXIT)'), COLORGREEN;
+
+{状态提示文字}
+DRAWTEXT_FIX(IS_STABLE, 0.01, 0.05, 0, '当前模式: 宽基/稳健模式 (AlphaCore V3.0)'), COLORCYAN;
+DRAWTEXT_FIX(IS_AGGRESSIVE, 0.01, 0.05, 0, '当前模式: 赛道/爆发模式 (AlphaCore V3.0)'), COLORMAGENTA;

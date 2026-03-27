@@ -11,7 +11,13 @@ const formatTrend = (change, isInverse = false) => {
 };
 
 const updateCardUI = (cardId, valId, trendId, dataItem) => {
+    if (!dataItem) return;
+    
     const valEl = document.getElementById(valId);
+    if (!valEl) {
+        console.warn(`[UI] Element not found: ${valId}`);
+        return;
+    }
     
     // Update HTML layout based on the design plan
     valEl.innerHTML = `
@@ -20,7 +26,7 @@ const updateCardUI = (cardId, valId, trendId, dataItem) => {
     `;
     
     // Dynamically set highlight color based on status (up = green, down = red, neutral = gray etc)
-    const cardEl = document.getElementById(cardId);
+    const cardEl = cardId ? document.getElementById(cardId) : null;
     if (dataItem.status === 'up') {
         valEl.className = 'stat-value highlight-up';
         if (cardEl) cardEl.classList.add('active-glow');
@@ -28,7 +34,7 @@ const updateCardUI = (cardId, valId, trendId, dataItem) => {
         valEl.className = 'stat-value highlight-down';
         if (cardEl) cardEl.classList.remove('active-glow');
     } else {
-        valEl.className = 'stat-value';
+        valEl.className = 'stat-value highlight-neutral';
         if (cardEl) cardEl.classList.remove('active-glow');
     }
 };
@@ -65,26 +71,171 @@ async function fetchQuantData() {
 function updateDashboard(marketData) {
     if (marketData.macro_cards) {
         // 1. 更新顶部卡片数值
-        updateCardUI('card-vix', 'val-vix', 'trend-vix', marketData.macro_cards.vix);
+        if (marketData.macro_cards.vix) {
+            updateCardUI('card-vix', 'val-vix', 'trend-vix', marketData.macro_cards.vix);
+            // V4.2 新增: VIX 风格描述与分位条
+            const vix = marketData.macro_cards.vix;
+            const vixRegimeEl = document.getElementById('val-vix-regime');
+            if (vixRegimeEl && vix.regime) {
+                vixRegimeEl.innerText = vix.regime;
+                vixRegimeEl.className = `vix-regime-box ${vix.class}`;
+            }
+            if (document.getElementById('desc-vix')) document.getElementById('desc-vix').innerText = vix.desc || "接入实时全球避险情绪水温";
+            if (document.getElementById('val-vix-percentile')) document.getElementById('val-vix-percentile').innerText = `Range: ${vix.percentile}%`;
+            const vixBar = document.getElementById('bar-vix-range');
+            if (vixBar) vixBar.style.width = `${vix.percentile}%`;
+        }
         updateCardUI('card-erp', 'val-erp', 'trend-erp', marketData.macro_cards.erp);
-        updateCardUI('card-capital', 'val-capital', 'trend-capital', marketData.macro_cards.capital);
+        
+        // A+H 跨境流量独立渲染
+        if (marketData.macro_cards.capital_a) {
+            updateCardUI(null, 'val-capital-a', 'trend-capital-a', marketData.macro_cards.capital_a);
+        }
+        if (marketData.macro_cards.capital_h) {
+            updateCardUI(null, 'val-capital-h', 'trend-capital-h', marketData.macro_cards.capital_h);
+        }
+        
+        // 如果 A+H 有一侧正在强力流入，点亮整个卡片背景
+        const cardCapital = document.getElementById('card-capital');
+        if (cardCapital) {
+            const isUp = (marketData.macro_cards.capital_a && marketData.macro_cards.capital_a.status === 'up') ||
+                         (marketData.macro_cards.capital_h && marketData.macro_cards.capital_h.status === 'up');
+            if (isUp) cardCapital.classList.add('active-glow');
+            else cardCapital.classList.remove('active-glow');
+        }
+
         updateCardUI('card-signal', 'val-signal', 'trend-signal', marketData.macro_cards.signal);
     }
     
-    // Render Execution Lists    // 4. 更新情绪仪表盘 (Market Temperature & Advice)
-    if (marketData.macro_cards.market_temp) {
+    // 4. 更新情绪与持仓枢纽 (V4.6 Sentiment & Position Hub)
+    if (marketData.macro_cards && marketData.macro_cards.market_temp) {
         const temp = marketData.macro_cards.market_temp;
-        document.getElementById('val-market-temp').innerText = `${temp.value}°`;
-        document.getElementById('label-market-temp').innerText = temp.label;
-        document.getElementById('val-pos-advice').innerText = temp.advice;
+        const vixMult = temp.market_vix_multiplier || 1.0;
         
-        // 简单正则提取建议比例的平均值用于进度条
+        // --- 左侧：宏观分析 (Macro Status) ---
+        if (document.getElementById('val-market-temp')) {
+            document.getElementById('val-market-temp').innerText = `${temp.value}°`;
+        }
+        
+        // VIX 避险修正标签显示与颜色逻辑
+        const riskLabel = document.getElementById('label-market-temp');
+        if (riskLabel) {
+            const isVixHedged = vixMult < 0.9;
+            riskLabel.innerText = isVixHedged ? `${temp.label} (VIX 避险修正)` : temp.label;
+            riskLabel.style.color = isVixHedged ? "#ef4444" : "#10b981";
+        }
+
+        if (document.getElementById('val-temp-a')) {
+            document.getElementById('val-temp-a').innerText = `${temp.value}`;
+        }
+        if (document.getElementById('val-regime-name')) {
+            document.getElementById('val-regime-name').innerText = temp.regime_name || "模式识别中";
+        }
+        if (document.getElementById('val-mindset')) {
+            document.getElementById('val-mindset').innerText = temp.mindset || "侦测中...";
+        }
+
+        // --- 右侧：战术仓位与演进 (Tactical Status) ---
+        if (document.getElementById('val-pos-advice')) {
+            document.getElementById('val-pos-advice').innerText = temp.advice;
+        }
+        if (document.getElementById('bar-pos-advice')) {
+            const posMatch = temp.advice.match(/(\d+)%/);
+            if (posMatch) document.getElementById('bar-pos-advice').style.width = `${posMatch[1]}%`;
+        }
+
+        
+        // V3.6 新增: 子策略权重更新
+        if (temp.regime_weights) {
+            if (document.getElementById('weight-mr')) document.getElementById('weight-mr').innerText = `${(temp.regime_weights.mr * 100).toFixed(0)}%权重`;
+            if (document.getElementById('weight-mom')) document.getElementById('weight-mom').innerText = `${(temp.regime_weights.mom * 100).toFixed(0)}%权重`;
+            if (document.getElementById('weight-div')) document.getElementById('weight-div').innerText = `${(temp.regime_weights.div * 100).toFixed(0)}%权重`;
+            
+            // V3.9 策略配仓总览: 比例条
+            const barDiv = document.getElementById('bar-div');
+            const barMr  = document.getElementById('bar-mr');
+            const barMom = document.getElementById('bar-mom');
+            if (barDiv) { barDiv.style.width = `${(temp.regime_weights.div * 100).toFixed(0)}%`; barDiv.querySelector('span').innerText = `红利 ${(temp.regime_weights.div * 100).toFixed(0)}%`; }
+            if (barMr)  { barMr.style.width  = `${(temp.regime_weights.mr  * 100).toFixed(0)}%`; barMr.querySelector('span').innerText  = `均值 ${(temp.regime_weights.mr  * 100).toFixed(0)}%`; }
+            if (barMom) { barMom.style.width = `${(temp.regime_weights.mom * 100).toFixed(0)}%`; barMom.querySelector('span').innerText = `动量 ${(temp.regime_weights.mom * 100).toFixed(0)}%`; }
+        }
+        
+        // V3.9 各策略名义仓位
+        if (temp.strategy_positions) {
+            const sp = temp.strategy_positions;
+            const totalEl = document.getElementById('val-alloc-total');
+            if (totalEl) totalEl.innerText = `总仓位: ${sp.total}%`;
+            const setPosVal = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = `${val}%`; };
+            setPosVal('val-pos-div', sp.div_pos);
+            setPosVal('val-pos-mr',  sp.mr_pos);
+            setPosVal('val-pos-mom', sp.mom_pos);
+        }
+        
+        // V3.9 策略过滤器状态
+        if (temp.strategy_filters) {
+            const sf = temp.strategy_filters;
+            const setFilter = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val === '正常' ? '' : val; };
+            setFilter('filter-div', sf.div);
+            setFilter('filter-mr',  sf.mr);
+            setFilter('filter-mom', sf.mom);
+        }
+
+        // DMSO 分指数更新
+        if (temp.score_a !== undefined && document.getElementById('val-temp-a')) {
+            document.getElementById('val-temp-a').innerText = temp.score_a;
+        }
+        if (temp.score_hk !== undefined && document.getElementById('val-temp-hk')) {
+            document.getElementById('val-temp-hk').innerText = temp.score_hk;
+        }
+        
+        // 建议比例进度条
         const match = temp.advice.match(/(\d+)%/);
         if (match) {
-            const posVal = match[1];
-            document.getElementById('bar-pos-advice').style.width = `${posVal}%`;
+            document.getElementById('bar-pos-advice').style.width = `${match[1]}%`;
         }
     }
+
+    // 4.5 更新明日实战决策矩阵 (V4.4)
+    if (marketData.macro_cards && marketData.macro_cards.tomorrow_plan) {
+        const plan = marketData.macro_cards.tomorrow_plan;
+        
+        // 更新视角切换：Regime Badge
+        const badgeEl = document.getElementById('tag-current-regime');
+        if (badgeEl && plan.current_tactics) {
+            badgeEl.innerText = `实时状态: ${plan.current_tactics.regime}`;
+        }
+
+        // 渲染 4 阶战术矩阵
+        const matrixEl = document.getElementById('matrix-content');
+        if (matrixEl && plan.regime_matrix) {
+            matrixEl.innerHTML = plan.regime_matrix.map(m => `
+                <div class="matrix-row ${m.active ? 'active' : ''}">
+                    <div class="col-regime">${m.regime}</div>
+                    <div class="col-tactics">${m.tactics}</div>
+                    <div class="col-pos">${m.pos}</div>
+                </div>
+            `).join('');
+        }
+        
+        // 渲染核心建议 (标记 Priority)
+        const frameworkEl = document.getElementById('list-plan-framework');
+        if (frameworkEl && plan.framework) {
+            frameworkEl.innerHTML = plan.framework.map(f => {
+                const isHighlight = f.includes('优先') || f.includes('核心');
+                const style = isHighlight ? 'color: #f59e0b; font-weight: 600' : '';
+                return `<li style="${style}">${f}</li>`;
+            }).join('');
+        }
+
+        // 渲染情景模拟标签
+        const scenarioEl = document.getElementById('list-plan-scenarios');
+        if (scenarioEl && plan.scenarios) {
+            scenarioEl.innerHTML = plan.scenarios.map(s => 
+                `<div class="scenario-tag">${s.case}: ${s.action}</div>`
+            ).join('');
+        }
+    }
+
 
     // 5. 更新行业热力图 (Sector Heatmap)
     if (marketData.sector_heatmap) {
@@ -164,10 +315,24 @@ function updateStrategyCard(prefix, data) {
 function showFallbackData() {
     const fallbackData = {
         macro_cards: {
-            vix: { value: 20.15, trend: "+5.2%", status: "up" },
-            benchmark: { value: "多头排列", trend: "短期均线发散", status: "up" },
-            capital: { value: "-124.5 亿", trend: "缩量流出", status: "down" },
-            signal: { value: "右侧胜率区", trend: "动量与红利共振", status: "up" }
+            vix: { 
+                value: 20.15, trend: "+5.2%", status: "up", 
+                regime: "🟡 正常震荡", class: "vix-status-norm",
+                desc: "市场常态，结构性调仓", percentile: 15.2
+            },
+            tomorrow_plan: {
+                pos_control: "60-80%",
+                tech_logic: "🚀 均线多头持有",
+                framework: ["适度加仓硬科技龙头", "持有国产算力/AI核心资产"],
+                scenarios: [
+                    {case: "VIX回落至22-24", action: "适度加仓"},
+                    {case: "VIX突破30+", action: "强制止损"}
+                ]
+            },
+            capital_a: { value: "A: 151.4 亿", trend: "外资稳步买入", status: "up" },
+            capital_h: { value: "H: 20.5 亿", trend: "南向博弈均衡", status: "neutral" },
+            signal: { value: "右侧胜率区", trend: "动量与红利共振", status: "up" },
+            erp: { value: "3.5%", trend: "极度低估", status: "up" }
         },
         execution_lists: {
             buy_zone: [

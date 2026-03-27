@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AlphaCore 投研量化终端</title>
     <!-- 引入外部样式 -->
-    <link rel="stylesheet" href="./styles.css?v=2">
+    <link rel="stylesheet" href="./styles.css?v=3">
     <!-- 引入高级无衬线字体 Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Chart.js 移除 (极简主义与性能优化) -->
@@ -23,11 +23,11 @@
                 <span class="icon">📊</span>
                 <span>量化总览</span>
             </a>
-            <a href="#" class="nav-item">
+            <a href="./factor.html" class="nav-item">
                 <span class="icon">📈</span>
                 <span>因子分析</span>
             </a>
-            <a href="#" class="nav-item">
+            <a href="./industry.html" class="nav-item">
                 <span class="icon">🏭</span>
                 <span>产业追踪</span>
             </a>
@@ -80,6 +80,13 @@
                 <div class="stat-card glass-panel" id="card-vix">
                     <div class="stat-title">全球恐慌指数 (VIX)</div>
                     <div class="stat-value" id="val-vix">-- <span class="trend" id="trend-vix">--</span></div>
+                    <div class="vix-regime-row">
+                        <div class="vix-regime-box" id="val-vix-regime">加载中...</div>
+                        <div class="vix-percentile-label" id="val-vix-percentile">Range: --%</div>
+                    </div>
+                    <div class="vix-range-container">
+                        <div class="vix-range-bar" id="bar-vix-range" style="width: 0%"></div>
+                    </div>
                     <div class="stat-desc" id="desc-vix">接入实时全球避险情绪水温</div>
                 </div>
                 <div class="stat-card glass-panel" id="card-erp">
@@ -88,9 +95,12 @@
                     <div class="stat-desc" id="desc-erp">跨资产(股/债)估值溢价模型</div>
                 </div>
                 <div class="stat-card glass-panel" id="card-capital">
-                    <div class="stat-title">跨市场流动性 (主力动向)</div>
-                    <div class="stat-value" id="val-capital">-- <span class="trend" id="trend-capital">--</span></div>
-                    <div class="stat-desc" id="desc-capital">存量 / 增量 资金博弈定调</div>
+                    <div class="stat-title">主力动向 (A+H 跨境监控)</div>
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <div class="stat-value" id="val-capital-a" style="font-size: 1.5rem; margin-bottom: 0;">-- <span class="trend" id="trend-capital-a">--</span></div>
+                        <div class="stat-value" id="val-capital-h" style="font-size: 1.5rem; margin-bottom: 0;">-- <span class="trend" id="trend-capital-h">--</span></div>
+                    </div>
+                    <div class="stat-desc" id="desc-capital">实时追踪北向与南向资金共振</div>
                 </div>
                 <div class="stat-card glass-panel" id="card-signal">
                     <div class="stat-title">当前量化极值活跃度</div>
@@ -110,40 +120,147 @@
                 </div>
             </div>
 
-        <!-- 情绪仪表盘：海内外温度与持仓建议 -->
+        <!-- V4.6 情绪与持仓枢纽 (Sentiment & Position Hub) -->
         <div class="sentiment-section">
-            <div class="sentiment-card glass-panel">
-                <div class="temp-gauge-container">
-                    <div class="temp-header">
-                        <span class="icon">🌡️</span>
-                        <h3>海内外市场温度</h3>
+            <div class="hub-main-title">AlphaCore 情绪与持仓枢纽 (Sentiment & Position Hub)</div>
+            <div class="sentiment-hub glass-panel" id="card-sentiment-hub">
+                <div class="hub-container">
+                    <!-- 左侧：宏观环境与温度 -->
+                    <div class="hub-panel panel-macro">
+                        <div class="hub-header">
+                            <span class="icon">🌡️</span>
+                            <h3>宏观风控与温度计</h3>
+                        </div>
+                        <div class="hub-main">
+                            <div class="gauge-center">
+                                <div class="temp-value" id="val-market-temp">--.-°</div>
+                                <div class="risk-flag" id="label-market-temp">对齐中...</div>
+                            </div>
+                            <div class="indices-grid">
+                                <div class="index-item">A/H 总温: <span id="val-temp-a">--</span></div>
+                            </div>
+                            <div class="system-mode">
+                                <div class="regime-badge" id="val-regime-name">载入中</div>
+                                <div class="mindset-label" id="val-mindset">侦测中...</div>
+                            </div>
+                        </div>
                     </div>
-                    <div class="temp-main">
-                        <div class="temp-value" id="val-market-temp">--.-°</div>
-                        <div class="temp-label" id="label-market-temp">数据加载中...</div>
-                    </div>
-                </div>
-                <div class="advice-container">
-                    <div class="advice-header">
-                        <span class="icon">🛡️</span>
-                        <h3>建议持仓比例 (1周)</h3>
-                    </div>
-                    <div class="advice-value" id="val-pos-advice">--%</div>
-                    <div class="advice-bar-bg">
-                        <div class="advice-bar-fill" id="bar-pos-advice" style="width: 50%;"></div>
+
+                    <!-- 右侧：战术仓位与预判 -->
+                    <div class="hub-panel panel-tactical">
+                        <div class="hub-header">
+                            <span class="icon">🛡️</span>
+                            <h3>战术仓位预判 (Pos Pathing)</h3>
+                        </div>
+                        <div class="hub-main">
+                            <div class="pos-advice-row">
+                                <span class="pos-label">当前建议仓位</span>
+                                <span class="pos-value" id="val-pos-advice">--%</span>
+                            </div>
+                            <div class="advice-bar-bg">
+                                <div class="advice-bar-fill" id="bar-pos-advice" style="width: 30%;"></div>
+                            </div>
+
+                            <div class="cycle-badge">
+                                <span class="icon">⚓</span>
+                                建议策略周期: <strong id="val-cycle-a">8-15 交易日</strong>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
+            <!-- V4.4 优化：明日实战决策矩阵 -->
+            <div class="plan-card glass-panel" id="card-tomorrow-plan">
+                <div class="plan-header">
+                    <div class="header-main">
+                        <span class="icon">📊</span>
+                        <h3>明日交易计划 (专业矩阵)</h3>
+                    </div>
+                    <div class="regime-badge" id="tag-current-regime">同步中...</div>
+                </div>
+                
+                <div class="matrix-table">
+                    <div class="matrix-row matrix-header">
+                        <div class="col-regime">VIX区间</div>
+                        <div class="col-tactics">实战对策</div>
+                        <div class="col-pos">仓位建议</div>
+                    </div>
+                    <div id="matrix-content">
+                        <!-- JS 动态注入 -->
+                        <div class="loading-matrix">战术矩阵加载中...</div>
+                    </div>
+                </div>
+
+                <div class="strategic-focus">
+                    <div class="focus-label">🎯 当前核心建议</div>
+                    <div class="plan-list">
+                        <ul id="list-plan-framework">
+                            <!-- 建议列表 -->
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="plan-scenarios" id="list-plan-scenarios">
+                    <!-- 场景标签 -->
+                </div>
+                
+                <div class="plan-disclaimer">基于 VIX 4阶矩阵 · AlphaCore V4.4 Real-time Protocol</div>
+            </div>
+        </div>
+
+            <!-- V3.9 策略配仓实时总览 -->
+            <div class="allocation-overview glass-panel">
+                <div class="alloc-header">
+                    <span class="icon">📊</span>
+                    <h3>动态策略配仓总览</h3>
+                    <span class="alloc-total" id="val-alloc-total">总仓位: --%</span>
+                </div>
+                <div class="alloc-bar-container">
+                    <div class="alloc-bar">
+                        <div class="alloc-segment seg-div" id="bar-div" style="width:33%">
+                            <span>红利 --%</span>
+                        </div>
+                        <div class="alloc-segment seg-mr" id="bar-mr" style="width:34%">
+                            <span>均值 --%</span>
+                        </div>
+                        <div class="alloc-segment seg-mom" id="bar-mom" style="width:33%">
+                            <span>动量 --%</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="alloc-details">
+                    <div class="alloc-detail-item">
+                        <span class="dot dot-div"></span>
+                        <span>红利防线</span>
+                        <strong id="val-pos-div">--%</strong>
+                        <span class="filter-badge" id="filter-div"></span>
+                    </div>
+                    <div class="alloc-detail-item">
+                        <span class="dot dot-mr"></span>
+                        <span>均值回归</span>
+                        <strong id="val-pos-mr">--%</strong>
+                        <span class="filter-badge" id="filter-mr"></span>
+                    </div>
+                    <div class="alloc-detail-item">
+                        <span class="dot dot-mom"></span>
+                        <span>动量轮动</span>
+                        <strong id="val-pos-mom">--%</strong>
+                        <span class="filter-badge" id="filter-mom"></span>
+                    </div>
+                </div>
+            </div>
+
             <!-- 策略状态雷达卡片区 (Option C) -->
+
             <div class="strategy-cards-grid">
                 <!-- 均值回归 -->
                 <div class="strategy-card glass-panel" onclick="window.location.href='./strategy.html?strat=mean-reversion'">
                     <div class="strat-header">
                         <span class="strat-icon">📐</span>
                         <h3>均值回归引擎</h3>
-                        <span class="strat-status active" id="strat-status-mr">监控中</span>
+                        <span class="weight-pill" id="weight-mr">30%权重</span>
                     </div>
                     <div class="strat-body">
                         <div class="strat-metric"><span class="label">冰点池容量</span> <strong id="strat-metric1-mr">--</strong></div>
@@ -156,7 +273,7 @@
                     <div class="strat-header">
                         <span class="strat-icon">🚀</span>
                         <h3>动量轮动过滤</h3>
-                        <span class="strat-status warning" id="strat-status-mom">预警区间</span>
+                        <span class="weight-pill" id="weight-mom">20%权重</span>
                     </div>
                     <div class="strat-body">
                         <div class="strat-metric"><span class="label">最强进攻主线</span> <strong id="strat-metric1-mom">--</strong></div>
@@ -169,7 +286,7 @@
                     <div class="strat-header">
                         <span class="strat-icon">🛡️</span>
                         <h3>红利趋势防线</h3>
-                        <span class="strat-status dormant" id="strat-status-div">底仓蛰伏</span>
+                        <span class="weight-pill" id="weight-div">50%权重</span>
                     </div>
                     <div class="strat-body">
                         <div class="strat-metric"><span class="label">平均股息溢价</span> <strong id="strat-metric1-div">--</strong></div>

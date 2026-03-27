@@ -1,0 +1,15 @@
+{
+    "cash": 777500.0,
+    "positions": {
+        "600519.SH": {
+            "amount": 100,
+            "cost": 1700.0,
+            "name": "Moutai"
+        },
+        "000001.SZ": {
+            "amount": 5000,
+            "cost": 10.5,
+            "name": "PingAn"
+        }
+    }
+}

@@ -17,11 +17,11 @@
                 <span class="icon">📊</span>
                 <span>量化总览</span>
             </a>
-            <a href="#" class="nav-item">
+            <a href="./factor.html" class="nav-item">
                 <span class="icon">📈</span>
                 <span>因子分析</span>
             </a>
-            <a href="#" class="nav-item">
+            <a href="./industry.html" class="nav-item">
                 <span class="icon">🏭</span>
                 <span>产业追踪</span>
             </a>
@@ -63,8 +63,9 @@
             <!-- 标签切换 -->
             <div class="st-tab-bar">
                 <button class="st-tab active" data-report="st-mean-reversion">📐 均值回归策略 V2.0</button>
-                <button class="st-tab" data-report="st-dividend-trend">💰 红利趋势策略 V2.0</button>
-                <button class="st-tab" data-report="st-momentum">🚀 行业动量轮动 V1.0</button>
+                <button class="st-tab" data-report="st-dividend-trend">💰 红利趋势策略 V3.1</button>
+                <button class="st-tab" data-report="st-momentum">🚀 行业动量轮动 V2.0</button>
+                <button class="st-tab" data-report="st-signal-rules">🎯 信号评分系统</button>
                 <button class="st-tab" data-report="st-execution">📊 策略执行结果</button>
             </div>
 
@@ -191,6 +192,85 @@
                 </div>
             </section>
 
+
+            <!-- 自选扩池管理器 -->
+            <section class="st-section" id="custom-pool-mean-reversion">
+                <h3>➕ 自选扩池 · 个性化追加标的（ETF 或个股）</h3>
+                <div class="glass-panel custom-pool-panel" style="padding:24px;" data-strategy="mean-reversion">
+
+                    <!-- 输入行 -->
+                    <div style="display:grid; grid-template-columns:1fr auto auto auto; gap:12px; align-items:end; margin-bottom:20px;">
+                        <div>
+                            <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:6px;">股票/ETF 代码（Tushare 格式 · 如 600036.SH 或 512480.SH）</label>
+                            <input id="custom-input-mean-reversion" type="text" maxlength="12"
+                                placeholder="输入代码后按 Enter 或点击查询..."
+                                style="width:100%; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:10px 14px; font-family:inherit; outline:none; font-size:0.9rem; box-sizing:border-box;"
+                                onkeydown="if(event.key==='Enter') lookupAndAdd('mean-reversion')" />
+                        </div>
+                        <div>
+                            <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:6px;">识别结果</label>
+                            <div id="custom-name-mean-reversion"
+                                style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:10px 14px; font-size:0.85rem; color:var(--text-muted); min-width:140px; height:40px; line-height:20px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                — 等待查询 —
+                            </div>
+                        </div>
+                        <div>
+                            <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:6px;">仓位上限</label>
+                            <select id="custom-cap-mean-reversion"
+                                style="background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:10px 12px; font-family:inherit; outline:none; height:40px;">
+                                <option value="5">5%</option><option value="8" selected>8% (个股推荐)</option><option value="10">10%</option><option value="15">15% (ETF)</option>
+                            </select>
+                        </div>
+                        <div style="display:flex; gap:8px;">
+                            <button onclick="lookupCustomName('mean-reversion')"
+                                style="background:rgba(99,102,241,0.15); border:1px solid rgba(99,102,241,0.3); color:#a78bfa; border-radius:8px; padding:10px 14px; cursor:pointer; font-size:0.82rem; white-space:nowrap; height:40px;">
+                                🔍 查询
+                            </button>
+                            <button onclick="lookupAndAdd('mean-reversion')"
+                                style="background:linear-gradient(135deg,rgba(16,185,129,0.25),rgba(5,150,105,0.15)); border:1px solid rgba(16,185,129,0.35); color:#10b981; border-radius:8px; padding:10px 16px; cursor:pointer; font-size:0.82rem; font-weight:700; white-space:nowrap; height:40px;">
+                                + 追加
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 已追加标的 chip 区 -->
+                    <div id="custom-chips-mean-reversion" style="display:flex; flex-wrap:wrap; gap:8px; min-height:48px; margin-bottom:16px; padding:12px; background:rgba(255,255,255,0.02); border:1px dashed rgba(255,255,255,0.08); border-radius:10px;">
+                        <span class="pool-empty-hint" style="color:var(--text-muted); font-size:0.8rem; align-self:center;">暂无自选标的 · 请在上方输入代码并追加</span>
+                    </div>
+
+                    <!-- 风险提示 + 入池标准 -->
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                        <div style="background:rgba(251,191,36,0.05); border:1px solid rgba(251,191,36,0.2); border-radius:10px; padding:14px;">
+                            <div style="font-size:0.8rem; font-weight:700; color:#fbbf24; margin-bottom:8px;">⚠️ 个股特异风险提示</div>
+                            <ul style="font-size:0.75rem; color:var(--text-muted); padding-left:16px; line-height:1.8; margin:0;">
+                                <li>个股波动率显著高于 ETF，仓位上限已受约束</li>
+                                <li>策略参数基于 ETF 历史优化，个股效果需自行评估</li>
+                                <li>自选标的仅参与<strong style="color:#fff;">实时执行评分</strong>，不纳入历史回测</li>
+                                <li>V1 版本不进行流动性自动验证，请自行确认日均成交额</li>
+                            </ul>
+                        </div>
+                        <div style="background:rgba(16,185,129,0.04); border:1px solid rgba(16,185,129,0.15); border-radius:10px; padding:14px;">
+                            <div style="font-size:0.8rem; font-weight:700; color:#10b981; margin-bottom:8px;">✅ 均值回归个股入池建议标准</div>
+                            <ul style="font-size:0.75rem; color:var(--text-muted); padding-left:16px; line-height:1.8; margin:0;">
+                                <li>RSI(14) 当前处于 20-40 超跌区间</li>
+                                <li>流通市值大于50亿，日均成交额大于2亿</li>
+                                <li>历史最大回撤大于20%（具备高弹性）</li>
+                                <li>PE 不亏损，避免基本面劣化标的</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- 统计行 -->
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.06);">
+                        <span id="custom-count-mean-reversion" style="font-size:0.78rem; color:var(--text-muted);">已追加：0 只 / 上限 10 只</span>
+                        <button onclick="clearCustomPool('mean-reversion')"
+                            style="background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); color:#f87171; border-radius:6px; padding:5px 12px; cursor:pointer; font-size:0.75rem;">
+                            清空全部
+                        </button>
+                    </div>
+                </div>
+            </section>
+
             </div><!-- /st-mean-reversion -->
 
             <!-- ==================== 红利趋势策略 ==================== -->
@@ -198,14 +278,201 @@
 
             <!-- Hero -->
             <section class="st-hero glass-panel" style="border-color:rgba(59, 130, 246, 0.25); background:linear-gradient(135deg, rgba(59, 130, 246, 0.06), rgba(20, 24, 34, 0.4), rgba(139, 92, 246, 0.05));">
-                <div class="st-hero-badge" style="background:rgba(59, 130, 246, 0.15); border-color:rgba(59, 130, 246, 0.3); color:#93c5fd;">💰 红利增强 · V2.0</div>
-                <h2 class="st-hero-title">💰 量化红利趋势增强策略</h2>
-                <p class="st-hero-sub">高股息打底 · MA120/MA20双均线 · 自适应低波参数 · 除息修复与托底</p>
+                <div class="st-hero-badge" style="background:rgba(59, 130, 246, 0.15); border-color:rgba(59, 130, 246, 0.3); color:#93c5fd;">&#x1F4B0; 红利增强 · V3.1 · 四状态自适应</div>
+                <h2 class="st-hero-title">&#x1F4B0; 红利趋势增强策略 V3.1</h2>
+                <p class="st-hero-sub">高股息托底 · 四状态自适应参数 · 信号评分系统融合 · BULL/RANGE/BEAR/CRASH智能切换</p>
                 <div class="st-hero-stats">
-                    <div class="st-hero-stat"><span class="st-hs-label">趋势基准</span><span class="st-hs-value st-blue">MA20/120双线</span></div>
+                    <div class="st-hero-stat"><span class="st-hs-label">趋势均线</span><span class="st-hs-value st-blue">MA60（90）自适应</span></div>
                     <div class="st-hero-stat"><span class="st-hs-label">标的池</span><span class="st-hs-value">8只红利ETF</span></div>
-                    <div class="st-hero-stat"><span class="st-hs-label">数据处理</span><span class="st-hs-value st-green">强制前复权</span></div>
-                    <div class="st-hero-stat"><span class="st-hs-label">股息托底</span><span class="st-hs-value st-gold">> 6.0%</span></div>
+                    <div class="st-hero-stat"><span class="st-hs-label">市场状态</span><span class="st-hs-value st-green">实时联动信号评分</span></div>
+                    <div class="st-hero-stat"><span class="st-hs-label">股息托底</span><span class="st-hs-value st-gold">&gt; 6.0%</span></div>
+                </div>
+            </section>
+
+            <!-- ===== 💰 红利策略专属评分器 V3.1 ===== -->
+            <section class="st-section">
+                <h3>💰 ③ 红利策略专属评分器 <span style="font-size:0.72rem; font-weight:400; color:var(--text-muted); margin-left:8px;">六维因子·自适应门槛·红利ETF定制版</span></h3>
+                <div class="glass-panel" style="padding:28px; border-color:rgba(59,130,246,0.2);">
+                    <!-- 实时同步控制栏 -->
+                    <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px; padding:12px 16px; background:rgba(59,130,246,0.06); border:1px solid rgba(59,130,246,0.15); border-radius:10px; flex-wrap:wrap;">
+                        <div style="flex:1; min-width:180px;">
+                            <label style="font-size:0.7rem; color:var(--text-muted); display:block; margin-bottom:4px;">选择评估标的</label>
+                            <select id="div-etf-select" style="width:100%; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:8px 10px; font-family:inherit; outline:none; font-size:0.82rem;" onchange="onDivEtfChange()">
+                                <option value="">— 手动输入（默认）—</option>
+                                <option value="515100.SH">中证红利低波100ETF（515100）</option>
+                                <option value="510880.SH">红利ETF（510880）</option>
+                                <option value="159545.SZ">恒生红利低波ETF（159545）</option>
+                                <option value="512890.SH">红利低波ETF（512890）</option>
+                                <option value="515080.SH">央企红利ETF（515080）</option>
+                                <option value="513530.SH">港股通红利ETF（513530）</option>
+                                <option value="513950.SH">恒生红利ETF（513950）</option>
+                                <option value="159201.SZ">自由现金流ETF（159201）</option>
+                            </select>
+                        </div>
+                        <button id="div-sync-btn" onclick="loadDividendRealtime()" style="background:linear-gradient(135deg,rgba(59,130,246,0.3),rgba(99,102,241,0.2)); border:1px solid rgba(59,130,246,0.4); color:#93c5fd; border-radius:9px; padding:9px 18px; cursor:pointer; font-size:0.82rem; font-weight:700; white-space:nowrap; transition:all 0.2s;" onmouseover="this.style.background='linear-gradient(135deg,rgba(59,130,246,0.5),rgba(99,102,241,0.35))'" onmouseout="this.style.background='linear-gradient(135deg,rgba(59,130,246,0.3),rgba(99,102,241,0.2))'">
+                            ⚡ 实时同步指标
+                        </button>
+                        <div id="div-sync-status" style="font-size:0.72rem; color:var(--text-muted); white-space:nowrap;">
+                            与左上方「市场环境识别」自动联动，或点击按钮获取最新指标
+                        </div>
+                    </div>
+
+                    <!-- ⚡ 实时评分排行榜（加载后展开） -->
+                    <div id="div-leaderboard" style="display:none; margin-bottom:20px;">
+                        <div style="font-size:0.75rem; font-weight:700; color:#60a5fa; margin-bottom:10px; display:flex; align-items:center; gap:6px;">
+                            <span style="width:8px; height:8px; background:#60a5fa; border-radius:50%; display:inline-block;"></span>
+                            实时评分排行榜（按评分降序）
+                        </div>
+                        <div id="div-leaderboard-list" style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px;"></div>
+                    </div>
+
+                    <!-- 6维因子输入 -->
+                    <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:24px;">
+                        <!-- 维度1：市场环境 -->
+                        <div>
+                            <label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:6px;">📡 市场环境（与左上联动）</label>
+                            <select id="div-calc-regime" onchange="calcDividendScore()" style="width:100%; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:9px; font-family:inherit; outline:none;">
+                                <option value="BULL">🟢 BULL 牛市（门槛≥ 55分）</option>
+                                <option value="RANGE" selected>🟡 RANGE 震荡（门槛≥ 65分）</option>
+                                <option value="BEAR">🔴 BEAR 熊市（门槛≥ 75分）</option>
+                                <option value="CRASH">💥 CRASH 熳断（禁止入场）</option>
+                            </select>
+                        </div>
+                        <!-- 维度2： RSI(9) -->
+                        <div>
+                            <label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:6px;">RSI(9) 技术位</label>
+                            <select id="div-calc-rsi" onchange="calcDividendScore()" style="width:100%; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:9px; font-family:inherit; outline:none;">
+                                <option value="20">RSI ≤ 30（极度超卖 +20分）</option>
+                                <option value="15">RSI 30–35（超卖 +15分）</option>
+                                <option value="10" selected>RSI 35–40（偏弱 +10分）</option>
+                                <option value="5">RSI 40–50（中性 +5分）</option>
+                                <option value="0">RSI &gt; 50（偏热 +0分）</option>
+                            </select>
+                        </div>
+                        <!-- 维度3： 乖离率 -->
+                        <div>
+                            <label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:6px;">乖离率（BIAS）</label>
+                            <select id="div-calc-bias" onchange="calcDividendScore()" style="width:100%; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:9px; font-family:inherit; outline:none;">
+                                <option value="20">BIAS ≤ -3.0%（严重偏离 +20分）</option>
+                                <option value="15">BIAS -3.0 ~ -2.0%（明显偏离 +15）</option>
+                                <option value="8" selected>BIAS -2.0 ~ 0%（轻度下方 +8）</option>
+                                <option value="0">BIAS &gt; 0%（偏高 +0分）</option>
+                            </select>
+                        </div>
+                        <!-- 维度4： 股息率估値 -->
+                        <div>
+                            <label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:6px;">💰 股息率估値（TTM）</label>
+                            <select id="div-calc-yield" onchange="calcDividendScore()" style="width:100%; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:9px; font-family:inherit; outline:none;">
+                                <option value="20">TTM &gt; 5.0%（高安全边际 +20分）</option>
+                                <option value="12" selected>TTM 4.0 ~ 5.0%（中等 +12分）</option>
+                                <option value="5">TTM 3.0 ~ 4.0%（偏低 +5分）</option>
+                                <option value="0">TTM &lt; 3.0%（注意风险 +0分）</option>
+                            </select>
+                        </div>
+                        <!-- 维度5： 布林带位置 -->
+                        <div>
+                            <label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:6px;">布林带位置</label>
+                            <select id="div-calc-boll" onchange="calcDividendScore()" style="width:100%; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:9px; font-family:inherit; outline:none;">
+                                <option value="10">触及下轨（极强 +10分）</option>
+                                <option value="6" selected>下轨 ~ 中轨（清醒 +6）</option>
+                                <option value="2">中轨 ~ 上轨（中性 +2）</option>
+                                <option value="0">触及上轨（超买 +0）</option>
+                            </select>
+                        </div>
+                        <!-- 维度6： 波动率过滤 -->
+                        <div>
+                            <label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:6px;">30日波动率</label>
+                            <select id="div-calc-vol" onchange="calcDividendScore()" style="width:100%; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:9px; font-family:inherit; outline:none;">
+                                <option value="10" selected>&lt; 12%（极低波动 +10）</option>
+                                <option value="6">12 ~ 20%（正常 +6）</option>
+                                <option value="0">&gt; 20%（高噪 +0）</option>
+                            </select>
+                        </div>
+                    </div>
+                    <!-- 评分结果卡 -->
+                    <div id="div-calc-result" style="display:flex; align-items:center; gap:24px; padding:20px 24px; background:rgba(0,0,0,0.2); border-radius:12px; border:1px solid rgba(255,255,255,0.06);">
+                        <div style="text-align:center; min-width:90px;">
+                            <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:4px;">红利评分</div>
+                            <div id="div-score-num" style="font-size:2.8rem; font-weight:900; color:#60a5fa; line-height:1;">56</div>
+                            <div style="font-size:0.72rem; color:var(--text-muted);">/ 100</div>
+                        </div>
+                        <div style="flex:1;">
+                            <div id="div-threshold-hint" style="font-size:0.68rem; color:#a78bfa; margin-bottom:6px; font-weight:600;">RANGE模式门槛: 全仓≥80 | 标准≥65 | 半仓≥55</div>
+                            <div style="height:8px; background:rgba(255,255,255,0.06); border-radius:4px; overflow:hidden;">
+                                <div id="div-score-bar" style="height:100%; width:56%; background:linear-gradient(90deg,#3b82f6,#60a5fa); border-radius:4px; transition:width 0.4s ease;"></div>
+                            </div>
+                        </div>
+                        <div id="div-verdict" style="font-size:0.9rem; font-weight:700; min-width:140px; text-align:center; padding:10px 16px; border-radius:8px; border:1px solid rgba(96,165,250,0.3); color:#60a5fa; background:rgba(96,165,250,0.08);">🔵 标准入场</div>
+                        <div>
+                            <div id="div-action" style="font-size:0.82rem; color:var(--text-muted); max-width:220px; line-height:1.6;">红利评分 56 分，达到 RANGE 模式标准入场线。建议建仓单标的基准权重，等候股息率或 RSI 进一步改善时加仓。</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 🔄 V3.1 市场自适应参数面板 -->
+            <section class="st-section">
+                <h3>🔄 市场自适应参数面板 · 四状态实时切换</h3>
+                <div class="glass-panel" style="padding:24px; border-color:rgba(99,102,241,0.2);">
+                    <!-- 状态说明条 -->
+                    <div style="margin-bottom:18px; font-size:0.8rem; color:var(--text-muted); display:flex; align-items:center; gap:8px;">
+                        <span style="color:#a78bfa;">&#x26A1;</span>
+                        参数自动联动上方「📡 市场环境实时识别」模块，CSI300实时识别市场状态，红利策略自动切换最优参数集
+                    </div>
+                    <!-- 四状态对比表 -->
+                    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px;">
+                        <!-- BULL -->
+                        <div id="div-regime-bull" style="border:2px solid rgba(16,185,129,0.3); border-radius:12px; padding:16px; background:rgba(16,185,129,0.05); transition:all 0.3s;">
+                            <div style="font-size:0.85rem; font-weight:700; color:#34d399; margin-bottom:10px;">🟢 BULL 牛市</div>
+                            <div style="font-size:0.7rem; color:var(--text-muted); line-height:1.8;">
+                                MA趋势: <strong style="color:#fff;">60日</strong><br>
+                                RSI买: <strong style="color:#34d399;">≤40</strong> 卖: <strong style="color:#f87171;">≥80</strong><br>
+                                乖离率买: <strong style="color:#34d399;">≤-1.5%</strong><br>
+                                防守线: <strong style="color:#fff;">MA20</strong><br>
+                                <span style="color:#34d399; font-weight:700;">仓位上限: 85%</span><br>
+                                入场门槛: <strong style="color:#fbbf24;">≥55分</strong>
+                            </div>
+                        </div>
+                        <!-- RANGE -->
+                        <div id="div-regime-range" style="border:2px solid rgba(59,130,246,0.4); border-radius:12px; padding:16px; background:rgba(59,130,246,0.1); transition:all 0.3s;">
+                            <div style="font-size:0.85rem; font-weight:700; color:#60a5fa; margin-bottom:10px;">🟡 RANGE 震荡 <span style="font-size:0.65rem; color:#a78bfa;">✔ V3.0最优</span></div>
+                            <div style="font-size:0.7rem; color:var(--text-muted); line-height:1.8;">
+                                MA趋势: <strong style="color:#fff;">60日</strong><br>
+                                RSI买: <strong style="color:#34d399;">≤35</strong> 卖: <strong style="color:#f87171;">≥75</strong><br>
+                                乖离率买: <strong style="color:#34d399;">≤-2.0%</strong><br>
+                                防守线: <strong style="color:#fff;">MA30</strong><br>
+                                <span style="color:#60a5fa; font-weight:700;">仓位上限: 70%</span><br>
+                                入场门槛: <strong style="color:#fbbf24;">≥65分</strong>
+                            </div>
+                        </div>
+                        <!-- BEAR -->
+                        <div id="div-regime-bear" style="border:2px solid rgba(251,191,36,0.3); border-radius:12px; padding:16px; background:rgba(251,191,36,0.04); transition:all 0.3s;">
+                            <div style="font-size:0.85rem; font-weight:700; color:#fbbf24; margin-bottom:10px;">🔴 BEAR 熊市</div>
+                            <div style="font-size:0.7rem; color:var(--text-muted); line-height:1.8;">
+                                MA趋势: <strong style="color:#fff;">90日</strong><br>
+                                RSI买: <strong style="color:#34d399;">≤30</strong> 卖: <strong style="color:#f87171;">≥70</strong><br>
+                                乖离率买: <strong style="color:#34d399;">≤-3.0%</strong><br>
+                                防守线: <strong style="color:#fff;">MA40</strong><br>
+                                <span style="color:#fbbf24; font-weight:700;">仓位上限: 45%</span><br>
+                                入场门槛: <strong style="color:#fbbf24;">≥75分</strong>
+                            </div>
+                        </div>
+                        <!-- CRASH -->
+                        <div id="div-regime-crash" style="border:2px solid rgba(239,68,68,0.3); border-radius:12px; padding:16px; background:rgba(239,68,68,0.04); transition:all 0.3s;">
+                            <div style="font-size:0.85rem; font-weight:700; color:#f87171; margin-bottom:10px;">💥 CRASH 熳断</div>
+                            <div style="font-size:0.7rem; color:var(--text-muted); line-height:1.8;">
+                                禁止任何新建仓<br>
+                                高股息已持仓&gt;6%：<strong style="color:#34d399;">不强制清仓</strong><br>
+                                低股息已持仓：允许止损<br>
+                                <span style="color:#f87171; font-weight:700;">仓位上限: 0%</span><br>
+                                入场门槛: <strong style="color:#f87171;">禁止</strong>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 当前状态提示条 -->
+                    <div style="padding:10px 16px; background:rgba(99,102,241,0.06); border:1px solid rgba(99,102,241,0.2); border-radius:8px; font-size:0.78rem; color:var(--text-muted);">
+                        💡 切换公式：先在「🎯 信号评分系统」 tab 重新识别市场状态 &rarr; 返回此页查看对应参数集 &rarr; 调用策略执行 API 时配置 <code style="color:#a78bfa;">regime=BULL/RANGE/BEAR/CRASH</code>
+                    </div>
                 </div>
             </section>
 
@@ -304,156 +571,1387 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                 </div>
             </section>
 
-            </div><!-- /st-dividend-trend -->
 
-            <!-- ==================== 行业动量轮动策略 ==================== -->
-            <div class="st-report" id="st-momentum">
+            <!-- 自选扩池管理器 -->
+            <section class="st-section" id="custom-pool-dividend-trend">
+                <h3>➕ 自选扩池 · 个性化追加标的（ETF 或个股）</h3>
+                <div class="glass-panel custom-pool-panel" style="padding:24px;" data-strategy="dividend-trend">
 
-            <!-- Hero -->
-            <section class="st-hero glass-panel" style="border-color:rgba(245, 158, 11, 0.25); background:linear-gradient(135deg, rgba(245, 158, 11, 0.06), rgba(20, 24, 34, 0.4), rgba(249, 115, 22, 0.05));">
-                <div class="st-hero-badge" style="background:rgba(245, 158, 11, 0.15); border-color:rgba(245, 158, 11, 0.3); color:#fcd34d;">🚀 行业动量 · V1.0</div>
-                <h2 class="st-hero-title" style="background:linear-gradient(110deg, #ffffff, #fcd34d, #fb923c); -webkit-background-clip:text; background-clip:text;">🚀 行业动量轮动 + 三层风控策略</h2>
-                <p class="st-hero-sub">20日动量排名 · 牛熊自适应参数 · 三层市场过滤 · 分散化约束</p>
-                <div class="st-hero-stats">
-                    <div class="st-hero-stat"><span class="st-hs-label">标的池</span><span class="st-hs-value st-gold">20只ETF</span></div>
-                    <div class="st-hero-stat"><span class="st-hs-label">回看期</span><span class="st-hs-value">20交易日</span></div>
-                    <div class="st-hero-stat"><span class="st-hs-label">Top N</span><span class="st-hs-value st-green">3~5只</span></div>
-                    <div class="st-hero-stat"><span class="st-hs-label">仓位上限</span><span class="st-hs-value st-blue">自适应</span></div>
-                </div>
-            </section>
-
-            <!-- 标的池 -->
-            <section class="st-section">
-                <h3>🎯 标的池构成（20只行业ETF · 4大板块）</h3>
-                <div class="st-pool-grid" style="grid-template-columns: repeat(2, 1fr);">
-                    <div class="st-pool-card glass-panel">
-                        <h4>科技 / AI（6只）</h4>
-                        <ul class="st-etf-list">
-                            <li class="st-etf-item"><span class="st-etf-code">512480</span><span class="st-etf-name">半导体ETF</span><span class="st-etf-cap">≤25%</span></li>
-                            <li class="st-etf-item"><span class="st-etf-code">588200</span><span class="st-etf-name">科创芯片ETF</span><span class="st-etf-cap">≤20%</span></li>
-                            <li class="st-etf-item"><span class="st-etf-code">159995</span><span class="st-etf-name">芯片ETF</span><span class="st-etf-cap">≤20%</span></li>
-                            <li class="st-etf-item"><span class="st-etf-code">515070</span><span class="st-etf-name">人工智能AIETF</span><span class="st-etf-cap">≤20%</span></li>
-                            <li class="st-etf-item"><span class="st-etf-code">159819</span><span class="st-etf-name">人工智能ETF易方达</span><span class="st-etf-cap">≤20%</span></li>
-                            <li class="st-etf-item"><span class="st-etf-code">515880</span><span class="st-etf-name">通信ETF国泰</span><span class="st-etf-cap">≤20%</span></li>
-                        </ul>
-                    </div>
-                    <div class="st-pool-card glass-panel">
-                        <h4>新能源 / 周期（5只）</h4>
-                        <ul class="st-etf-list">
-                            <li class="st-etf-item"><span class="st-etf-code">516160</span><span class="st-etf-name">新能源ETF</span><span class="st-etf-cap">≤22%</span></li>
-                            <li class="st-etf-item"><span class="st-etf-code">515790</span><span class="st-etf-name">光伏ETF</span><span class="st-etf-cap">≤22%</span></li>
-                            <li class="st-etf-item"><span class="st-etf-code">512400</span><span class="st-etf-name">有色金属ETF</span><span class="st-etf-cap">≤22%</span></li>
-                            <li class="st-etf-item"><span class="st-etf-code">159870</span><span class="st-etf-name">化工ETF</span><span class="st-etf-cap">≤18%</span></li>
-                            <li class="st-etf-item"><span class="st-etf-code">562550</span><span class="st-etf-name">绿电ETF</span><span class="st-etf-cap">≤18%</span></li>
-                        </ul>
-                    </div>
-                    <div class="st-pool-card glass-panel">
-                        <h4>军工 / 制造 / 金融（5只）</h4>
-                        <ul class="st-etf-list">
-                            <li class="st-etf-item"><span class="st-etf-code">512560</span><span class="st-etf-name">军工ETF</span><span class="st-etf-cap">≤22%</span></li>
-                            <li class="st-etf-item"><span class="st-etf-code">159218</span><span class="st-etf-name">卫星ETF招商</span><span class="st-etf-cap">≤18%</span></li>
-                            <li class="st-etf-item"><span class="st-etf-code">562500</span><span class="st-etf-name">机器人ETF</span><span class="st-etf-cap">≤20%</span></li>
-                            <li class="st-etf-item"><span class="st-etf-code">159326</span><span class="st-etf-name">电网设备ETF</span><span class="st-etf-cap">≤18%</span></li>
-                            <li class="st-etf-item"><span class="st-etf-code">159851</span><span class="st-etf-name">金融科技ETF</span><span class="st-etf-cap">≤18%</span></li>
-                        </ul>
-                    </div>
-                    <div class="st-pool-card glass-panel">
-                        <h4>港股 / 消费 / 成长（4只）</h4>
-                        <ul class="st-etf-list">
-                            <li class="st-etf-item"><span class="st-etf-code">513130</span><span class="st-etf-name">恒生科技ETF</span><span class="st-etf-cap">≤22%</span></li>
-                            <li class="st-etf-item"><span class="st-etf-code">513120</span><span class="st-etf-name">港股创新药ETF</span><span class="st-etf-cap">≤18%</span></li>
-                            <li class="st-etf-item"><span class="st-etf-code">159869</span><span class="st-etf-name">游戏ETF</span><span class="st-etf-cap">≤18%</span></li>
-                            <li class="st-etf-item"><span class="st-etf-code">588220</span><span class="st-etf-name">科创100ETF鹏华</span><span class="st-etf-cap">≤20%</span></li>
-                        </ul>
-                    </div>
-                </div>
-            </section>
-
-            <!-- 运行流程 -->
-            <section class="st-section">
-                <h3>🔄 策略运行逻辑（6步）</h3>
-                <div class="glass-panel" style="padding:28px;">
-                    <div class="st-flow">
-                        <div class="st-flow-step" style="border-color:rgba(245,158,11,0.3); color:#fcd34d;"><span class="step-num" style="background:rgba(245,158,11,0.2); color:#f59e0b;">1</span>拉取数据</div><span class="st-flow-arrow">→</span>
-                        <div class="st-flow-step" style="border-color:rgba(245,158,11,0.3); color:#fcd34d;"><span class="step-num" style="background:rgba(245,158,11,0.2); color:#f59e0b;">2</span>环境判断</div><span class="st-flow-arrow">→</span>
-                        <div class="st-flow-step" style="border-color:rgba(245,158,11,0.3); color:#fcd34d;"><span class="step-num" style="background:rgba(245,158,11,0.2); color:#f59e0b;">3</span>计算动量</div><span class="st-flow-arrow">→</span>
-                        <div class="st-flow-step" style="border-color:rgba(245,158,11,0.3); color:#fcd34d;"><span class="step-num" style="background:rgba(245,158,11,0.2); color:#f59e0b;">4</span>排名过滤</div><span class="st-flow-arrow">→</span>
-                        <div class="st-flow-step" style="border-color:rgba(245,158,11,0.3); color:#fcd34d;"><span class="step-num" style="background:rgba(245,158,11,0.2); color:#f59e0b;">5</span>分散约束</div><span class="st-flow-arrow">→</span>
-                        <div class="st-flow-step" style="border-color:rgba(245,158,11,0.3); color:#fcd34d;"><span class="step-num" style="background:rgba(245,158,11,0.2); color:#f59e0b;">6</span>调仓执行</div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- 三层风控 + 自适应参数 -->
-            <section class="st-section">
-                <div class="st-two-col">
-                    <div class="glass-panel" style="padding:28px;">
-                        <h4 style="font-size:1rem;font-weight:700;color:#fff;margin-bottom:18px;">🛡️ 三层市场环境过滤</h4>
-                        <div class="st-risk-list">
-                            <div class="st-risk-item">
-                                <span class="st-risk-icon">📈</span>
-                                <div><strong>L1 趋势过滤</strong><p>沪深300 vs 120日均线。跌破均线 → 仓位上限降至50%</p></div>
+                    <!-- 输入行 -->
+                    <div style="display:grid; grid-template-columns:1fr auto auto auto; gap:12px; align-items:end; margin-bottom:20px;">
+                        <div>
+                            <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:6px;">股票/ETF 代码（Tushare 格式 · 如 600036.SH 或 512480.SH）</label>
+                            <input id="custom-input-dividend-trend" type="text" maxlength="12"
+                                placeholder="输入代码后按 Enter 或点击查询..."
+                                style="width:100%; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:10px 14px; font-family:inherit; outline:none; font-size:0.9rem; box-sizing:border-box;"
+                                onkeydown="if(event.key==='Enter') lookupAndAdd('dividend-trend')" />
+                        </div>
+                        <div>
+                            <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:6px;">识别结果</label>
+                            <div id="custom-name-dividend-trend"
+                                style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:10px 14px; font-size:0.85rem; color:var(--text-muted); min-width:140px; height:40px; line-height:20px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                — 等待查询 —
                             </div>
-                            <div class="st-risk-item">
-                                <span class="st-risk-icon">😱</span>
-                                <div><strong>L2 波动率过滤</strong><p>VIX恐慌指数 ≥ 30 → 仓位上限降至30%</p></div>
+                        </div>
+                        <div>
+                            <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:6px;">仓位上限</label>
+                            <select id="custom-cap-dividend-trend"
+                                style="background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:10px 12px; font-family:inherit; outline:none; height:40px;">
+                                <option value="5">5%</option><option value="8" selected>8% (个股推荐)</option><option value="10">10%</option><option value="15">15% (ETF)</option>
+                            </select>
+                        </div>
+                        <div style="display:flex; gap:8px;">
+                            <button onclick="lookupCustomName('dividend-trend')"
+                                style="background:rgba(99,102,241,0.15); border:1px solid rgba(99,102,241,0.3); color:#a78bfa; border-radius:8px; padding:10px 14px; cursor:pointer; font-size:0.82rem; white-space:nowrap; height:40px;">
+                                🔍 查询
+                            </button>
+                            <button onclick="lookupAndAdd('dividend-trend')"
+                                style="background:linear-gradient(135deg,rgba(16,185,129,0.25),rgba(5,150,105,0.15)); border:1px solid rgba(16,185,129,0.35); color:#10b981; border-radius:8px; padding:10px 16px; cursor:pointer; font-size:0.82rem; font-weight:700; white-space:nowrap; height:40px;">
+                                + 追加
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 已追加标的 chip 区 -->
+                    <div id="custom-chips-dividend-trend" style="display:flex; flex-wrap:wrap; gap:8px; min-height:48px; margin-bottom:16px; padding:12px; background:rgba(255,255,255,0.02); border:1px dashed rgba(255,255,255,0.08); border-radius:10px;">
+                        <span class="pool-empty-hint" style="color:var(--text-muted); font-size:0.8rem; align-self:center;">暂无自选标的 · 请在上方输入代码并追加</span>
+                    </div>
+
+                    <!-- 风险提示 + 入池标准 -->
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                        <div style="background:rgba(251,191,36,0.05); border:1px solid rgba(251,191,36,0.2); border-radius:10px; padding:14px;">
+                            <div style="font-size:0.8rem; font-weight:700; color:#fbbf24; margin-bottom:8px;">⚠️ 个股特异风险提示</div>
+                            <ul style="font-size:0.75rem; color:var(--text-muted); padding-left:16px; line-height:1.8; margin:0;">
+                                <li>个股波动率显著高于 ETF，仓位上限已受约束</li>
+                                <li>策略参数基于 ETF 历史优化，个股效果需自行评估</li>
+                                <li>自选标的仅参与<strong style="color:#fff;">实时执行评分</strong>，不纳入历史回测</li>
+                                <li>V1 版本不进行流动性自动验证，请自行确认日均成交额</li>
+                            </ul>
+                        </div>
+                        <div style="background:rgba(16,185,129,0.04); border:1px solid rgba(16,185,129,0.15); border-radius:10px; padding:14px;">
+                            <div style="font-size:0.8rem; font-weight:700; color:#10b981; margin-bottom:8px;">✅ 红利策略个股入池建议标准</div>
+                            <ul style="font-size:0.75rem; color:var(--text-muted); padding-left:16px; line-height:1.8; margin:0;">
+                                <li>TTM 股息率大于3.5%（核心硬条件）</li>
+                                <li>连续分红年数大于3年，负债率不超过70%</li>
+                                <li>流通市值大于100亿，ROE大于8%</li>
+                                <li>股息率大于6%时享受卖出豁免特权</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- 统计行 -->
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.06);">
+                        <span id="custom-count-dividend-trend" style="font-size:0.78rem; color:var(--text-muted);">已追加：0 只 / 上限 8 只</span>
+                        <button onclick="clearCustomPool('dividend-trend')"
+                            style="background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); color:#f87171; border-radius:6px; padding:5px 12px; cursor:pointer; font-size:0.75rem;">
+                            清空全部
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===== V3.0 回测优化结果面板 ===== -->
+            <section class="st-section">
+                <h3>🔬 参数优化回测结果 <span style="font-size:0.72rem; font-weight:400; color:var(--text-muted); margin-left:8px;">2022-01-01 → 2026-03-27 · 144种参数组合网格搜索</span></h3>
+
+                <!-- 最优参数卡片 -->
+                <div class="glass-panel" style="padding:24px; margin-bottom:20px; border-color:rgba(59,130,246,0.2);">
+                    <div style="display:flex; align-items:center; gap:12px; margin-bottom:20px;">
+                        <span style="font-size:1.2rem;">🏆</span>
+                        <div>
+                            <div style="font-size:0.9rem; font-weight:600; color:#60a5fa;">V3.0 最优参数组合</div>
+                            <div style="font-size:0.72rem; color:var(--text-muted);">训练期2022-2023 + 样本外验证2024-2026 综合最优</div>
+                        </div>
+                    </div>
+                    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:18px;">
+                        <div style="background:rgba(59,130,246,0.08); border:1px solid rgba(59,130,246,0.2); border-radius:10px; padding:12px; text-align:center;">
+                            <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:4px;">宏观趋势均线</div>
+                            <div style="font-size:1.4rem; font-weight:700; color:#60a5fa;">MA <span style="color:#fff;">60</span></div>
+                            <div style="font-size:0.65rem; color:var(--text-muted); margin-top:2px;">原V2.0: MA120</div>
+                        </div>
+                        <div style="background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.2); border-radius:10px; padding:12px; text-align:center;">
+                            <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:4px;">RSI(9) 买/卖阈值</div>
+                            <div style="font-size:1.1rem; font-weight:700; color:#34d399;">≤35 / ≥75</div>
+                            <div style="font-size:0.65rem; color:var(--text-muted); margin-top:2px;">原V2.0: ≤40 / ≥75</div>
+                        </div>
+                        <div style="background:rgba(251,191,36,0.08); border:1px solid rgba(251,191,36,0.2); border-radius:10px; padding:12px; text-align:center;">
+                            <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:4px;">乖离率 买/卖阈值</div>
+                            <div style="font-size:1.1rem; font-weight:700; color:#fbbf24;">≤-2.0 / ≥5.5</div>
+                            <div style="font-size:0.65rem; color:var(--text-muted); margin-top:2px;">原V2.0: ≤-3.5 / ≥6.0</div>
+                        </div>
+                        <div style="background:rgba(139,92,246,0.08); border:1px solid rgba(139,92,246,0.2); border-radius:10px; padding:12px; text-align:center;">
+                            <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:4px;">防守均线</div>
+                            <div style="font-size:1.4rem; font-weight:700; color:#a78bfa;">MA <span style="color:#fff;">30</span></div>
+                            <div style="font-size:0.65rem; color:var(--text-muted); margin-top:2px;">原V2.0: MA20</div>
+                        </div>
+                    </div>
+
+                    <!-- 训练 vs 验证 绩效 -->
+                    <div style="display:grid; grid-template-columns:1fr 1px 1fr; gap:0; margin-top:8px;">
+                        <div style="padding:0 16px 0 0;">
+                            <div style="font-size:0.75rem; font-weight:600; color:#60a5fa; margin-bottom:12px; display:flex; align-items:center; gap:6px;">
+                                <span style="width:8px; height:8px; background:#60a5fa; border-radius:50%; display:inline-block;"></span>
+                                训练期 2022–2023
                             </div>
-                            <div class="st-risk-item">
-                                <span class="st-risk-icon">🚨</span>
-                                <div><strong>L3 极端风险</strong><p>全池ETF有30%+跌幅超5% → 空仓避险</p></div>
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                                <div style="background:rgba(255,255,255,0.03); border-radius:6px; padding:8px;">
+                                    <div style="font-size:0.65rem; color:var(--text-muted);">年化Alpha</div>
+                                    <div style="font-size:1rem; font-weight:700; color:#34d399;">+17.3%</div>
+                                </div>
+                                <div style="background:rgba(255,255,255,0.03); border-radius:6px; padding:8px;">
+                                    <div style="font-size:0.65rem; color:var(--text-muted);">最大回撤</div>
+                                    <div style="font-size:1rem; font-weight:700; color:#a78bfa;">-0.2%</div>
+                                </div>
+                                <div style="background:rgba(255,255,255,0.03); border-radius:6px; padding:8px;">
+                                    <div style="font-size:0.65rem; color:var(--text-muted);">Calmar比率</div>
+                                    <div style="font-size:1rem; font-weight:700; color:#60a5fa;">2.20</div>
+                                </div>
+                                <div style="background:rgba(255,255,255,0.03); border-radius:6px; padding:8px;">
+                                    <div style="font-size:0.65rem; color:var(--text-muted);">综合评分</div>
+                                    <div style="font-size:1rem; font-weight:700; color:#fbbf24;">0.407</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div style="width:1px; background:rgba(255,255,255,0.08);"></div>
+                        <div style="padding:0 0 0 16px;">
+                            <div style="font-size:0.75rem; font-weight:600; color:#a78bfa; margin-bottom:12px; display:flex; align-items:center; gap:6px;">
+                                <span style="width:8px; height:8px; background:#a78bfa; border-radius:50%; display:inline-block;"></span>
+                                验证期 2024–2026 <span style="font-size:0.65rem; color:var(--text-muted); font-weight:400;">(样本外)</span>
+                            </div>
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                                <div style="background:rgba(255,255,255,0.03); border-radius:6px; padding:8px;">
+                                    <div style="font-size:0.65rem; color:var(--text-muted);">年化Alpha</div>
+                                    <div style="font-size:1rem; font-weight:700; color:#f87171;">-12.6%</div>
+                                </div>
+                                <div style="background:rgba(255,255,255,0.03); border-radius:6px; padding:8px;">
+                                    <div style="font-size:0.65rem; color:var(--text-muted);">最大回撤</div>
+                                    <div style="font-size:1rem; font-weight:700; color:#a78bfa;">-0.4%</div>
+                                </div>
+                                <div style="background:rgba(255,255,255,0.03); border-radius:6px; padding:8px;">
+                                    <div style="font-size:0.65rem; color:var(--text-muted);">Calmar比率</div>
+                                    <div style="font-size:1rem; font-weight:700; color:#60a5fa;">1.06</div>
+                                </div>
+                                <div style="background:rgba(255,255,255,0.03); border-radius:6px; padding:8px;">
+                                    <div style="font-size:0.65rem; color:var(--text-muted);">综合评分</div>
+                                    <div style="font-size:1rem; font-weight:700; color:#fbbf24;">0.270</div>
+                                </div>
                             </div>
                         </div>
                     </div>
-                    <div class="glass-panel" style="padding:28px;">
-                        <h4 style="font-size:1rem;font-weight:700;color:#fff;margin-bottom:18px;">⚙️ 牛熊自适应参数</h4>
-                        <table class="st-table">
-                            <thead><tr><th>状态</th><th>Top N</th><th>动量门槛</th><th>仓位上限</th></tr></thead>
-                            <tbody>
-                                <tr><td style="color:#10b981;font-weight:700">🟢 牛市</td><td>5只</td><td>>0%</td><td style="color:#10b981">85%</td></tr>
-                                <tr><td style="color:#fbbf24;font-weight:700">🟡 震荡</td><td>5只</td><td>>2%</td><td style="color:#fbbf24">65%</td></tr>
-                                <tr><td style="color:#ef4444;font-weight:700">🔴 熊市</td><td>3只</td><td>>5%</td><td style="color:#ef4444">40%</td></tr>
-                            </tbody>
-                        </table>
-                        <div style="margin-top:16px;">
-                            <h4 style="font-size:0.88rem;font-weight:700;color:#fff;margin-bottom:10px;">📊 分散化约束</h4>
-                            <ul style="color:var(--text-muted);font-size:0.82rem;line-height:1.8;padding-left:18px;">
-                                <li>单只 ≤ <strong style="color:#fbbf24">30%</strong>（熊市≤20%）</li>
-                                <li>同行业合计 ≤ <strong style="color:#fbbf24">40%</strong></li>
-                                <li>最少同时持有 <strong style="color:#10b981">3只</strong></li>
-                                <li>单只止损 <strong style="color:#ef4444">-8%</strong></li>
+                </div>
+
+                <!-- 策略对比表格 -->
+                <div class="glass-panel" style="padding:20px;">
+                    <div style="font-size:0.82rem; font-weight:600; margin-bottom:14px; color:var(--text-primary);">📊 全周期绩效对比（2022-2026）</div>
+                    <table style="width:100%; border-collapse:collapse; font-size:0.78rem;">
+                        <thead>
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.08);">
+                                <th style="padding:8px 12px; text-align:left; color:var(--text-muted); font-weight:500;">指标</th>
+                                <th style="padding:8px 12px; text-align:center; color:#60a5fa; font-weight:600;">V3.0最优参数</th>
+                                <th style="padding:8px 12px; text-align:center; color:var(--text-muted); font-weight:500;">V2.0默认参数</th>
+                                <th style="padding:8px 12px; text-align:center; color:var(--text-muted); font-weight:500;">沪深300ETF基准</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+                                <td style="padding:8px 12px; color:var(--text-muted);">年化收益率</td>
+                                <td style="padding:8px 12px; text-align:center; color:#34d399; font-weight:600;">+0.4%</td>
+                                <td style="padding:8px 12px; text-align:center; color:#f87171;">-1.1%</td>
+                                <td style="padding:8px 12px; text-align:center; color:#f87171;">-2.6%</td>
+                            </tr>
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+                                <td style="padding:8px 12px; color:var(--text-muted);">年化超额Alpha</td>
+                                <td style="padding:8px 12px; text-align:center; color:#34d399; font-weight:600;">+3.0%</td>
+                                <td style="padding:8px 12px; text-align:center; color:#34d399;">+1.5%</td>
+                                <td style="padding:8px 12px; text-align:center; color:var(--text-muted);">—</td>
+                            </tr>
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+                                <td style="padding:8px 12px; color:var(--text-muted);">最大回撤</td>
+                                <td style="padding:8px 12px; text-align:center; color:#34d399; font-weight:600;">-0.4%</td>
+                                <td style="padding:8px 12px; text-align:center; color:#fbbf24;">-5.1%</td>
+                                <td style="padding:8px 12px; text-align:center; color:#f87171;">约-35%</td>
+                            </tr>
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+                                <td style="padding:8px 12px; color:var(--text-muted);">Calmar比率</td>
+                                <td style="padding:8px 12px; text-align:center; color:#60a5fa; font-weight:600;">0.985</td>
+                                <td style="padding:8px 12px; text-align:center; color:#f87171;">-0.215</td>
+                                <td style="padding:8px 12px; text-align:center; color:var(--text-muted);">约0.1</td>
+                            </tr>
+                            <tr>
+                                <td style="padding:8px 12px; color:var(--text-muted);">信息比率 IR</td>
+                                <td style="padding:8px 12px; text-align:center; color:#60a5fa; font-weight:600;">0.077</td>
+                                <td style="padding:8px 12px; text-align:center; color:var(--text-muted);">-0.006</td>
+                                <td style="padding:8px 12px; text-align:center; color:var(--text-muted);">—</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <!-- 科学声明 -->
+                    <div style="margin-top:14px; padding:10px 14px; background:rgba(251,191,36,0.06); border:1px solid rgba(251,191,36,0.15); border-radius:8px;">
+                        <div style="font-size:0.7rem; color:#fbbf24; font-weight:600; margin-bottom:4px;">⚠️ 策略特性说明</div>
+                        <div style="font-size:0.68rem; color:var(--text-muted); line-height:1.6;">
+                            本策略2022-2026年整体处于低回报区间（最大回撤极小≈空仓），核心Alpha来自<strong style="color:#fbbf24;">保护性避险能力</strong>——在基准大跌时保持空仓，避免深度回撤。
+                            红利低波ETF适合作为组合的防御性底仓，而非追求高绝对收益的进攻性工具。建议半年重新运行参数优化以适应市场环境变化。
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===== V3.1 分状态验证结果面板 ===== -->
+            <section class="st-section">
+                <h3>🧪 V3.1 分状态参数验证 <span style="font-size:0.72rem; font-weight:400; color:var(--text-muted); margin-left:8px;">自适应参数 vs 统一RANGE参数 · 4段历史市场窗口</span></h3>
+
+                <!-- 验证结论摘要 -->
+                <div class="glass-panel" style="padding:20px; margin-bottom:16px; border-color:rgba(251,191,36,0.25); background:linear-gradient(135deg,rgba(251,191,36,0.05),rgba(20,24,34,0.4));">
+                    <div style="display:flex; align-items:flex-start; gap:16px;">
+                        <span style="font-size:2rem; flex-shrink:0;">🔬</span>
+                        <div>
+                            <div style="font-size:0.9rem; font-weight:700; color:#fbbf24; margin-bottom:6px;">核心发现：红利策略的Alpha来源是防守性，而非参数激进性</div>
+                            <div style="font-size:0.78rem; color:var(--text-muted); line-height:1.7;">
+                                对2021-2026年内4段不同市场状态进行独立验证：<strong style="color:#fff;">BEAR期（2022年）超额Alpha高达+29%</strong>——来自熊市中主动空仓规避风险，而非BEAR参数的"激进"调整。
+                                BULL/RANGE两套参数在对应区间差异极小（&lt;1.5%），说明红利ETF的特性决定了其价值在于低波动托底，而非趋势追涨。
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 四段验证结果卡片 -->
+                <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:16px; margin-bottom:16px;">
+
+                    <!-- BEAR 2022 -->
+                    <div class="glass-panel" style="padding:18px; border-color:rgba(239,68,68,0.25);">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+                            <span style="width:10px; height:10px; background:#ef4444; border-radius:50%; flex-shrink:0;"></span>
+                            <span style="font-size:0.82rem; font-weight:700; color:#f87171;">BEAR 熊市</span>
+                            <span style="font-size:0.7rem; color:var(--text-muted);">2022-01 ~ 2022-10</span>
+                            <span style="margin-left:auto; font-size:0.68rem; color:#fbbf24; background:rgba(251,191,36,0.1); padding:2px 8px; border-radius:20px;">▼ 差异 -1.3%</span>
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:12px;">
+                            <div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:10px; text-align:center;">
+                                <div style="font-size:0.62rem; color:var(--text-muted); margin-bottom:3px;">区间超额（BEAR参数）</div>
+                                <div style="font-size:1rem; font-weight:700; color:#34d399;">+28.0%</div>
+                            </div>
+                            <div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:10px; text-align:center;">
+                                <div style="font-size:0.62rem; color:var(--text-muted); margin-bottom:3px;">区间超额（RANGE参数）</div>
+                                <div style="font-size:1rem; font-weight:700; color:#34d399;">+29.3%</div>
+                            </div>
+                            <div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:10px; text-align:center;">
+                                <div style="font-size:0.62rem; color:var(--text-muted); margin-bottom:3px;">基准（CSI300）</div>
+                                <div style="font-size:1rem; font-weight:700; color:#f87171;">-28.6%</div>
+                            </div>
+                        </div>
+                        <div style="font-size:0.72rem; color:var(--text-muted); line-height:1.6; padding:8px 10px; background:rgba(255,255,255,0.02); border-radius:6px;">
+                            RANGE参数在熊市微弱胜出（差异仅1.3%）。核心原因：MA60比MA90更灵敏，在熊市初期更快清仓，略微提升了超额。
+                        </div>
+                    </div>
+
+                    <!-- RANGE 2022末-2024 -->
+                    <div class="glass-panel" style="padding:18px; border-color:rgba(251,191,36,0.2);">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+                            <span style="width:10px; height:10px; background:#f59e0b; border-radius:50%; flex-shrink:0;"></span>
+                            <span style="font-size:0.82rem; font-weight:700; color:#fbbf24;">RANGE 震荡（反弹期）</span>
+                            <span style="font-size:0.7rem; color:var(--text-muted);">2022-11 ~ 2024-08</span>
+                            <span style="margin-left:auto; font-size:0.68rem; color:#10b981; background:rgba(16,185,129,0.1); padding:2px 8px; border-radius:20px;">= 完全一致</span>
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:12px;">
+                            <div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:10px; text-align:center;">
+                                <div style="font-size:0.62rem; color:var(--text-muted); margin-bottom:3px;">区间总收益（两套）</div>
+                                <div style="font-size:1rem; font-weight:700; color:#34d399;">+1.3%</div>
+                            </div>
+                            <div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:10px; text-align:center;">
+                                <div style="font-size:0.62rem; color:var(--text-muted); margin-bottom:3px;">区间超额（两套）</div>
+                                <div style="font-size:1rem; font-weight:700; color:#fbbf24;">+9.7%</div>
+                            </div>
+                            <div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:10px; text-align:center;">
+                                <div style="font-size:0.62rem; color:var(--text-muted); margin-bottom:3px;">基准（CSI300）</div>
+                                <div style="font-size:1rem; font-weight:700; color:#f87171;">-8.4%</div>
+                            </div>
+                        </div>
+                        <div style="font-size:0.72rem; color:var(--text-muted); line-height:1.6; padding:8px 10px; background:rgba(255,255,255,0.02); border-radius:6px;">
+                            RANGE参数完全相同时，结果完全一致。震荡期红利ETF提供了+9.7%超额，策略有效性验证通过。
+                        </div>
+                    </div>
+
+                    <!-- BULL 924行情 -->
+                    <div class="glass-panel" style="padding:18px; border-color:rgba(16,185,129,0.2);">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+                            <span style="width:10px; height:10px; background:#10b981; border-radius:50%; flex-shrink:0;"></span>
+                            <span style="font-size:0.82rem; font-weight:700; color:#34d399;">BULL 牛市</span>
+                            <span style="font-size:0.7rem; color:var(--text-muted);">2024-09 ~ 2024-12</span>
+                            <span style="margin-left:auto; font-size:0.68rem; color:#fbbf24; background:rgba(251,191,36,0.1); padding:2px 8px; border-radius:20px;">▼ 差异 -0.4%</span>
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:12px;">
+                            <div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:10px; text-align:center;">
+                                <div style="font-size:0.62rem; color:var(--text-muted); margin-bottom:3px;">区间超额（BULL参数）</div>
+                                <div style="font-size:1rem; font-weight:700; color:#f87171;">-20.6%</div>
+                            </div>
+                            <div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:10px; text-align:center;">
+                                <div style="font-size:0.62rem; color:var(--text-muted); margin-bottom:3px;">区间超额（RANGE参数）</div>
+                                <div style="font-size:1rem; font-weight:700; color:#f87171;">-20.2%</div>
+                            </div>
+                            <div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:10px; text-align:center;">
+                                <div style="font-size:0.62rem; color:var(--text-muted); margin-bottom:3px;">基准（CSI300）</div>
+                                <div style="font-size:1rem; font-weight:700; color:#34d399;">+20.7%</div>
+                            </div>
+                        </div>
+                        <div style="font-size:0.72rem; color:var(--text-muted); line-height:1.6; padding:8px 10px; background:rgba(255,255,255,0.02); border-radius:6px;">
+                            牛市期红利ETF天然跑不赢成长型基准（这是品类特性，不是策略缺陷）。BULL/RANGE参数差异不足0.4%——BULL参数设计已在回撤保护上略有改善（-0.3%）。
+                        </div>
+                    </div>
+
+                    <!-- RANGE 2025 -->
+                    <div class="glass-panel" style="padding:18px; border-color:rgba(99,102,241,0.2);">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+                            <span style="width:10px; height:10px; background:#6366f1; border-radius:50%; flex-shrink:0;"></span>
+                            <span style="font-size:0.82rem; font-weight:700; color:#a78bfa;">RANGE 震荡（2025）</span>
+                            <span style="font-size:0.7rem; color:var(--text-muted);">2025-01 ~ 2026-03</span>
+                            <span style="margin-left:auto; font-size:0.68rem; color:#10b981; background:rgba(16,185,129,0.1); padding:2px 8px; border-radius:20px;">= 完全一致</span>
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:12px;">
+                            <div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:10px; text-align:center;">
+                                <div style="font-size:0.62rem; color:var(--text-muted); margin-bottom:3px;">区间总收益（两套）</div>
+                                <div style="font-size:1rem; font-weight:700; color:#f87171;">-0.4%</div>
+                            </div>
+                            <div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:10px; text-align:center;">
+                                <div style="font-size:0.62rem; color:var(--text-muted); margin-bottom:3px;">区间超额（两套）</div>
+                                <div style="font-size:1rem; font-weight:700; color:#f87171;">-15.2%</div>
+                            </div>
+                            <div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:10px; text-align:center;">
+                                <div style="font-size:0.62rem; color:var(--text-muted); margin-bottom:3px;">基准（CSI300）</div>
+                                <div style="font-size:1rem; font-weight:700; color:#34d399;">+14.8%</div>
+                            </div>
+                        </div>
+                        <div style="font-size:0.72rem; color:var(--text-muted); line-height:1.6; padding:8px 10px; background:rgba(255,255,255,0.02); border-radius:6px;">
+                            2025年沪深300强势反弹，红利低波ETF策略在持续低仓位下跑输。主动空仓恰恰是策略防守性的体现——但在牛市中会拖累相对表现。
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 策略定位声明 -->
+                <div style="background:rgba(59,130,246,0.06); border:1px solid rgba(59,130,246,0.2); border-radius:10px; padding:16px 20px;">
+                    <div style="font-size:0.82rem; font-weight:700; color:#60a5fa; margin-bottom:8px;">📌 V3.1 策略定位校准（基于实证验证）</div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                        <div>
+                            <div style="font-size:0.75rem; font-weight:600; color:#34d399; margin-bottom:6px;">✅ 策略擅长的场景</div>
+                            <ul style="font-size:0.72rem; color:var(--text-muted); padding-left:14px; line-height:1.9; margin:0;">
+                                <li>BEAR/熊市：空仓规避，超额回报来自防守（+28%以上）</li>
+                                <li>RANGE/震荡：低吸高卖，提供稳定Alpha（+9.7%）</li>
+                                <li>高股息托底：TTM>6%持仓保留，提供利息安全垫</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <div style="font-size:0.75rem; font-weight:600; color:#f87171; margin-bottom:6px;">⚠️ 策略不适合的场景</div>
+                            <ul style="font-size:0.72rem; color:var(--text-muted); padding-left:14px; line-height:1.9; margin:0;">
+                                <li>BULL牛市：红利ETF跑不过成长型ETF（-20%超额）</li>
+                                <li>追求高绝对收益：策略以控制风险为优先</li>
+                                <li>替代行业动量策略：两者应互补而非竞争</li>
                             </ul>
                         </div>
                     </div>
                 </div>
             </section>
 
-            <!-- 买卖信号规则 -->
+            </div><!-- /st-dividend-trend -->
+
+            <!-- ==================== 行业动量轮动策略 V2.0 ==================== -->
+            <div class="st-report" id="st-momentum">
+
+            <!-- Hero -->
+            <section class="st-hero glass-panel" style="border-color:rgba(245, 158, 11, 0.25); background:linear-gradient(135deg, rgba(245, 158, 11, 0.07), rgba(20, 24, 34, 0.4), rgba(249, 115, 22, 0.06));">
+                <div class="st-hero-badge" style="background:rgba(245, 158, 11, 0.15); border-color:rgba(245, 158, 11, 0.3); color:#fcd34d;">🚀 V2.0 · 多因子 · 网格优化</div>
+                <h2 class="st-hero-title" style="background:linear-gradient(110deg, #ffffff, #fcd34d, #fb923c); -webkit-background-clip:text; background-clip:text;">🚀 行业动量轮动 V2.0 · 回测研究实验室</h2>
+                <p class="st-hero-sub">4因子复合评分 · 5年向量化回测 · 网格搜索参数优化 · 跑赢沪深300基准</p>
+                <div class="st-hero-stats">
+                    <div class="st-hero-stat"><span class="st-hs-label">标的池</span><span class="st-hs-value st-gold">20只ETF</span></div>
+                    <div class="st-hero-stat"><span class="st-hs-label">回测周期</span><span class="st-hs-value">5年全样本</span></div>
+                    <div class="st-hero-stat"><span class="st-hs-label">评分因子</span><span class="st-hs-value st-green">4因子合成</span></div>
+                    <div class="st-hero-stat"><span class="st-hs-label">目标超额</span><span class="st-hs-value st-blue">≥ +8%/年</span></div>
+                </div>
+            </section>
+
+            <!-- 策略框架说明 -->
             <section class="st-section">
-                <div class="st-signal-grid">
-                    <div class="st-signal-card glass-panel st-signal-buy" style="border-color:rgba(16, 185, 129, 0.25);">
-                        <span class="st-signal-badge st-badge-buy">🟢 买入条件 (AND 逻辑)</span>
-                        <ul style="color:var(--text-muted); padding-left:18px; font-size:0.85rem; line-height:2;">
-                            <li>20日动量排名进入 <strong style="color:#fff">Top N</strong></li>
-                            <li>动量 > <strong style="color:#fff">状态门槛</strong>（牛0%/震荡2%/熊5%）</li>
-                            <li>量比 ≥ <strong style="color:#fff">0.8</strong>（不买缩量标的）</li>
-                            <li>三层环境过滤 <strong style="color:#fff">全部通过</strong></li>
-                            <li>分散化约束 <strong style="color:#fff">行业+持仓检查通过</strong></li>
-                        </ul>
+                <h3>🧬 V2.0 复合因子评分体系</h3>
+                <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:16px;">
+                    <div class="glass-panel" style="padding:20px; border-color:rgba(245,158,11,0.2); text-align:center;">
+                        <div style="font-size:1.8rem; margin-bottom:8px;">🚀</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px;">SHORT MOMENTUM (40%)</div>
+                        <div style="font-weight:700; color:#fcd34d; font-size:1rem;">短期动量</div>
+                        <div style="font-size:0.78rem; color:var(--text-muted); margin-top:8px; line-height:1.5;">MOM_S = 20日价格收益率<br>捕捉近期强势行业</div>
                     </div>
-                    <div class="st-signal-card glass-panel st-signal-sell" style="border-color:rgba(239, 68, 68, 0.25);">
-                        <span class="st-signal-badge st-badge-sell">🔴 卖出条件 (OR 逻辑)</span>
-                        <ul style="color:var(--text-muted); padding-left:18px; font-size:0.85rem; line-height:2;">
-                            <li>动量排名跌出 <strong style="color:#fff">Top N</strong>（轮动调仓）</li>
-                            <li>20日动量 <strong style="color:#fff">转负</strong>（趋势反转）</li>
-                            <li>单只亏损达到 <strong style="color:#fff">-8%</strong>（强制止损）</li>
-                            <li>市场环境恶化至 <strong style="color:#fff">空仓信号</strong></li>
-                            <li>震荡/熊市中波动率 <strong style="color:#fff">高于均值</strong></li>
-                        </ul>
+                    <div class="glass-panel" style="padding:20px; border-color:rgba(99,102,241,0.2); text-align:center;">
+                        <div style="font-size:1.8rem; margin-bottom:8px;">📈</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px;">MID MOMENTUM (30%)</div>
+                        <div style="font-weight:700; color:#a78bfa; font-size:1rem;">中期动量</div>
+                        <div style="font-size:0.78rem; color:var(--text-muted); margin-top:8px; line-height:1.5;">MOM_M = 60日价格收益率<br>确认趋势的持续性</div>
+                    </div>
+                    <div class="glass-panel" style="padding:20px; border-color:rgba(16,185,129,0.2); text-align:center;">
+                        <div style="font-size:1.8rem; margin-bottom:8px;">📐</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px;">TREND SLOPE (15%)</div>
+                        <div style="font-weight:700; color:#6ee7b7; font-size:1rem;">趋势斜率</div>
+                        <div style="font-size:0.78rem; color:var(--text-muted); margin-top:8px; line-height:1.5;">SLOPE = 20日线性回归斜率<br>过滤横盘震荡标的</div>
+                    </div>
+                    <div class="glass-panel" style="padding:20px; border-color:rgba(59,130,246,0.2); text-align:center;">
+                        <div style="font-size:1.8rem; margin-bottom:8px;">⚖️</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px;">VOL-ADJ RETURN (15%)</div>
+                        <div style="font-weight:700; color:#93c5fd; font-size:1rem;">波动调整收益</div>
+                        <div style="font-size:0.78rem; color:var(--text-muted); margin-top:8px; line-height:1.5;">SHARPE = MOM_S÷波动率<br>规避高波动噪声标的</div>
+                    </div>
+                </div>
+                <div class="glass-panel" style="padding:16px 24px; margin-top:16px; border-color:rgba(245,158,11,0.15);">
+                    <div style="font-size:0.85rem; color:var(--text-muted);">
+                        <span style="color:#fcd34d; font-weight:700;">合成公式：</span>
+                        Score = <span style="color:#fcd34d;">0.40×MOM_S</span> + <span style="color:#a78bfa;">0.30×MOM_M</span> + <span style="color:#6ee7b7;">0.15×SLOPE</span> + <span style="color:#93c5fd;">0.15×SHARPE</span>
+                        （各因子先做跨截面Z-Score标准化，使不同量纲可比）
+                    </div>
+                </div>
+            </section>
+
+            <!-- 标的池 20只行业ETF -->
+            <section class="st-section">
+                <h3>🎯 标的池构成（20只行业ETF · 4大板块）</h3>
+                <div class="glass-panel" style="padding:24px;">
+                    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:16px;">
+
+                        <!-- 科技AI -->
+                        <div style="background:rgba(245,158,11,0.04); border:1px solid rgba(245,158,11,0.2); border-radius:12px; padding:18px;">
+                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+                                <span style="font-size:1.1rem;">💡</span>
+                                <span style="font-weight:700; color:#fcd34d; font-size:0.9rem;">科技 / AI</span>
+                                <span style="margin-left:auto; font-size:0.7rem; color:var(--text-muted); background:rgba(245,158,11,0.12); padding:2px 8px; border-radius:20px;">6只</span>
+                            </div>
+                            <div style="display:flex; flex-direction:column; gap:7px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
+                                    <div><span style="font-size:0.7rem; color:#fcd34d; font-weight:700; margin-right:6px;">512480</span><span style="font-size:0.8rem; color:#e2e8f0;">半导体ETF</span></div>
+                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤25%</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
+                                    <div><span style="font-size:0.7rem; color:#fcd34d; font-weight:700; margin-right:6px;">588200</span><span style="font-size:0.8rem; color:#e2e8f0;">科创芯片ETF</span></div>
+                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤20%</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
+                                    <div><span style="font-size:0.7rem; color:#fcd34d; font-weight:700; margin-right:6px;">159995</span><span style="font-size:0.8rem; color:#e2e8f0;">芯片ETF</span></div>
+                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤20%</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
+                                    <div><span style="font-size:0.7rem; color:#fcd34d; font-weight:700; margin-right:6px;">515070</span><span style="font-size:0.8rem; color:#e2e8f0;">人工智能AIETF</span></div>
+                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤20%</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
+                                    <div><span style="font-size:0.7rem; color:#fcd34d; font-weight:700; margin-right:6px;">159819</span><span style="font-size:0.8rem; color:#e2e8f0;">人工智能ETF易方达</span></div>
+                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤20%</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
+                                    <div><span style="font-size:0.7rem; color:#fcd34d; font-weight:700; margin-right:6px;">515880</span><span style="font-size:0.8rem; color:#e2e8f0;">通信ETF国泰</span></div>
+                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤20%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 新能源周期 -->
+                        <div style="background:rgba(16,185,129,0.04); border:1px solid rgba(16,185,129,0.2); border-radius:12px; padding:18px;">
+                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+                                <span style="font-size:1.1rem;">⚡</span>
+                                <span style="font-weight:700; color:#10b981; font-size:0.9rem;">新能源 / 周期</span>
+                                <span style="margin-left:auto; font-size:0.7rem; color:var(--text-muted); background:rgba(16,185,129,0.12); padding:2px 8px; border-radius:20px;">5只</span>
+                            </div>
+                            <div style="display:flex; flex-direction:column; gap:7px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
+                                    <div><span style="font-size:0.7rem; color:#10b981; font-weight:700; margin-right:6px;">516160</span><span style="font-size:0.8rem; color:#e2e8f0;">新能源ETF</span></div>
+                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤22%</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
+                                    <div><span style="font-size:0.7rem; color:#10b981; font-weight:700; margin-right:6px;">515790</span><span style="font-size:0.8rem; color:#e2e8f0;">光伏ETF</span></div>
+                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤22%</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
+                                    <div><span style="font-size:0.7rem; color:#10b981; font-weight:700; margin-right:6px;">512400</span><span style="font-size:0.8rem; color:#e2e8f0;">有色金属ETF</span></div>
+                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤22%</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
+                                    <div><span style="font-size:0.7rem; color:#10b981; font-weight:700; margin-right:6px;">159870</span><span style="font-size:0.8rem; color:#e2e8f0;">化工ETF</span></div>
+                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤18%</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
+                                    <div><span style="font-size:0.7rem; color:#10b981; font-weight:700; margin-right:6px;">562550</span><span style="font-size:0.8rem; color:#e2e8f0;">绿电ETF</span></div>
+                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤18%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 军工制造 -->
+                        <div style="background:rgba(99,102,241,0.04); border:1px solid rgba(99,102,241,0.22); border-radius:12px; padding:18px;">
+                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+                                <span style="font-size:1.1rem;">🛡️</span>
+                                <span style="font-weight:700; color:#a78bfa; font-size:0.9rem;">军工 / 制造</span>
+                                <span style="margin-left:auto; font-size:0.7rem; color:var(--text-muted); background:rgba(99,102,241,0.12); padding:2px 8px; border-radius:20px;">5只</span>
+                            </div>
+                            <div style="display:flex; flex-direction:column; gap:7px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
+                                    <div><span style="font-size:0.7rem; color:#a78bfa; font-weight:700; margin-right:6px;">512560</span><span style="font-size:0.8rem; color:#e2e8f0;">军工ETF</span></div>
+                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤22%</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
+                                    <div><span style="font-size:0.7rem; color:#a78bfa; font-weight:700; margin-right:6px;">159218</span><span style="font-size:0.8rem; color:#e2e8f0;">卫星ETF招商</span></div>
+                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤18%</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
+                                    <div><span style="font-size:0.7rem; color:#a78bfa; font-weight:700; margin-right:6px;">562500</span><span style="font-size:0.8rem; color:#e2e8f0;">机器人ETF</span></div>
+                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤20%</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
+                                    <div><span style="font-size:0.7rem; color:#a78bfa; font-weight:700; margin-right:6px;">159326</span><span style="font-size:0.8rem; color:#e2e8f0;">电网设备ETF</span></div>
+                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤18%</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
+                                    <div><span style="font-size:0.7rem; color:#a78bfa; font-weight:700; margin-right:6px;">159851</span><span style="font-size:0.8rem; color:#e2e8f0;">金融科技ETF</span></div>
+                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤18%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 港股消费成长 -->
+                        <div style="background:rgba(239,68,68,0.04); border:1px solid rgba(239,68,68,0.18); border-radius:12px; padding:18px;">
+                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+                                <span style="font-size:1.1rem;">🌏</span>
+                                <span style="font-weight:700; color:#f87171; font-size:0.9rem;">港股 / 消费 / 成长</span>
+                                <span style="margin-left:auto; font-size:0.7rem; color:var(--text-muted); background:rgba(239,68,68,0.12); padding:2px 8px; border-radius:20px;">4只</span>
+                            </div>
+                            <div style="display:flex; flex-direction:column; gap:7px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
+                                    <div><span style="font-size:0.7rem; color:#f87171; font-weight:700; margin-right:6px;">513130</span><span style="font-size:0.8rem; color:#e2e8f0;">恒生科技ETF</span></div>
+                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤22%</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
+                                    <div><span style="font-size:0.7rem; color:#f87171; font-weight:700; margin-right:6px;">513120</span><span style="font-size:0.8rem; color:#e2e8f0;">港股创新药ETF</span></div>
+                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤18%</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
+                                    <div><span style="font-size:0.7rem; color:#f87171; font-weight:700; margin-right:6px;">159869</span><span style="font-size:0.8rem; color:#e2e8f0;">游戏ETF</span></div>
+                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤18%</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
+                                    <div><span style="font-size:0.7rem; color:#f87171; font-weight:700; margin-right:6px;">588220</span><span style="font-size:0.8rem; color:#e2e8f0;">科创100ETF鹏华</span></div>
+                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤20%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- 底部约束提示 -->
+                    <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:16px;">
+                        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:8px; padding:12px; text-align:center;">
+                            <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:4px;">单行业组合计上限</div>
+                            <div style="font-weight:700; color:#fcd34d; font-size:1rem;">≤ 40%</div>
+                        </div>
+                        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:8px; padding:12px; text-align:center;">
+                            <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:4px;">最少同时持有</div>
+                            <div style="font-weight:700; color:#10b981; font-size:1rem;">≥ 3 只</div>
+                        </div>
+                        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:8px; padding:12px; text-align:center;">
+                            <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:4px;">单只硬止损</div>
+                            <div style="font-weight:700; color:#f87171; font-size:1rem;">-8%</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 回测控制台 -->
+            <section class="st-section">
+                <h3>🔬 回测控制台</h3>
+                <div class="glass-panel" style="padding:24px;">
+                    <div style="display:grid; grid-template-columns: repeat(4, 1fr) auto; gap:20px; align-items:end;">
+                        <div>
+                            <label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:6px;">TOP N 选取数量</label>
+                            <select id="bt-top-n" style="width:100%; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:10px; outline:none; font-family:inherit;">
+                                <option value="3" selected>3 只 ✅ 最优推荐</option>
+                                <option value="4">4 只 (均衡)</option>
+                                <option value="5">5 只 (高分散)</option>
+                                <option value="6">6 只 (进取)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:6px;">调仓周期 (交易日)</label>
+                            <select id="bt-rebalance" style="width:100%; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:10px; outline:none; font-family:inherit;">
+                                <option value="5" selected>5 日 ✅ 最优推荐</option>
+                                <option value="10">10 日 (均衡)</option>
+                                <option value="15">15 日 (低频)</option>
+                                <option value="20">20 日 (月度)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:6px;">短期动量窗口 (日)</label>
+                            <select id="bt-window" style="width:100%; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:10px; outline:none; font-family:inherit;">
+                                <option value="15">15 日</option>
+                                <option value="20">20 日</option>
+                                <option value="30" selected>30 日 ✅ 最优推荐</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:6px;">止损线 (%)</label>
+                            <select id="bt-stoploss" style="width:100%; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:10px; outline:none; font-family:inherit;">
+                                <option value="0">不设止损</option>
+                                <option value="-0.06">-6%</option>
+                                <option value="-0.08" selected>-8% ✅ 最优推荐</option>
+                                <option value="-0.12">-12%</option>
+                            </select>
+                        </div>
+                        <div>
+                            <button id="bt-run-btn" onclick="runMomentumBacktest()" style="width:100%; background:linear-gradient(135deg, #f59e0b, #ea580c); color:#fff; border:none; border-radius:10px; padding:11px 20px; font-weight:700; font-size:0.9rem; cursor:pointer; font-family:inherit; white-space:nowrap;">
+                                🚀 运行回测
+                            </button>
+                        </div>
+                    </div>
+                    <div style="margin-top:16px; display:flex; align-items:center; gap:16px; font-size:0.78rem; color:var(--text-muted);">
+                        <span>📅 回测区间：2021-01-01 → 今日</span>
+                        <span>🎯 基准：沪深300ETF (510300.SH)</span>
+                        <span>💸 交易成本：双边 0.15%</span>
+                        <span id="bt-status-text" style="color:#fbbf24;">等待运行...</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 绩效矩阵卡片 -->
+            <section class="st-section" id="bt-perf-section" style="display:none;">
+                <h3>📊 绩效评估矩阵</h3>
+                <div style="display:grid; grid-template-columns: repeat(6, 1fr); gap:14px; margin-bottom:20px;">
+                    <div class="glass-panel" style="padding:18px; text-align:center; border-color:rgba(245,158,11,0.2);">
+                        <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:4px;">年化超额收益</div>
+                        <div id="kpi-excess-cagr" style="font-size:1.6rem; font-weight:800; color:#fcd34d;">—</div>
+                        <div style="font-size:0.68rem; color:var(--text-muted);">vs CSI300</div>
+                    </div>
+                    <div class="glass-panel" style="padding:18px; text-align:center; border-color:rgba(16,185,129,0.2);">
+                        <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:4px;">年化收益 CAGR</div>
+                        <div id="kpi-cagr" style="font-size:1.6rem; font-weight:800; color:#10b981;">—</div>
+                        <div style="font-size:0.68rem; color:var(--text-muted);">复利年化</div>
+                    </div>
+                    <div class="glass-panel" style="padding:18px; text-align:center; border-color:rgba(239,68,68,0.2);">
+                        <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:4px;">最大回撤</div>
+                        <div id="kpi-maxdd" style="font-size:1.6rem; font-weight:800; color:#f87171;">—</div>
+                        <div style="font-size:0.68rem; color:var(--text-muted);">峰谷降幅</div>
+                    </div>
+                    <div class="glass-panel" style="padding:18px; text-align:center; border-color:rgba(99,102,241,0.2);">
+                        <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:4px;">夏普比率</div>
+                        <div id="kpi-sharpe" style="font-size:1.6rem; font-weight:800; color:#a78bfa;">—</div>
+                        <div style="font-size:0.68rem; color:var(--text-muted);">风险调整</div>
+                    </div>
+                    <div class="glass-panel" style="padding:18px; text-align:center; border-color:rgba(59,130,246,0.2);">
+                        <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:4px;">信息比率 IR</div>
+                        <div id="kpi-ir" style="font-size:1.6rem; font-weight:800; color:#60a5fa;">—</div>
+                        <div style="font-size:0.68rem; color:var(--text-muted);">超额稳定性</div>
+                    </div>
+                    <div class="glass-panel" style="padding:18px; text-align:center; border-color:rgba(20,184,166,0.2);">
+                        <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:4px;">月度胜率</div>
+                        <div id="kpi-winrate" style="font-size:1.6rem; font-weight:800; color:#2dd4bf;">—</div>
+                        <div style="font-size:0.68rem; color:var(--text-muted);">超额正收益月份</div>
+                    </div>
+                </div>
+
+                <!-- 次要指标行 -->
+                <div class="glass-panel" style="padding:16px 24px;">
+                    <div style="display:flex; gap:32px; flex-wrap:wrap; font-size:0.82rem;">
+                        <span style="color:var(--text-muted)">策略CAGR: <strong id="kpi-s-cagr" style="color:#fff">—</strong></span>
+                        <span style="color:var(--text-muted)">基准CAGR: <strong id="kpi-b-cagr" style="color:#fff">—</strong></span>
+                        <span style="color:var(--text-muted)">策略MaxDD: <strong id="kpi-s-dd" style="color:#fff">—</strong></span>
+                        <span style="color:var(--text-muted)">基准MaxDD: <strong id="kpi-b-dd" style="color:#f87171">—</strong></span>
+                        <span style="color:var(--text-muted)">跟踪误差: <strong id="kpi-te" style="color:#fff">—</strong></span>
+                        <span style="color:var(--text-muted)">Calmar: <strong id="kpi-calmar" style="color:#fff">—</strong></span>
+                        <span style="color:var(--text-muted)">年化波动: <strong id="kpi-vol" style="color:#fff">—</strong></span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 净值对比曲线 -->
+            <section class="st-section" id="bt-chart-section" style="display:none;">
+                <h3>📈 净值对比曲线（策略 vs 沪深300ETF）</h3>
+                <div class="glass-panel" style="padding:20px;">
+                    <div id="bt-nav-chart" style="width:100%; height:360px;"></div>
+                </div>
+            </section>
+
+            <!-- 月度超额热力图 -->
+            <section class="st-section" id="bt-monthly-section" style="display:none;">
+                <h3>🗓️ 月度超额收益热力图</h3>
+                <div class="glass-panel" style="padding:20px; overflow-x:auto;">
+                    <table id="bt-monthly-table" style="border-collapse:collapse; width:100%; min-width:700px; font-size:0.8rem;">
+                        <thead>
+                            <tr>
+                                <th style="text-align:left; padding:8px; color:var(--text-muted); width:60px;">年份</th>
+                                <th style="padding:8px; color:var(--text-muted);">Jan</th>
+                                <th style="padding:8px; color:var(--text-muted);">Feb</th>
+                                <th style="padding:8px; color:var(--text-muted);">Mar</th>
+                                <th style="padding:8px; color:var(--text-muted);">Apr</th>
+                                <th style="padding:8px; color:var(--text-muted);">May</th>
+                                <th style="padding:8px; color:var(--text-muted);">Jun</th>
+                                <th style="padding:8px; color:var(--text-muted);">Jul</th>
+                                <th style="padding:8px; color:var(--text-muted);">Aug</th>
+                                <th style="padding:8px; color:var(--text-muted);">Sep</th>
+                                <th style="padding:8px; color:var(--text-muted);">Oct</th>
+                                <th style="padding:8px; color:var(--text-muted);">Nov</th>
+                                <th style="padding:8px; color:var(--text-muted);">Dec</th>
+                                <th style="padding:8px; color:var(--text-muted);">全年</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bt-monthly-body"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- 参数优化扫描 -->
+            <section class="st-section">
+                <h3>⚙️ 参数优化中心 (网格搜索)</h3>
+                <div class="glass-panel" style="padding:24px;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
+                        <div>
+                            <div style="font-weight:700; color:#fff; font-size:0.95rem;">智能参数寻优引擎</div>
+                            <div style="font-size:0.78rem; color:var(--text-muted); margin-top:4px;">在 2021-2023 样本内寻找最优参数，在 2024-2025 样本外验证稳健性（防止过拟合）</div>
+                        </div>
+                        <button id="bt-opt-btn" onclick="runMomentumOptimize()" style="background:rgba(99,102,241,0.2); color:#a78bfa; border:1px solid rgba(99,102,241,0.3); border-radius:10px; padding:10px 22px; font-weight:700; cursor:pointer; font-family:inherit; font-size:0.85rem; white-space:nowrap;">
+                            🔬 启动网格搜索
+                        </button>
+                    </div>
+                    <div style="background:rgba(0,0,0,0.2); border-radius:10px; padding:16px; border:1px solid rgba(99,102,241,0.15);">
+                        <div style="font-size:0.75rem; font-weight:700; color:#a78bfa; margin-bottom:10px;">搜索空间</div>
+                        <div style="display:flex; flex-wrap:wrap; gap:20px; font-size:0.78rem; color:var(--text-muted);">
+                            <span>top_n: <code style="color:#fcd34d">[3, 4, 5]</code></span>
+                            <span>rebalance: <code style="color:#fcd34d">[5, 10, 15]</code></span>
+                            <span>mom_s_window: <code style="color:#fcd34d">[15, 20, 30]</code></span>
+                            <span>w_mom_s: <code style="color:#fcd34d">[0.35, 0.45]</code></span>
+                            <span>stop_loss: <code style="color:#fcd34d">[-6%, -8%, None]</code></span>
+                            <span style="color:#10b981; font-weight:600;">共 162 组参数</span>
+                        </div>
+                    </div>
+                    <div id="bt-opt-results" style="display:none; margin-top:20px;">
+                        <div style="font-size:0.85rem; font-weight:700; color:#fff; margin-bottom:12px;">🏆 最优参数组合</div>
+                        <div id="bt-best-params" style="background:rgba(245,158,11,0.05); border:1px solid rgba(245,158,11,0.2); border-radius:10px; padding:16px; font-size:0.82rem;"></div>
+                        <div style="font-size:0.85rem; font-weight:700; color:#fff; margin:16px 0 12px;">📋 Top 10 参数排名</div>
+                        <div style="overflow-x:auto;">
+                            <table class="st-table" id="bt-top10-table">
+                                <thead><tr>
+                                    <th>排名</th><th>最终评分</th><th>超额CAGR%</th><th>夏普</th><th>MaxDD%</th><th>IR</th><th>top_n</th><th>换仓(日)</th><th>窗口(日)</th><th>止损</th>
+                                </tr></thead>
+                                <tbody id="bt-top10-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 策略作战手册 -->
+            <section class="st-section">
+                <h3>📋 实盘作战手册 (V2.0 · 优化版)</h3>
+                <div class="st-two-col">
+                    <div class="glass-panel" style="padding:24px;">
+                        <h4 style="font-size:0.95rem; color:#fcd34d; margin-bottom:16px;">⚙️ 推荐参数配置</h4>
+                        <table class="st-table">
+                            <thead><tr><th>参数</th><th>推荐值</th><th>依据</th></tr></thead>
+                            <tbody>
+                                <tr><td>Top N 选取</td><td style="color:#fcd34d; font-weight:700;">3 只</td><td style="font-size:0.75rem">576组网格搜索最优（Score #1）</td></tr>
+                                <tr><td>调仓周期</td><td style="color:#fcd34d; font-weight:700;">5 交易日（周频）</td><td style="font-size:0.75rem">信号捕捉效率最高</td></tr>
+                                <tr><td>动量窗口</td><td style="color:#fcd34d; font-weight:700;">30 日</td><td style="font-size:0.75rem">跨越单月噪声，捕捉趋势</td></tr>
+                                <tr><td>止损线</td><td style="color:#f87171; font-weight:700;">-8%</td><td style="font-size:0.75rem">控单次亏损，回撤优化</td></tr>
+                                <tr><td>权重_短期MOM</td><td style="color:#10b981; font-weight:700;">40%</td><td style="font-size:0.75rem">4因子中权重最高</td></tr>
+                                <tr><td>仓位上限</td><td style="color:#60a5fa; font-weight:700;">85%（牛）</td><td style="font-size:0.75rem">三层滤波自适应</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="glass-panel" style="padding:24px;">
+                        <h4 style="font-size:0.95rem; color:#fcd34d; margin-bottom:16px;">🚦 每周五 15:30 操作 SOP</h4>
+                        <div class="st-risk-list">
+                            <div class="st-risk-item">
+                                <span class="st-risk-icon">1️⃣</span>
+                                <div><strong>市场状态自动识别</strong><p>策略中心→信号评分系统→查看「市场环境实时识别」面板，确认当前BULL/RANGE/BEAR状态及自动匹配参数。</p></div>
+                            </div>
+                            <div class="st-risk-item">
+                                <span class="st-risk-icon">2️⃣</span>
+                                <div><strong>持仓硬止损扫描</strong><p>任何持仓浮亏达止损线？BULL/RANGE→-8%立清；BEAR→-6%立清；不等调仓日。</p></div>
+                            </div>
+                            <div class="st-risk-item">
+                                <span class="st-risk-icon">3️⃣</span>
+                                <div><strong>运行动量评分引擎</strong><p>策略执行结果→行业动量轮动V2.0→获取最新Top3复合因子排名及评分。</p></div>
+                            </div>
+                            <div class="st-risk-item">
+                                <span class="st-risk-icon">4️⃣</span>
+                                <div><strong>信号评分验证</strong><p>将Top候选填入信号评分计算器，确认综合评分≥当前状态门槛（BULL≥65/RANGE≥68/BEAR≥75）。</p></div>
+                            </div>
+                            <div class="st-risk-item">
+                                <span class="st-risk-icon">5️⃣</span>
+                                <div><strong>次周一挂单执行</strong><p>9:25集合竞价结束后限价单换仓，误差≤0.2%。记录：状态快照+评分+执行价。</p></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- 三层过滤 -->
+                <div class="glass-panel" style="padding:24px; margin-top:16px;">
+                    <h4 style="font-size:0.95rem; color:#fff; margin-bottom:16px;">🛡️ 三层市场过滤 · 自适应仓位系数</h4>
+                    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:20px;">
+                        <div style="background:rgba(16,185,129,0.05); border:1px solid rgba(16,185,129,0.2); border-radius:10px; padding:16px;">
+                            <div style="font-weight:700; color:#10b981; margin-bottom:8px;">🟢 BULL 牛市 (系数×1.0)</div>
+                            <div style="font-size:0.78rem; color:var(--text-muted); line-height:1.6;">CSI300 站上MA120 且 MA120向上 → 全仓85%运行</div>
+                        </div>
+                        <div style="background:rgba(251,191,36,0.05); border:1px solid rgba(251,191,36,0.2); border-radius:10px; padding:16px;">
+                            <div style="font-weight:700; color:#fbbf24; margin-bottom:8px;">🟡 RANGE 震荡 (系数×0.7)</div>
+                            <div style="font-size:0.78rem; color:var(--text-muted); line-height:1.6;">站上均线但MA120走平/下行 → 仓位压缩至60%</div>
+                        </div>
+                        <div style="background:rgba(239,68,68,0.05); border:1px solid rgba(239,68,68,0.2); border-radius:10px; padding:16px;">
+                            <div style="font-weight:700; color:#f87171; margin-bottom:8px;">🔴 BEAR 熊市 (系数×0.5)</div>
+                            <div style="font-size:0.78rem; color:var(--text-muted); line-height:1.6;">跌破MA120 → 仓位压缩至45%，优先防守</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+
+            <!-- 自选扩池管理器 -->
+            <section class="st-section" id="custom-pool-momentum">
+                <h3>➕ 自选扩池 · 个性化追加标的（ETF 或个股）</h3>
+                <div class="glass-panel custom-pool-panel" style="padding:24px;" data-strategy="momentum">
+
+                    <!-- 输入行 -->
+                    <div style="display:grid; grid-template-columns:1fr auto auto auto; gap:12px; align-items:end; margin-bottom:20px;">
+                        <div>
+                            <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:6px;">股票/ETF 代码（Tushare 格式 · 如 600036.SH 或 512480.SH）</label>
+                            <input id="custom-input-momentum" type="text" maxlength="12"
+                                placeholder="输入代码后按 Enter 或点击查询..."
+                                style="width:100%; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:10px 14px; font-family:inherit; outline:none; font-size:0.9rem; box-sizing:border-box;"
+                                onkeydown="if(event.key==='Enter') lookupAndAdd('momentum')" />
+                        </div>
+                        <div>
+                            <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:6px;">识别结果</label>
+                            <div id="custom-name-momentum"
+                                style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:10px 14px; font-size:0.85rem; color:var(--text-muted); min-width:140px; height:40px; line-height:20px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                — 等待查询 —
+                            </div>
+                        </div>
+                        <div>
+                            <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:6px;">仓位上限</label>
+                            <select id="custom-cap-momentum"
+                                style="background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:10px 12px; font-family:inherit; outline:none; height:40px;">
+                                <option value="5">5%</option><option value="8">8%</option><option value="10" selected>10% (个股推荐)</option><option value="15">15% (ETF)</option>
+                            </select>
+                        </div>
+                        <div style="display:flex; gap:8px;">
+                            <button onclick="lookupCustomName('momentum')"
+                                style="background:rgba(99,102,241,0.15); border:1px solid rgba(99,102,241,0.3); color:#a78bfa; border-radius:8px; padding:10px 14px; cursor:pointer; font-size:0.82rem; white-space:nowrap; height:40px;">
+                                🔍 查询
+                            </button>
+                            <button onclick="lookupAndAdd('momentum')"
+                                style="background:linear-gradient(135deg,rgba(16,185,129,0.25),rgba(5,150,105,0.15)); border:1px solid rgba(16,185,129,0.35); color:#10b981; border-radius:8px; padding:10px 16px; cursor:pointer; font-size:0.82rem; font-weight:700; white-space:nowrap; height:40px;">
+                                + 追加
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 已追加标的 chip 区 -->
+                    <div id="custom-chips-momentum" style="display:flex; flex-wrap:wrap; gap:8px; min-height:48px; margin-bottom:16px; padding:12px; background:rgba(255,255,255,0.02); border:1px dashed rgba(255,255,255,0.08); border-radius:10px;">
+                        <span class="pool-empty-hint" style="color:var(--text-muted); font-size:0.8rem; align-self:center;">暂无自选标的 · 请在上方输入代码并追加</span>
+                    </div>
+
+                    <!-- 风险提示 + 入池标准 -->
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                        <div style="background:rgba(251,191,36,0.05); border:1px solid rgba(251,191,36,0.2); border-radius:10px; padding:14px;">
+                            <div style="font-size:0.8rem; font-weight:700; color:#fbbf24; margin-bottom:8px;">⚠️ 个股特异风险提示</div>
+                            <ul style="font-size:0.75rem; color:var(--text-muted); padding-left:16px; line-height:1.8; margin:0;">
+                                <li>个股波动率显著高于 ETF，仓位上限已受约束</li>
+                                <li>策略参数基于 ETF 历史优化，个股效果需自行评估</li>
+                                <li>自选标的仅参与<strong style="color:#fff;">实时执行评分</strong>，不纳入历史回测</li>
+                                <li>V1 版本不进行流动性自动验证，请自行确认日均成交额</li>
+                            </ul>
+                        </div>
+                        <div style="background:rgba(16,185,129,0.04); border:1px solid rgba(16,185,129,0.15); border-radius:10px; padding:14px;">
+                            <div style="font-size:0.8rem; font-weight:700; color:#10b981; margin-bottom:8px;">✅ 动量轮动个股入池建议标准</div>
+                            <ul style="font-size:0.75rem; color:var(--text-muted); padding-left:16px; line-height:1.8; margin:0;">
+                                <li>日均成交额大于3亿（调仓频繁，流动性要求最高）</li>
+                                <li>30日年化波动率不超过60%（防干扰 Sharpe 因子）</li>
+                                <li>上市时间大于1年（确保动量历史数据充足）</li>
+                                <li>与现有4大板块有明确行业归属</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- 统计行 -->
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.06);">
+                        <span id="custom-count-momentum" style="font-size:0.78rem; color:var(--text-muted);">已追加：0 只 / 上限 8 只</span>
+                        <button onclick="clearCustomPool('momentum')"
+                            style="background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); color:#f87171; border-radius:6px; padding:5px 12px; cursor:pointer; font-size:0.75rem;">
+                            清空全部
+                        </button>
                     </div>
                 </div>
             </section>
 
             </div><!-- /st-momentum -->
+
+
+            <!-- ==================== 信号评分系统 ==================== -->
+            <div class="st-report" id="st-signal-rules">
+
+            <!-- Hero -->
+            <section class="st-hero glass-panel" style="background:linear-gradient(135deg,rgba(99,102,241,0.08),rgba(20,24,34,0.5),rgba(16,185,129,0.06)); border-color:rgba(99,102,241,0.25);">
+                <div class="st-hero-badge" style="background:rgba(99,102,241,0.15); border-color:rgba(99,102,241,0.3); color:#a78bfa;">🎯 V2.0 · 机构级 · 完整规则</div>
+                <h2 class="st-hero-title" style="background:linear-gradient(110deg,#fff,#a78bfa,#10b981); -webkit-background-clip:text; background-clip:text;">🎯 信号评分系统 · 进场·止盈·止损 完整规则</h2>
+                <p class="st-hero-sub">5维因子评分 · 精准入场阈值 · 三级止盈阶梯 · 多重止损断路器 · ETF vs 个股适配分析</p>
+                <div class="st-hero-stats">
+                    <div class="st-hero-stat"><span class="st-hs-label">评分满分</span><span class="st-hs-value st-gold">100 分</span></div>
+                    <div class="st-hero-stat"><span class="st-hs-label">入场门槛</span><span class="st-hs-value">≥ 65 分</span></div>
+                    <div class="st-hero-stat"><span class="st-hs-label">止盈目标</span><span class="st-hs-value st-green">T1+15% / T2+25%</span></div>
+                    <div class="st-hero-stat"><span class="st-hs-label">硬止损</span><span class="st-hs-value" style="color:#f87171;">-8%</span></div>
+                </div>
+            </section>
+
+            <!-- ★ 市场环境自动识别 ★ -->
+            <section class="st-section">
+                <!-- 顶部控制栏 -->
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+                    <h3 style="margin:0;">📡 市场环境实时识别 · 自动匹配最优参数</h3>
+                    <button id="regime-refresh-btn" onclick="loadMarketRegime()"
+                        style="background:rgba(99,102,241,0.12); color:#a78bfa; border:1px solid rgba(99,102,241,0.3); border-radius:8px; padding:8px 18px; cursor:pointer; font-size:0.82rem; font-family:inherit; transition:all 0.2s;">
+                        🔄 重新识别
+                    </button>
+                </div>
+
+                <!-- 主体卡片 -->
+                <div id="regime-panel" class="glass-panel" style="padding:24px; border-color:rgba(99,102,241,0.2); position:relative;">
+
+                    <!-- 加载态 -->
+                    <div id="regime-loading" style="display:flex; align-items:center; gap:12px; color:var(--text-muted); font-size:0.88rem;">
+                        <div style="width:18px;height:18px;border:2px solid rgba(99,102,241,0.3);border-top-color:#a78bfa;border-radius:50%;animation:spin 1s linear infinite;"></div>
+                        正在调取 CSI300 实时数据，计算市场状态...
+                    </div>
+
+                    <!-- 结果展示（初始隐藏）-->
+                    <div id="regime-result" style="display:none;">
+                        <!-- 第一行：状态 + CSI300 核心指标 -->
+                        <div style="display:grid; grid-template-columns:auto 1fr; gap:20px; align-items:center; margin-bottom:20px;">
+                            <!-- 大型状态徽章 -->
+                            <div id="regime-badge" style="padding:18px 28px; border-radius:14px; text-align:center; min-width:150px; border:2px solid;">
+                                <div id="regime-icon-text" style="font-size:2.4rem; line-height:1; margin-bottom:4px;">🟢</div>
+                                <div id="regime-name-cn" style="font-size:1.1rem; font-weight:900; letter-spacing:0.05em;">牛市</div>
+                                <div id="regime-name-en" style="font-size:0.72rem; opacity:0.7; margin-top:2px;">BULL MODE</div>
+                            </div>
+                            <!-- 描述 + 指标格 -->
+                            <div>
+                                <div id="regime-desc-text" style="font-size:0.85rem; color:var(--text-muted); line-height:1.6; margin-bottom:14px;"></div>
+                                <div style="display:grid; grid-template-columns:repeat(6,1fr); gap:10px;">
+                                    <div style="background:rgba(0,0,0,0.2); border-radius:8px; padding:10px; text-align:center;">
+                                        <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:3px;">CSI 300</div>
+                                        <div id="rm-csi" style="font-size:1rem; font-weight:700; color:#fff;">—</div>
+                                    </div>
+                                    <div style="background:rgba(0,0,0,0.2); border-radius:8px; padding:10px; text-align:center;">
+                                        <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:3px;">MA120</div>
+                                        <div id="rm-ma120" style="font-size:1rem; font-weight:700; color:#fff;">—</div>
+                                    </div>
+                                    <div style="background:rgba(0,0,0,0.2); border-radius:8px; padding:10px; text-align:center;">
+                                        <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:3px;">5日涨幅</div>
+                                        <div id="rm-ret5" style="font-size:1rem; font-weight:700;">—</div>
+                                    </div>
+                                    <div style="background:rgba(0,0,0,0.2); border-radius:8px; padding:10px; text-align:center;">
+                                        <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:3px;">20日涨幅</div>
+                                        <div id="rm-ret20" style="font-size:1rem; font-weight:700;">—</div>
+                                    </div>
+                                    <div style="background:rgba(0,0,0,0.2); border-radius:8px; padding:10px; text-align:center;">
+                                        <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:3px;">MA120斜率</div>
+                                        <div id="rm-slope" style="font-size:1rem; font-weight:700;">—</div>
+                                    </div>
+                                    <div style="background:rgba(0,0,0,0.2); border-radius:8px; padding:10px; text-align:center;">
+                                        <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:3px;">20日波动</div>
+                                        <div id="rm-vol" style="font-size:1rem; font-weight:700; color:#fff;">—</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 分割线 -->
+                        <div style="border-top:1px solid rgba(255,255,255,0.05); margin-bottom:18px;"></div>
+
+                        <!-- 第二行：自动匹配参数 -->
+                        <div style="margin-bottom:8px; font-size:0.85rem; font-weight:700; color:#fff;">
+                            ⚙️ 当前状态自动匹配最优参数
+                            <span id="regime-param-note" style="margin-left:10px; font-size:0.72rem; font-weight:400; padding:3px 10px; border-radius:6px; border:1px solid rgba(255,255,255,0.1); color:var(--text-muted);"></span>
+                        </div>
+                        <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-bottom:16px;">
+                            <div style="background:rgba(245,158,11,0.06); border:1px solid rgba(245,158,11,0.2); border-radius:10px; padding:14px; text-align:center;">
+                                <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:4px;">Top N</div>
+                                <div id="rm-p-topn" style="font-size:1.4rem; font-weight:900; color:#fcd34d;">3</div>
+                                <div style="font-size:0.65rem; color:var(--text-muted);">只</div>
+                            </div>
+                            <div style="background:rgba(99,102,241,0.06); border:1px solid rgba(99,102,241,0.2); border-radius:10px; padding:14px; text-align:center;">
+                                <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:4px;">调仓周期</div>
+                                <div id="rm-p-rb" style="font-size:1.4rem; font-weight:900; color:#a78bfa;">5</div>
+                                <div style="font-size:0.65rem; color:var(--text-muted);">交易日</div>
+                            </div>
+                            <div style="background:rgba(16,185,129,0.06); border:1px solid rgba(16,185,129,0.2); border-radius:10px; padding:14px; text-align:center;">
+                                <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:4px;">仓位上限</div>
+                                <div id="rm-p-poscap" style="font-size:1.4rem; font-weight:900; color:#10b981;">85</div>
+                                <div style="font-size:0.65rem; color:var(--text-muted);">%</div>
+                            </div>
+                            <div style="background:rgba(239,68,68,0.06); border:1px solid rgba(239,68,68,0.2); border-radius:10px; padding:14px; text-align:center;">
+                                <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:4px;">止损线</div>
+                                <div id="rm-p-sl" style="font-size:1.4rem; font-weight:900; color:#f87171;">-8</div>
+                                <div style="font-size:0.65rem; color:var(--text-muted);">%</div>
+                            </div>
+                            <div style="background:rgba(251,191,36,0.06); border:1px solid rgba(251,191,36,0.2); border-radius:10px; padding:14px; text-align:center;">
+                                <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:4px;">入场门槛</div>
+                                <div id="rm-p-gate" style="font-size:1.4rem; font-weight:900; color:#fbbf24;">65</div>
+                                <div style="font-size:0.65rem; color:var(--text-muted);">分</div>
+                            </div>
+                        </div>
+
+                        <!-- 自动同步到计算器提示 -->
+                        <div id="regime-sync-tip" style="font-size:0.78rem; color:var(--text-muted); padding:8px 14px; background:rgba(99,102,241,0.05); border:1px solid rgba(99,102,241,0.15); border-radius:8px; display:flex; align-items:center; gap:8px;">
+                            ✅ <span>市场环境已自动同步至下方评分计算器，评分门槛已调整为</span>
+                            <strong id="regime-sync-gate" style="color:#a78bfa;">65</strong>分
+                        </div>
+                    </div>
+
+                    <!-- 错误态 -->
+                    <div id="regime-error" style="display:none; color:#f87171; font-size:0.85rem;">
+                        ⚠️ 数据获取失败，请检查服务器连接后点击「重新识别」。
+                    </div>
+                </div>
+            </section>
+
+            <!-- ① ETF vs 个股适用性 -->
+            <section class="st-section">
+                <h3>🔬 ① ETF vs 个股适用性科学评估</h3>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:20px;">
+                    <!-- ETF 优势 -->
+                    <div class="glass-panel" style="padding:24px; border-color:rgba(16,185,129,0.25); border-left:3px solid #10b981;">
+                        <div style="font-size:1rem; font-weight:700; color:#10b981; margin-bottom:14px;">✅ 行业ETF — 动量策略最优载体</div>
+                        <table style="width:100%; font-size:0.8rem; border-collapse:collapse;">
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                <td style="padding:8px 4px; color:var(--text-muted); width:40%;">单股特质风险</td>
+                                <td style="padding:8px 4px; color:#10b981; font-weight:600;">🟢 无（内部已分散）</td>
+                            </tr>
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                <td style="padding:8px 4px; color:var(--text-muted);">财报黑天鹅</td>
+                                <td style="padding:8px 4px; color:#10b981; font-weight:600;">🟢 ETF不受影响</td>
+                            </tr>
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                <td style="padding:8px 4px; color:var(--text-muted);">退市/ST风险</td>
+                                <td style="padding:8px 4px; color:#10b981; font-weight:600;">🟢 零风险</td>
+                            </tr>
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                <td style="padding:8px 4px; color:var(--text-muted);">动量信号质量</td>
+                                <td style="padding:8px 4px; color:#10b981; font-weight:600;">🟢 行业共振，噪声低</td>
+                            </tr>
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                <td style="padding:8px 4px; color:var(--text-muted);">成交量稳定性</td>
+                                <td style="padding:8px 4px; color:#10b981; font-weight:600;">🟢 主力资金可监测</td>
+                            </tr>
+                            <tr>
+                                <td style="padding:8px 4px; color:var(--text-muted);">回测一致性</td>
+                                <td style="padding:8px 4px; color:#10b981; font-weight:600;">🟢 样本外IR=0.638</td>
+                            </tr>
+                        </table>
+                        <div style="margin-top:14px; padding:10px 14px; background:rgba(16,185,129,0.06); border-radius:8px; font-size:0.78rem; color:var(--text-muted); line-height:1.6;">
+                            <strong style="color:#10b981;">结论：</strong>行业ETF是本策略的<strong style="color:#fff;">最优载体</strong>。回测576组参数验证，样本外超额CAGR +11.85%，Sharpe 1.24，无过拟合。
+                        </div>
+                    </div>
+                    <!-- 个股风险 -->
+                    <div class="glass-panel" style="padding:24px; border-color:rgba(239,68,68,0.2); border-left:3px solid #ef4444;">
+                        <div style="font-size:1rem; font-weight:700; color:#f87171; margin-bottom:14px;">⚠️ 个股应用 — 需增加5层前置过滤</div>
+                        <table style="width:100%; font-size:0.8rem; border-collapse:collapse;">
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                <td style="padding:8px 4px; color:var(--text-muted); width:40%;">单股特质风险</td>
+                                <td style="padding:8px 4px; color:#f87171; font-weight:600;">🔴 爆雷/崩盘风险高</td>
+                            </tr>
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                <td style="padding:8px 4px; color:var(--text-muted);">财报黑天鹅</td>
+                                <td style="padding:8px 4px; color:#f87171; font-weight:600;">🔴 单日跌停风险</td>
+                            </tr>
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                <td style="padding:8px 4px; color:var(--text-muted);">流动性</td>
+                                <td style="padding:8px 4px; color:#fbbf24; font-weight:600;">🟡 需筛选(日成≥5000万)</td>
+                            </tr>
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                <td style="padding:8px 4px; color:var(--text-muted);">动量信号质量</td>
+                                <td style="padding:8px 4px; color:#fbbf24; font-weight:600;">🟡 噪声高，需更强过滤</td>
+                            </tr>
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                <td style="padding:8px 4px; color:var(--text-muted);">止损难度</td>
+                                <td style="padding:8px 4px; color:#f87171; font-weight:600;">🔴 跳空缺口风险</td>
+                            </tr>
+                            <tr>
+                                <td style="padding:8px 4px; color:var(--text-muted);">参数稳定性</td>
+                                <td style="padding:8px 4px; color:#fbbf24; font-weight:600;">🟡 需独立验证</td>
+                            </tr>
+                        </table>
+                        <div style="margin-top:14px; padding:10px 14px; background:rgba(239,68,68,0.05); border-radius:8px; font-size:0.78rem; color:var(--text-muted); line-height:1.6;">
+                            <strong style="color:#fbbf24;">若要用于个股：</strong>必须满足 流通市值≥50亿 + 日成交≥5000万 + 非ST + 上市≥1年 + RSI<75 五项前置条件，止损收窄至 -5%。
+                        </div>
+                    </div>
+                </div>
+                <!-- 专家结论横幅 -->
+                <div class="glass-panel" style="padding:16px 24px; border-color:rgba(251,191,36,0.2); background:rgba(251,191,36,0.04); display:flex; align-items:center; gap:16px;">
+                    <span style="font-size:1.8rem;">🏛️</span>
+                    <div>
+                        <div style="font-weight:700; color:#fbbf24; margin-bottom:4px;">专业结论：策略以行业ETF为主战场，个股可作为辅助验证工具</div>
+                        <div style="font-size:0.8rem; color:var(--text-muted);">主仓（≥80%）配置 ETF 动量轮动，副仓（≤20%）用精选个股做行业内穿透，满足流动性+估值+趋势三重准入后方可入场。</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ② 5维入场评分 -->
+            <section class="st-section">
+                <h3>🟢 ② 入场信号评分系统（满分100分）</h3>
+                <div style="display:grid; grid-template-columns: repeat(5,1fr); gap:14px; margin-bottom:18px;">
+                    <!-- 因子1 -->
+                    <div class="glass-panel" style="padding:18px 14px; text-align:center; border-color:rgba(245,158,11,0.25); position:relative; overflow:hidden;">
+                        <div style="position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#f59e0b,#fcd34d);"></div>
+                        <div style="font-size:0.68rem; color:var(--text-muted); margin-bottom:6px; letter-spacing:0.05em;">FACTOR 1</div>
+                        <div style="font-size:1.8rem; font-weight:900; color:#fcd34d; line-height:1;">40</div>
+                        <div style="font-size:0.62rem; color:var(--text-muted); margin-bottom:8px;">分</div>
+                        <div style="font-weight:700; color:#fff; font-size:0.85rem;">动量强度</div>
+                        <div style="font-size:0.72rem; color:var(--text-muted); margin-top:8px; line-height:1.5;">30日评分Z>+1.0σ→40分<br>Z∈[+0.5,+1.0]→25分<br>Z<+0.5→0分</div>
+                    </div>
+                    <!-- 因子2 -->
+                    <div class="glass-panel" style="padding:18px 14px; text-align:center; border-color:rgba(99,102,241,0.25); position:relative; overflow:hidden;">
+                        <div style="position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#6366f1,#a78bfa);"></div>
+                        <div style="font-size:0.68rem; color:var(--text-muted); margin-bottom:6px; letter-spacing:0.05em;">FACTOR 2</div>
+                        <div style="font-size:1.8rem; font-weight:900; color:#a78bfa; line-height:1;">20</div>
+                        <div style="font-size:0.62rem; color:var(--text-muted); margin-bottom:8px;">分</div>
+                        <div style="font-weight:700; color:#fff; font-size:0.85rem;">市场环境</div>
+                        <div style="font-size:0.72rem; color:var(--text-muted); margin-top:8px; line-height:1.5;">BULL→20分<br>RANGE→12分<br>BEAR→0分</div>
+                    </div>
+                    <!-- 因子3 -->
+                    <div class="glass-panel" style="padding:18px 14px; text-align:center; border-color:rgba(16,185,129,0.25); position:relative; overflow:hidden;">
+                        <div style="position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#10b981,#6ee7b7);"></div>
+                        <div style="font-size:0.68rem; color:var(--text-muted); margin-bottom:6px; letter-spacing:0.05em;">FACTOR 3</div>
+                        <div style="font-size:1.8rem; font-weight:900; color:#6ee7b7; line-height:1;">15</div>
+                        <div style="font-size:0.62rem; color:var(--text-muted); margin-bottom:8px;">分</div>
+                        <div style="font-weight:700; color:#fff; font-size:0.85rem;">量能确认</div>
+                        <div style="font-size:0.72rem; color:var(--text-muted); margin-top:8px; line-height:1.5;">量比≥1.5→15分<br>量比∈[1.0,1.5)→8分<br>量比<1.0→0分</div>
+                    </div>
+                    <!-- 因子4 -->
+                    <div class="glass-panel" style="padding:18px 14px; text-align:center; border-color:rgba(59,130,246,0.25); position:relative; overflow:hidden;">
+                        <div style="position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#3b82f6,#93c5fd);"></div>
+                        <div style="font-size:0.68rem; color:var(--text-muted); margin-bottom:6px; letter-spacing:0.05em;">FACTOR 4</div>
+                        <div style="font-size:1.8rem; font-weight:900; color:#93c5fd; line-height:1;">15</div>
+                        <div style="font-size:0.62rem; color:var(--text-muted); margin-bottom:8px;">分</div>
+                        <div style="font-weight:700; color:#fff; font-size:0.85rem;">技术位置</div>
+                        <div style="font-size:0.72rem; color:var(--text-muted); margin-top:8px; line-height:1.5;">RSI∈[40,65]→15分<br>RSI∈[30,40)→10分<br>RSI≥70→0分（过热）</div>
+                    </div>
+                    <!-- 因子5 -->
+                    <div class="glass-panel" style="padding:18px 14px; text-align:center; border-color:rgba(20,184,166,0.25); position:relative; overflow:hidden;">
+                        <div style="position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#14b8a6,#2dd4bf);"></div>
+                        <div style="font-size:0.68rem; color:var(--text-muted); margin-bottom:6px; letter-spacing:0.05em;">FACTOR 5</div>
+                        <div style="font-size:1.8rem; font-weight:900; color:#2dd4bf; line-height:1;">10</div>
+                        <div style="font-size:0.62rem; color:var(--text-muted); margin-bottom:8px;">分</div>
+                        <div style="font-weight:700; color:#fff; font-size:0.85rem;">波动过滤</div>
+                        <div style="font-size:0.72rem; color:var(--text-muted); margin-top:8px; line-height:1.5;">30日波动<25%→10分<br>波动∈[25,40%]→5分<br>波动>40%→0分（高噪）</div>
+                    </div>
+                </div>
+                <!-- 入场门槛决策台 -->
+                <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:16px;">
+                    <div style="background:rgba(239,68,68,0.06); border:1px solid rgba(239,68,68,0.2); border-radius:12px; padding:18px; text-align:center;">
+                        <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:8px;">❌ 不入场</div>
+                        <div style="font-size:2rem; font-weight:900; color:#f87171;">< 50</div>
+                        <div style="font-size:0.8rem; color:var(--text-muted); margin-top:8px;">信号不足，观望等待</div>
+                    </div>
+                    <div style="background:rgba(251,191,36,0.06); border:1px solid rgba(251,191,36,0.2); border-radius:12px; padding:18px; text-align:center;">
+                        <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:8px;">🟡 半仓入场</div>
+                        <div style="font-size:2rem; font-weight:900; color:#fbbf24;">50–79</div>
+                        <div style="font-size:0.8rem; color:var(--text-muted); margin-top:8px;">建仓 1/2，等待加仓确认</div>
+                    </div>
+                    <div style="background:rgba(16,185,129,0.06); border:1px solid rgba(16,185,129,0.2); border-radius:12px; padding:18px; text-align:center;">
+                        <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:8px;">🟢 全仓入场</div>
+                        <div style="font-size:2rem; font-weight:900; color:#10b981;">≥ 80</div>
+                        <div style="font-size:0.8rem; color:var(--text-muted); margin-top:8px;">建仓 30%（单标的上限）</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ③ 止盈规则 -->
+            <section class="st-section">
+                <h3>📈 ③ 三级止盈阶梯规则</h3>
+                <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:14px;">
+                    <div style="background:rgba(16,185,129,0.05); border:1px solid rgba(16,185,129,0.25); border-radius:12px; padding:20px;">
+                        <div style="font-size:0.75rem; color:#10b981; font-weight:700; margin-bottom:10px; letter-spacing:0.05em;">TARGET 1</div>
+                        <div style="font-size:1.6rem; font-weight:900; color:#10b981; margin-bottom:8px;">+15%</div>
+                        <div style="font-size:0.82rem; color:#fff; font-weight:600; margin-bottom:6px;">卖出 50%</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted); line-height:1.5;">剩余50%继续持有，等候 T2 或追踪止损触发</div>
+                    </div>
+                    <div style="background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.3); border-radius:12px; padding:20px;">
+                        <div style="font-size:0.75rem; color:#10b981; font-weight:700; margin-bottom:10px; letter-spacing:0.05em;">TARGET 2</div>
+                        <div style="font-size:1.6rem; font-weight:900; color:#10b981; margin-bottom:8px;">+25%</div>
+                        <div style="font-size:0.82rem; color:#fff; font-weight:600; margin-bottom:6px;">再卖出 25%</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted); line-height:1.5;">剩余25%持续运行，追踪止损保护利润</div>
+                    </div>
+                    <div style="background:rgba(251,191,36,0.05); border:1px solid rgba(251,191,36,0.2); border-radius:12px; padding:20px;">
+                        <div style="font-size:0.75rem; color:#fbbf24; font-weight:700; margin-bottom:10px; letter-spacing:0.05em;">TRAILING STOP</div>
+                        <div style="font-size:1.6rem; font-weight:900; color:#fbbf24; margin-bottom:8px;">-10%</div>
+                        <div style="font-size:0.82rem; color:#fff; font-weight:600; margin-bottom:6px;">从最高点回撤</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted); line-height:1.5;">触发后全仓清出。追踪止损高于T1时始终有效</div>
+                    </div>
+                    <div style="background:rgba(99,102,241,0.05); border:1px solid rgba(99,102,241,0.2); border-radius:12px; padding:20px;">
+                        <div style="font-size:0.75rem; color:#a78bfa; font-weight:700; margin-bottom:10px; letter-spacing:0.05em;">FORCED EXIT</div>
+                        <div style="font-size:1.6rem; font-weight:900; color:#a78bfa; margin-bottom:8px;">排名跌出</div>
+                        <div style="font-size:0.82rem; color:#fff; font-weight:600; margin-bottom:6px;">Top N 之外</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted); line-height:1.5;">下次调仓日（周五），无论盈亏全部清出并换仓</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ④ 止损规则 -->
+            <section class="st-section">
+                <h3>🛡️ ④ 多重止损断路器</h3>
+                <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:16px;">
+                    <div style="background:rgba(239,68,68,0.05); border:1px solid rgba(239,68,68,0.3); border-radius:12px; padding:22px;">
+                        <div style="font-size:0.75rem; color:#f87171; font-weight:700; margin-bottom:10px;">🔴 硬止损 (HARD STOP)</div>
+                        <div style="font-size:1.8rem; font-weight:900; color:#f87171; margin-bottom:10px;">-8%</div>
+                        <div style="font-size:0.82rem; color:#fff; margin-bottom:8px;">单仓持有期跌幅达 -8%</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted); line-height:1.6;">⚡ 立即清仓，同日执行<br>不等调仓周期<br>可设限价单 -7.5% 触发</div>
+                    </div>
+                    <div style="background:rgba(251,191,36,0.05); border:1px solid rgba(251,191,36,0.2); border-radius:12px; padding:22px;">
+                        <div style="font-size:0.75rem; color:#fbbf24; font-weight:700; margin-bottom:10px;">🟡 时间止损 (TIME STOP)</div>
+                        <div style="font-size:1.8rem; font-weight:900; color:#fbbf24; margin-bottom:10px;">20日</div>
+                        <div style="font-size:0.82rem; color:#fff; margin-bottom:8px;">持有超20交易日仍无进展</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted); line-height:1.6;">收益率 < +5%<br>→ 减半仓位<br>→ 等候新信号确认</div>
+                    </div>
+                    <div style="background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.35); border-radius:12px; padding:22px;">
+                        <div style="font-size:0.75rem; color:#f87171; font-weight:700; margin-bottom:10px;">💥 市场熔断 (CIRCUIT BREAKER)</div>
+                        <div style="font-size:1.8rem; font-weight:900; color:#f87171; margin-bottom:10px;">CSI -10%</div>
+                        <div style="font-size:0.82rem; color:#fff; margin-bottom:8px;">CSI300单周跌幅超 -10%</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted); line-height:1.6;">🚨 全部清仓，移至现金<br>观察2周，等CSI300<br>重新站上MA120再入场</div>
+                    </div>
+                </div>
+                <!-- 止损评分扣分规则 -->
+                <div class="glass-panel" style="padding:18px 24px; margin-top:16px;">
+                    <div style="font-size:0.85rem; font-weight:700; color:#fff; margin-bottom:12px;">📉 持仓警告评分（实时监控）</div>
+                    <div style="display:flex; flex-wrap:wrap; gap:12px; font-size:0.78rem;">
+                        <div style="background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); border-radius:8px; padding:10px 14px;">
+                            <span style="color:#f87171; font-weight:700;">⚠️ 危险 (-20分)</span><br>
+                            <span style="color:var(--text-muted);">评分跌至 &lt; 45分 且持仓亏损 &gt; 4%</span>
+                        </div>
+                        <div style="background:rgba(251,191,36,0.06); border:1px solid rgba(251,191,36,0.15); border-radius:8px; padding:10px 14px;">
+                            <span style="color:#fbbf24; font-weight:700;">⚡ 注意 (-10分)</span><br>
+                            <span style="color:var(--text-muted);">动量Z分 &lt; 0 或量比 &lt; 0.7</span>
+                        </div>
+                        <div style="background:rgba(16,185,129,0.05); border:1px solid rgba(16,185,129,0.15); border-radius:8px; padding:10px 14px;">
+                            <span style="color:#10b981; font-weight:700;">✅ 持有加分 (+5分)</span><br>
+                            <span style="color:var(--text-muted);">盈利超 +5% 且评分维持 &gt; 65分</span>
+                        </div>
+                        <div style="background:rgba(99,102,241,0.06); border:1px solid rgba(99,102,241,0.15); border-radius:8px; padding:10px 14px;">
+                            <span style="color:#a78bfa; font-weight:700;">🔒 锁仓加分 (+8分)</span><br>
+                            <span style="color:var(--text-muted);">T1已止盈，剩余仓启动追踪止盈保护</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ⑤ 实时信号计算器 -->
+            <section class="st-section">
+                <h3>🧮 ⑤ 实时信号评分计算器</h3>
+                <div class="glass-panel" style="padding:28px;">
+                    <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:16px; margin-bottom:24px;">
+                        <div>
+                            <label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:6px;">动量Z分 (MOM_S)</label>
+                            <select id="calc-mom" onchange="calcSignalScore()" style="width:100%; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:9px; font-family:inherit; outline:none;">
+                                <option value="40">Z &gt; +1.0 (强势)</option>
+                                <option value="25" selected>Z ∈ [+0.5, +1.0]</option>
+                                <option value="0">Z &lt; +0.5 (弱势)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:6px;">市场环境</label>
+                            <select id="calc-regime" onchange="calcSignalScore()" style="width:100%; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:9px; font-family:inherit; outline:none;">
+                                <option value="20">🟢 BULL 牛市</option>
+                                <option value="12" selected>🟡 RANGE 震荡</option>
+                                <option value="0">🔴 BEAR 熊市</option>
+                            </select>
+                        </div>
+                        <div>
+                        <div>
+                            <label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:6px;">量比</label>
+                            <select id="calc-vol" onchange="calcSignalScore()" style="width:100%; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:9px; font-family:inherit; outline:none;">
+                                <option value="15">≥ 1.5x (放量)</option>
+                                <option value="8" selected>1.0–1.5x</option>
+                                <option value="0">&lt; 1.0x (缩量)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:6px;">RSI (技术位)</label>
+                            <select id="calc-rsi" onchange="calcSignalScore()" style="width:100%; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:9px; font-family:inherit; outline:none;">
+                                <option value="15" selected>40–65 (健康)</option>
+                                <option value="10">30–40 (超卖)</option>
+                                <option value="5">&lt; 30 (极度超卖)</option>
+                                <option value="0">&gt; 70 (过热，否决)</option>
+                            </select>
+                        </div>
+                            <label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:6px;">30日波动率</label>
+                            <select id="calc-vlt" onchange="calcSignalScore()" style="width:100%; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:9px; font-family:inherit; outline:none;">
+                                <option value="10" selected>&lt; 25% (低波动)</option>
+                                <option value="5">25–40%</option>
+                                <option value="0">&gt; 40% (高噪音)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <!-- 评分结果展示 -->
+                    <div id="calc-result" style="display:flex; align-items:center; gap:24px; padding:20px 24px; background:rgba(0,0,0,0.2); border-radius:12px; border:1px solid rgba(255,255,255,0.06);">
+                        <div style="text-align:center; min-width:90px;">
+                            <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:4px;">综合评分</div>
+                            <div id="calc-score-num" style="font-size:2.8rem; font-weight:900; color:#fbbf24; line-height:1;">45</div>
+                            <div style="font-size:0.72rem; color:var(--text-muted);">/ 100</div>
+                        </div>
+                        <div style="flex:1;">
+                            <div id="calc-threshold-hint" style="font-size:0.68rem; color:#a78bfa; margin-bottom:6px; font-weight:600; letter-spacing:0.02em;">当前市场门槛: 全仓≥80 | 标准≥65 | 半仓≥55</div>
+                            <div style="height:8px; background:rgba(255,255,255,0.06); border-radius:4px; overflow:hidden;">
+                                <div id="calc-score-bar" style="height:100%; width:45%; background:linear-gradient(90deg,#f59e0b,#fbbf24); border-radius:4px; transition:width 0.4s ease;"></div>
+                            </div>
+                        </div>
+                        <div id="calc-verdict" style="font-size:0.9rem; font-weight:700; min-width:140px; text-align:center; padding:10px 16px; border-radius:8px; border:1px solid rgba(255,255,255,0.1); color:#fff;">🟡 半仓入场</div>
+                        <div>
+                            <div id="calc-action" style="font-size:0.82rem; color:var(--text-muted); max-width:220px; line-height:1.6;">综合评分45分，达到半仓入场标准。建议建仓持仓上限的50%，等候下次调仓日确认加仓信号。</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ⑥ 仓位管理公式 -->
+            <section class="st-section">
+                <h3>⚖️ ⑥ 仓位管理公式</h3>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+                    <div class="glass-panel" style="padding:24px;">
+                        <div style="font-size:0.9rem; font-weight:700; color:#fff; margin-bottom:16px;">📐 Kelly-Lite 仓位公式</div>
+                        <div style="background:rgba(0,0,0,0.25); border-radius:10px; padding:16px; font-size:0.85rem; font-family:monospace; color:#a78bfa; line-height:2;">
+                            W_raw = (Score - 50) / 50 × 30%<br>
+                            W_adj = W_raw × 市场系数<br>
+                            W_final = min(W_adj, 单标的上限30%)<br>
+                            <span style="color:var(--text-muted); font-size:0.72rem;">市场系数: BULL=1.0 / RANGE=0.77 / BEAR=0.53</span>
+                        </div>
+                        <div style="margin-top:14px; font-size:0.78rem; color:var(--text-muted); line-height:1.7;">
+                            <strong style="color:#fcd34d;">示例：</strong>Score=80，BULL市场<br>
+                            W_raw=(80-50)/50×30%=18%<br>
+                            W_adj=18%×1.0=18% → 建仓18%总资金
+                        </div>
+                    </div>
+                    <div class="glass-panel" style="padding:24px;">
+                        <div style="font-size:0.9rem; font-weight:700; color:#fff; margin-bottom:16px;">🛡️ 最大仓位约束矩阵</div>
+                        <table class="st-table">
+                            <thead><tr><th>条件</th><th>单仓上限</th><th>总仓上限</th></tr></thead>
+                            <tbody>
+                                <tr><td>🟢 BULL + Score≥80</td><td style="color:#10b981;font-weight:700;">30%</td><td style="color:#10b981;font-weight:700;">85%</td></tr>
+                                <tr><td>🟡 RANGE + Score≥68</td><td style="color:#fbbf24;font-weight:700;">22%</td><td style="color:#fbbf24;font-weight:700;">66%</td></tr>
+                                <tr><td>🔴 BEAR + Score≥75</td><td style="color:#f87171;font-weight:700;">16%</td><td style="color:#f87171;font-weight:700;">45%</td></tr>
+                                <tr><td>❌ Score&lt;50</td><td style="color:var(--text-muted);">0%</td><td style="color:var(--text-muted);">0%</td></tr>
+                            </tbody>
+                        </table>
+                        <div style="margin-top:14px; padding:10px 14px; background:rgba(245,158,11,0.05); border:1px solid rgba(245,158,11,0.15); border-radius:8px; font-size:0.78rem; color:var(--text-muted); line-height:1.6;">
+                            ⚡ <strong style="color:#fbbf24;">行业组约束：</strong>同一大类行业（科技/新能源/军工/港股）持仓合计不得超 40%，强制分散。
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+
+            </div><!-- /st-signal-rules -->
+
+
+
+
+
 
             <!-- ==================== 策略执行结果 ==================== -->
             <div class="st-report" id="st-execution">
@@ -468,7 +1966,7 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                             <select id="st-strategy-select" class="st-select" style="background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:8px 12px; margin-right:12px; outline:none; font-family:inherit;">
                                 <option value="mean-reversion">📐 均值回归策略 V2.0</option>
                                 <option value="dividend-trend">💰 红利趋势策略 V2.0</option>
-                                <option value="momentum">🚀 行业动量轮动 V1.0</option>
+                                <option value="momentum">🚀 行业动量轮动 V2.0</option>
                             </select>
                             <span class="st-data-time" id="st-data-time">等待运行...</span>
                             <button class="st-run-btn" id="st-run-btn" onclick="runStrategy()">🚀 运行策略</button>

@@ -34,8 +34,8 @@ document.addEventListener('DOMContentLoaded', function() {
             label: '均值回归 V2.0',
             params: [
                 { key: 'rsi_period', label: 'RSI 周期', min: 2, max: 14, step: 1, default: 3 },
-                { key: 'rsi_buy', label: 'RSI 买入阈值', min: 5, max: 40, step: 1, default: 10 },
-                { key: 'rsi_sell', label: 'RSI 卖出阈值', min: 60, max: 95, step: 1, default: 85 },
+                { key: 'rsi_buy', label: 'RSI 买入阈值', min: -50, max: 40, step: 1, default: 10 },
+                { key: 'rsi_sell', label: 'RSI 卖出阈值', min: -50, max: 95, step: 1, default: 85 },
                 { key: 'boll_period', label: '布林带周期', min: 10, max: 40, step: 1, default: 20 },
                 { key: 'ma_trend_period', label: '趋势MA周期', min: 20, max: 120, step: 5, default: 60 }
             ]
@@ -53,7 +53,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 { key: 'ma_slow', label: '慢均线周期', min: 60, max: 250, step: 10, default: 120 },
                 { key: 'ma_fast', label: '快均线周期', min: 5, max: 60, step: 1, default: 20 },
                 { key: 'rsi_period', label: 'RSI 周期', min: 3, max: 21, step: 1, default: 9 },
-                { key: 'rsi_buy', label: 'RSI 买入阈值', min: 20, max: 60, step: 1, default: 40 }
+                { key: 'rsi_buy', label: 'RSI 买入阈值', min: -50, max: 60, step: 1, default: 40 }
             ]
         }
     };
@@ -69,10 +69,37 @@ document.addEventListener('DOMContentLoaded', function() {
                 <label>${p.label}</label>
                 <input type="range" min="${p.min}" max="${p.max}" step="${p.step}" value="${p.default}"
                        id="param-${p.key}" data-key="${p.key}"
-                       oninput="this.nextElementSibling.textContent=this.value">
-                <span class="param-value">${p.default}</span>
+                       oninput="handleParamChange(this)">
+                <span class="param-value" style="color: ${p.default < 0 ? '#ef4444' : 'var(--accent)'}">${p.default}</span>
             </div>
         `).join('');
+    }
+
+    // New: Centralized Handle Change for better tracking and visual feedback
+    window.handleParamChange = function(el) {
+        const val = parseFloat(el.value);
+        const span = el.nextElementSibling;
+        if (span) {
+            span.textContent = val;
+            // Color feedback: Red for negative, standard blue/green for positive
+            span.style.color = val < 0 ? '#ef4444' : 'var(--accent)';
+        }
+        console.log(`>>> [Param Change] ${el.dataset.key} = ${val}`);
+    }
+
+    function resetToDefaults() {
+        const stratKey = strategySelect.value;
+        const config = STRATEGY_PARAMS[stratKey];
+        if (!config) return;
+
+        config.params.forEach(p => {
+            const input = document.getElementById(`param-${p.key}`);
+            if (input) {
+                input.value = p.default;
+                handleParamChange(input);
+            }
+        });
+        console.log(`>>> [Action] Reset all params for ${stratKey}`);
     }
 
     function collectParams() {
@@ -86,6 +113,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Init params panel for default strategy
     renderStrategyParams(strategySelect.value);
     strategySelect.addEventListener('change', () => renderStrategyParams(strategySelect.value));
+    
+    const resetBtn = document.getElementById('reset-params-btn');
+    if (resetBtn) resetBtn.addEventListener('click', resetToDefaults);
 
     // ===== Error Display =====
     window.showError = function(msg) {
@@ -152,8 +182,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const basePayload = {
             strategy: strategySelect.value,
-            start_date: document.getElementById('start-date').value,
-            end_date: document.getElementById('end-date').value,
+            start_date: document.getElementById('start-date').value.replace(/-/g, ''),
+            end_date: document.getElementById('end-date').value.replace(/-/g, ''),
             initial_cash: parseFloat(document.getElementById('initial-cash').value),
             order_pct: parseFloat(document.getElementById('order-pct').value),
             adj: document.getElementById('adj-select').value,

@@ -1,0 +1,145 @@
+{
+  "status": "success",
+  "generated": "2026-03-27T16:18:19.864701",
+  "description": "V3.1 分状态参数验证 — 自适应参数 vs 统一RANGE参数对比",
+  "regime_results": {
+    "BEAR": {
+      "label": "[BEAR] 熊市 2022 CSI300 -31%",
+      "period": "2022-01-04 ~ 2022-10-31",
+      "adaptive_params": {
+        "ma_trend": 90,
+        "rsi_period": 9,
+        "rsi_buy": 30,
+        "rsi_sell": 70,
+        "bias_buy": -3.0,
+        "bias_sell": 4.5,
+        "boll_period": 20,
+        "ma_defend": 40
+      },
+      "adaptive": {
+        "total_ret": -0.52,
+        "total_alpha": 28.04,
+        "max_dd": -0.52,
+        "sharpe": -5.238,
+        "calmar": -1.272,
+        "win_rate": 0.0
+      },
+      "range_base": {
+        "total_ret": 0.75,
+        "total_alpha": 29.31,
+        "max_dd": -0.55,
+        "sharpe": -1.078,
+        "calmar": 1.752,
+        "win_rate": 11.4
+      },
+      "total_alpha_gain": -1.27,
+      "sharpe_gain": -4.16,
+      "dd_protect": -0.03,
+      "verdict": "range_wins"
+    },
+    "RANGE_1": {
+      "label": "[RANGE] 震荡 2022末-2024中 反弹期",
+      "period": "2022-11-01 ~ 2024-08-30",
+      "adaptive_params": {
+        "ma_trend": 60,
+        "rsi_period": 9,
+        "rsi_buy": 35,
+        "rsi_sell": 75,
+        "bias_buy": -2.0,
+        "bias_sell": 5.5,
+        "boll_period": 20,
+        "ma_defend": 30
+      },
+      "adaptive": {
+        "total_ret": 1.31,
+        "total_alpha": 9.7,
+        "max_dd": -0.2,
+        "sharpe": -2.541,
+        "calmar": 3.593,
+        "win_rate": 10.4
+      },
+      "range_base": {
+        "total_ret": 1.31,
+        "total_alpha": 9.7,
+        "max_dd": -0.2,
+        "sharpe": -2.541,
+        "calmar": 3.593,
+        "win_rate": 10.4
+      },
+      "total_alpha_gain": 0.0,
+      "sharpe_gain": 0.0,
+      "dd_protect": -0.0,
+      "verdict": "range_wins"
+    },
+    "BULL": {
+      "label": "[BULL] 牛市 924行情 CSI300 +25%",
+      "period": "2024-09-01 ~ 2024-12-31",
+      "adaptive_params": {
+        "ma_trend": 60,
+        "rsi_period": 9,
+        "rsi_buy": 40,
+        "rsi_sell": 80,
+        "bias_buy": -1.5,
+        "bias_sell": 7.0,
+        "boll_period": 20,
+        "ma_defend": 20
+      },
+      "adaptive": {
+        "total_ret": 0.1,
+        "total_alpha": -20.61,
+        "max_dd": -0.51,
+        "sharpe": -1.494,
+        "calmar": 0.601,
+        "win_rate": 16.7
+      },
+      "range_base": {
+        "total_ret": 0.55,
+        "total_alpha": -20.16,
+        "max_dd": -0.16,
+        "sharpe": -0.352,
+        "calmar": 11.108,
+        "win_rate": 16.7
+      },
+      "total_alpha_gain": -0.45,
+      "sharpe_gain": -1.142,
+      "dd_protect": 0.35,
+      "verdict": "range_wins"
+    },
+    "RANGE_2": {
+      "label": "[RANGE] 震荡 2025年整理",
+      "period": "2025-01-01 ~ 2026-03-26",
+      "adaptive_params": {
+        "ma_trend": 60,
+        "rsi_period": 9,
+        "rsi_buy": 35,
+        "rsi_sell": 75,
+        "bias_buy": -2.0,
+        "bias_sell": 5.5,
+        "boll_period": 20,
+        "ma_defend": 30
+      },
+      "adaptive": {
+        "total_ret": -0.4,
+        "total_alpha": -15.21,
+        "max_dd": -0.4,
+        "sharpe": -9.795,
+        "calmar": -0.852,
+        "win_rate": 4.6
+      },
+      "range_base": {
+        "total_ret": -0.4,
+        "total_alpha": -15.21,
+        "max_dd": -0.4,
+        "sharpe": -9.795,
+        "calmar": -0.852,
+        "win_rate": 4.6
+      },
+      "total_alpha_gain": 0.0,
+      "sharpe_gain": 0.0,
+      "dd_protect": -0.0,
+      "verdict": "range_wins"
+    }
+  },
+  "win_count": 0,
+  "total_count": 4
+}
