@@ -272,6 +272,86 @@
                 </div>
             </section>
 
+            <!-- ===== ⚡ V4.0 当前激活参数面板（自动识别）===== -->
+            <section class="st-section" id="mr-active-params">
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+                    <h3 style="margin:0;">⚡ V4.0 · 当前激活参数 <span style="font-size:0.72rem; font-weight:400; color:var(--text-muted); margin-left:8px;">实时Regime识别 · 自动切换三套专属参数 · 无需重启</span></h3>
+                    <button onclick="loadMrCurrentParams(true)" id="mr-params-refresh-btn"
+                        style="background:rgba(99,102,241,0.12); color:#a78bfa; border:1px solid rgba(99,102,241,0.3); border-radius:8px; padding:7px 16px; cursor:pointer; font-size:0.8rem; font-family:inherit; transition:all 0.2s;">
+                        🔄 重新识别
+                    </button>
+                </div>
+                <div class="glass-panel" style="padding:24px; border-color:rgba(99,102,241,0.25);">
+
+                    <!-- 加载状态 -->
+                    <div id="mr-params-loading" style="display:flex; align-items:center; gap:10px; color:var(--text-muted); font-size:0.85rem; padding:12px 0;">
+                        <div style="width:16px;height:16px;border:2px solid rgba(99,102,241,0.3);border-top-color:#a78bfa;border-radius:50%;animation:spin 1s linear infinite;"></div>
+                        正在识别市场状态并加载最优参数...
+                    </div>
+
+                    <!-- 结果展示 -->
+                    <div id="mr-params-result" style="display:none;">
+                        <!-- 状态徽章 + 当前激活参数 -->
+                        <div style="display:grid; grid-template-columns:auto 1fr; gap:20px; align-items:start; margin-bottom:20px;">
+                            <div id="mr-regime-badge" style="padding:16px 22px; border-radius:12px; text-align:center; min-width:120px; border:2px solid rgba(99,102,241,0.3);">
+                                <div id="mr-regime-icon" style="font-size:2rem; line-height:1; margin-bottom:4px;">🟡</div>
+                                <div id="mr-regime-name" style="font-size:1rem; font-weight:900;">RANGE</div>
+                                <div id="mr-regime-sub" style="font-size:0.68rem; opacity:0.7; margin-top:2px;">震荡期</div>
+                            </div>
+                            <!-- 激活参数网格 -->
+                            <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:10px;">
+                                <div style="background:rgba(16,185,129,0.06); border:1px solid rgba(16,185,129,0.2); border-radius:9px; padding:12px; text-align:center;">
+                                    <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:3px;">趋势均线</div>
+                                    <div id="mr-ap-trend" style="font-size:1.3rem; font-weight:900; color:#34d399;">MA90</div>
+                                </div>
+                                <div style="background:rgba(16,185,129,0.06); border:1px solid rgba(16,185,129,0.2); border-radius:9px; padding:12px; text-align:center;">
+                                    <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:3px;">RSI买入≤</div>
+                                    <div id="mr-ap-rsibuy" style="font-size:1.3rem; font-weight:900; color:#34d399;">40</div>
+                                </div>
+                                <div style="background:rgba(239,68,68,0.06); border:1px solid rgba(239,68,68,0.2); border-radius:9px; padding:12px; text-align:center;">
+                                    <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:3px;">RSI卖出≥</div>
+                                    <div id="mr-ap-rsisell" style="font-size:1.3rem; font-weight:900; color:#f87171;">70</div>
+                                </div>
+                                <div style="background:rgba(245,158,11,0.06); border:1px solid rgba(245,158,11,0.2); border-radius:9px; padding:12px; text-align:center;">
+                                    <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:3px;">乖离率≤</div>
+                                    <div id="mr-ap-bias" style="font-size:1.3rem; font-weight:900; color:#fbbf24;">-2.0%</div>
+                                </div>
+                                <div style="background:rgba(239,68,68,0.06); border:1px solid rgba(239,68,68,0.2); border-radius:9px; padding:12px; text-align:center;">
+                                    <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:3px;">止损线</div>
+                                    <div id="mr-ap-sl" style="font-size:1.3rem; font-weight:900; color:#f87171;">-7%</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 仓位上限 + 评分门槛 + 三态对比表 -->
+                        <div style="display:grid; grid-template-columns:1fr 2fr; gap:16px;">
+                            <div style="background:rgba(0,0,0,0.2); border-radius:10px; padding:14px;">
+                                <div style="font-size:0.75rem; font-weight:700; color:#a78bfa; margin-bottom:8px;">当前状态运行规格</div>
+                                <div style="font-size:0.8rem; color:var(--text-muted); line-height:2.0;">
+                                    仓位上限：<strong id="mr-ap-poscap" style="color:#34d399;">80%</strong><br>
+                                    评分入场门槛：<strong id="mr-ap-gate" style="color:#fbbf24;">68分</strong><br>
+                                    最后识别：<span id="mr-ap-time" style="color:#64748b;">—</span>
+                                </div>
+                            </div>
+                            <div id="mr-three-regime-table" style="background:rgba(0,0,0,0.2); border-radius:10px; padding:14px;">
+                                <div style="font-size:0.75rem; font-weight:700; color:#a78bfa; margin-bottom:8px;">三态参数速览（回测验证）</div>
+                                <table class="st-table" style="font-size:0.75rem;">
+                                    <thead><tr><th>状态</th><th>趋势均线</th><th>RSI买入</th><th>RSI卖出</th><th>乖离率</th><th>止损</th><th>仓位上限</th></tr></thead>
+                                    <tbody id="mr-regime-table-body">
+                                        <tr><td colspan="7" style="text-align:center; color:#64748b;">加载中...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- 重优化提示 -->
+                        <div id="mr-reopt-banner" style="display:none; margin-top:14px; padding:10px 14px; background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.25); border-radius:8px; font-size:0.78rem; color:#fbbf24;">
+                            ⏰ 距上次优化已超60天，建议运行 <code>python mr_per_regime_optimizer.py</code> 重新优化参数
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             <!-- ===== 📊 V3.0 回测验证区块 ===== -->
             <section class="st-section" id="mr-backtest-verify">
                 <h3>📊 V3.0 · 回测验证报告 <span style="font-size:0.72rem; font-weight:400; color:var(--text-muted); margin-left:8px;">864种参数网格 · 双集验证防过拟合 · Regime Overlay 状态切换</span></h3>

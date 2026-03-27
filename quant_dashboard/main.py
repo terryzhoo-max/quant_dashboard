@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 import time
 import traceback
 from datetime import datetime, timedelta
-from mean_reversion_engine import run_strategy
+from mean_reversion_engine import run_strategy, detect_regime, get_all_regime_params, load_regime_params, needs_reoptimize
 from dividend_trend_engine import run_dividend_strategy
 from momentum_rotation_engine import run_momentum_strategy
 from momentum_backtest_engine import run_momentum_backtest, run_momentum_optimize
@@ -1356,20 +1356,51 @@ async def execute_trade(req: TradeRequest):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-# === 均值回归 V3.0 回测结果 API ===
+# === 均值回归 V4.0 三态参数 API ===
 import json as _json
 import os as _os
 
 @app.get("/api/v1/mr_backtest_results")
 async def get_mr_backtest_results():
-    """返回均值回归 V3.0 网格搜索 + Regime Overlay 回测结果"""
     fp = "mr_optimization_results.json"
     if not _os.path.exists(fp):
-        return {"status": "error", "message": "回测结果文件不存在，请先运行 mr_regime_backtest.py"}
+        return {"status": "error", "message": "请先运行 mr_regime_backtest.py"}
     try:
         with open(fp, "r", encoding="utf-8") as f:
             data = _json.load(f)
         return data
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/v1/mr_per_regime_params")
+async def get_per_regime_params():
+    """返回三态（BEAR/RANGE/BULL）各自的回测最优参数"""
+    try:
+        return {
+            "status": "ok",
+            "regimes": get_all_regime_params(),
+            "needs_reoptimize": needs_reoptimize(),
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/v1/mr_current_params")
+async def get_current_regime_params():
+    """实时识别当前市场状态，返回对应的最优参数（无需重启服务器）"""
+    try:
+        info = detect_regime()
+        return {
+            "status":      "ok",
+            "regime":      info.get("regime"),
+            "params":      info.get("params", {}),
+            "pos_cap":     info.get("pos_cap"),
+            "score_gate":  info.get("score_gate"),
+            "csi300":      info.get("csi300"),
+            "ret5":        info.get("ret5"),
+            "ret20":       info.get("ret20"),
+            "needs_reoptimize": info.get("needs_reoptimize", False),
+            "all_regimes": get_all_regime_params(),
+        }
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

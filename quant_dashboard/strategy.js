@@ -170,6 +170,130 @@ function calcDividendScore() {
 
 
 
+// ====== ⚡ 均值回归 V4.0 · 当前激活参数自动加载 ======
+const _MR_REGIME_META = {
+    BULL:  { icon:'🟢', name:'BULL',  sub:'牛市',    color:'#34d399', bg:'rgba(16,185,129,0.10)', border:'rgba(16,185,129,0.3)' },
+    RANGE: { icon:'🟡', name:'RANGE', sub:'震荡',    color:'#fbbf24', bg:'rgba(245,158,11,0.10)', border:'rgba(245,158,11,0.3)' },
+    BEAR:  { icon:'🔴', name:'BEAR',  sub:'熊市',    color:'#f87171', bg:'rgba(239,68,68,0.10)',  border:'rgba(239,68,68,0.3)'  },
+    CRASH: { icon:'🚨', name:'CRASH', sub:'崩盘警戒',color:'#ff4444', bg:'rgba(239,0,0,0.15)',    border:'rgba(239,0,0,0.4)'    },
+};
+
+async function loadMrCurrentParams(force = false) {
+    const loadEl   = document.getElementById('mr-params-loading');
+    const resultEl = document.getElementById('mr-params-result');
+    const btn      = document.getElementById('mr-params-refresh-btn');
+    if (loadEl)  loadEl.style.display = 'flex';
+    if (resultEl) resultEl.style.display = 'none';
+    if (btn)    { btn.disabled = true; btn.textContent = '⏳ 识别中...'; }
+
+    try {
+        const resp = await fetch(`${API_URL}/api/v1/mr_current_params`, {
+            signal: AbortSignal.timeout(10000)
+        });
+        if (!resp.ok) throw new Error('API err');
+        const data = await resp.json();
+        if (data.status === 'error') throw new Error(data.message);
+        _renderMrActiveParams(data);
+    } catch(e) {
+        // 离线回退：直接读静态 JSON
+        try {
+            const r2 = await fetch('./mr_per_regime_params.json?' + Date.now());
+            if (!r2.ok) throw new Error('no file');
+            const jd = await r2.json();
+            const capMap  = { BEAR:0.65, RANGE:0.80, BULL:0.35 };
+            const gateMap = { BEAR:78,   RANGE:68,   BULL:60   };
+            const regs = {};
+            Object.entries(jd.regimes || {}).forEach(([r, v]) => {
+                regs[r] = { params: v.params, pos_cap: capMap[r]||0.65,
+                             score_gate: gateMap[r]||68,
+                             combined_score: v.combined_score,
+                             train_alpha: v.train_kpi?.alpha,
+                             valid_alpha: v.valid_kpi?.alpha };
+            });
+            _renderMrActiveParams({
+                regime: 'RANGE', params: regs['RANGE']?.params || {},
+                pos_cap: 0.80, score_gate: 68,
+                all_regimes: regs, needs_reoptimize: false,
+            });
+        } catch(e2) {
+            if (loadEl) loadEl.innerHTML = '<span style="color:#f87171;">⚠️ 无法连接后端，且本地 mr_per_regime_params.json 未找到</span>';
+        }
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '🔄 重新识别'; }
+    }
+}
+
+function _renderMrActiveParams(data) {
+    const regime = data.regime  || 'RANGE';
+    const params = data.params  || {};
+    const posCap = data.pos_cap || 0.80;
+    const gate   = data.score_gate || 68;
+    const allReg = data.all_regimes || {};
+    const needR  = data.needs_reoptimize;
+    const meta   = _MR_REGIME_META[regime] || _MR_REGIME_META['RANGE'];
+
+    const loadEl   = document.getElementById('mr-params-loading');
+    const resultEl = document.getElementById('mr-params-result');
+    if (loadEl)   loadEl.style.display  = 'none';
+    if (resultEl) resultEl.style.display = 'block';
+
+    const badge = document.getElementById('mr-regime-badge');
+    if (badge) { badge.style.background = meta.bg; badge.style.borderColor = meta.border; }
+
+    const _t = (id, txt, color) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = txt;
+        if (color) el.style.color = color;
+    };
+    _t('mr-regime-icon', meta.icon);
+    _t('mr-regime-name', meta.name, meta.color);
+    _t('mr-regime-sub',  meta.sub);
+    _t('mr-ap-trend',  `MA${params.N_trend || 90}`, '#34d399');
+    _t('mr-ap-rsibuy', params.rsi_buy  != null ? String(params.rsi_buy)          : '—', '#34d399');
+    _t('mr-ap-rsisell',params.rsi_sell != null ? String(params.rsi_sell)         : '—', '#f87171');
+    _t('mr-ap-bias',   params.bias_buy != null ? `${params.bias_buy}%`           : '—', '#fbbf24');
+    _t('mr-ap-sl',     params.stop_loss!= null ? `-${(params.stop_loss*100).toFixed(0)}%` : '—', '#f87171');
+    _t('mr-ap-poscap', `${Math.round(posCap*100)}%`, '#34d399');
+    _t('mr-ap-gate',   `${gate}分`, '#fbbf24');
+    _t('mr-ap-time',   new Date().toLocaleTimeString('zh-CN'));
+
+    const reoptBanner = document.getElementById('mr-reopt-banner');
+    if (reoptBanner) reoptBanner.style.display = needR ? 'block' : 'none';
+
+    const tbody = document.getElementById('mr-regime-table-body');
+    if (tbody) {
+        const capMap  = { BEAR:65, RANGE:80, BULL:35 };
+        const descMap = { BEAR:'🔴 熊市', RANGE:'🟡 震荡', BULL:'🟢 牛市' };
+        tbody.innerHTML = ['BEAR','RANGE','BULL'].map(r => {
+            const p = allReg[r]?.params || {};
+            const isActive = r === regime;
+            const s = isActive ? `background:${_MR_REGIME_META[r].bg};font-weight:700;` : '';
+            return `<tr style="${s}">
+                <td>${descMap[r]}${isActive ? ' ◀当前' : ''}</td>
+                <td>MA${p.N_trend||'—'}</td>
+                <td>${p.rsi_buy  !=null?'≤'+p.rsi_buy:'—'}</td>
+                <td>${p.rsi_sell !=null?'≥'+p.rsi_sell:'—'}</td>
+                <td>${p.bias_buy !=null?p.bias_buy+'%':'—'}</td>
+                <td>${p.stop_loss!=null?'-'+(p.stop_loss*100).toFixed(0)+'%':'—'}</td>
+                <td>${capMap[r]||'—'}%</td>
+            </tr>`;
+        }).join('');
+    }
+
+    // 联动信号评分：自动设置 Regime 下拉
+    const regSel = document.getElementById('calc-regime');
+    if (regSel) {
+        const regVal = { BULL:20, RANGE:12, BEAR:0, CRASH:0 }[regime];
+        if (regVal != null) { regSel.value = String(regVal); calcSignalScore(); }
+    }
+}
+
+// 页面打开自动识别
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(loadMrCurrentParams, 500);
+});
+
 // ====== 📊 均值回归 V3.0 回测验证 — 净值曲线渲染 ======
 let _mrBacktestChart = null;
 

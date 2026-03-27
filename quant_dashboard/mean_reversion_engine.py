@@ -1,399 +1,423 @@
 """
-AlphaCore · 均值回归策略引擎 V2.0
-数据源：Tushare（5000积分用户 — 按trade_date批量获取）
+AlphaCore · 均值回归 V4.0 自适应参数引擎
+==========================================
+特性：
+- 按实时 Regime 动态加载三套专属参数
+- 无需重启服务器（读取 mr_per_regime_params.json）
+- BULL 状态：均值回归仓位上限 35%，超跌补仓逻辑
+- 60天自动重优化检测
 """
 
 import pandas as pd
 import numpy as np
 import tushare as ts
-from datetime import datetime, timedelta
-import traceback
-import time
+import json
+import os
+from datetime import datetime
 
-# ====== Tushare 初始化 ======
-TUSHARE_TOKEN = "5334333c2cb73c9b9987fb6e89da29a3cbd0f442622fbcbfd7bd40b6"
-ts.set_token(TUSHARE_TOKEN)
-pro = ts.pro_api()
+TUSHARE_TOKEN   = "5334333c2cb73c9b9987fb6e89da29a3cbd0f442622fbcbfd7bd40b6"
+DAILY_PRICE_DIR = "data_lake/daily_prices"
+PARAMS_FILE     = "mr_per_regime_params.json"
 
-# ====== 标的池定义（35只ETF） ======
-ETF_POOL = [
-    # 宽基指数
-    {"code": "510500.SH", "name": "中证500ETF",          "max_pos": 15, "category": "宽基指数"},
-    {"code": "512100.SH", "name": "中证1000ETF",         "max_pos": 15, "category": "宽基指数"},
-    {"code": "510300.SH", "name": "沪深300ETF华泰",      "max_pos": 15, "category": "宽基指数"},
-    {"code": "159915.SZ", "name": "创业板ETF易方达",      "max_pos": 10, "category": "宽基指数"},
-    {"code": "159949.SZ", "name": "创业板50ETF华安",      "max_pos": 10, "category": "宽基指数"},
-    {"code": "588000.SH", "name": "科创50ETF(易方达)",     "max_pos": 10, "category": "宽基指数"},
-    {"code": "159781.SZ", "name": "科创创业ETF",          "max_pos": 8,  "category": "宽基指数"},
-    
-    # 科技/AI/芯片
-    {"code": "512480.SH", "name": "半导体ETF",            "max_pos": 8,  "category": "科技AI芯片"},
-    {"code": "588200.SH", "name": "科创芯片ETF",          "max_pos": 7,  "category": "科技AI芯片"},
-    {"code": "159995.SZ", "name": "芯片ETF",              "max_pos": 7,  "category": "科技AI芯片"},
-    {"code": "159516.SZ", "name": "半导体设备ETF",        "max_pos": 6,  "category": "科技AI芯片"},
-    {"code": "588220.SH", "name": "科创100ETF鹏华",       "max_pos": 8,  "category": "科技AI芯片"},
-    {"code": "515000.SH", "name": "科技ETF",              "max_pos": 6,  "category": "科技AI芯片"},
-    {"code": "515070.SH", "name": "人工智能AIETF",        "max_pos": 6,  "category": "科技AI芯片"},
-    {"code": "159819.SZ", "name": "人工智能ETF易方达",    "max_pos": 6,  "category": "科技AI芯片"},
-    {"code": "515880.SH", "name": "通信ETF国泰",          "max_pos": 6,  "category": "科技AI芯片"},
-    {"code": "562500.SH", "name": "机器人ETF",            "max_pos": 5,  "category": "科技AI芯片"},
+# 默认回退参数（若 JSON 不存在）
+FALLBACK_PARAMS = {
+    "BEAR":  {"N_trend": 40, "rsi_period": 14, "rsi_buy": 45, "rsi_sell": 65, "bias_buy": -3.0, "stop_loss": 0.05},
+    "RANGE": {"N_trend": 90, "rsi_period": 14, "rsi_buy": 40, "rsi_sell": 70, "bias_buy": -2.0, "stop_loss": 0.07},
+    "BULL":  {"N_trend": 120,"rsi_period": 14, "rsi_buy": 45, "rsi_sell": 75, "bias_buy": -1.5, "stop_loss": 0.06},
+}
 
-    # 行业/新能源
-    {"code": "512400.SH", "name": "有色金属ETF",          "max_pos": 6,  "category": "行业新能源"},
-    {"code": "516160.SH", "name": "新能源ETF",            "max_pos": 7,  "category": "行业新能源"},
-    {"code": "515790.SH", "name": "光伏ETF",              "max_pos": 7,  "category": "行业新能源"},
-    {"code": "562550.SH", "name": "绿电ETF",              "max_pos": 5,  "category": "行业新能源"},
-    {"code": "159870.SZ", "name": "化工ETF",              "max_pos": 5,  "category": "行业新能源"},
-    {"code": "512560.SH", "name": "军工ETF",              "max_pos": 7,  "category": "行业新能源"},
-    {"code": "159218.SZ", "name": "卫星ETF招商",          "max_pos": 5,  "category": "行业新能源"},
-    {"code": "159326.SZ", "name": "电网设备ETF",          "max_pos": 5,  "category": "行业新能源"},
-    {"code": "159869.SZ", "name": "游戏ETF",              "max_pos": 5,  "category": "行业新能源"},
-    {"code": "159851.SZ", "name": "金融科技ETF",          "max_pos": 5,  "category": "行业新能源"},
-    
-    # 跨境/港股
-    {"code": "159941.SZ", "name": "纳指ETF",              "max_pos": 8,  "category": "跨境港股"},
-    {"code": "513500.SH", "name": "标普500ETF博时",       "max_pos": 8,  "category": "跨境港股"},
-    {"code": "515100.SH", "name": "红利低波100ETF",       "max_pos": 5,  "category": "跨境港股"},
-    {"code": "159545.SZ", "name": "恒生红利低波ETF",      "max_pos": 5,  "category": "跨境港股"},
-    {"code": "513130.SH", "name": "恒生科技ETF",          "max_pos": 5,  "category": "跨境港股"},
-    {"code": "513970.SH", "name": "恒生消费ETF景顺",      "max_pos": 5,  "category": "跨境港股"},
-    {"code": "513090.SH", "name": "香港证券ETF易方达",    "max_pos": 5,  "category": "跨境港股"},
-    {"code": "513120.SH", "name": "港股创新药ETF",        "max_pos": 5,  "category": "跨境港股"},
+# 各态仓位上限
+REGIME_POS_CAP = {
+    "BEAR":  0.65,   # 熊市：均值回归主战，65%
+    "RANGE": 0.80,   # 震荡：全力均值回归，80%
+    "BULL":  0.35,   # 牛市：超跌补仓逻辑，35%（防止过度交易）
+    "CRASH": 0.00,   # 崩盘：完全禁入
+}
+
+# 信号评分入场门槛（100分制·按 Regime 自适应）
+REGIME_SCORE_GATE = {
+    "BEAR":  78,    # 熊市严格（防接飞刀）
+    "RANGE": 68,    # 震荡标准
+    "BULL":  60,    # 牛市宽松（回调即机会）
+    "CRASH": 999,   # CRASH 禁入
+}
+
+MR_POOL = [
+    {"code": "510500.SH", "name": "中证500ETF",      "max_pos": 15, "defensive": False},
+    {"code": "512100.SH", "name": "中证1000ETF",     "max_pos": 15, "defensive": False},
+    {"code": "510300.SH", "name": "沪深300ETF",      "max_pos": 15, "defensive": True},
+    {"code": "159915.SZ", "name": "创业板ETF",        "max_pos": 10, "defensive": False},
+    {"code": "159949.SZ", "name": "创业板50ETF",      "max_pos": 10, "defensive": False},
+    {"code": "588000.SH", "name": "科创50ETF",        "max_pos": 10, "defensive": False},
+    {"code": "159781.SZ", "name": "科创创业ETF",      "max_pos": 8,  "defensive": False},
+    {"code": "512480.SH", "name": "半导体ETF",        "max_pos": 8,  "defensive": False},
+    {"code": "588200.SH", "name": "科创芯片ETF",      "max_pos": 7,  "defensive": False},
+    {"code": "159995.SZ", "name": "芯片ETF",          "max_pos": 7,  "defensive": False},
+    {"code": "159516.SZ", "name": "半导体设备ETF",    "max_pos": 6,  "defensive": False},
+    {"code": "588220.SH", "name": "科创100ETF",       "max_pos": 8,  "defensive": False},
+    {"code": "515000.SH", "name": "科技ETF",          "max_pos": 6,  "defensive": False},
+    {"code": "515070.SH", "name": "人工智能AIETF",    "max_pos": 6,  "defensive": False},
+    {"code": "159819.SZ", "name": "人工智能ETF",      "max_pos": 6,  "defensive": False},
+    {"code": "515880.SH", "name": "通信ETF",          "max_pos": 6,  "defensive": False},
+    {"code": "562500.SH", "name": "机器人ETF",        "max_pos": 5,  "defensive": False},
+    {"code": "512400.SH", "name": "有色金属ETF",      "max_pos": 6,  "defensive": False},
+    {"code": "516160.SH", "name": "新能源ETF",        "max_pos": 7,  "defensive": False},
+    {"code": "515790.SH", "name": "光伏ETF",          "max_pos": 7,  "defensive": False},
+    {"code": "562550.SH", "name": "绿电ETF",          "max_pos": 5,  "defensive": False},
+    {"code": "159870.SZ", "name": "化工ETF",          "max_pos": 5,  "defensive": False},
+    {"code": "512560.SH", "name": "军工ETF",          "max_pos": 7,  "defensive": True},
+    {"code": "159218.SZ", "name": "卫星ETF",          "max_pos": 5,  "defensive": False},
+    {"code": "159326.SZ", "name": "电网设备ETF",      "max_pos": 5,  "defensive": True},
+    {"code": "159869.SZ", "name": "游戏ETF",          "max_pos": 5,  "defensive": False},
+    {"code": "159851.SZ", "name": "金融科技ETF",      "max_pos": 5,  "defensive": False},
+    {"code": "159941.SZ", "name": "纳指ETF",          "max_pos": 8,  "defensive": True},
+    {"code": "513500.SH", "name": "标普500ETF",       "max_pos": 8,  "defensive": True},
+    {"code": "515100.SH", "name": "红利低波100ETF",   "max_pos": 5,  "defensive": True},
+    {"code": "159545.SZ", "name": "恒生红利低波ETF",  "max_pos": 5,  "defensive": True},
+    {"code": "513130.SH", "name": "恒生科技ETF",      "max_pos": 5,  "defensive": False},
+    {"code": "513970.SH", "name": "恒生消费ETF",      "max_pos": 5,  "defensive": False},
+    {"code": "513090.SH", "name": "香港证券ETF",      "max_pos": 5,  "defensive": False},
+    {"code": "513120.SH", "name": "港股创新药ETF",    "max_pos": 5,  "defensive": False},
 ]
 
-ETF_CODE_SET = {e["code"] for e in ETF_POOL}
+
+# ─── 动态参数加载（运行时，无需重启） ─────────────────────────────────────────
+
+def load_regime_params(regime: str = None) -> dict:
+    """
+    从 mr_per_regime_params.json 读取指定 Regime 的最优参数。
+    文件更新后无需重启服务器——每次调用都重新读文件。
+    若文件不存在，返回内置默认参数。
+    """
+    if not os.path.exists(PARAMS_FILE):
+        return FALLBACK_PARAMS.get(regime or "RANGE", FALLBACK_PARAMS["RANGE"])
+    try:
+        with open(PARAMS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if regime:
+            reg_data = data.get("regimes", {}).get(regime, {})
+            return reg_data.get("params", FALLBACK_PARAMS.get(regime, FALLBACK_PARAMS["RANGE"]))
+        return data
+    except Exception as e:
+        print(f"[WARN] 读取参数文件失败：{e}，使用默认参数")
+        return FALLBACK_PARAMS.get(regime or "RANGE", FALLBACK_PARAMS["RANGE"])
 
 
-from concurrent.futures import ThreadPoolExecutor
+def needs_reoptimize() -> bool:
+    """检查是否超过60天未重优化"""
+    if not os.path.exists(PARAMS_FILE):
+        return True
+    try:
+        with open(PARAMS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        next_date = pd.to_datetime(data.get("next_optimize_after", "2000-01-01"))
+        return pd.Timestamp.now() >= next_date
+    except:
+        return True
 
-def fetch_all_etf_data_batch(days: int = 120) -> dict:
-    print(f"[策略引擎] 开始并行获取{days}天历史数据(按 ts_code)...")
-    end_date = datetime.now().strftime("%Y%m%d")
-    start_date = (datetime.now() - timedelta(days=int(days * 2.0))).strftime("%Y%m%d")
-    result = {}
-    total_etfs = len(ETF_POOL)
-    
-    def fetch_single(item):
-        code = item["code"]
-        name = item["name"]
-        try:
-            df = pro.fund_daily(ts_code=code, start_date=start_date, end_date=end_date)
-            if df is not None and not df.empty:
-                df = df.sort_values("trade_date").reset_index(drop=True)
-                df = df.tail(days).reset_index(drop=True)
-                df = df.rename(columns={'trade_date': 'date', 'vol': 'volume'})
-                df['date'] = pd.to_datetime(df['date'])
-                return code, df
+
+def get_all_regime_params() -> dict:
+    """返回三态完整参数摘要（供API和前端使用）"""
+    if not os.path.exists(PARAMS_FILE):
+        return {
+            "BEAR":  {"params": FALLBACK_PARAMS["BEAR"],  "optimized_at": "N/A", "score": 0},
+            "RANGE": {"params": FALLBACK_PARAMS["RANGE"], "optimized_at": "N/A", "score": 0},
+            "BULL":  {"params": FALLBACK_PARAMS["BULL"],  "optimized_at": "N/A", "score": 0},
+        }
+    try:
+        with open(PARAMS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return {
+            r: {
+                "params":       v.get("params", {}),
+                "desc":         v.get("desc", ""),
+                "optimized_at": v.get("optimized_at", "N/A"),
+                "combined_score": v.get("combined_score", 0),
+                "train_alpha":  v.get("train_kpi", {}).get("alpha"),
+                "valid_alpha":  v.get("valid_kpi", {}).get("alpha"),
+                "pos_cap":      REGIME_POS_CAP.get(r, 0.65),
+                "score_gate":   REGIME_SCORE_GATE.get(r, 68),
+            }
+            for r, v in data.get("regimes", {}).items()
+        }
+    except:
+        return {}
+
+
+# ─── 市场状态识别 ─────────────────────────────────────────────────────────────
+
+def detect_regime() -> dict:
+    """
+    根据 CSI300（510300.SH）实时识别市场状态
+    返回：{"regime": "BULL"/"RANGE"/"BEAR"/"CRASH", "params": {...}, ...}
+    """
+    try:
+        ts.set_token(TUSHARE_TOKEN)
+        pro = ts.pro_api()
+
+        df = pro.fund_daily(ts_code="510300.SH", start_date="20230101",
+                           end_date=datetime.now().strftime("%Y%m%d"))
+        if df is None or df.empty:
+            raise ValueError("510300.SH 数据为空")
+
+        df = df.sort_values("trade_date").reset_index(drop=True)
+        close = df["close"].values
+
+        # 熔断检测：3日跌幅 > 7%
+        ret3 = (close[-1] / close[-4] - 1) if len(close) >= 4 else 0
+        if ret3 < -0.07:
+            regime = "CRASH"
+        else:
+            ma60  = close[-60:].mean()  if len(close) >= 60  else close.mean()
+            ma120 = close[-120:].mean() if len(close) >= 120 else close.mean()
+            cur   = close[-1]
+            if cur > ma120:
+                regime = "BULL"
+            elif cur < ma60:
+                regime = "BEAR"
             else:
-                print(f"  [FAIL] {name}({code}): 无数据")
-                return code, None
-        except Exception as e:
-            print(f"  [FAIL] {name}({code}): {e}")
-            return code, None
+                regime = "RANGE"
 
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = {executor.submit(fetch_single, etf): etf for etf in ETF_POOL}
-        for i, future in enumerate(futures):
-            code, df = future.result()
-            if df is not None:
-                result[code] = df
-            if (i + 1) % 10 == 0:
-                print(f"[策略引擎] 已获取 {i + 1}/{total_etfs} 只ETF...")
+        params    = load_regime_params(regime)
+        pos_cap   = REGIME_POS_CAP.get(regime, 0.65)
+        score_gate = REGIME_SCORE_GATE.get(regime, 68)
 
-    print(f"[策略引擎] 数据获取完成，共{len(result)}只ETF有数据")
-    return result
+        ret5  = (close[-1]/close[-6]-1)*100  if len(close) >= 6  else 0
+        ret20 = (close[-1]/close[-21]-1)*100 if len(close) >= 21 else 0
 
+        return {
+            "regime":      regime,
+            "params":      params,
+            "pos_cap":     pos_cap,
+            "score_gate":  score_gate,
+            "csi300":      round(float(close[-1]), 2),
+            "ret5":        round(float(ret5), 2),
+            "ret20":       round(float(ret20), 2),
+            "needs_reoptimize": needs_reoptimize(),
+        }
+    except Exception as e:
+        return {
+            "regime":     "RANGE",
+            "params":     FALLBACK_PARAMS["RANGE"],
+            "pos_cap":    0.70,
+            "score_gate": 68,
+            "error":      str(e),
+        }
+
+
+# ─── 核心策略计算 ─────────────────────────────────────────────────────────────
 
 def calculate_indicators(df: pd.DataFrame) -> dict:
-    """计算全部技术指标"""
-    if len(df) < 20: # 稍微放宽一点
-        return None
-
-    close = df["close"]
+    close  = df["close"]
     volume = df["volume"]
 
-    # ── V3.0 优化参数：N_trend=90, RSI(14), rsi_buy=35, rsi_sell=70, bias_buy=-2% ──
+    # V4.0：参数从文件动态读取
+    regime_info = detect_regime()
+    p = regime_info["params"]
+    N = p.get("N_trend", 90)
+    rsi_p = p.get("rsi_period", 14)
+
     ma20 = close.rolling(20).mean()
-    boll_std = close.rolling(20).std()
+    ma_n = close.rolling(N).mean()   # 趋势均线（Regime专属）
+    boll_std   = close.rolling(20).std()
     boll_upper = ma20 + 2 * boll_std
     boll_lower = ma20 - 2 * boll_std
+    percent_b  = np.where(
+        (boll_upper - boll_lower).abs() > 1e-6,
+        (close - boll_lower) / (boll_upper - boll_lower),
+        0.5
+    )
 
-    # 趋势均线升级：MA60 → MA90（回测验证最优）
-    ma60 = close.rolling(60).mean()
-    ma90 = close.rolling(90).mean()
+    # RSI（Wilder 平滑，用 Regime 指定周期）
+    delta    = close.diff(1)
+    gain     = delta.where(delta > 0, 0.0)
+    loss     = -delta.where(delta < 0, 0.0)
+    avg_gain = gain.ewm(span=rsi_p, min_periods=rsi_p, adjust=False).mean()
+    avg_loss = loss.ewm(span=rsi_p, min_periods=rsi_p, adjust=False).mean()
+    rs       = avg_gain / avg_loss.replace(0, 0.001)
+    rsi      = 100 - (100 / (1 + rs))
 
-    # RSI(14) — Wilder 平滑法（V3.0 统一使用，废弃 RSI(3)）
-    delta = close.diff(1)
-    gain = delta.where(delta > 0, 0.0)
-    loss = -delta.where(delta < 0, 0.0)
-    avg_gain = gain.ewm(span=14, min_periods=14, adjust=False).mean()
-    avg_loss = loss.ewm(span=14, min_periods=14, adjust=False).mean()
-    rs = avg_gain / avg_loss.replace(0, 0.001)
-    rsi = 100 - (100 / (1 + rs))
+    # 保留 RSI(3) 辅助展示
+    avg_g3 = gain.rolling(3).mean()
+    avg_l3 = loss.rolling(3).mean()
+    rsi_3  = 100 - (100 / (1 + avg_g3 / avg_l3.replace(0, 0.001)))
 
-    # 保留 RSI(3) 作为快速超卖辅助（展示用，不作为主信号）
-    avg_gain_3 = gain.rolling(3).mean()
-    avg_loss_3 = loss.rolling(3).mean()
-    rs_3 = avg_gain_3 / avg_loss_3.replace(0, 0.001)
-    rsi_3 = 100 - (100 / (1 + rs_3))
-
-    # 乖离率：相对 MA90（V3.0 与趋势均线统一）
-    bias = (close - ma90) / ma90 * 100
+    # BIAS 相对趋势均线
+    bias      = (close - ma_n) / ma_n * 100
     deviation = ((close - ma20) / ma20).abs() * 100
 
-    vol_ma5 = volume.rolling(5).mean()
-    volume_spike = volume >= vol_ma5 * 1.5
-    vol_ratio = volume / vol_ma5.replace(0, 1) # 避免除以0
-    
-    # 布林带百分比带宽 %B
-    percent_b = (close - boll_lower) / (boll_upper - boll_lower).replace(0, 0.001)
+    vol_ma5   = volume.rolling(5).mean()
+    vol_ratio = (volume / vol_ma5.replace(0, 1)).clip(0, 10)
 
-    idx = len(df) - 1
-    latest_close = float(close.iloc[idx])
-    latest_ma20 = float(ma20.iloc[idx]) if pd.notna(ma20.iloc[idx]) else latest_close
-    latest_ma60 = float(ma60.iloc[idx]) if pd.notna(ma60.iloc[idx]) else latest_close
-    latest_upper = float(boll_upper.iloc[idx]) if pd.notna(boll_upper.iloc[idx]) else latest_close * 1.05
-    latest_lower = float(boll_lower.iloc[idx]) if pd.notna(boll_lower.iloc[idx]) else latest_close * 0.95
-
-    if latest_close <= latest_lower:
-        boll_pos = "下轨下"
-    elif latest_close >= latest_upper:
-        boll_pos = "上轨上"
-    elif latest_close < latest_ma20:
-        boll_pos = "中轨下"
-    else:
-        boll_pos = "中轨上"
-
+    latest = df.iloc[-1]
     return {
-        "close": round(latest_close, 3),
-        "ma20": round(latest_ma20, 3),
-        "ma60": round(latest_ma60, 3),
-        "boll_upper": round(latest_upper, 3),
-        "boll_lower": round(latest_lower, 3),
-        "boll_position": boll_pos,
-        "percent_b": round(float(percent_b.iloc[idx]) if pd.notna(percent_b.iloc[idx]) else 0.5, 3),
-        "rsi": round(float(rsi.iloc[idx]) if pd.notna(rsi.iloc[idx]) else 50, 1),
-        "rsi_3": round(float(rsi_3.iloc[idx]) if pd.notna(rsi_3.iloc[idx]) else 50, 1),
-        "bias": round(float(bias.iloc[idx]) if pd.notna(bias.iloc[idx]) else 0, 2),
-        "deviation": round(float(deviation.iloc[idx]) if pd.notna(deviation.iloc[idx]) else 0, 2),
-        "volume_spike": bool(volume_spike.iloc[idx]) if pd.notna(volume_spike.iloc[idx]) else False,
-        "vol_ratio": round(float(vol_ratio.iloc[idx]) if pd.notna(vol_ratio.iloc[idx]) else 1.0, 2),
-        "volume": float(volume.iloc[idx]),
-        "vol_ma5": round(float(vol_ma5.iloc[idx]) if pd.notna(vol_ma5.iloc[idx]) else 0, 0),
-        "date": df["date"].iloc[idx].strftime("%Y-%m-%d"),
-        "_deviation_series": deviation.dropna().tolist(),
-        "_close_series": close.tolist(),
-        "_ma20_series": ma20.dropna().tolist(),
+        "close":           float(latest["close"]),
+        "ma20":            float(ma20.iloc[-1]) if not ma20.isnull().all() else 0,
+        "ma_n":            float(ma_n.iloc[-1]) if not ma_n.isnull().all() else 0,
+        "ma60":            float(close.rolling(60).mean().iloc[-1]),  # 保留，用于 BEAR Regime上展示
+        "boll_upper":      float(boll_upper.iloc[-1]) if not boll_upper.isnull().all() else 0,
+        "boll_lower":      float(boll_lower.iloc[-1]) if not boll_lower.isnull().all() else 0,
+        "percent_b":       float(percent_b[-1]) if hasattr(percent_b, '__len__') else 0,
+        "rsi":             float(rsi.iloc[-1]) if not rsi.isnull().all() else 50,
+        "rsi_3":           float(rsi_3.iloc[-1]) if not rsi_3.isnull().all() else 50,
+        "bias":            float(bias.iloc[-1]) if not bias.isnull().all() else 0,
+        "deviation":       float(deviation.iloc[-1]) if not deviation.isnull().all() else 0,
+        "vol_ratio":       float(vol_ratio.iloc[-1]) if not vol_ratio.isnull().all() else 1,
+        "regime":          regime_info["regime"],
+        "regime_params":   p,
+        "pos_cap":         regime_info["pos_cap"],
+        "score_gate":      regime_info["score_gate"],
+        "needs_reopt":     regime_info.get("needs_reoptimize", False),
     }
 
 
 def calculate_score(indicators: dict) -> int:
-    """综合评分 0-100"""
-    percent_b = indicators["percent_b"]
-    rsi = indicators["rsi"]
-    rsi_3 = indicators["rsi_3"]
-    vol_ratio = indicators["vol_ratio"]
+    """V4.0 评分：从 Regime 专属参数动态生成门槛"""
+    p = indicators.get("regime_params", FALLBACK_PARAMS["RANGE"])
+    rsi_buy_opt  = p.get("rsi_buy", 40)
+    bias_buy_opt = p.get("bias_buy", -2.0)
+
+    score = 0
+    rsi   = indicators["rsi"]
+    bias  = indicators["bias"]
+    pb    = indicators["percent_b"]
+
+    # 维度1：RSI 超卖评分（0-30，基于 Regime 专属阈值，完全替代原"布林带"指标）
+    # RSI ≤ rsi_buy_opt → 30分; RSI ≤ rsi_buy_opt+10 → 15分；其他按比例
+    if rsi <= rsi_buy_opt:
+        score += 30
+    elif rsi <= rsi_buy_opt + 10:
+        score += int((rsi_buy_opt + 10 - rsi) / 10 * 15)
+    elif rsi <= rsi_buy_opt + 20:
+        score += int((rsi_buy_opt + 20 - rsi) / 20 * 8)
+
+    # 维度2：乖离率评分（0-25）
+    if bias <= bias_buy_opt:
+        score += 25
+    elif bias <= bias_buy_opt / 2:
+        score += 15
+    elif bias <= 0:
+        score += 8
+
+    # 维度3：布林带位置（0-20）
+    if pb <= 0.1:
+        score += 20
+    elif pb <= 0.25:
+        score += 14
+    elif pb <= 0.4:
+        score += 7
+
+    # 维度4：成交量信号（0-15）—— 恐慌放量或绝望缩量
+    vr = indicators["vol_ratio"]
+    if vr > 2.5 or vr < 0.4:
+        score += 15
+    elif vr > 1.8 or vr < 0.6:
+        score += 10
+    elif vr > 1.3 or vr < 0.8:
+        score += 5
+
+    # 维度5：趋势位置（0-10）—— 在趋势均线之上加分
     close = indicators["close"]
-    ma20 = indicators["ma20"]
-    ma60 = indicators["ma60"]
+    ma_n  = indicators["ma_n"]
+    if close > ma_n:
+        score += 10
+    elif close > ma_n * 0.97:
+        score += 5
 
-    # 1. 布林带百分比得分 (40%)
-    if close < ma20:
-        if percent_b <= 0:
-            pb_score = 100
-        elif percent_b <= 0.2:
-            pb_score = 80
-        elif percent_b <= 0.5:
-            pb_score = 60
-        else:
-            pb_score = 40
-    else:
-        if percent_b >= 1.0:
-            pb_score = 100
-        elif percent_b >= 0.8:
-            pb_score = 80
-        elif percent_b >= 0.5:
-            pb_score = 60
-        else:
-            pb_score = 40
-
-    # 2. 超短线RSI(3) 得分 (30%)
-    if close < ma20:
-        rsi3_score = 100 if rsi_3 <= 10 else max(0, 100 - (rsi_3 - 10) * 3)
-    else:
-        rsi3_score = 100 if rsi_3 >= 90 else max(0, 100 - (90 - rsi_3) * 3)
-
-    # 3. 趋势与量能得分 (20%)
-    trend_score = 100 if (ma20 >= ma60) else 50
-    vol_score = 100 if (vol_ratio > 1.5 or vol_ratio < 0.6) else 50
-    context_score = trend_score * 0.5 + vol_score * 0.5
-
-    # 4. 历史回归成功率 (10%)
-    regression_score = _calc_regression_rate(indicators)
-
-    total = pb_score * 0.40 + rsi3_score * 0.30 + context_score * 0.20 + regression_score * 0.10
-    return max(0, min(100, int(round(total))))
-
-
-def _calc_regression_rate(indicators: dict) -> float:
-    close_list = indicators["_close_series"]
-    ma20_list = indicators["_ma20_series"]
-    dev_list = indicators["_deviation_series"]
-    if len(close_list) < 20 or len(ma20_list) < 20:
-        return 50
-    min_len = min(len(close_list), len(ma20_list), len(dev_list))
-    success, total = 0, 0
-    for i in range(10, min_len - 3):
-        if i < len(dev_list) and dev_list[i] >= 3:
-            total += 1
-            for j in range(1, 4):
-                if i + j < min_len and ma20_list[i + j] != 0:
-                    future_dev = abs(close_list[i + j] - ma20_list[i + j]) / ma20_list[i + j] * 100
-                    if future_dev < 3:
-                        success += 1
-                        break
-    return min(100, (success / total) * 100) if total > 0 else 50
+    return min(100, score)
 
 
 def generate_signal(indicators: dict, score: int) -> str:
-    """
-    V3.0 信号生成 — 采用回测验证最优参数：
-    - 趋势过滤：close > MA90（N_trend=90）
-    - 买入：RSI(14)≤35 OR BIAS≤-2.0%
-    - 卖出：RSI(14)≥70 OR 跌破 MA90×0.97（硬止损）
-    """
-    close = indicators["close"]
-    ma20  = indicators["ma20"]
-    ma60  = indicators["ma60"]
-    percent_b = indicators["percent_b"]
-    rsi   = indicators["rsi"]       # RSI(14)
-    rsi_3 = indicators["rsi_3"]     # RSI(3) 仅展示
-    bias  = indicators["bias"]      # 相对 MA90 的乖离率
-    vol_ratio = indicators["vol_ratio"]
+    """V4.0 信号生成 — 从 Regime 专属参数读取阈值"""
+    p = indicators.get("regime_params", FALLBACK_PARAMS["RANGE"])
 
-    # ① 趋势过滤（MA90 硬性门槛）
-    is_bull_trend = close > ma60   # ma60 在此引擎中实际存储 MA90 值
+    close    = indicators["close"]
+    ma20     = indicators["ma20"]
+    ma_n     = indicators["ma_n"]
+    rsi      = indicators["rsi"]
+    bias     = indicators["bias"]
+    pb       = indicators["percent_b"]
+    regime   = indicators.get("regime", "RANGE")
+    score_gate = indicators.get("score_gate", 68)
 
-    # ② 买入逻辑：RSI(14)≤35 OR 乖离率≤-2.0%
-    buy_rsi  = rsi <= 35
-    buy_bias = bias <= -2.0
+    rsi_buy  = p["rsi_buy"]
+    rsi_sell = p["rsi_sell"]
+    bias_buy = p["bias_buy"]
+    sl       = p["stop_loss"]
 
-    if is_bull_trend and (buy_rsi or buy_bias):
+    # CRASH 或 BULL 高分要求：禁入或严格过滤
+    if regime == "CRASH":
+        return "no_entry"
+    if regime == "BULL" and score < score_gate:
+        return "hold"      # 牛市：评分不够不主动建仓
+
+    # 趋势过滤
+    trend_ok = close > ma_n
+
+    # 买入：RSI超卖 OR BIAS乖离
+    if trend_ok and (rsi <= rsi_buy or bias <= bias_buy) and score >= score_gate:
         return "buy"
 
-    # ③ 卖出逻辑：RSI(14)≥70（超买出场）
-    if rsi >= 70:
+    # 卖出：RSI超买
+    if rsi >= rsi_sell:
         return "sell"
 
-    # ④ 阶梯止盈：接近均线且评分偏低（减仓信号）
-    if close >= ma20 and percent_b > 0.5:
+    # 止盈半仓
+    if close >= ma20 and pb > 0.6:
         return "sell_half"
 
-    if score < 55:
+    if score < score_gate * 0.75:
         return "sell_weak"
 
     return "hold"
 
 
-def pyramid_position(score: int, max_pos: float) -> float:
-    if score < 60:
-        return 0.0
-    elif score < 75:
-        return round(max_pos * 0.33, 2)
-    elif score < 85:
-        return round(max_pos * 0.66, 2)
-    else:
-        return round(max_pos * 1.0, 2)
+def run_strategy(ts_codes: list = None, regime_override: str = None) -> list:
+    """主策略入口 — 批量计算每只ETF的信号"""
+    ts.set_token(TUSHARE_TOKEN)
+    pro = ts.pro_api()
 
-
-def run_strategy() -> dict:
-    """运行完整均值回归策略"""
+    pool = ts_codes if ts_codes else [e["code"] for e in MR_POOL]
     results = []
-    errors = []
-    buy_signals = []
-    sell_signals = []
+    end_date   = datetime.now().strftime("%Y%m%d")
+    start_date = "20230101"
 
-    # 按trade_date批量获取所有ETF数据
-    etf_data = fetch_all_etf_data_batch(days=120)
-
-    for etf in ETF_POOL:
-        code = etf["code"]
+    for code in pool:
         try:
-            df = etf_data.get(code)
-            if df is None or len(df) < 20:
-                count = len(df) if df is not None else 0
-                errors.append({"code": code, "name": etf["name"], "error": f"数据不足({count}条)"})
+            df = pro.fund_daily(ts_code=code, start_date=start_date, end_date=end_date)
+            if df is None or df.empty:
                 continue
+            df = df.sort_values("trade_date").reset_index(drop=True)
 
-            ind = calculate_indicators(df)
-            if ind is None:
-                errors.append({"code": code, "name": etf["name"], "error": "指标计算失败"})
-                continue
+            indicators = calculate_indicators(df)
+            score      = calculate_score(indicators)
+            signal     = generate_signal(indicators, score)
 
-            score = calculate_score(ind)
-            signal = generate_signal(ind, score)
-            suggested_pos = pyramid_position(score, etf["max_pos"])
-
-            row = {
-                "code": code, "name": etf["name"], "category": etf["category"],
-                "max_position": etf["max_pos"],
-                "close": ind["close"], "ma20": ind["ma20"],
-                "percent_b": ind["percent_b"], "rsi_3": ind["rsi_3"],
-                "deviation": ind["deviation"], "rsi": ind["rsi"], "bias": ind["bias"],
-                "boll_upper": ind["boll_upper"], "boll_lower": ind["boll_lower"],
-                "boll_position": ind["boll_position"],
-                "volume_spike": ind["volume_spike"],
-                "volume_ratio": round(ind["volume"] / (ind["vol_ma5"] or 1), 2),
-                "score": score, "signal": signal,
-                "suggested_position": suggested_pos, "date": ind["date"],
-            }
-            results.append(row)
-            if signal == "buy":
-                buy_signals.append(row)
-            elif signal in ("sell", "sell_weak", "sell_half"):
-                sell_signals.append(row)
+            name = next((e["name"] for e in MR_POOL if e["code"] == code), code)
+            results.append({
+                "ts_code":       code,
+                "name":          name,
+                "signal":        signal,
+                "signal_score":  score,
+                "rsi":           round(indicators["rsi"], 1),
+                "rsi_3":         round(indicators["rsi_3"], 1),
+                "bias":          round(indicators["bias"], 2),
+                "percent_b":     round(indicators["percent_b"], 3),
+                "vol_ratio":     round(indicators["vol_ratio"], 2),
+                "close":         round(indicators["close"], 3),
+                "ma20":          round(indicators["ma20"], 3),
+                "ma_n":          round(indicators["ma_n"], 3),
+                "regime":        indicators["regime"],
+                "regime_params": indicators["regime_params"],
+                "pos_cap":       indicators["pos_cap"],
+                "score_gate":    indicators["score_gate"],
+                "needs_reopt":   indicators["needs_reopt"],
+            })
         except Exception as e:
-            errors.append({"code": code, "name": etf["name"], "error": str(e)})
+            results.append({
+                "ts_code": code, "name": code,
+                "signal": "error", "signal_score": 0,
+                "error": str(e),
+            })
 
-    buy_signals.sort(key=lambda x: x["score"], reverse=True)
-    sell_signals.sort(key=lambda x: x["score"])
-    results.sort(key=lambda x: x["score"], reverse=True)
-
-    if results:
-        deviations = [r["deviation"] for r in results]
-        avg_dev = round(np.mean(deviations), 2)
-        max_dev_item = max(results, key=lambda x: x["deviation"])
-        min_dev_item = min(results, key=lambda x: x["deviation"])
-        above_3pct = sum(1 for d in deviations if d >= 3)
-        total_suggested = min(round(sum(r["suggested_position"] for r in results), 1), 85.0)
-    else:
-        avg_dev, above_3pct, total_suggested = 0, 0, 0
-        max_dev_item = min_dev_item = {"code": "-", "name": "-", "deviation": 0}
-
-    return {
-        "status": "success",
-        "timestamp": datetime.now().isoformat(),
-        "data": {
-            "market_overview": {
-                "avg_deviation": avg_dev,
-                "max_deviation": {"code": max_dev_item["code"], "name": max_dev_item["name"], "value": max_dev_item["deviation"]},
-                "min_deviation": {"code": min_dev_item["code"], "name": min_dev_item["name"], "value": min_dev_item["deviation"]},
-                "signal_count": {"buy": len(buy_signals), "sell": len(sell_signals), "hold": len(results) - len(buy_signals) - len(sell_signals)},
-                "above_3pct": above_3pct,
-                "total_suggested_position": total_suggested,
-                "total_etfs": len(results),
-                "market_divergence": "高分化" if above_3pct >= 10 else ("中等分化" if above_3pct >= 5 else "低分化"),
-            },
-            "signals": results,
-            "buy_signals": buy_signals,
-            "sell_signals": sell_signals,
-            "errors": errors,
-        }
-    }
-
-
-if __name__ == "__main__":
-    import json
-    print("正在运行均值回归策略...")
-    result = run_strategy()
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return sorted(results, key=lambda x: x.get("signal_score", 0), reverse=True)
