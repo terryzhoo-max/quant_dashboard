@@ -1141,11 +1141,12 @@ async def get_momentum_optimize(
         print(f"Momentum Optimize Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
 
-# --- Market Regime Auto-Detection ---
+# --- Market Regime Auto-Detection (统一算法) ---
 
 @app.get("/api/v1/market/regime")
 async def get_market_regime():
-    """自动识别市场状态 BULL/RANGE/BEAR，返回自适应最优参数"""
+    """自动识别市场状态 BULL/RANGE/BEAR — 与 V4.0 激活参数面板使用相同算法"""
+    from mean_reversion_engine import _classify_regime_from_series
     def _detect():
         import numpy as np
         ts.set_token("5334333c2cb73c9b9987fb6e89da29a3cbd0f442622fbcbfd7bd40b6")
@@ -1155,55 +1156,71 @@ async def get_market_regime():
         df = pro_.index_daily(ts_code="000300.SH", start_date=start_dt, end_date=end_dt,
                               fields="trade_date,close,pct_chg")
         if df is None or len(df) < 30:
-            return {"status": "error", "message": "CSI300 data insufficient"}
+            return {"status": "error", "message": "CSI300 数据不足"}
         df = df.sort_values("trade_date").reset_index(drop=True)
-        close = df["close"].astype(float)
-        latest = float(close.iloc[-1])
-        ma20  = float(close.rolling(20).mean().iloc[-1])
-        ma60  = float(close.rolling(min(60,len(close))).mean().iloc[-1])
-        ma120 = float(close.rolling(min(120,len(close))).mean().iloc[-1])
-        ma120s = close.rolling(min(120,len(close))).mean().dropna()
-        slope5 = 0.0
-        if len(ma120s) >= 6:
-            y = np.array(ma120s.iloc[-6:].tolist(), dtype=float)
-            slope5 = float(np.polyfit(np.arange(6, dtype=float), y, 1)[0])
-        ret5  = float((close.iloc[-1]/close.iloc[-6]  - 1)*100) if len(close)>=6  else 0
-        ret20 = float((close.iloc[-1]/close.iloc[-21] - 1)*100) if len(close)>=21 else 0
-        ret60 = float((close.iloc[-1]/close.iloc[-61] - 1)*100) if len(close)>=61 else 0
-        pct   = df["pct_chg"].astype(float)/100
-        vol20 = float(pct.iloc[-20:].std() * (252**0.5) * 100) if len(pct)>=20 else 20.0
-        above = latest > ma120
-        rising = slope5 > 0
-        if above and rising and ret20 > 0:
-            regime,regime_cn,pos_cap,sg,rc,ri = "BULL","牛市",85,65,"#10b981","🟢"
-            desc = f"CSI300 ({latest:.0f}) 站上MA120 ({ma120:.0f})，均线向上，全力进攻。"
-        elif above:
-            regime,regime_cn,pos_cap,sg,rc,ri = "RANGE","震荡市",66,68,"#fbbf24","🟡"
-            desc = f"CSI300 ({latest:.0f}) 站上MA120 ({ma120:.0f})，均线走平，均衡配置。"
-        elif not above and ret5 > 3:
-            regime,regime_cn,pos_cap,sg,rc,ri = "RANGE","震荡反弹",55,72,"#fb923c","🟠"
-            desc = f"CSI300 ({latest:.0f}) 跌破MA120 ({ma120:.0f})，近5日反弹+{ret5:.1f}%，谨慎。"
-        else:
-            regime,regime_cn,pos_cap,sg,rc,ri = "BEAR","熊市",45,75,"#ef4444","🔴"
-            desc = f"CSI300 ({latest:.0f}) 跌破MA120 ({ma120:.0f})，防御优先。"
-        param_note = {"BULL":"全力进攻：信号达标即可满仓","RANGE":"均衡配置：仓位×0.77","BEAR":"防御模式：止损收至-6%"}.get(regime,"均衡配置：仓位×0.77")
-        sl = -8 if regime != "BEAR" else -6
+        close = df["close"].astype(float).values
+
+        # ── 统一算法 ──
+        info   = _classify_regime_from_series(close)
+        regime = info["regime"]
+        rc     = info["regime_color"]
+        ri     = info["regime_icon"]
+        regime_cn = info["regime_cn"]
+
+        latest = float(close[-1])
+        ma120  = info["ma120"]
+        ma60   = info["ma60"]
+        slope5 = info["slope5"]
+        ret5   = info["ret5"]
+        ret20  = info["ret20"]
+
+        pct    = df["pct_chg"].astype(float) / 100
+        vol20  = float(pct.iloc[-20:].std() * (252**0.5) * 100) if len(pct) >= 20 else 20.0
+        ret60  = float((close[-1]/close[-61] - 1)*100) if len(close) >= 61 else 0.0
+
+        desc_map = {
+            "BULL":  f"CSI300 ({latest:.0f}) 站上MA120 ({ma120:.0f})，均线向上，全力进攻。",
+            "RANGE": f"CSI300 ({latest:.0f}) 站上MA120 ({ma120:.0f})，均线走平，均衡配置。",
+            "BEAR":  f"CSI300 ({latest:.0f}) 跌破MA120 ({ma120:.0f})，防御优先。",
+            "CRASH": f"CSI300 ({latest:.0f}) 触发熔断，禁止新建仓。",
+        }
+        # 震荡反弹子状态
+        if regime == "RANGE" and not info["above_ma120"]:
+            desc_map["RANGE"] = f"CSI300 ({latest:.0f}) 跌破MA120 ({ma120:.0f})，近5日反弹+{ret5:.1f}%，谨慎。"
+
+        note_map = {
+            "BULL":  "全力进攻：信号达标即可满仓",
+            "RANGE": "均衡配置：仓位×0.77",
+            "BEAR":  "防御模式：止损收至-6%",
+            "CRASH": "禁止新建仓",
+        }
+        sg = {"BULL": 65, "RANGE": 68, "BEAR": 75, "CRASH": 999}.get(regime, 68)
+        pc = {"BULL": 85, "RANGE": 66, "BEAR": 45, "CRASH": 0}.get(regime, 66)
+        sl = -6 if regime == "BEAR" else -8
+
         return {
-            "status":"ok","as_of":datetime.now().strftime("%Y-%m-%d"),
-            "latest_date":df["trade_date"].iloc[-1],
-            "csi300":round(latest,2),"ma20":round(ma20,2),"ma60":round(ma60,2),"ma120":round(ma120,2),
-            "above_ma120":above,"ma120_rising":rising,"ma120_slope5":round(slope5,4),
-            "ret5d":round(ret5,2),"ret20d":round(ret20,2),"ret60d":round(ret60,2),"vol20d":round(vol20,1),
-            "regime":regime,"regime_cn":regime_cn,"regime_color":rc,"regime_icon":ri,"regime_desc":desc,
-            "pos_cap":pos_cap,"score_gate":sg,
-            "optimal_params":{"top_n":3,"rebalance_days":5,"mom_window":30,"stop_loss":sl,
-                              "pos_cap":pos_cap,"entry_threshold":sg,"note":param_note},
+            "status": "ok", "as_of": datetime.now().strftime("%Y-%m-%d"),
+            "latest_date": df["trade_date"].iloc[-1],
+            "csi300": round(latest, 2), "ma60": round(ma60, 2), "ma120": round(ma120, 2),
+            "above_ma120": info["above_ma120"], "ma120_rising": slope5 > 0,
+            "ma120_slope5": round(slope5, 4),
+            "ret5d": round(ret5, 2), "ret20d": round(ret20, 2),
+            "ret60d": round(ret60, 2), "vol20d": round(vol20, 1),
+            "regime": regime, "regime_cn": regime_cn,
+            "regime_color": rc, "regime_icon": ri,
+            "regime_desc": desc_map.get(regime, ""),
+            "pos_cap": pc, "score_gate": sg,
+            "optimal_params": {
+                "top_n": 3, "rebalance_days": 5, "mom_window": 30,
+                "stop_loss": sl, "pos_cap": pc, "entry_threshold": sg,
+                "note": note_map.get(regime, ""),
+            },
         }
     try:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(executor, _detect)
     except Exception as e:
-        return {"status":"error","message":str(e)}
+        return {"status": "error", "message": str(e)}
 
 # --- Industry Tracking API ---
 

@@ -144,65 +144,113 @@ def get_all_regime_params() -> dict:
         return {}
 
 
-# ─── 市场状态识别 ─────────────────────────────────────────────────────────────
+# ─── 市场状态识别（统一算法，与信号评分系统保持一致） ────────────────────────
+
+def _classify_regime_from_series(close_arr) -> dict:
+    """
+    统一 Regime 分类算法（所有模块公用）：
+      - CRASH: 3日跌幅 > 7%
+      - BULL:  close > MA120 AND slope5 > 0 AND ret20 > 0%
+      - RANGE: close > MA120（均线走平）OR（close < MA120 AND ret5 > +3%，超跌反弹）
+      - BEAR:  close < MA120 AND ret5 <= 3%
+    """
+    import numpy as np
+    close = np.array(close_arr, dtype=float)
+    n = len(close)
+
+    # CRASH 检测
+    ret3 = (close[-1] / close[-4] - 1) if n >= 4 else 0
+    if ret3 < -0.07:
+        return {"regime": "CRASH", "regime_cn": "崩盘警戒",
+                "regime_color": "#ef4444", "regime_icon": "🚨"}
+
+    ma120 = close[-120:].mean() if n >= 120 else close.mean()
+    ma60  = close[-60:].mean()  if n >= 60  else close.mean()
+    ma120_s = np.array([close[max(0,i-119):i+1].mean() for i in range(max(0,n-6), n)])
+    slope5 = float(np.polyfit(np.arange(len(ma120_s), dtype=float), ma120_s, 1)[0]) \
+             if len(ma120_s) >= 2 else 0.0
+    ret5  = float((close[-1] / close[-6]  - 1) * 100) if n >= 6  else 0.0
+    ret20 = float((close[-1] / close[-21] - 1) * 100) if n >= 21 else 0.0
+    cur   = float(close[-1])
+    above = cur > ma120
+
+    if above and slope5 > 0 and ret20 > 0:
+        regime, regime_cn, rc, ri = "BULL",  "牛市",    "#10b981", "🟢"
+    elif above:
+        regime, regime_cn, rc, ri = "RANGE", "震荡市",  "#fbbf24", "🟡"
+    elif not above and ret5 > 3:
+        regime, regime_cn, rc, ri = "RANGE", "震荡反弹","#fb923c", "🟠"
+    else:
+        regime, regime_cn, rc, ri = "BEAR",  "熊市",    "#ef4444", "🔴"
+
+    return {
+        "regime":       regime,
+        "regime_cn":    regime_cn,
+        "regime_color": rc,
+        "regime_icon":  ri,
+        "ma60":         round(float(ma60), 2),
+        "ma120":        round(float(ma120), 2),
+        "slope5":       round(slope5, 4),
+        "ret5":         round(ret5, 2),
+        "ret20":        round(ret20, 2),
+        "above_ma120":  above,
+    }
+
 
 def detect_regime() -> dict:
     """
-    根据 CSI300（510300.SH）实时识别市场状态
-    返回：{"regime": "BULL"/"RANGE"/"BEAR"/"CRASH", "params": {...}, ...}
+    实时识别市场状态（CSI300 指数，000300.SH）
+    使用统一三重条件算法，与信号评分系统 /api/v1/market/regime 完全一致。
+    返回：{"regime": ..., "params": {...}, "pos_cap": ..., "score_gate": ...}
     """
     try:
         ts.set_token(TUSHARE_TOKEN)
         pro = ts.pro_api()
 
-        df = pro.fund_daily(ts_code="510300.SH", start_date="20230101",
-                           end_date=datetime.now().strftime("%Y%m%d"))
+        end_dt   = datetime.now().strftime("%Y%m%d")
+        start_dt = (datetime.now() - pd.Timedelta(days=300)).strftime("%Y%m%d")
+
+        df = pro.index_daily(ts_code="000300.SH", start_date=start_dt, end_date=end_dt,
+                             fields="trade_date,close,pct_chg")
         if df is None or df.empty:
-            raise ValueError("510300.SH 数据为空")
+            raise ValueError("000300.SH 数据为空")
 
         df = df.sort_values("trade_date").reset_index(drop=True)
-        close = df["close"].values
+        close_arr = df["close"].astype(float).values
 
-        # 熔断检测：3日跌幅 > 7%
-        ret3 = (close[-1] / close[-4] - 1) if len(close) >= 4 else 0
-        if ret3 < -0.07:
-            regime = "CRASH"
-        else:
-            ma60  = close[-60:].mean()  if len(close) >= 60  else close.mean()
-            ma120 = close[-120:].mean() if len(close) >= 120 else close.mean()
-            cur   = close[-1]
-            if cur > ma120:
-                regime = "BULL"
-            elif cur < ma60:
-                regime = "BEAR"
-            else:
-                regime = "RANGE"
-
-        params    = load_regime_params(regime)
-        pos_cap   = REGIME_POS_CAP.get(regime, 0.65)
+        info    = _classify_regime_from_series(close_arr)
+        regime  = info["regime"]
+        params  = load_regime_params(regime)
+        pos_cap = REGIME_POS_CAP.get(regime, 0.65)
         score_gate = REGIME_SCORE_GATE.get(regime, 68)
-
-        ret5  = (close[-1]/close[-6]-1)*100  if len(close) >= 6  else 0
-        ret20 = (close[-1]/close[-21]-1)*100 if len(close) >= 21 else 0
 
         return {
             "regime":      regime,
+            "regime_cn":   info["regime_cn"],
+            "regime_color": info["regime_color"],
+            "regime_icon": info["regime_icon"],
             "params":      params,
             "pos_cap":     pos_cap,
             "score_gate":  score_gate,
-            "csi300":      round(float(close[-1]), 2),
-            "ret5":        round(float(ret5), 2),
-            "ret20":       round(float(ret20), 2),
+            "csi300":      round(float(close_arr[-1]), 2),
+            "ma120":       info["ma120"],
+            "ma60":        info["ma60"],
+            "slope5":      info["slope5"],
+            "ret5":        info["ret5"],
+            "ret20":       info["ret20"],
+            "above_ma120": info["above_ma120"],
             "needs_reoptimize": needs_reoptimize(),
         }
     except Exception as e:
         return {
             "regime":     "RANGE",
+            "regime_cn":  "震荡市",
             "params":     FALLBACK_PARAMS["RANGE"],
             "pos_cap":    0.70,
             "score_gate": 68,
             "error":      str(e),
         }
+
 
 
 # ─── 核心策略计算 ─────────────────────────────────────────────────────────────

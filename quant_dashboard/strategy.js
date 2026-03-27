@@ -187,37 +187,53 @@ async function loadMrCurrentParams(force = false) {
     if (btn)    { btn.disabled = true; btn.textContent = '⏳ 识别中...'; }
 
     try {
-        const resp = await fetch(`${API_URL}/api/v1/mr_current_params`, {
-            signal: AbortSignal.timeout(10000)
+        // ── 统一 API：与信号评分系统共用相同 endpoint 和算法 ──
+        const resp = await fetch(`${API_URL}/api/v1/market/regime`, {
+            cache: 'no-cache',
+            signal: AbortSignal.timeout(12000)
         });
-        if (!resp.ok) throw new Error('API err');
-        const data = await resp.json();
-        if (data.status === 'error') throw new Error(data.message);
-        _renderMrActiveParams(data);
-    } catch(e) {
-        // 离线回退：直接读静态 JSON
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const mkt = await resp.json();
+        if (mkt.status === 'error') throw new Error(mkt.message);
+
+        const regime = mkt.regime || 'RANGE';
+
+        // 从 mr_per_regime_params.json 补充 MR 专属参数
+        let mrParams = {}, allRegs = {}, needsR = false;
         try {
             const r2 = await fetch('./mr_per_regime_params.json?' + Date.now());
-            if (!r2.ok) throw new Error('no file');
-            const jd = await r2.json();
-            const capMap  = { BEAR:0.65, RANGE:0.80, BULL:0.35 };
-            const gateMap = { BEAR:78,   RANGE:68,   BULL:60   };
-            const regs = {};
-            Object.entries(jd.regimes || {}).forEach(([r, v]) => {
-                regs[r] = { params: v.params, pos_cap: capMap[r]||0.65,
-                             score_gate: gateMap[r]||68,
-                             combined_score: v.combined_score,
-                             train_alpha: v.train_kpi?.alpha,
-                             valid_alpha: v.valid_kpi?.alpha };
-            });
-            _renderMrActiveParams({
-                regime: 'RANGE', params: regs['RANGE']?.params || {},
-                pos_cap: 0.80, score_gate: 68,
-                all_regimes: regs, needs_reoptimize: false,
-            });
-        } catch(e2) {
-            if (loadEl) loadEl.innerHTML = '<span style="color:#f87171;">⚠️ 无法连接后端，且本地 mr_per_regime_params.json 未找到</span>';
-        }
+            if (r2.ok) {
+                const jd = await r2.json();
+                needsR = jd.next_optimize_after
+                    ? new Date() >= new Date(jd.next_optimize_after) : false;
+                const capMap  = { BEAR: 0.65, RANGE: 0.80, BULL: 0.35 };
+                const gateMap = { BEAR: 78,   RANGE: 68,   BULL: 60   };
+                Object.entries(jd.regimes || {}).forEach(([r, v]) => {
+                    allRegs[r] = { params: v.params, pos_cap: capMap[r] || 0.65,
+                                   score_gate: gateMap[r] || 68,
+                                   combined_score: v.combined_score,
+                                   train_alpha: v.train_kpi?.alpha,
+                                   valid_alpha: v.valid_kpi?.alpha };
+                });
+                mrParams = allRegs[regime]?.params || {};
+            }
+        } catch(_) { /* use market API defaults */ }
+
+        _renderMrActiveParams({
+            regime:           regime,
+            params:           mrParams,
+            pos_cap:          (mkt.pos_cap || 66) / 100,
+            score_gate:       mkt.score_gate || 68,
+            all_regimes:      allRegs,
+            needs_reoptimize: needsR,
+            csi300:           mkt.csi300,
+            ma120:            mkt.ma120,
+            regime_desc:      mkt.regime_desc,
+        });
+    } catch(e) {
+        if (loadEl) loadEl.innerHTML =
+            '<span style="color:#f87171;">⚠️ 无法连接后端，请检查服务器是否运行</span>';
+        console.warn('[MR V4.0] loadMrCurrentParams failed:', e.message);
     } finally {
         if (btn) { btn.disabled = false; btn.textContent = '🔄 重新识别'; }
     }
