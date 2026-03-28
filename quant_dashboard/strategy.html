@@ -62,8 +62,8 @@
 
             <!-- 标签切换 -->
             <div class="st-tab-bar">
-                <button class="st-tab active" data-report="st-mean-reversion">📐 均值回归策略 V2.0</button>
-                <button class="st-tab" data-report="st-dividend-trend">💰 红利趋势策略 V3.1</button>
+                <button class="st-tab active" data-report="st-mean-reversion">📐 均值回归策略 V4.1</button>
+                <button class="st-tab" data-report="st-dividend-trend">💰 红利趋势策略 V3.2</button>
                 <button class="st-tab" data-report="st-momentum">🚀 行业动量轮动 V2.0</button>
                 <button class="st-tab" data-report="st-signal-rules">🎯 信号评分系统</button>
                 <button class="st-tab" data-report="st-execution">📊 策略执行结果</button>
@@ -74,9 +74,9 @@
 
             <!-- Hero -->
             <section class="st-hero glass-panel">
-                <div class="st-hero-badge">⚙️ 量化策略 · V3.0</div>
-                <h2 class="st-hero-title">📐 均值回归 + Regime自适应 V3.0</h2>
-                <p class="st-hero-sub">864参数回测验证 · MA90趋势过滤 · RSI(14)超卖捕捉 · 三态仓位切换 · 年化Alpha +8.01%</p>
+                <div class="st-hero-badge">⚙️ AlphaCore V5.0 · 均值回归引擎</div>
+                <h2 class="st-hero-title">📐 均值回归 + Regime全自适应 V4.1</h2>
+                <p class="st-hero-sub">统一三态Regime算法 · MA120趋势锚定 · RSI(14)超卖捕捉 · 止损内嵌执行 · 三策略Regime完全一致</p>
                 <div class="st-hero-stats">
                     <div class="st-hero-stat"><span class="st-hs-label">标的池</span><span class="st-hs-value st-blue">35只ETF</span></div>
                     <div class="st-hero-stat"><span class="st-hs-label">运行时间</span><span class="st-hs-value">每日15:30</span></div>
@@ -276,7 +276,7 @@
             <!-- ===== ⚡ V4.0 当前激活参数面板（自动识别）===== -->
             <section class="st-section" id="mr-active-params">
                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
-                    <h3 style="margin:0;">⚡ V4.0 · 当前激活参数 <span style="font-size:0.72rem; font-weight:400; color:var(--text-muted); margin-left:8px;">实时Regime识别 · 自动切换三套专属参数 · 无需重启</span></h3>
+                    <h3 style="margin:0;">⚡ V4.1 · 当前激活参数 <span style="font-size:0.72rem; font-weight:400; color:var(--text-muted); margin-left:8px;">统一Regime算法 · 自动切换三套专属参数 · 无需重启 · AlphaCore V5.0</span></h3>
                     <button onclick="loadMrCurrentParams(true)" id="mr-params-refresh-btn"
                         style="background:rgba(99,102,241,0.12); color:#a78bfa; border:1px solid rgba(99,102,241,0.3); border-radius:8px; padding:7px 16px; cursor:pointer; font-size:0.8rem; font-family:inherit; transition:all 0.2s;">
                         🔄 重新识别
@@ -443,7 +443,7 @@
             <!-- Hero -->
             <section class="st-hero glass-panel" style="border-color:rgba(59, 130, 246, 0.25); background:linear-gradient(135deg, rgba(59, 130, 246, 0.06), rgba(20, 24, 34, 0.4), rgba(139, 92, 246, 0.05));">
                 <div class="st-hero-badge" style="background:rgba(59, 130, 246, 0.15); border-color:rgba(59, 130, 246, 0.3); color:#93c5fd;">&#x1F4B0; 红利增强 · V3.1 · 四状态自适应</div>
-                <h2 class="st-hero-title">&#x1F4B0; 红利趋势增强策略 V3.1</h2>
+                <h2 class="st-hero-title">&#x1F4B0; 红利趋势增强策略 V3.2</h2>
                 <p class="st-hero-sub">高股息托底 · 四状态自适应参数 · 信号评分系统融合 · BULL/RANGE/BEAR/CRASH智能切换</p>
                 <div class="st-hero-stats">
                     <div class="st-hero-stat"><span class="st-hs-label">趋势均线</span><span class="st-hs-value st-blue">MA60（90）自适应</span></div>
@@ -2007,7 +2007,17 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
 
             <!-- ⑤ 实时信号计算器 -->
             <section class="st-section">
-                <h3>🧮 ⑤ 实时信号评分计算器</h3>
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+                    <h3 style="margin:0;">🧮 ⑤ 实时信号评分计算器</h3>
+                    <button id="calc-auto-fill-btn" onclick="autoFillCalcRegime()"
+                        style="background:rgba(99,102,241,0.12); color:#a78bfa; border:1px solid rgba(99,102,241,0.3);
+                               border-radius:8px; padding:6px 14px; cursor:pointer; font-size:0.8rem; font-family:inherit;
+                               transition:all 0.2s;" title="自动拉取当前市场状态并填入计算器">
+                        📡 自动填入市场状态
+                    </button>
+                </div>
+                <div id="calc-auto-status" style="display:none; margin-bottom:10px; font-size:0.78rem; padding:6px 12px;
+                     background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.2); border-radius:6px; color:#6ee7b7;"></div>
                 <div class="glass-panel" style="padding:28px;">
                     <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:16px; margin-bottom:24px;">
                         <div>

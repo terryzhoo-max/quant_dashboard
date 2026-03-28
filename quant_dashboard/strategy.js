@@ -1,6 +1,47 @@
 // AlphaCore · 策略中心页面 JS
 const API_URL = 'http://127.0.0.1:8000';
 
+// ====== 计算器自动填入市场状态 ======
+async function autoFillCalcRegime() {
+    const btn = document.getElementById('calc-auto-fill-btn');
+    const statusEl = document.getElementById('calc-auto-status');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ 识别中...'; }
+
+    try {
+        const resp = await fetch(`${API_URL}/api/v1/market/regime`, { cache: 'no-cache' });
+        const data = await resp.json();
+        const regime = data.regime || 'RANGE';
+
+        // 评分位映射：CRASH=0, BEAR=8, RANGE=15, BULL=20
+        const regimeScoreMap = { CRASH: 0, BEAR: 8, RANGE: 15, BULL: 20 };
+        const score = regimeScoreMap[regime] ?? 15;
+
+        const sel = document.getElementById('calc-regime');
+        if (sel) {
+            sel.value = score;
+            calcSignalScore();
+        }
+
+        // 状态提示
+        const icons = { BULL: '🟢', RANGE: '🟡', BEAR: '🔴', CRASH: '🚨' };
+        const ts = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+        if (statusEl) {
+            statusEl.style.display = 'block';
+            statusEl.textContent = `✅ 已自动同步：${icons[regime] || ''} ${regime} 市场状态（${data.regime_desc || ''}）— ${ts} 更新`;
+        }
+    } catch(e) {
+        if (statusEl) {
+            statusEl.style.display = 'block';
+            statusEl.style.background = 'rgba(239,68,68,0.08)';
+            statusEl.style.color = '#f87171';
+            statusEl.style.borderColor = 'rgba(239,68,68,0.2)';
+            statusEl.textContent = `⚠️ 自动填入失败：${e.message}`;
+        }
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '📡 自动填入市场状态'; }
+    }
+}
+
 // ====== 实时信号评分计算器 (V3.0 · 状态自适应门槛) ======
 function calcSignalScore() {
     const mom  = parseInt(document.getElementById('calc-mom')?.value  || 0);
@@ -254,7 +295,12 @@ function _renderMrActiveParams(data) {
     if (resultEl) resultEl.style.display = 'block';
 
     const badge = document.getElementById('mr-regime-badge');
-    if (badge) { badge.style.background = meta.bg; badge.style.borderColor = meta.border; }
+    if (badge) {
+        badge.style.background   = meta.bg;
+        badge.style.borderColor  = meta.border;
+        badge.className = badge.className.replace(/regime-\w+-glow/g, '');
+        badge.classList.add(`regime-${regime.toLowerCase()}-glow`);
+    }
 
     const _t = (id, txt, color) => {
         const el = document.getElementById(id);
@@ -670,7 +716,13 @@ function selectDivEtfFromBoard(code) {
 
 // ====== 市场环境自动识别 ======
 const REGIME_CACHE_KEY = 'alphacore_regime_cache';
-const REGIME_CACHE_TTL = 30 * 60 * 1000; // 30 min
+// 盘中(09:30-15:00)2分钟刷新 / 盘后15分钟
+function _getRegimeCacheTTL() {
+    const h = new Date().getHours(), m = new Date().getMinutes();
+    const inSession = (h === 9 && m >= 30) || (h >= 10 && h < 15);
+    return inSession ? 2 * 60 * 1000 : 15 * 60 * 1000;
+}
+const REGIME_CACHE_TTL = _getRegimeCacheTTL();
 
 async function loadMarketRegime(forceRefresh = false) {
     const loadEl  = document.getElementById('regime-loading');
@@ -727,6 +779,12 @@ function renderRegime(d) {
 
     // Badge
     const badge = document.getElementById('regime-badge');
+    if (badge) {
+        badge.style.background  = meta.bg;
+        badge.style.borderColor = meta.border;
+        badge.className = badge.className.replace(/regime-\w+-glow/g, '');
+        badge.classList.add(`regime-${regime.toLowerCase()}-glow`);
+    }
     if (badge) {
         badge.style.borderColor = clr + '55';
         badge.style.background  = clr + '15';

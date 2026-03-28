@@ -11,7 +11,7 @@
         "rsi_buy": 45,
         "rsi_sell": 65,
         "bias_buy": -3.0,
-        "stop_loss": 0.05
+        "stop_loss": -0.05
       },
       "train_kpi": {
         "valid": true,
@@ -49,7 +49,7 @@
         "rsi_buy": 40,
         "rsi_sell": 70,
         "bias_buy": -2.0,
-        "stop_loss": 0.07
+        "stop_loss": -0.07
       },
       "train_kpi": {
         "valid": true,
@@ -87,7 +87,7 @@
         "rsi_buy": 45,
         "rsi_sell": 75,
         "bias_buy": -1.5,
-        "stop_loss": 0.06
+        "stop_loss": -0.06
       },
       "train_kpi": {
         "valid": true,
@@ -125,7 +125,7 @@
         "rsi_buy": 45,
         "rsi_sell": 65,
         "bias_buy": -3.0,
-        "stop_loss": 0.05
+        "stop_loss": -0.05
       },
       "train_alpha": 27.37,
       "valid_alpha": -17.59,
@@ -138,7 +138,7 @@
         "rsi_buy": 40,
         "rsi_sell": 70,
         "bias_buy": -2.0,
-        "stop_loss": 0.07
+        "stop_loss": -0.07
       },
       "train_alpha": 6.23,
       "valid_alpha": 25.58,
@@ -151,7 +151,7 @@
         "rsi_buy": 45,
         "rsi_sell": 75,
         "bias_buy": -1.5,
-        "stop_loss": 0.06
+        "stop_loss": -0.06
       },
       "train_alpha": -33.16,
       "valid_alpha": -26.23,

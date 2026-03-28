@@ -336,17 +336,29 @@ def score_etf(ind: dict, regime: str, p: dict) -> int:
 
 def run_dividend_strategy(regime: str = None) -> dict:
     """
-    运行全量红利趋势策略 V3.1
+    运行全量红利趋势策略 V3.2
+    V3.2 升级：regime 为 None 时自动调用统一 Regime 算法识别
     regime：外部传入市场状态（BULL/RANGE/BEAR/CRASH）
-            若为None，默认使用RANGE（V3.0标准参数）
+            若为None，自动识别（与均值回归/信号评分系统算法一致）
     """
-    regime = (regime or DEFAULT_REGIME).upper()
+    if not regime:
+        try:
+            from mean_reversion_engine import detect_regime
+            regime_info = detect_regime()
+            regime = regime_info.get("regime", DEFAULT_REGIME)
+            print(f"[红利引擎] 自动识别 Regime: {regime} ({regime_info.get('regime_cn', '')})")
+        except Exception as e:
+            regime = DEFAULT_REGIME
+            print(f"[红利引擎] Regime自动识别失败，使用默认{DEFAULT_REGIME}: {e}")
+    else:
+        regime = regime.upper()
+
     if regime not in REGIME_PARAMS:
         regime = DEFAULT_REGIME
 
     p = REGIME_PARAMS[regime]
 
-    print(f"[红利引擎] ========= 红利趋势策略 V3.1 启动 =========")
+    print(f"[红利引擎] ========= 红利趋势策略 V3.2 启动 =========")
     print(f"[红利引擎] 市场状态: {regime} | {p['note']}")
     print(f"[红利引擎] 参数: MA趋势={p['ma_trend']}d RSI≤{p['rsi_buy']}/≥{p['rsi_sell']} "
           f"BIAS≤{p['bias_buy']}%/≥{p['bias_sell']}% Defend=MA{p['ma_defend']} "

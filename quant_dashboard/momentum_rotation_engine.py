@@ -1,13 +1,12 @@
 """
-AlphaCore · 行业动量轮动策略引擎 V1.0
+AlphaCore · 行业动量轮动策略引擎 V2.0
 数据源：Tushare（5000积分 — 按ts_code批量获取）
 标的池：20只行业/赛道ETF · 三层环境过滤 · 牛熊自适应
 
-核心逻辑：
-1. 三层市场环境过滤（趋势/波动率/极端风险）
-2. 市场状态自适应参数（牛/熊/震荡）
-3. 20日动量排名 → 选Top N最强行业
-4. 分散化约束（单只≤30%、单行业≤40%、最少3只）
+V2.0 升级：
+- 接入统一 Regime 算法（_classify_regime_from_series）
+- 三大策略（均值回归/动量轮动/红利趋势）Regime 完全一致
+- Layer2(VIX) + Layer3(极端风险) 保留独立运算（动量策略独有）
 """
 
 import pandas as pd
@@ -505,21 +504,40 @@ def _empty_overview(env):
 # ====================================================================
 
 def run_momentum_strategy() -> dict:
-    """运行完整行业动量轮动策略"""
-    print("[动量引擎] ========= 行业动量轮动策略 V1.0 启动 =========")
+    """运行完整行业动量轮动策略 V2.0（统一 Regime 算法）"""
+    print("[动量引擎] ========= 行业动量轮动策略 V2.0 启动 =========")
 
     # 1. 获取ETF数据
     etf_data = fetch_etf_data(days=60)
 
-    # 2. 获取沪深300数据（环境判断）
+    # 2. 获取沪深300数据
     hs300_df = fetch_hs300_data(days=150)
 
-    # 3. 三层市场环境评估
+    # 3. 统一 Regime 识别（与均值回归/信号评分系统使用相同算法）
+    unified_regime = "RANGE"
+    regime_meta = {}
+    if hs300_df is not None and len(hs300_df) >= 30:
+        try:
+            from mean_reversion_engine import _classify_regime_from_series
+            close_arr = hs300_df["close"].astype(float).values
+            regime_meta = _classify_regime_from_series(close_arr)
+            unified_regime = regime_meta.get("regime", "RANGE")
+            print(f"[动量引擎] 统一Regime: {unified_regime} ({regime_meta.get('regime_cn', '')})")
+        except Exception as e:
+            print(f"[动量引擎] Regime识别失败，使用默认RANGE: {e}")
+
+    # 4. 三层市场环境评估（Layer2 VIX + Layer3 极端风险保留独立运算）
     env = assess_market_environment(hs300_df, etf_data)
 
-    # 4. 如果极端风险 → 直接空仓返回
-    if env["layer3_crash"]:
-        print("[动量引擎] ! 极端风险 ! 全池30%+标的跌幅超5%，空仓避险")
+    # 5. 统一 Regime 覆盖（只替换分类，保留 VIX/极端风险的仓位约束）
+    env["regime"]       = unified_regime
+    env["regime_label"] = REGIME_PARAMS.get(unified_regime, REGIME_PARAMS["RANGE"])["label"]
+    env["regime_cn"]    = regime_meta.get("regime_cn", "震荡")
+    env["regime_icon"]  = regime_meta.get("regime_icon", "🟡")
+
+    # 6. CRASH 熔断 + 极端风险 → 直接空仓
+    if unified_regime == "CRASH" or env["layer3_crash"]:
+        print("[动量引擎] ! CRASH/极端风险 ! 空仓避险")
         return {
             "status": "success",
             "timestamp": datetime.now().isoformat(),
@@ -532,12 +550,12 @@ def run_momentum_strategy() -> dict:
             }
         }
 
-    # 5. 信号生成
+    # 7. 信号生成
     result = generate_signals(etf_data, env)
 
     print(f"[动量引擎] 完成: {result['market_overview']['total_etfs']}只有信号, "
           f"{len(result['errors'])}只异常")
-    print(f"[动量引擎] 状态:{env['regime']} "
+    print(f"[动量引擎] Regime:{unified_regime} "
           f"买入:{result['market_overview']['buy_count']} "
           f"卖出:{result['market_overview']['sell_count']} "
           f"建议总仓:{result['market_overview']['total_suggested_pos']}%")
@@ -551,6 +569,7 @@ def run_momentum_strategy() -> dict:
 
 if __name__ == "__main__":
     import json
-    print("正在运行行业动量轮动策略...")
+    print("正在运行行业动量轮动策略 V2.0...")
     result = run_momentum_strategy()
     print(json.dumps(result, ensure_ascii=False, indent=2))
+

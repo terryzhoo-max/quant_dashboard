@@ -827,3 +827,104 @@
     .st-overview-grid { grid-template-columns: 1fr; }
     .st-run-bar { flex-direction: column; gap: 16px; }
 }
+
+/* ================================================
+   AlphaCore V5.0 · 视觉增强补丁
+   ================================================ */
+
+/* ── Regime 徽章发光效果 ── */
+#mr-regime-badge,
+#regime-badge {
+    transition: box-shadow 0.4s ease, background 0.4s ease;
+}
+
+/* BEAR 徽章 */
+.regime-bear-glow {
+    box-shadow: 0 0 18px rgba(239, 68, 68, 0.4), inset 0 0 10px rgba(239,68,68,0.12) !important;
+}
+/* RANGE 徽章 */
+.regime-range-glow {
+    box-shadow: 0 0 18px rgba(245, 158, 11, 0.35), inset 0 0 10px rgba(245,158,11,0.1) !important;
+}
+/* BULL 徽章 */
+.regime-bull-glow {
+    box-shadow: 0 0 18px rgba(16, 185, 129, 0.4), inset 0 0 10px rgba(16,185,129,0.12) !important;
+}
+/* CRASH 徽章 */
+.regime-crash-glow {
+    box-shadow: 0 0 24px rgba(255, 50, 50, 0.6), inset 0 0 14px rgba(255,0,0,0.18) !important;
+    animation: regime-crash-pulse 1.2s ease-in-out infinite !important;
+}
+@keyframes regime-crash-pulse {
+    0%, 100% { box-shadow: 0 0 24px rgba(255,50,50,0.5), inset 0 0 14px rgba(255,0,0,0.15); }
+    50% { box-shadow: 0 0 36px rgba(255,50,50,0.8), inset 0 0 20px rgba(255,0,0,0.25); }
+}
+
+/* ── Skeleton Loading（替代 spinner）── */
+@keyframes skeleton-shimmer {
+    0% { background-position: -400px 0; }
+    100% { background-position: 400px 0; }
+}
+.skeleton-line {
+    height: 14px;
+    border-radius: 7px;
+    background: linear-gradient(90deg,
+        rgba(255,255,255,0.04) 0%,
+        rgba(255,255,255,0.10) 40%,
+        rgba(255,255,255,0.04) 80%);
+    background-size: 800px 100%;
+    animation: skeleton-shimmer 1.4s ease infinite;
+    margin-bottom: 10px;
+}
+.skeleton-line.w-60 { width: 60%; }
+.skeleton-line.w-80 { width: 80%; }
+.skeleton-line.w-40 { width: 40%; }
+.skeleton-line.h-big { height: 36px; border-radius: 10px; }
+
+/* ── KPI 数字字号放大 ── */
+#mr-regime-name,
+#signal-regime-name {
+    font-size: 1.8rem !important;
+    font-weight: 900 !important;
+    letter-spacing: -0.5px;
+}
+
+/* ── 三态速览表行间距放宽 ── */
+#mr-regime-table-body tr td,
+#mr-regime-table-body tr th {
+    padding: 14px 16px !important;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+#mr-regime-table-body tr:last-child td {
+    border-bottom: none;
+}
+
+/* ── Tab hover 微光 ── */
+.st-tab:hover {
+    background: rgba(255,255,255,0.06) !important;
+    transform: translateY(-1px);
+}
+.st-tab.active {
+    background: linear-gradient(135deg, rgba(16,185,129,0.22), rgba(59,130,246,0.14)) !important;
+    box-shadow: 0 4px 20px rgba(16,185,129,0.18) !important;
+}
+
+/* ── glass-panel 深度感增强 ── */
+.glass-panel {
+    backdrop-filter: blur(20px) !important;
+    -webkit-backdrop-filter: blur(20px) !important;
+}
+
+/* ── 自动填入状态提示动画 ── */
+#calc-auto-status {
+    animation: status-fadeIn 0.3s ease;
+}
+@keyframes status-fadeIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── 按钮 hover 统一增强 ── */
+[onclick], button:not(:disabled) {
+    transition: all 0.2s cubic-bezier(0.4,0,0.2,1) !important;
+}

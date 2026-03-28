@@ -20,10 +20,11 @@ DAILY_PRICE_DIR = "data_lake/daily_prices"
 PARAMS_FILE     = "mr_per_regime_params.json"
 
 # 默认回退参数（若 JSON 不存在）
+# stop_loss：负数表示止损幅度，如 -0.05 = 浮亏 > 5% 触发止损
 FALLBACK_PARAMS = {
-    "BEAR":  {"N_trend": 40, "rsi_period": 14, "rsi_buy": 45, "rsi_sell": 65, "bias_buy": -3.0, "stop_loss": 0.05},
-    "RANGE": {"N_trend": 90, "rsi_period": 14, "rsi_buy": 40, "rsi_sell": 70, "bias_buy": -2.0, "stop_loss": 0.07},
-    "BULL":  {"N_trend": 120,"rsi_period": 14, "rsi_buy": 45, "rsi_sell": 75, "bias_buy": -1.5, "stop_loss": 0.06},
+    "BEAR":  {"N_trend": 40, "rsi_period": 14, "rsi_buy": 45, "rsi_sell": 65, "bias_buy": -3.0, "stop_loss": -0.05},
+    "RANGE": {"N_trend": 90, "rsi_period": 14, "rsi_buy": 40, "rsi_sell": 70, "bias_buy": -2.0, "stop_loss": -0.07},
+    "BULL":  {"N_trend": 120,"rsi_period": 14, "rsi_buy": 45, "rsi_sell": 75, "bias_buy": -1.5, "stop_loss": -0.06},
 }
 
 # 各态仓位上限
@@ -391,13 +392,21 @@ def generate_signal(indicators: dict, score: int) -> str:
     rsi_buy  = p["rsi_buy"]
     rsi_sell = p["rsi_sell"]
     bias_buy = p["bias_buy"]
-    sl       = p["stop_loss"]
+    # stop_loss 为负数，如 -0.05 表示浮亏 5% 触发止损
+    sl       = p.get("stop_loss", -0.07)
 
-    # CRASH 或 BULL 高分要求：禁入或严格过滤
+    # CRASH：全面禁入
     if regime == "CRASH":
         return "no_entry"
     if regime == "BULL" and score < score_gate:
         return "hold"      # 牛市：评分不够不主动建仓
+
+    # 止损检查：浮亏超过止损线 → 强制清仓（stop_loss 为负数）
+    cost_price = indicators.get("cost_price")  # 可选：传入持仓成本
+    if cost_price and cost_price > 0:
+        ret = (close / cost_price) - 1
+        if ret <= sl:  # sl 为负，如 ret=-0.06 <= -0.05 → 触发
+            return "stop_loss"
 
     # 趋势过滤
     trend_ok = close > ma_n

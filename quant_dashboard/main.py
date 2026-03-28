@@ -59,7 +59,18 @@ STRATEGY_CACHE = {
         "div": None
     }
 }
-CACHE_TTL = 3600  # 1小时缓存
+
+def _get_cache_ttl() -> int:
+    """智能缓存 TTL：盘中5分钟 / 盘后1小时 / 周末24小时"""
+    now = datetime.now()
+    weekday = now.weekday()  # 0=周一 ... 6=周日
+    h, m = now.hour, now.minute
+    if weekday >= 5:               # 周末
+        return 86400
+    in_session = (h == 9 and m >= 30) or (10 <= h < 15)  # 09:30-15:00
+    return 300 if in_session else 3600
+
+CACHE_TTL = 3600  # 向下兼容，实际使用 _get_cache_ttl()
 
 # --- AlphaCore DMSO Sub-Engines (V3.3 机构级) ---
 
@@ -367,10 +378,13 @@ async def get_dashboard_data():
     核心数据拉取接口：集成三大策略引擎真实数据 + 缓存机制
     """
     current_time = time.time()
-    
+    ttl = _get_cache_ttl()
+
     # 检查缓存是否存在且未过期
-    if STRATEGY_CACHE["last_update"] and (current_time - STRATEGY_CACHE["last_update"] < CACHE_TTL):
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] Dashboard Cache Hit.")
+    if STRATEGY_CACHE["last_update"] and (current_time - STRATEGY_CACHE["last_update"] < ttl):
+        age = int(current_time - STRATEGY_CACHE["last_update"])
+        ttl_type = "盘中5min" if ttl == 300 else ("周末24h" if ttl == 86400 else "盘后1h")
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Dashboard Cache Hit [{ttl_type}] ({age}s ago).")
         return STRATEGY_CACHE["dashboard_data"]
 
     # 默认值初始化
@@ -918,12 +932,6 @@ async def get_industry_detail(code: str):
         return {"status": "success", "data": detail_data}
     except Exception as e:
         return {"status": "error", "message": str(e)}
-
-@app.get("/api/v1/industry-tracking")
-async def get_industry_tracking(date: Optional[str] = None):
-    """行业全景数据同步首页热力图逻辑"""
-    # 此处复用 get_dashboard_data 中的计算逻辑，但提供更全的列表
-    return await get_dashboard_data()
 
 # --- API Routes (Defined BEFORE Static Files to prevent path collision) ---
 
