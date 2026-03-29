@@ -149,7 +149,13 @@ class FactorDataManager:
         
         # 计算未来 5 日收益率 (用于 IC 计算)
         df['next_5d_ret'] = df['close'].shift(-5) / df['close'] - 1
-        return df[['trade_date', 'close', 'next_5d_ret']]
+        # V2.0: 返回 amount 列供资金热度引擎使用
+        cols = ['trade_date', 'close', 'next_5d_ret']
+        if 'amount' in df.columns:
+            cols.append('amount')
+        if 'vol' in df.columns:
+            cols.append('vol')
+        return df[[c for c in cols if c in df.columns]]
 
 if __name__ == "__main__":
     manager = FactorDataManager()

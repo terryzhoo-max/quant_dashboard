@@ -3,21 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AlphaCore | 因子研究终端 V2.0</title>
-    <link rel="stylesheet" href="./styles.css?v=2">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+    <title>AlphaCore | 因子研究终端 V3.0</title>
+    <link rel="stylesheet" href="./styles.css?v=3">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
     <script src="./echarts.min.js"></script>
     <style>
         :root { --terminal-sidebar-width: 280px; }
 
         /* === 全局容器 === */
         .factor-terminal {
-            display: flex;
-            flex-direction: column;
-            height: calc(100vh - 80px);
-            gap: 0;
             padding: 16px 20px;
-            overflow-y: auto;
         }
 
         /* === 因子快选导航条 === */
@@ -34,7 +29,7 @@
         .factor-nav-container { display: flex; gap: 8px; }
         .factor-tile {
             position: relative;
-            min-width: 140px;
+            min-width: 160px;
             padding: 12px 16px;
             border-radius: 10px;
             background: linear-gradient(145deg, rgba(30,41,59,0.6), rgba(15,23,42,0.8));
@@ -73,27 +68,67 @@
             display: flex; align-items: center; justify-content: center;
             line-height: 1;
         }
-        .ft-grade.grade-A { background: rgba(16,185,129,0.3); color: #34d399; }
+        .ft-grade.grade-S { background: rgba(16,185,129,0.35); color: #10b981; box-shadow: 0 0 8px rgba(16,185,129,0.3); }
+        .ft-grade.grade-A { background: rgba(52,211,153,0.25); color: #34d399; }
         .ft-grade.grade-B { background: rgba(59,130,246,0.3); color: #60a5fa; }
-        .ft-grade.grade-C { background: rgba(148,163,184,0.15); color: #94a3b8; }
-        .ft-grade.grade-D { background: rgba(245,158,11,0.2); color: #fbbf24; }
+        .ft-grade.grade-C { background: rgba(251,191,36,0.2); color: #fbbf24; }
+        .ft-grade.grade-D { background: rgba(249,115,22,0.2); color: #f97316; }
         .ft-grade.grade-F { background: rgba(239,68,68,0.2); color: #f87171; }
         .ft-stats { display: flex; gap: 10px; font-size: 0.7rem; color: #64748b; }
         .ft-stats span { font-family: 'Outfit', sans-serif; }
         .ft-ic { font-weight: 700; }
+        .ft-score { font-weight: 800; font-size: 0.75rem; }
 
-        /* === 指标仪表盘 === */
-        .metrics-dashboard {
-            display: grid;
-            grid-template-columns: repeat(8, 1fr);
+        /* === 核心指标行 (Alpha Score + 8卡) === */
+        .metrics-row {
+            display: flex;
             gap: 10px;
             margin-bottom: 16px;
+            align-items: stretch;
+            flex-shrink: 0;
+        }
+
+        /* Alpha Score 大卡 */
+        .alpha-score-card {
+            min-width: 160px;
+            padding: 10px;
+            border-radius: 12px;
+            background: linear-gradient(145deg, rgba(30,41,59,0.6), rgba(15,23,42,0.8));
+            border: 1px solid rgba(255,255,255,0.06);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+            transition: border-color 0.4s;
+        }
+        .alpha-score-card .asc-label {
+            font-size: 0.65rem;
+            color: #64748b;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            margin-bottom: 4px;
+        }
+        .alpha-score-card .asc-grade {
+            font-size: 0.6rem;
+            font-weight: 700;
+            margin-top: 2px;
+        }
+
+        /* 指标卡网格 */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 8px;
+            flex: 1;
         }
         @media (max-width: 1400px) {
-            .metrics-dashboard { grid-template-columns: repeat(4, 1fr); }
+            .metrics-row { flex-direction: column; }
+            .metrics-grid { grid-template-columns: repeat(4, 1fr); }
         }
         .metric-card {
-            padding: 14px 12px;
+            padding: 12px 10px;
             text-align: center;
             border-radius: 10px;
             background: linear-gradient(145deg, rgba(30,41,59,0.5), rgba(15,23,42,0.7));
@@ -101,22 +136,22 @@
             transition: border-color 0.3s;
         }
         .metric-card .mc-label {
-            font-size: 0.68rem;
+            font-size: 0.62rem;
             color: #64748b;
-            margin-bottom: 6px;
+            margin-bottom: 5px;
             font-weight: 500;
             letter-spacing: 0.03em;
         }
         .metric-card .mc-value {
-            font-size: 1.2rem;
+            font-size: 1.1rem;
             font-weight: 700;
             font-family: 'Outfit', sans-serif;
             color: #e2e8f0;
         }
         .metric-card .mc-hint {
-            font-size: 0.58rem;
+            font-size: 0.55rem;
             color: #475569;
-            margin-top: 4px;
+            margin-top: 3px;
         }
         .metric-card.mc-good { border-color: rgba(16,185,129,0.3); }
         .metric-card.mc-good .mc-value { color: #34d399; }
@@ -125,21 +160,104 @@
         .metric-card.mc-bad { border-color: rgba(239,68,68,0.3); }
         .metric-card.mc-bad .mc-value { color: #f87171; }
 
-        /* 评级大卡 */
-        .metric-card.mc-grade {
-            position: relative;
-            overflow: hidden;
+        /* === 交易建议区 === */
+        .advice-section {
+            display: block !important;
+            margin-bottom: 16px !important;
+            border-radius: 12px;
+            background: linear-gradient(145deg, rgba(30,41,59,0.4), rgba(15,23,42,0.6));
+            border: 1px solid rgba(255,255,255,0.05);
+            overflow: visible !important;
+            min-height: 160px !important;
+            height: auto !important;
+            max-height: none !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            flex-shrink: 0 !important;
         }
-        .mc-grade-badge {
-            font-size: 2rem;
-            font-weight: 800;
-            font-family: 'Outfit', sans-serif;
-            line-height: 1;
+        .advice-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 18px;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
         }
-        .mc-grade-label {
-            font-size: 0.62rem;
-            margin-top: 4px;
+        .advice-header-title {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: #94a3b8;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .advice-confidence {
+            font-size: 0.72rem;
+            font-weight: 600;
             color: #64748b;
+            font-family: 'Outfit', sans-serif;
+        }
+        .advice-cards {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 0;
+        }
+        .advice-card {
+            padding: 16px 14px;
+            text-align: center;
+            border-right: 1px solid rgba(255,255,255,0.04);
+            transition: background 0.2s;
+        }
+        .advice-card:last-child { border-right: none; }
+        .advice-card:hover { background: rgba(255,255,255,0.02); }
+        .advice-card .ac-icon { font-size: 1.3rem; margin-bottom: 6px; }
+        .advice-card .ac-value {
+            font-size: 1.05rem;
+            font-weight: 700;
+            font-family: 'Outfit', sans-serif;
+            margin-bottom: 3px;
+        }
+        .advice-card .ac-label {
+            font-size: 0.62rem;
+            color: #64748b;
+            font-weight: 500;
+        }
+        /* 信号卡特殊样式 */
+        .advice-card.signal-card .ac-value {
+            font-size: 0.9rem;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+        }
+
+        /* 风险提示条 */
+        .risk-strip {
+            padding: 10px 18px;
+            border-top: 1px solid rgba(255,255,255,0.04);
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            font-size: 0.72rem;
+            color: #94a3b8;
+            line-height: 1.5;
+        }
+        .risk-strip .risk-icon {
+            font-size: 0.85rem;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+        .risk-strip .risk-text { flex: 1; }
+        .risk-strip.risk-warn { color: #fbbf24; background: rgba(251,191,36,0.04); }
+        .risk-strip.risk-danger { color: #f87171; background: rgba(239,68,68,0.04); }
+        .risk-strip.risk-ok { color: #34d399; background: rgba(16,185,129,0.03); }
+
+        /* 免责声明 */
+        .disclaimer-bar {
+            padding: 8px 18px;
+            border-top: 1px solid rgba(255,255,255,0.03);
+            font-size: 0.58rem;
+            color: #334155;
+            text-align: center;
+            font-style: italic;
+            user-select: none;
         }
 
         /* === 图表矩阵 === */
@@ -148,6 +266,7 @@
             grid-template-columns: 280px 1fr;
             gap: 16px;
             margin-bottom: 16px;
+            flex-shrink: 0;
         }
         .chart-panel {
             padding: 20px;
@@ -172,20 +291,8 @@
             grid-template-columns: 1fr 1fr;
             gap: 16px;
             margin-bottom: 16px;
+            flex-shrink: 0;
         }
-
-        /* === 空状态引导 === */
-        .empty-state {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 60px 20px;
-            color: #475569;
-            gap: 12px;
-        }
-        .empty-state-icon { font-size: 3rem; opacity: 0.3; }
-        .empty-state-text { font-size: 0.9rem; text-align: center; line-height: 1.6; }
 
         /* === 加载进度 === */
         .loading-overlay {
@@ -354,8 +461,8 @@
             font-weight: 700;
             padding: 3px 8px;
             border-radius: 4px;
-            background: rgba(99,102,241,0.2);
-            color: #818cf8;
+            background: rgba(16,185,129,0.15);
+            color: #34d399;
             font-family: 'Outfit', sans-serif;
         }
         .topbar-actions { display: flex; gap: 10px; }
@@ -419,7 +526,7 @@
     <main class="dashboard">
         <!-- 顶部工具栏 -->
         <div class="factor-topbar">
-            <h2>📈 因子研究终端 <span class="version-badge">V2.0</span></h2>
+            <h2>📈 因子研究终端 <span class="version-badge">V3.0</span></h2>
             <div class="topbar-actions">
                 <button id="config-btn">⚙️ 配置</button>
                 <button class="btn-primary-sm" id="run-btn">▶ 运行分析</button>
@@ -432,48 +539,95 @@
                 <div class="factor-nav-container" id="factor-nav"></div>
             </div>
 
-            <!-- 指标仪表盘 -->
-            <div class="metrics-dashboard" id="metrics-dashboard">
-                <div class="metric-card mc-grade">
-                    <div class="mc-label">因子评级</div>
-                    <div class="mc-grade-badge" id="m-grade">—</div>
-                    <div class="mc-grade-label" id="m-grade-label">等待分析</div>
+            <!-- Alpha Score + 指标卡行 -->
+            <div class="metrics-row" id="metrics-row">
+                <div class="alpha-score-card" id="alpha-score-card">
+                    <div class="asc-label">ALPHA SCORE</div>
+                    <div id="alpha-gauge" style="width: 130px; height: 130px;"></div>
+                    <div class="asc-grade" id="asc-grade">等待分析</div>
                 </div>
-                <div class="metric-card">
-                    <div class="mc-label">IC 均值</div>
-                    <div class="mc-value" id="m-ic-mean">—</div>
-                    <div class="mc-hint">>0.03 可用</div>
+                <div class="metrics-grid" id="metrics-grid">
+                    <div class="metric-card">
+                        <div class="mc-label">IC 均值</div>
+                        <div class="mc-value" id="m-ic-mean">—</div>
+                        <div class="mc-hint">>0.03 可用</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="mc-label">信息比率 IR</div>
+                        <div class="mc-value" id="m-ir">—</div>
+                        <div class="mc-hint">>0.5 优秀</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="mc-label">IC 胜率</div>
+                        <div class="mc-value" id="m-win-rate">—</div>
+                        <div class="mc-hint">>55% 可用</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="mc-label">单调性</div>
+                        <div class="mc-value" id="m-mono">—</div>
+                        <div class="mc-hint">>0.8 优</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="mc-label">IC 稳定性</div>
+                        <div class="mc-value" id="m-stability">—</div>
+                        <div class="mc-hint">0.8-1.2 稳</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="mc-label">多空价差</div>
+                        <div class="mc-value" id="m-ls-spread">—</div>
+                        <div class="mc-hint">>0 有效</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="mc-label">样本量</div>
+                        <div class="mc-value" id="m-samples">—</div>
+                        <div class="mc-hint">截面数</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="mc-label">因子评级</div>
+                        <div class="mc-value" id="m-grade">—</div>
+                        <div class="mc-hint">S/A/B/C/D/F</div>
+                    </div>
                 </div>
-                <div class="metric-card">
-                    <div class="mc-label">信息比率 IR</div>
-                    <div class="mc-value" id="m-ir">—</div>
-                    <div class="mc-hint">>0.5 优秀</div>
+            </div>
+
+            <!-- 交易建议区 -->
+            <div class="advice-section" id="advice-section">
+                <div class="advice-header">
+                    <div class="advice-header-title"><span>💡</span> 交易建议 (基于因子统计推断)</div>
+                    <div class="advice-confidence" id="advice-confidence">置信度: —</div>
                 </div>
-                <div class="metric-card">
-                    <div class="mc-label">IC 胜率</div>
-                    <div class="mc-value" id="m-win-rate">—</div>
-                    <div class="mc-hint">>55% 可用</div>
+                <div class="advice-cards" id="advice-cards">
+                    <div class="advice-card signal-card">
+                        <div class="ac-icon">📡</div>
+                        <div class="ac-value" id="adv-signal" style="color: #64748b;">等待分析</div>
+                        <div class="ac-label">信号强度</div>
+                    </div>
+                    <div class="advice-card">
+                        <div class="ac-icon">⏱️</div>
+                        <div class="ac-value" id="adv-hold" style="color: #e2e8f0;">—</div>
+                        <div class="ac-label">建议持有期</div>
+                    </div>
+                    <div class="advice-card">
+                        <div class="ac-icon">🎯</div>
+                        <div class="ac-value" id="adv-target" style="color: #34d399;">—</div>
+                        <div class="ac-label">目标收益 (止盈)</div>
+                    </div>
+                    <div class="advice-card">
+                        <div class="ac-icon">🛡️</div>
+                        <div class="ac-value" id="adv-stop" style="color: #f87171;">—</div>
+                        <div class="ac-label">止损线</div>
+                    </div>
+                    <div class="advice-card">
+                        <div class="ac-icon">📊</div>
+                        <div class="ac-value" id="adv-position" style="color: #60a5fa;">—</div>
+                        <div class="ac-label">建议仓位</div>
+                    </div>
                 </div>
-                <div class="metric-card">
-                    <div class="mc-label">单调性</div>
-                    <div class="mc-value" id="m-mono">—</div>
-                    <div class="mc-hint">>0.8 优</div>
+                <div class="risk-strip risk-ok" id="risk-strip">
+                    <span class="risk-icon">ℹ️</span>
+                    <span class="risk-text" id="risk-text">运行分析后将显示风险提示</span>
                 </div>
-                <div class="metric-card">
-                    <div class="mc-label">IC 稳定性</div>
-                    <div class="mc-value" id="m-stability">—</div>
-                    <div class="mc-hint">0.8-1.2 稳</div>
-                </div>
-                <div class="metric-card">
-                    <div class="mc-label">多空价差</div>
-                    <div class="mc-value" id="m-ls-spread">—</div>
-                    <div class="mc-hint">>0 有效</div>
-                </div>
-                <div class="metric-card">
-                    <div class="mc-label">样本量</div>
-                    <div class="mc-value" id="m-samples">—</div>
-                    <div class="mc-hint">截面数</div>
-                </div>
+                <div class="disclaimer-bar">⚠️ 以上建议基于历史统计推断，不构成投资建议。过去表现不代表未来收益。用户须自行承担交易风险。</div>
             </div>
 
             <!-- 雷达图 + IC序列 -->
@@ -540,18 +694,17 @@
         </div>
 
         <div class="methodology-panel">
-            <h4>📚 测评方法论</h4>
-            <p>• <b>Rank IC</b>: 因子值排名与未来5日收益率排名的Spearman秩相关系数。</p>
-            <p>• <b>IR</b>: IC均值 / IC标准差，衡量因子预测的稳定性。</p>
-            <p>• <b>IC胜率</b>: IC > 0 的日期占比，反映因子方向正确率。</p>
-            <p>• <b>单调性</b>: 分组收益与组别的相关性，越高说明因子区分力越强。</p>
-            <p>• <b>IC稳定性</b>: 后半段IC均值 / 前半段IC均值，检测因子是否在衰减。</p>
+            <h4>📚 测评方法论 V3.0</h4>
+            <p>• <b>Alpha Score</b>: 综合评分(0-100)，6维加权: IC强度(25%)+IR稳定(20%)+胜率(20%)+单调性(15%)+时效(10%)+多空盈利(10%)。</p>
+            <p>• <b>Rank IC</b>: 因子排名与未来5日收益排名的 Spearman 秩相关。</p>
+            <p>• <b>交易建议</b>: 基于历史统计推断。信号由 Alpha Score + 单调性联合判定。止盈基于 Q5 历史均值×5日累计。仓位基于简化凯利公式。</p>
             <p>• <b>评级标准</b>:<br>
-               A: IC>0.05 + IR>0.5 + 胜率>65%<br>
-               B: IC>0.03 + IR>0.3 + 胜率>55%<br>
-               C: IC>0.02 + IR>0.2<br>
-               D: IC>0.01<br>
-               F: IC≤0.01</p>
+               S: ≥80 (顶级因子)<br>
+               A: ≥60 (优质因子)<br>
+               B: ≥45 (可用因子)<br>
+               C: ≥30 (边缘因子)<br>
+               D: ≥15 (噪音因子)<br>
+               F: <15 (无效因子)</p>
         </div>
     </div>
 
@@ -564,6 +717,6 @@
         </div>
     </div>
 
-    <script src="./factor.js?v=2"></script>
+    <script src="./factor.js?v=3"></script>
 </body>
 </html>

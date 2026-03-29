@@ -1087,151 +1087,420 @@ h3::before {
     color: #fff;
     margin-bottom: 18px;
     padding-left: 15px;
-    border-left: 4px solid #3b82f6; /* Accent color */
+    border-left: 4px solid #3b82f6;
     letter-spacing: 1px;
     text-transform: uppercase;
 }
 
-/* V4.6.1 情绪与持仓枢纽 (Sentiment & Position Hub Optimized) */
+/* ================= V6.0 情绪与持仓枢纽 (三栏布局) ================= */
 .sentiment-hub {
     margin-top: 24px;
-    padding: 24px;
-    background: linear-gradient(135deg, rgba(20, 20, 20, 0.9) 0%, rgba(35, 35, 35, 0.9) 100%);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 28px;
+    background: linear-gradient(135deg, rgba(12, 14, 20, 0.95) 0%, rgba(25, 28, 40, 0.9) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 20px;
-    box-shadow: 0 15px 45px rgba(0,0,0,0.6);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
 }
 
-.hub-container {
+.hub-container-v6 {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 32px;
+    grid-template-columns: 1fr 1.3fr 1fr;
+    gap: 28px;
 }
 
-.hub-panel { display: flex; flex-direction: column; }
+.hub-col {
+    display: flex;
+    flex-direction: column;
+    padding: 0 8px;
+}
 
-.hub-header {
+.hub-col-header {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin-bottom: 24px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    gap: 10px;
+    margin-bottom: 20px;
     padding-bottom: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.hub-header h3 {
+.hub-col-header h3 {
     margin: 0;
-    font-size: 0.9rem;
+    font-size: 0.82rem;
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 2px;
     font-weight: 600;
 }
 
-/* Macro Panel (Left) */
-.gauge-center {
-    text-align: center;
-    padding: 24px 0;
-    background: rgba(255, 255, 255, 0.02);
-    border-radius: 20px;
-    margin-bottom: 24px;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-}
+.hub-col-header h3::before { display: none; }
 
-.gauge-center .temp-value {
-    font-size: 3.8rem;
-    font-weight: 900;
-    background: linear-gradient(180deg, #fff 30%, #666 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    line-height: 1;
-}
-
-.risk-flag {
-    font-size: 0.9rem;
-    font-weight: 700;
-    margin-top: 14px;
-    letter-spacing: 0.5px;
-}
-
-.indices-grid {
+/* --- 左栏: 宏观温度仪表 --- */
+.macro-gauge {
     display: flex;
     justify-content: center;
-    gap: 16px;
-    margin-bottom: 24px;
+    margin-bottom: 16px;
 }
 
-.index-item {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-    background: rgba(255, 255, 255, 0.04);
-    padding: 8px 16px;
-    border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.05);
+.gauge-ring {
+    width: 160px;
+    height: 160px;
+    border-radius: 50%;
+    background: conic-gradient(
+        var(--temp-color, #3b82f6) 0deg,
+        var(--temp-color-dim, rgba(59,130,246,0.3)) calc(var(--temp-deg, 180) * 1deg),
+        rgba(255,255,255,0.04) calc(var(--temp-deg, 180) * 1deg),
+        rgba(255,255,255,0.04) 360deg
+    );
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    transition: all 0.8s ease;
 }
 
-.index-item span { font-weight: 800; color: #fff; margin-left: 6px; }
-
-.system-mode {
+.gauge-inner {
+    width: 130px;
+    height: 130px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, rgba(12, 14, 20, 0.98), rgba(20, 24, 34, 0.95));
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 12px;
+    justify-content: center;
+    gap: 4px;
 }
 
-/* Tactical Panel (Right) */
-.pos-advice-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
+.gauge-temp {
+    font-size: 2.4rem;
+    font-weight: 900;
+    color: var(--temp-color, #3b82f6);
+    line-height: 1;
+    font-family: 'Inter', monospace;
+}
+
+.gauge-regime {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 2px 10px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 10px;
+    font-weight: 600;
+}
+
+.col-macro .risk-flag {
+    text-align: center;
+    font-size: 0.78rem;
+    font-weight: 600;
     margin-bottom: 16px;
-    padding-top: 10px;
+    letter-spacing: 0.5px;
 }
 
-.pos-label { font-size: 0.8rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; }
+.macro-tags {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-bottom: 16px;
+}
 
-.pos-value {
-    font-size: 1.8rem;
+.macro-tag {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
+    font-size: 0.72rem;
+    transition: all 0.3s ease;
+}
+
+.macro-tag:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.tag-icon { font-size: 0.8rem; }
+.tag-label { color: var(--text-muted); font-weight: 500; }
+.tag-value { color: #fff; font-weight: 700; font-family: 'Inter', monospace; }
+
+.col-macro .mindset-label {
+    text-align: center;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #fff;
+    background: linear-gradient(90deg, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.05) 100%);
+    padding: 8px 14px;
+    border-radius: 8px;
+    border-left: 3px solid var(--temp-color, #3b82f6);
+    margin-top: auto;
+}
+
+/* --- 中栏: 仓位决策面板 --- */
+.col-position {
+    border-left: 1px solid rgba(255, 255, 255, 0.06);
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    padding-left: 24px !important;
+    padding-right: 24px !important;
+}
+
+.pos-hero {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.pos-big-value {
+    font-size: 2.2rem;
     font-weight: 900;
     color: #f59e0b;
-    text-shadow: 0 0 20px rgba(245, 158, 11, 0.4);
+    text-shadow: 0 0 30px rgba(245, 158, 11, 0.3);
+    margin-bottom: 12px;
+    font-family: 'Inter', monospace;
 }
 
-.advice-bar-bg {
+.pos-bar-wrap { padding: 0 10px; }
+
+.pos-bar-bg {
     height: 8px;
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.06);
     border-radius: 4px;
     overflow: hidden;
-    margin-bottom: 24px;
 }
 
-.advice-bar-fill {
+.pos-bar-fill {
     height: 100%;
     background: linear-gradient(90deg, #f59e0b, #fbbf24);
-    box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+    box-shadow: 0 0 12px rgba(245, 158, 11, 0.4);
     transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+    border-radius: 4px;
 }
 
-.cycle-badge {
-    margin-top: 16px;
-    font-size: 0.8rem;
-    background: rgba(245, 158, 11, 0.08);
-    padding: 12px 20px;
-    border-radius: 12px;
-    border: 1px solid rgba(245, 158, 11, 0.15);
-    color: var(--text-secondary);
+.confidence-row {
     display: flex;
     align-items: center;
     gap: 10px;
+    margin: 16px 0 20px;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.cycle-badge strong { color: #f59e0b; font-weight: 800; font-size: 1rem; }
+.conf-label {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+.conf-gauge {
+    flex: 1;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.conf-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #ef4444, #f59e0b, #10b981);
+    border-radius: 3px;
+    transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.conf-value {
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: #fff;
+    font-family: 'Inter', monospace;
+    min-width: 28px;
+    text-align: right;
+}
+
+/* 五因子条形图 */
+.factors-chart {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.factor-row {
+    display: grid;
+    grid-template-columns: 60px 1fr 32px;
+    align-items: center;
+    gap: 8px;
+}
+
+.factor-name {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    font-weight: 500;
+    text-align: right;
+    letter-spacing: 0.3px;
+}
+
+.factor-bar-bg {
+    height: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.factor-bar {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.5s ease;
+    background: var(--accent);
+}
+
+.factor-bar.score-high { background: linear-gradient(90deg, #10b981, #34d399); }
+.factor-bar.score-mid  { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+.factor-bar.score-low  { background: linear-gradient(90deg, #ef4444, #f87171); }
+
+.factor-score {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    font-family: 'Inter', monospace;
+    text-align: right;
+}
+
+/* --- 右栏: 策略配仓 --- */
+.alloc-total-badge {
+    margin-left: auto;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 0.5px;
+    font-family: 'Inter', monospace;
+}
+
+.alloc-stacked-bar {
+    display: flex;
+    height: 28px;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    margin-bottom: 16px;
+}
+
+.alloc-seg {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #fff;
+    transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    min-width: 36px;
+}
+
+.alloc-items {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.alloc-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    padding: 6px 10px;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    transition: all 0.2s ease;
+}
+
+.alloc-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.alloc-name { flex: 1; }
+
+.alloc-item strong {
+    font-size: 0.95rem;
+    color: #fff;
+    font-weight: 700;
+    font-family: 'Inter', monospace;
+}
+
+.col-allocation .cycle-badge {
+    margin-top: auto;
+    font-size: 0.75rem;
+    background: rgba(245, 158, 11, 0.08);
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(245, 158, 11, 0.12);
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.col-allocation .cycle-badge strong {
+    color: #f59e0b;
+    font-weight: 800;
+    font-size: 0.9rem;
+}
+
+/* Temperature color states (set by JS) */
+.sentiment-hub[data-temp-zone="cold"] {
+    --temp-color: #06b6d4;
+    --temp-color-dim: rgba(6, 182, 212, 0.3);
+    border-color: rgba(6, 182, 212, 0.15);
+}
+.sentiment-hub[data-temp-zone="warm"] {
+    --temp-color: #f59e0b;
+    --temp-color-dim: rgba(245, 158, 11, 0.3);
+    border-color: rgba(245, 158, 11, 0.15);
+}
+.sentiment-hub[data-temp-zone="hot"] {
+    --temp-color: #ef4444;
+    --temp-color-dim: rgba(239, 68, 68, 0.3);
+    border-color: rgba(239, 68, 68, 0.15);
+}
+.sentiment-hub[data-temp-zone="hot"] .gauge-ring {
+    animation: pulse-danger 2s infinite;
+}
 
 /* Responsive Hub */
-@media (max-width: 1100px) {
-    .hub-container { grid-template-columns: 1fr; gap: 40px; }
+@media (max-width: 1400px) {
+    .hub-container-v6 {
+        grid-template-columns: 1fr 1fr;
+    }
+    .col-allocation {
+        grid-column: 1 / -1;
+    }
+    .col-position {
+        border-right: none;
+    }
 }
+
+@media (max-width: 900px) {
+    .hub-container-v6 {
+        grid-template-columns: 1fr;
+        gap: 32px;
+    }
+    .col-position {
+        border-left: none;
+        border-right: none;
+        padding-left: 8px !important;
+        padding-right: 8px !important;
+        border-top: 1px solid rgba(255,255,255,0.06);
+        border-bottom: 1px solid rgba(255,255,255,0.06);
+        padding-top: 24px;
+        padding-bottom: 24px;
+    }
+}
+
 
 /* --- Industry Deep-Dive V2.0 Styles (Decision Gauges) --- */
 .stat-card {
@@ -1411,4 +1680,181 @@ h3::before {
 
 .pulse-value {
     animation: data-pulse 2s infinite ease-in-out;
+}
+
+/* ================= V5.0 Regime 状态横幅 ================= */
+.regime-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 24px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.08);
+    transition: all 0.5s ease;
+}
+.rb-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.rb-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #94a3b8;
+    box-shadow: 0 0 8px rgba(148,163,184,0.5);
+    animation: dot-pulse 2s infinite;
+}
+@keyframes dot-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+.rb-regime {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.5px;
+}
+.rb-temp {
+    font-size: 1.5rem;
+    font-weight: 800;
+    font-family: 'Outfit', 'Inter', monospace;
+    color: #fff;
+}
+.rb-center {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: rgba(255,255,255,0.9);
+    padding: 6px 16px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+.rb-right {
+    display: flex;
+    gap: 10px;
+}
+.rb-tag {
+    font-size: 0.78rem;
+    padding: 4px 10px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px;
+    color: var(--text-muted);
+    font-family: 'Outfit', monospace;
+    font-weight: 500;
+}
+/* Regime color variants */
+.regime-banner.rb-bull {
+    background: linear-gradient(135deg, rgba(239,68,68,0.12) 0%, rgba(20,24,34,0.4) 60%);
+    border-color: rgba(239,68,68,0.25);
+}
+.regime-banner.rb-bull .rb-dot { background: #ef4444; box-shadow: 0 0 12px rgba(239,68,68,0.6); }
+.regime-banner.rb-bull .rb-temp { color: #f87171; }
+
+.regime-banner.rb-bear {
+    background: linear-gradient(135deg, rgba(16,185,129,0.12) 0%, rgba(20,24,34,0.4) 60%);
+    border-color: rgba(16,185,129,0.25);
+}
+.regime-banner.rb-bear .rb-dot { background: #10b981; box-shadow: 0 0 12px rgba(16,185,129,0.6); }
+.regime-banner.rb-bear .rb-temp { color: #34d399; }
+
+.regime-banner.rb-neutral {
+    background: linear-gradient(135deg, rgba(245,158,11,0.08) 0%, rgba(20,24,34,0.4) 60%);
+    border-color: rgba(245,158,11,0.2);
+}
+.regime-banner.rb-neutral .rb-dot { background: #f59e0b; box-shadow: 0 0 10px rgba(245,158,11,0.5); }
+.regime-banner.rb-neutral .rb-temp { color: #fbbf24; }
+
+/* ================= V5.0 策略卡片状态指示 ================= */
+.version-pill {
+    font-size: 0.65rem;
+    padding: 2px 8px;
+    background: linear-gradient(135deg, rgba(99,102,241,0.2), rgba(139,92,246,0.15));
+    color: #a78bfa;
+    border: 1px solid rgba(139,92,246,0.3);
+    border-radius: 6px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+.strat-status-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.05);
+}
+.strat-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #94a3b8;
+    flex-shrink: 0;
+}
+.strat-dot.active {
+    background: var(--success);
+    box-shadow: 0 0 8px rgba(16,185,129,0.5);
+    animation: dot-pulse 1.5s infinite;
+}
+.strat-dot.warning {
+    background: var(--warning);
+    box-shadow: 0 0 8px rgba(245,158,11,0.5);
+    animation: dot-pulse 1.5s infinite;
+}
+.strat-dot.dormant {
+    background: #64748b;
+}
+.strat-status-text {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+.strat-status-row.active .strat-status-text { color: var(--success); }
+.strat-status-row.warning .strat-status-text { color: var(--warning); }
+
+/* Strategy card height to accommodate extra row */
+.strategy-card {
+    height: auto;
+    min-height: 200px;
+}
+
+/* ================= V5.0 热力图信号角标 ================= */
+.heatmap-cell {
+    position: relative;
+}
+.hm-badges {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    display: flex;
+    gap: 2px;
+}
+.hm-badge {
+    font-size: 0.65rem;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    line-height: 1;
+}
+.hm-badge.hm-buy {
+    background: rgba(16,185,129,0.2);
+    border: 1px solid rgba(16,185,129,0.4);
+}
+.hm-badge.hm-sell {
+    background: rgba(239,68,68,0.2);
+    border: 1px solid rgba(239,68,68,0.4);
+}
+.sector-rps {
+    display: block;
+    font-size: 0.72rem;
+    color: rgba(255,255,255,0.5);
+    font-family: 'Outfit', monospace;
+    margin-top: 2px;
 }

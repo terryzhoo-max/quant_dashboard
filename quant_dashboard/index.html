@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AlphaCore 投研量化终端</title>
     <!-- 引入外部样式 -->
-    <link rel="stylesheet" href="./styles.css?v=3">
+    <link rel="stylesheet" href="./styles.css?v=6">
     <!-- 引入高级无衬线字体 Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Chart.js 移除 (极简主义与性能优化) -->
@@ -75,6 +75,20 @@
                 <p id="system-time">正在连接 AlphaCore 量化后端引擎拉取实时数据...</p>
             </div>
 
+            <!-- V5.0 全局 Regime 状态横幅 -->
+            <div class="regime-banner glass-panel" id="regime-banner">
+                <div class="rb-left">
+                    <span class="rb-dot" id="rb-dot"></span>
+                    <span class="rb-regime" id="rb-regime">同步中...</span>
+                    <span class="rb-temp" id="rb-temp">--.-°</span>
+                </div>
+                <div class="rb-center" id="rb-advice">建议仓位: --%</div>
+                <div class="rb-right">
+                    <span class="rb-tag" id="rb-vix">VIX --</span>
+                    <span class="rb-tag" id="rb-capital">资金 Z:--</span>
+                </div>
+            </div>
+
             <!-- 数据结构化概览卡片 -->
             <div class="stats-grid">
                 <div class="stat-card glass-panel" id="card-vix">
@@ -120,56 +134,138 @@
                 </div>
             </div>
 
-        <!-- V4.6 情绪与持仓枢纽 (Sentiment & Position Hub) -->
+        <!-- V6.0 情绪与持仓枢纽 (Sentiment & Position Hub) -->
         <div class="sentiment-section">
-            <div class="hub-main-title">AlphaCore 情绪与持仓枢纽 (Sentiment & Position Hub)</div>
+            <div class="hub-main-title">AlphaCore 情绪与持仓枢纽 V6.0 (Sentiment & Position Hub)</div>
             <div class="sentiment-hub glass-panel" id="card-sentiment-hub">
-                <div class="hub-container">
-                    <!-- 左侧：宏观环境与温度 -->
-                    <div class="hub-panel panel-macro">
-                        <div class="hub-header">
+                <div class="hub-container-v6">
+                    <!-- 左栏：宏观温度计 -->
+                    <div class="hub-col col-macro">
+                        <div class="hub-col-header">
                             <span class="icon">🌡️</span>
-                            <h3>宏观风控与温度计</h3>
+                            <h3>宏观风控</h3>
                         </div>
-                        <div class="hub-main">
-                            <div class="gauge-center">
-                                <div class="temp-value" id="val-market-temp">--.-°</div>
-                                <div class="risk-flag" id="label-market-temp">对齐中...</div>
+                        <div class="macro-gauge" id="macro-gauge">
+                            <div class="gauge-ring" id="gauge-ring">
+                                <div class="gauge-inner">
+                                    <div class="gauge-temp" id="val-market-temp">--.-°</div>
+                                    <div class="gauge-regime" id="val-regime-name">载入中</div>
+                                </div>
                             </div>
-                            <div class="indices-grid">
-                                <div class="index-item">A/H 总温: <span id="val-temp-a">--</span></div>
+                        </div>
+                        <div class="risk-flag" id="label-market-temp">对齐中...</div>
+                        <div class="macro-tags">
+                            <div class="macro-tag" id="tag-capital-z">
+                                <span class="tag-icon">💰</span>
+                                <span class="tag-label">资金Z</span>
+                                <span class="tag-value" id="val-capital-z">--</span>
                             </div>
-                            <div class="system-mode">
-                                <div class="regime-badge" id="val-regime-name">载入中</div>
-                                <div class="mindset-label" id="val-mindset">侦测中...</div>
+                            <div class="macro-tag" id="tag-erp">
+                                <span class="tag-icon">📊</span>
+                                <span class="tag-label">ERP</span>
+                                <span class="tag-value" id="val-erp-tag">--</span>
+                            </div>
+                        </div>
+                        <div class="mindset-label" id="val-mindset">侦测中...</div>
+                    </div>
+
+                    <!-- 中栏：仓位决策面板 -->
+                    <div class="hub-col col-position">
+                        <div class="hub-col-header">
+                            <span class="icon">🎯</span>
+                            <h3>仓位决策</h3>
+                        </div>
+                        <div class="pos-hero">
+                            <div class="pos-big-value" id="val-pos-advice">--%</div>
+                            <div class="pos-bar-wrap">
+                                <div class="pos-bar-bg">
+                                    <div class="pos-bar-fill" id="bar-pos-advice" style="width: 30%;"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="confidence-row">
+                            <span class="conf-label">决策置信度</span>
+                            <div class="conf-gauge">
+                                <div class="conf-fill" id="conf-fill" style="width: 50%;"></div>
+                            </div>
+                            <span class="conf-value" id="val-confidence">--</span>
+                        </div>
+                        <div class="factors-chart" id="factors-chart">
+                            <div class="factor-row">
+                                <span class="factor-name">VIX恐慌</span>
+                                <div class="factor-bar-bg"><div class="factor-bar" id="fbar-vix" style="width:50%"></div></div>
+                                <span class="factor-score" id="fscore-vix">--</span>
+                            </div>
+                            <div class="factor-row">
+                                <span class="factor-name">资金流向</span>
+                                <div class="factor-bar-bg"><div class="factor-bar" id="fbar-capital" style="width:50%"></div></div>
+                                <span class="factor-score" id="fscore-capital">--</span>
+                            </div>
+                            <div class="factor-row">
+                                <span class="factor-name">宏观温度</span>
+                                <div class="factor-bar-bg"><div class="factor-bar" id="fbar-temp" style="width:50%"></div></div>
+                                <span class="factor-score" id="fscore-temp">--</span>
+                            </div>
+                            <div class="factor-row">
+                                <span class="factor-name">ERP估值</span>
+                                <div class="factor-bar-bg"><div class="factor-bar" id="fbar-erp" style="width:50%"></div></div>
+                                <span class="factor-score" id="fscore-erp">--</span>
+                            </div>
+                            <div class="factor-row">
+                                <span class="factor-name">策略共振</span>
+                                <div class="factor-bar-bg"><div class="factor-bar" id="fbar-signal" style="width:50%"></div></div>
+                                <span class="factor-score" id="fscore-signal">--</span>
                             </div>
                         </div>
                     </div>
 
-                    <!-- 右侧：战术仓位与预判 -->
-                    <div class="hub-panel panel-tactical">
-                        <div class="hub-header">
-                            <span class="icon">🛡️</span>
-                            <h3>战术仓位预判 (Pos Pathing)</h3>
+                    <!-- 右栏：策略权重与联动 -->
+                    <div class="hub-col col-allocation">
+                        <div class="hub-col-header">
+                            <span class="icon">📊</span>
+                            <h3>策略配仓</h3>
+                            <span class="alloc-total-badge" id="val-alloc-total">总仓位: --%</span>
                         </div>
-                        <div class="hub-main">
-                            <div class="pos-advice-row">
-                                <span class="pos-label">当前建议仓位</span>
-                                <span class="pos-value" id="val-pos-advice">--%</span>
+                        <div class="alloc-stacked-bar">
+                            <div class="alloc-seg seg-div" id="bar-div" style="width:33%">
+                                <span>红利 --%</span>
                             </div>
-                            <div class="advice-bar-bg">
-                                <div class="advice-bar-fill" id="bar-pos-advice" style="width: 30%;"></div>
+                            <div class="alloc-seg seg-mr" id="bar-mr" style="width:34%">
+                                <span>均值 --%</span>
                             </div>
-
-                            <div class="cycle-badge">
-                                <span class="icon">⚓</span>
-                                建议策略周期: <strong id="val-cycle-a">8-15 交易日</strong>
+                            <div class="alloc-seg seg-mom" id="bar-mom" style="width:33%">
+                                <span>动量 --%</span>
                             </div>
+                        </div>
+                        <div class="alloc-items">
+                            <div class="alloc-item">
+                                <span class="dot dot-div"></span>
+                                <span class="alloc-name">红利防线</span>
+                                <strong id="val-pos-div">--%</strong>
+                                <span class="filter-badge" id="filter-div"></span>
+                            </div>
+                            <div class="alloc-item">
+                                <span class="dot dot-mr"></span>
+                                <span class="alloc-name">均值回归</span>
+                                <strong id="val-pos-mr">--%</strong>
+                                <span class="filter-badge" id="filter-mr"></span>
+                            </div>
+                            <div class="alloc-item">
+                                <span class="dot dot-mom"></span>
+                                <span class="alloc-name">动量轮动</span>
+                                <strong id="val-pos-mom">--%</strong>
+                                <span class="filter-badge" id="filter-mom"></span>
+                            </div>
+                        </div>
+                        <div class="cycle-badge">
+                            <span class="icon">⚓</span>
+                            建议周期: <strong id="val-cycle-a">8-15 交易日</strong>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
+
 
             <!-- V4.4 优化：明日实战决策矩阵 -->
             <div class="plan-card glass-panel" id="card-tomorrow-plan">
@@ -188,7 +284,6 @@
                         <div class="col-pos">仓位建议</div>
                     </div>
                     <div id="matrix-content">
-                        <!-- JS 动态注入 -->
                         <div class="loading-matrix">战术矩阵加载中...</div>
                     </div>
                 </div>
@@ -196,60 +291,12 @@
                 <div class="strategic-focus">
                     <div class="focus-label">🎯 当前核心建议</div>
                     <div class="plan-list">
-                        <ul id="list-plan-framework">
-                            <!-- 建议列表 -->
-                        </ul>
+                        <ul id="list-plan-framework"></ul>
                     </div>
                 </div>
 
-                <div class="plan-scenarios" id="list-plan-scenarios">
-                    <!-- 场景标签 -->
-                </div>
-                
+                <div class="plan-scenarios" id="list-plan-scenarios"></div>
                 <div class="plan-disclaimer">基于 VIX 4阶矩阵 · AlphaCore V4.4 Real-time Protocol</div>
-            </div>
-        </div>
-
-            <!-- V3.9 策略配仓实时总览 -->
-            <div class="allocation-overview glass-panel">
-                <div class="alloc-header">
-                    <span class="icon">📊</span>
-                    <h3>动态策略配仓总览</h3>
-                    <span class="alloc-total" id="val-alloc-total">总仓位: --%</span>
-                </div>
-                <div class="alloc-bar-container">
-                    <div class="alloc-bar">
-                        <div class="alloc-segment seg-div" id="bar-div" style="width:33%">
-                            <span>红利 --%</span>
-                        </div>
-                        <div class="alloc-segment seg-mr" id="bar-mr" style="width:34%">
-                            <span>均值 --%</span>
-                        </div>
-                        <div class="alloc-segment seg-mom" id="bar-mom" style="width:33%">
-                            <span>动量 --%</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="alloc-details">
-                    <div class="alloc-detail-item">
-                        <span class="dot dot-div"></span>
-                        <span>红利防线</span>
-                        <strong id="val-pos-div">--%</strong>
-                        <span class="filter-badge" id="filter-div"></span>
-                    </div>
-                    <div class="alloc-detail-item">
-                        <span class="dot dot-mr"></span>
-                        <span>均值回归</span>
-                        <strong id="val-pos-mr">--%</strong>
-                        <span class="filter-badge" id="filter-mr"></span>
-                    </div>
-                    <div class="alloc-detail-item">
-                        <span class="dot dot-mom"></span>
-                        <span>动量轮动</span>
-                        <strong id="val-pos-mom">--%</strong>
-                        <span class="filter-badge" id="filter-mom"></span>
-                    </div>
-                </div>
             </div>
 
             <!-- 策略状态雷达卡片区 (Option C) -->
@@ -260,7 +307,12 @@
                     <div class="strat-header">
                         <span class="strat-icon">📐</span>
                         <h3>均值回归引擎</h3>
+                        <span class="version-pill">V4.2</span>
                         <span class="weight-pill" id="weight-mr">30%权重</span>
+                    </div>
+                    <div class="strat-status-row" id="strat-status-row-mr">
+                        <span class="strat-dot"></span>
+                        <span class="strat-status-text" id="strat-status-mr">同步中...</span>
                     </div>
                     <div class="strat-body">
                         <div class="strat-metric"><span class="label">冰点池容量</span> <strong id="strat-metric1-mr">--</strong></div>
@@ -273,7 +325,12 @@
                     <div class="strat-header">
                         <span class="strat-icon">🚀</span>
                         <h3>动量轮动过滤</h3>
+                        <span class="version-pill">V3.0</span>
                         <span class="weight-pill" id="weight-mom">20%权重</span>
+                    </div>
+                    <div class="strat-status-row" id="strat-status-row-mom">
+                        <span class="strat-dot"></span>
+                        <span class="strat-status-text" id="strat-status-mom">同步中...</span>
                     </div>
                     <div class="strat-body">
                         <div class="strat-metric"><span class="label">最强进攻主线</span> <strong id="strat-metric1-mom">--</strong></div>
@@ -286,7 +343,12 @@
                     <div class="strat-header">
                         <span class="strat-icon">🛡️</span>
                         <h3>红利趋势防线</h3>
+                        <span class="version-pill">V4.0</span>
                         <span class="weight-pill" id="weight-div">50%权重</span>
+                    </div>
+                    <div class="strat-status-row" id="strat-status-row-div">
+                        <span class="strat-dot"></span>
+                        <span class="strat-status-text" id="strat-status-div">同步中...</span>
                     </div>
                     <div class="strat-body">
                         <div class="strat-metric"><span class="label">平均股息溢价</span> <strong id="strat-metric1-div">--</strong></div>
@@ -312,6 +374,6 @@
         </div>
     </main>
 
-    <script src="./script.js?v=2"></script>
+    <script src="./script.js?v=6"></script>
 </body>
 </html>

@@ -1,17 +1,18 @@
 """
-AlphaCore · 红利趋势增强策略引擎 V3.1
+AlphaCore · 红利趋势增强策略引擎 V4.0
 数据源：Tushare（5000积分用户 — 按ts_code批量获取）
 标的池：8只红利类ETF · 固定权重配置
 
-V3.1 新增：四状态自适应参数框架
-  BULL  — RSI放宽至40，BIAS放宽至-1.5%，仓位上限85%
-  RANGE — V3.0经验最优参数（默认）
-  BEAR  — RSI收紧至30，BIAS收紧至-3.0%，仓位上限45%
-  CRASH — 禁止新买入，已持仓高股息标的不强制清仓
+V4.0 升级：
+  · 7维100分评分体系（新增RSI动量方向Δ RSI₅）
+  · 波动率维度实质化（30日年化波动率实际计算）
+  · 信号交叉验证（温和版：调用均值回归评分引擎做技术面检查）
+  · 四状态自适应参数框架（BULL/RANGE/BEAR/CRASH）
 
 设计决策：
-  · 股息率历史分位 → 方案A：固定阈值（TTM>5%高/4-5%中/<4%低），快速落地
-  · CRASH下已持仓高股息(>6%)标的 → 不强制清仓，等CRASH解除后正常判断
+  · 股息率历史分位 → 方案A：固定阈值（TTM>5%高/4-5%中/<4%低）
+  · CRASH下已持仓高股息(>6%)标的 → 不强制清仓
+  · 交叉验证门槛比动量策略低10分（红利ETF有股息率安全边际）
 """
 
 import pandas as pd
@@ -159,7 +160,7 @@ def fetch_etf_data_by_code(days: int = 150) -> dict:
 
 def calculate_indicators(df, code, p: dict) -> dict:
     """
-    计算红利趋势策略所需的全部指标（V3.1 · 接受状态参数集 p）
+    计算红利趋势策略所需的全部指标（V4.0 · 增加RSI斜率+波动率）
     """
     close = df['close'].astype(float)
 
@@ -189,6 +190,25 @@ def calculate_indicators(df, code, p: dict) -> dict:
     # 4. 乖离率（基于状态自适应防守线）
     bias = (close - ma_defend) / ma_defend * 100
 
+    # 5. V4.0新增：RSI动量方向（近5日RSI线性回归斜率）
+    rsi_slope5 = 0.0
+    if len(rsi) >= 5:
+        rsi_tail = rsi.iloc[-5:].dropna()
+        if len(rsi_tail) >= 3:
+            x = np.arange(len(rsi_tail))
+            try:
+                slope = np.polyfit(x, rsi_tail.values, 1)[0]
+                rsi_slope5 = round(float(slope), 2)
+            except:
+                rsi_slope5 = 0.0
+
+    # 6. V4.0新增：30日年化波动率
+    vol_30d = 0.0
+    if len(close) >= 30:
+        daily_ret = close.pct_change().iloc[-30:].dropna()
+        if len(daily_ret) >= 20:
+            vol_30d = round(float(daily_ret.std() * np.sqrt(252) * 100), 1)
+
     # TTM 股息率（静态近似 · 方案A）
     trailing_dividend = DIVIDEND_D_TTM.get(code, 0.05)
     real_ttm_yield    = (trailing_dividend / float(close.iloc[-1])) * 100
@@ -200,12 +220,14 @@ def calculate_indicators(df, code, p: dict) -> dict:
         'ma_defend':   round(float(ma_defend.iloc[idx]), 3) if pd.notna(ma_defend.iloc[idx]) else 0,
         'trend_up':    bool(trend_up),
         'rsi':         round(float(rsi.iloc[idx]), 1) if pd.notna(rsi.iloc[idx]) else 50,
+        'rsi_slope5':  rsi_slope5,
         'bias':        round(float(bias.iloc[idx]), 2) if pd.notna(bias.iloc[idx]) else 0,
         'boll_upper':  round(float(boll_upper.iloc[idx]), 3) if pd.notna(boll_upper.iloc[idx]) else 0,
         'boll_lower':  round(float(boll_lower.iloc[idx]), 3) if pd.notna(boll_lower.iloc[idx]) else 0,
         'boll_mid':    round(float(ma_boll.iloc[idx]), 3) if pd.notna(ma_boll.iloc[idx]) else 0,
         'ttm_yield':   round(float(real_ttm_yield), 2),
         'yield_class': classify_yield(real_ttm_yield),
+        'vol_30d':     vol_30d,
         'date':        df['trade_date'].iloc[idx],
     }
 
@@ -270,39 +292,39 @@ def generate_signal(ind: dict, weight: int, p: dict, regime: str) -> tuple:
     return 'hold', weight
 
 
-def score_etf(ind: dict, regime: str, p: dict) -> int:
+def score_etf(ind: dict, regime: str, p: dict) -> dict:
     """
-    V3.1 · 红利策略专属信号评分（6维，满分100分）
-    用于前端评分器展示和辅助判断
+    V4.0 · 红利策略专属信号评分（7维，满分100分）
+    返回: {total: int, breakdown: dict}
     """
-    # 维度1 · 市场环境（20分）
-    env_score = {"BULL": 20, "RANGE": 12, "BEAR": 5, "CRASH": 0}.get(regime, 12)
+    # 维度1 · 市场环境（15分）— 降权：红利不应过度依赖市场状态
+    env_score = {"BULL": 15, "RANGE": 10, "BEAR": 4, "CRASH": 0}.get(regime, 10)
 
-    # 维度2 · RSI(9) 技术位（20分）
+    # 维度2 · RSI(9) 技术位（18分）
     rsi = ind['rsi']
     if rsi <= 30:
-        rsi_score = 20
+        rsi_score = 18
     elif rsi <= 35:
-        rsi_score = 15
+        rsi_score = 14
     elif rsi <= 40:
-        rsi_score = 10
+        rsi_score = 9
     elif rsi <= 50:
-        rsi_score = 5
+        rsi_score = 4
     else:
         rsi_score = 0
 
-    # 维度3 · 乖离率位置（20分）
+    # 维度3 · 乖离率位置（18分）
     bias = ind['bias']
     if bias <= -3.0:
-        bias_score = 20
+        bias_score = 18
     elif bias <= -2.0:
-        bias_score = 15
+        bias_score = 14
     elif bias <= 0:
-        bias_score = 8
+        bias_score = 7
     else:
         bias_score = 0
 
-    # 维度4 · 股息率估值（20分）方案A：固定阈值
+    # 维度4 · 股息率估值（20分）— 保持最高权重，红利核心
     ttm = ind['ttm_yield']
     if ttm >= 5.0:
         yield_score = 20
@@ -316,22 +338,93 @@ def score_etf(ind: dict, regime: str, p: dict) -> int:
     # 维度5 · 布林带位置（10分）
     if ind['boll_upper'] > ind['boll_lower']:
         boll_pct = (ind['close'] - ind['boll_lower']) / (ind['boll_upper'] - ind['boll_lower'])
-        if boll_pct <= 0.05:       # 触下轨
+        if boll_pct <= 0.05:
             boll_score = 10
-        elif boll_pct <= 0.35:     # 下轨→中轨
+        elif boll_pct <= 0.35:
             boll_score = 6
-        elif boll_pct <= 0.7:      # 中轨→上轨
+        elif boll_pct <= 0.7:
             boll_score = 2
-        else:                      # 触上轨
+        else:
             boll_score = 0
     else:
         boll_score = 5
 
-    # 维度6 · 波动率过滤（10分）由前端计算（这里给满分占位）
-    vol_score = 10  # 红利ETF固有低波，默认满分
+    # 维度6 · 30日波动率（9分）— V4.0实质化
+    vol_30d = ind.get('vol_30d', 10.0)
+    if vol_30d <= 12:
+        vol_score = 9    # 极低波动（红利ETF正常）
+    elif vol_30d <= 18:
+        vol_score = 6    # 正常范围
+    elif vol_30d <= 25:
+        vol_score = 3    # 偏高（港股红利ETF可能出现）
+    else:
+        vol_score = 0    # 异常高波
 
-    total = env_score + rsi_score + bias_score + yield_score + boll_score + vol_score
-    return min(total, 100)
+    # 维度7 · RSI动量方向（10分）— V4.0新增
+    rsi_slope = ind.get('rsi_slope5', 0.0)
+    if rsi_slope >= 3.0:
+        rsi_dir_score = 10   # 强反弹（超卖回升确认）
+    elif rsi_slope >= 1.0:
+        rsi_dir_score = 7    # 温和回升
+    elif rsi_slope >= -1.0:
+        rsi_dir_score = 4    # 横盘筑底
+    elif rsi_slope >= -3.0:
+        rsi_dir_score = 1    # 持续下行
+    else:
+        rsi_dir_score = 0    # 急跌中
+
+    total = env_score + rsi_score + bias_score + yield_score + boll_score + vol_score + rsi_dir_score
+    total = min(total, 100)
+
+    return {
+        'total': total,
+        'breakdown': {
+            'env': env_score,
+            'rsi': rsi_score,
+            'bias': bias_score,
+            'yield': yield_score,
+            'boll': boll_score,
+            'vol': vol_score,
+            'rsi_dir': rsi_dir_score,
+        }
+    }
+
+
+def cross_validate_dividend_signal(ind: dict, regime: str) -> dict:
+    """
+    V4.0 · 温和版信号交叉验证
+    调用均值回归评分引擎做技术面健康度检查
+    返回: {warning: bool, mr_score: int, message: str}
+    """
+    # 红利策略的交叉验证门槛比动量低10分（有股息率安全边际）
+    XV_SAFETY_GATE = {"BULL": 50, "RANGE": 55, "BEAR": 65, "CRASH": 999}
+    gate = XV_SAFETY_GATE.get(regime, 55)
+
+    try:
+        from mean_reversion_engine import calculate_score
+        # 构造均值回归评分所需的输入
+        mr_input = {
+            'rsi': ind.get('rsi', 50),
+            'bias': ind.get('bias', 0),
+            'boll_position': (
+                (ind['close'] - ind['boll_lower']) / (ind['boll_upper'] - ind['boll_lower']) * 100
+                if (ind['boll_upper'] - ind['boll_lower']) > 0 else 50
+            ),
+            'rsi_slope5': ind.get('rsi_slope5', 0),
+            'kline_pattern': 'none',
+        }
+        score_result = calculate_score(mr_input, regime)
+        if isinstance(score_result, dict):
+            mr_score = score_result.get('total', 50)
+        else:
+            mr_score = int(score_result)
+
+        warning = mr_score < gate
+        msg = f"⚠️ 技术面警告: 均值回归评分{mr_score}<门槛{gate}" if warning else ""
+        return {'warning': warning, 'mr_score': mr_score, 'message': msg}
+
+    except Exception as e:
+        return {'warning': False, 'mr_score': -1, 'message': f"交叉验证不可用: {str(e)[:50]}"}
 
 
 def run_dividend_strategy(regime: str = None) -> dict:
@@ -383,7 +476,8 @@ def run_dividend_strategy(regime: str = None) -> dict:
 
             ind    = calculate_indicators(df, code, p)
             signal, suggested_pos = generate_signal(ind, item['weight'], p, regime)
-            score  = score_etf(ind, regime, p)
+            score_result = score_etf(ind, regime, p)
+            xv = cross_validate_dividend_signal(ind, regime)
 
             results.append({
                 'code':               code.split('.')[0],
@@ -394,14 +488,19 @@ def run_dividend_strategy(regime: str = None) -> dict:
                 'ma100':              ind['ma_trend'],
                 'trend':              'UP' if ind['close'] > ind['ma_trend'] else 'DOWN',
                 'rsi':                ind['rsi'],
+                'rsi_slope5':         ind.get('rsi_slope5', 0),
                 'bias':               ind['bias'],
+                'vol_30d':            ind.get('vol_30d', 0),
                 'boll_pos':           round(
                     (ind['close'] - ind['boll_lower']) /
                     (ind['boll_upper'] - ind['boll_lower']) * 100, 1
                 ) if (ind['boll_upper'] - ind['boll_lower']) > 0 else 50,
                 'signal':             signal,
                 'suggested_position': suggested_pos,
-                'signal_score':       score,            # V3.1新增：专属评分
+                'signal_score':       score_result['total'],
+                'score_breakdown':    score_result['breakdown'],
+                'xv_warning':         xv['warning'],
+                'xv_message':         xv['message'],
             })
 
         except Exception as e:
@@ -454,6 +553,6 @@ def run_dividend_strategy(regime: str = None) -> dict:
 
 if __name__ == "__main__":
     import json
-    print("正在运行红利趋势策略 V3.1（RANGE模式）...")
+    print("正在运行红利趋势策略 V4.0（RANGE模式）...")
     result = run_dividend_strategy(regime="RANGE")
     print(json.dumps(result, ensure_ascii=False, indent=2))

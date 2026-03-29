@@ -1,12 +1,14 @@
 """
-AlphaCore · 行业动量轮动策略引擎 V2.0
+AlphaCore · 行业动量轮动策略引擎 V3.0
 数据源：Tushare（5000积分 — 按ts_code批量获取）
-标的池：20只行业/赛道ETF · 三层环境过滤 · 牛熊自适应
+标的池：20只进攻型 + 4只防御型行业ETF · 三层环境过滤 · Regime自适应因子权重
 
-V2.0 升级：
-- 接入统一 Regime 算法（_classify_regime_from_series）
-- 三大策略（均值回归/动量轮动/红利趋势）Regime 完全一致
-- Layer2(VIX) + Layer3(极端风险) 保留独立运算（动量策略独有）
+V3.0 升级：
+- Regime 自适应因子权重（BULL追强 / RANGE均衡 / BEAR防守）
+- 新增防御型标的池（红利低波/医药/消费），仅BEAR/RANGE模式激活
+- 6维100分制动量评分函数 calculate_momentum_score()
+- 信号评分交叉验证（温和版：技术面警告标注）
+- 止损线分状态：BULL -8% / RANGE -7% / BEAR -5%
 """
 
 import pandas as pd
@@ -21,69 +23,107 @@ TUSHARE_TOKEN = "5334333c2cb73c9b9987fb6e89da29a3cbd0f442622fbcbfd7bd40b6"
 ts.set_token(TUSHARE_TOKEN)
 pro = ts.pro_api()
 
-# ====== 标的池定义（20只行业ETF · 4组） ======
-MOMENTUM_POOL = [
+# ====== 标的池定义 ======
+# 进攻型标的池（20只 · 全市场ALL状态可用）
+MOMENTUM_POOL_OFFENSE = [
     # 科技AI（6只）
-    {"code": "512480.SH", "name": "半导体ETF",         "group": "科技AI",     "max_pos": 25},
-    {"code": "588200.SH", "name": "科创芯片ETF",       "group": "科技AI",     "max_pos": 20},
-    {"code": "159995.SZ", "name": "芯片ETF",           "group": "科技AI",     "max_pos": 20},
-    {"code": "515070.SH", "name": "人工智能AIETF",     "group": "科技AI",     "max_pos": 20},
-    {"code": "159819.SZ", "name": "人工智能ETF易方达", "group": "科技AI",     "max_pos": 20},
-    {"code": "515880.SH", "name": "通信ETF国泰",       "group": "科技AI",     "max_pos": 20},
-
+    {"code": "512480.SH", "name": "半导体ETF",         "group": "科技AI",     "max_pos": 25, "type": "offense"},
+    {"code": "588200.SH", "name": "科创芯片ETF",       "group": "科技AI",     "max_pos": 20, "type": "offense"},
+    {"code": "159995.SZ", "name": "芯片ETF",           "group": "科技AI",     "max_pos": 20, "type": "offense"},
+    {"code": "515070.SH", "name": "人工智能AIETF",     "group": "科技AI",     "max_pos": 20, "type": "offense"},
+    {"code": "159819.SZ", "name": "人工智能ETF易方达", "group": "科技AI",     "max_pos": 20, "type": "offense"},
+    {"code": "515880.SH", "name": "通信ETF国泰",       "group": "科技AI",     "max_pos": 20, "type": "offense"},
     # 新能源周期（5只）
-    {"code": "516160.SH", "name": "新能源ETF",         "group": "新能源周期", "max_pos": 22},
-    {"code": "515790.SH", "name": "光伏ETF",           "group": "新能源周期", "max_pos": 22},
-    {"code": "512400.SH", "name": "有色金属ETF",       "group": "新能源周期", "max_pos": 22},
-    {"code": "159870.SZ", "name": "化工ETF",           "group": "新能源周期", "max_pos": 18},
-    {"code": "562550.SH", "name": "绿电ETF",           "group": "新能源周期", "max_pos": 18},
-
+    {"code": "516160.SH", "name": "新能源ETF",         "group": "新能源周期", "max_pos": 22, "type": "offense"},
+    {"code": "515790.SH", "name": "光伏ETF",           "group": "新能源周期", "max_pos": 22, "type": "offense"},
+    {"code": "512400.SH", "name": "有色金属ETF",       "group": "新能源周期", "max_pos": 22, "type": "offense"},
+    {"code": "159870.SZ", "name": "化工ETF",           "group": "新能源周期", "max_pos": 18, "type": "offense"},
+    {"code": "562550.SH", "name": "绿电ETF",           "group": "新能源周期", "max_pos": 18, "type": "offense"},
     # 军工制造金融（5只）
-    {"code": "512560.SH", "name": "军工ETF",           "group": "军工制造",   "max_pos": 22},
-    {"code": "159218.SZ", "name": "卫星ETF招商",       "group": "军工制造",   "max_pos": 18},
-    {"code": "562500.SH", "name": "机器人ETF",         "group": "军工制造",   "max_pos": 20},
-    {"code": "159326.SZ", "name": "电网设备ETF",       "group": "军工制造",   "max_pos": 18},
-    {"code": "159851.SZ", "name": "金融科技ETF",       "group": "军工制造",   "max_pos": 18},
-
+    {"code": "512560.SH", "name": "军工ETF",           "group": "军工制造",   "max_pos": 22, "type": "offense"},
+    {"code": "159218.SZ", "name": "卫星ETF招商",       "group": "军工制造",   "max_pos": 18, "type": "offense"},
+    {"code": "562500.SH", "name": "机器人ETF",         "group": "军工制造",   "max_pos": 20, "type": "offense"},
+    {"code": "159326.SZ", "name": "电网设备ETF",       "group": "军工制造",   "max_pos": 18, "type": "offense"},
+    {"code": "159851.SZ", "name": "金融科技ETF",       "group": "军工制造",   "max_pos": 18, "type": "offense"},
     # 港股消费（4只）
-    {"code": "513130.SH", "name": "恒生科技ETF",       "group": "港股消费",   "max_pos": 22},
-    {"code": "513120.SH", "name": "港股创新药ETF",     "group": "港股消费",   "max_pos": 18},
-    {"code": "159869.SZ", "name": "游戏ETF",           "group": "港股消费",   "max_pos": 18},
-    {"code": "588220.SH", "name": "科创100ETF鹏华",    "group": "港股消费",   "max_pos": 20},
+    {"code": "513130.SH", "name": "恒生科技ETF",       "group": "港股消费",   "max_pos": 22, "type": "offense"},
+    {"code": "513120.SH", "name": "港股创新药ETF",     "group": "港股消费",   "max_pos": 18, "type": "offense"},
+    {"code": "159869.SZ", "name": "游戏ETF",           "group": "港股消费",   "max_pos": 18, "type": "offense"},
+    {"code": "588220.SH", "name": "科创100ETF鹏华",    "group": "港股消费",   "max_pos": 20, "type": "offense"},
 ]
 
-# ====== 市场状态自适应参数 ======
+# 防御型标的池（4只 · 仅RANGE/BEAR状态激活）
+MOMENTUM_POOL_DEFENSE = [
+    {"code": "515100.SH", "name": "红利低波100ETF",   "group": "防御红利",   "max_pos": 20, "type": "defense"},
+    {"code": "510880.SH", "name": "红利ETF",           "group": "防御红利",   "max_pos": 18, "type": "defense"},
+    {"code": "512010.SH", "name": "医药ETF",           "group": "防御消费",   "max_pos": 18, "type": "defense"},
+    {"code": "159928.SZ", "name": "消费ETF",           "group": "防御消费",   "max_pos": 18, "type": "defense"},
+]
+
+# 向后兼容：MOMENTUM_POOL = 全部进攻型（外部模块引用）
+MOMENTUM_POOL = MOMENTUM_POOL_OFFENSE
+
+
+def get_active_pool(regime: str) -> list:
+    """根据 Regime 返回当前活跃标的池"""
+    if regime in ("BEAR", "RANGE"):
+        return MOMENTUM_POOL_OFFENSE + MOMENTUM_POOL_DEFENSE
+    return MOMENTUM_POOL_OFFENSE
+
+
+# ====== V3.0 Regime 自适应参数（含因子权重+止损+评分门槛） ======
 REGIME_PARAMS = {
     "BULL": {
-        "label": "牛市",
-        "top_n": 5,
+        "label":    "牛市",
+        "strategy": "追强",      # 核心策略标签
+        "top_n":    5,
         "momentum_threshold": 0,
         "position_cap": 85,
-        "single_cap": 30,
+        "single_cap":   30,
+        "stop_loss":    -8,      # V3.0: 分状态止损
         "volatility_filter": False,
-    },
-    "BEAR": {
-        "label": "熊市",
-        "top_n": 3,
-        "momentum_threshold": 5,
-        "position_cap": 40,
-        "single_cap": 20,
-        "volatility_filter": True,
+        # V3.0: Regime自适应因子权重
+        "w_mom_s":  0.50,       # 牛市：重短期动量（追强）
+        "w_mom_m":  0.25,
+        "w_slope":  0.15,
+        "w_sharpe": 0.10,
+        "signal_safety_gate": 55,  # 信号安全门槛（温和）
     },
     "RANGE": {
-        "label": "震荡",
-        "top_n": 5,
+        "label":    "震荡",
+        "strategy": "均衡",
+        "top_n":    4,
         "momentum_threshold": 2,
-        "position_cap": 65,
-        "single_cap": 25,
+        "position_cap": 60,
+        "single_cap":   25,
+        "stop_loss":    -7,
         "volatility_filter": True,
+        "w_mom_s":  0.35,       # 震荡：均衡配置
+        "w_mom_m":  0.30,
+        "w_slope":  0.20,
+        "w_sharpe": 0.15,
+        "signal_safety_gate": 60,
+    },
+    "BEAR": {
+        "label":    "熊市",
+        "strategy": "防守",
+        "top_n":    3,
+        "momentum_threshold": 5,
+        "position_cap": 35,
+        "single_cap":   20,
+        "stop_loss":    -5,
+        "volatility_filter": True,
+        "w_mom_s":  0.15,       # 熊市：重波动调整（防守）
+        "w_mom_m":  0.25,
+        "w_slope":  0.20,
+        "w_sharpe": 0.40,
+        "signal_safety_gate": 70,
     },
 }
 
 # 行业组仓位上限
 GROUP_POSITION_CAP = 40  # 单行业组合计 ≤ 40%
 MIN_HOLDINGS = 3          # 最少同时持有3只
-STOP_LOSS_PCT = -8        # 止损线 (%)
 LOOKBACK_PERIOD = 20      # 动量回看期（交易日）
 VOLUME_RATIO_MIN = 0.8    # 量比最低要求
 
@@ -95,14 +135,16 @@ VOLUME_RATIO_MIN = 0.8    # 量比最低要求
 def fetch_etf_data(days: int = 60) -> dict:
     """
     按ts_code逐只获取历史数据。
-    20只ETF = 20次API调用，高效稳定。
+    V3.0: 获取全部Pool（进攻+防御），24只ETF。
     """
-    print(f"[动量引擎] 开始获取{days}天历史数据...")
+    full_pool = MOMENTUM_POOL_OFFENSE + MOMENTUM_POOL_DEFENSE
+    total = len(full_pool)
+    print(f"[动量引擎] 开始获取{days}天历史数据 ({total}只)...")
     end_date = datetime.now().strftime("%Y%m%d")
     start_date = (datetime.now() - timedelta(days=int(days * 2.0))).strftime("%Y%m%d")
 
     etf_data = {}
-    for item in MOMENTUM_POOL:
+    for item in full_pool:
         code = item["code"]
         try:
             df = pro.fund_daily(ts_code=code, start_date=start_date, end_date=end_date)
@@ -110,13 +152,14 @@ def fetch_etf_data(days: int = 60) -> dict:
                 df = df.sort_values("trade_date").reset_index(drop=True)
                 df = df.tail(days).reset_index(drop=True)
                 etf_data[code] = df
-                print(f"  [OK] {item['name']}({code}): {len(df)}条")
+                tag = "🛡" if item.get("type") == "defense" else "⚔"
+                print(f"  {tag} [OK] {item['name']}({code}): {len(df)}条")
             else:
                 print(f"  [FAIL] {item['name']}({code}): 无数据")
         except Exception as e:
             print(f"  [FAIL] {item['name']}({code}): {e}")
 
-    print(f"[动量引擎] 数据获取完成: {len(etf_data)}/20 只")
+    print(f"[动量引擎] 数据获取完成: {len(etf_data)}/{total} 只")
     return etf_data
 
 
@@ -252,25 +295,33 @@ def assess_market_environment(hs300_df, etf_data: dict) -> dict:
 # ====================================================================
 
 def calculate_indicators(df) -> dict:
-    """计算动量、量比、波动率、RSI等指标"""
+    """V3.0 增强指标计算：新增60日中期动量、趋势斜率、RSI方向、均线偏离"""
     close = df["close"].astype(float)
     volume = df["vol"].astype(float) if "vol" in df.columns else df["volume"].astype(float)
 
     if len(close) < LOOKBACK_PERIOD:
         return None
 
-    # 20日动量 (%)
     close_now = float(close.iloc[-1])
+
+    # ── 短期动量 MOM_S (20日收益率 %) ──
     close_20ago = float(close.iloc[-LOOKBACK_PERIOD]) if len(close) >= LOOKBACK_PERIOD else close_now
     momentum_pct = round((close_now / close_20ago - 1) * 100, 2) if close_20ago > 0 else 0
 
-    # 成交量比率（当日 / 20日均量）
+    # ── 中期动量 MOM_M (60日收益率 %) ──
+    if len(close) >= 60:
+        close_60ago = float(close.iloc[-60])
+        momentum_m = round((close_now / close_60ago - 1) * 100, 2) if close_60ago > 0 else 0
+    else:
+        momentum_m = momentum_pct  # 数据不足用短期替代
+
+    # ── 成交量比率（当日 / 20日均量）──
     vol_ma20 = volume.rolling(20).mean()
     latest_vol = float(volume.iloc[-1])
     latest_vol_ma20 = float(vol_ma20.iloc[-1]) if pd.notna(vol_ma20.iloc[-1]) else latest_vol
     volume_ratio = round(latest_vol / latest_vol_ma20, 2) if latest_vol_ma20 > 0 else 1.0
 
-    # 20日历史波动率（年化）
+    # ── 20日历史波动率（年化 %）──
     returns = close.pct_change().dropna()
     if len(returns) >= 20:
         hist_vol = float(returns.tail(20).std() * np.sqrt(252) * 100)
@@ -278,30 +329,227 @@ def calculate_indicators(df) -> dict:
         hist_vol = 0
     hist_vol = round(hist_vol, 1)
 
-    # RSI (14)
+    # ── 波动调整收益 SHARPE = MOM_S / hist_vol ──
+    sharpe_factor = round(momentum_pct / hist_vol, 3) if hist_vol > 0 else 0
+
+    # ── 趋势斜率 SLOPE (20日线性回归斜率) ──
+    if len(close) >= 20:
+        y = np.log(close.tail(20).values.astype(float))
+        x = np.arange(20)
+        xm = x - x.mean()
+        ym = y - y.mean()
+        slope = float((xm * ym).sum() / (xm ** 2).sum()) * 252  # 年化
+    else:
+        slope = 0
+    slope = round(slope, 4)
+
+    # ── RSI(14) ──
     delta = close.diff()
     gain = (delta.where(delta > 0, 0.0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0.0)).rolling(14).mean()
     rs = gain / loss.replace(0, 0.001)
-    rsi = 100 - (100 / (1 + rs))
-    latest_rsi = round(float(rsi.iloc[-1]), 1) if pd.notna(rsi.iloc[-1]) else 50
+    rsi_series = 100 - (100 / (1 + rs))
+    latest_rsi = round(float(rsi_series.iloc[-1]), 1) if pd.notna(rsi_series.iloc[-1]) else 50
 
-    # 当日涨跌幅
+    # ── RSI 5日斜率（方向判断）──
+    if len(rsi_series) >= 5:
+        rsi_slope5 = float(rsi_series.iloc[-1]) - float(rsi_series.iloc[-5])
+    else:
+        rsi_slope5 = 0
+    rsi_slope5 = round(rsi_slope5, 2)
+
+    # ── 均线偏离（close vs MA20）──
+    ma20 = float(close.rolling(20).mean().iloc[-1]) if len(close) >= 20 else close_now
+    ma_deviation = round((close_now / ma20 - 1) * 100, 2) if ma20 > 0 else 0
+
+    # ── 当日涨跌幅 ──
     if len(close) >= 2:
-        day_change = round((float(close.iloc[-1]) - float(close.iloc[-2])) / float(close.iloc[-2]) * 100, 2)
+        day_change = round((close_now - float(close.iloc[-2])) / float(close.iloc[-2]) * 100, 2)
     else:
         day_change = 0
 
     return {
-        "close": round(close_now, 3),
-        "momentum_pct": momentum_pct,
-        "volume_ratio": volume_ratio,
-        "hist_vol": hist_vol,
-        "rsi": latest_rsi,
-        "day_change": day_change,
-        "date": df["trade_date"].iloc[-1],
-        "_close_series": close.tolist(),
+        "close":          round(close_now, 3),
+        "momentum_pct":   momentum_pct,     # MOM_S (20d)
+        "momentum_m":     momentum_m,        # MOM_M (60d) V3.0新增
+        "volume_ratio":   volume_ratio,
+        "hist_vol":       hist_vol,
+        "sharpe_factor":  sharpe_factor,      # V3.0新增
+        "slope":          slope,              # V3.0新增
+        "rsi":            latest_rsi,
+        "rsi_slope5":     rsi_slope5,          # V3.0新增
+        "ma_deviation":   ma_deviation,        # V3.0新增
+        "day_change":     day_change,
+        "date":           df["trade_date"].iloc[-1],
+        "_close_series":  close.tolist(),
     }
+
+
+# ====================================================================
+#  V3.0 动量策略专属6维评分（满分100分）
+# ====================================================================
+
+def calculate_momentum_score(indicators: dict, regime: str) -> dict:
+    """
+    动量策略6维评分体系（满分100分）——权重随 Regime 自适应调整
+
+    ① 短期动量 MOM_S      max 30分（BULL: max 40分）
+    ② 中期趋势 MOM_M      max 20分
+    ③ 趋势斜率 SLOPE       max 15分
+    ④ 波动调整 SHARPE      max 15分（BEAR: max 30分）
+    ⑤ 量价配合             max 10分
+    ⑥ RSI方向 + 均线偏离    max 10分
+    """
+    params = REGIME_PARAMS.get(regime, REGIME_PARAMS["RANGE"])
+    w_s  = params["w_mom_s"]
+    w_m  = params["w_mom_m"]
+    w_sl = params["w_slope"]
+    w_sh = params["w_sharpe"]
+
+    mom_s = indicators.get("momentum_pct", 0)
+    mom_m = indicators.get("momentum_m", 0)
+    slope = indicators.get("slope", 0)
+    sharpe = indicators.get("sharpe_factor", 0)
+    vol_ratio = indicators.get("volume_ratio", 1.0)
+    rsi = indicators.get("rsi", 50)
+    rsi_slope5 = indicators.get("rsi_slope5", 0)
+    ma_dev = indicators.get("ma_deviation", 0)
+
+    # ① 短期动量 (0-40, 根据Regime缩放)
+    max_s1 = round(100 * w_s)  # BULL=50, RANGE=35, BEAR=15
+    if mom_s >= 15:
+        s1 = max_s1
+    elif mom_s >= 8:
+        s1 = round(max_s1 * 0.8)
+    elif mom_s >= 3:
+        s1 = round(max_s1 * 0.55)
+    elif mom_s >= 0:
+        s1 = round(max_s1 * 0.3)
+    elif mom_s >= -3:
+        s1 = round(max_s1 * 0.1)
+    else:
+        s1 = 0
+
+    # ② 中期趋势 (0-25)
+    max_s2 = round(100 * w_m)
+    if mom_m >= 20:
+        s2 = max_s2
+    elif mom_m >= 10:
+        s2 = round(max_s2 * 0.8)
+    elif mom_m >= 3:
+        s2 = round(max_s2 * 0.5)
+    elif mom_m >= 0:
+        s2 = round(max_s2 * 0.2)
+    else:
+        s2 = 0
+
+    # ③ 趋势斜率 (0-20)
+    max_s3 = round(100 * w_sl)
+    if slope >= 0.5:
+        s3 = max_s3
+    elif slope >= 0.2:
+        s3 = round(max_s3 * 0.7)
+    elif slope >= 0:
+        s3 = round(max_s3 * 0.3)
+    else:
+        s3 = 0
+
+    # ④ 波动调整收益 SHARPE (0-30, BEAR时满分30)
+    max_s4 = round(100 * w_sh)
+    if sharpe >= 1.5:
+        s4 = max_s4
+    elif sharpe >= 0.8:
+        s4 = round(max_s4 * 0.75)
+    elif sharpe >= 0.3:
+        s4 = round(max_s4 * 0.45)
+    elif sharpe >= 0:
+        s4 = round(max_s4 * 0.15)
+    else:
+        s4 = 0
+
+    # ⑤ 量价配合 (0-10)
+    s5 = 0
+    if vol_ratio >= 2.0:
+        s5 = 10
+    elif vol_ratio >= 1.5:
+        s5 = 8
+    elif vol_ratio >= 1.0:
+        s5 = 5
+    elif vol_ratio >= 0.8:
+        s5 = 2
+
+    # ⑥ 行业景气度：RSI方向 + 均线偏离 (0-10)
+    s6 = 0
+    if rsi_slope5 > 3:
+        s6 += 5
+    elif rsi_slope5 > 0:
+        s6 += 3
+    elif rsi_slope5 > -3:
+        s6 += 1
+
+    if ma_dev >= 3:
+        s6 += 5   # 站稳均线上方
+    elif ma_dev >= 0:
+        s6 += 3
+    elif ma_dev >= -2:
+        s6 += 1
+    s6 = min(10, s6)
+
+    total = min(100, s1 + s2 + s3 + s4 + s5 + s6)
+
+    return {
+        "total": total,
+        "breakdown": {
+            "mom_s":   s1,    # ① 短期动量
+            "mom_m":   s2,    # ② 中期趋势
+            "slope":   s3,    # ③ 趋势斜率
+            "sharpe":  s4,    # ④ 波动调整
+            "volume":  s5,    # ⑤ 量价配合
+            "health":  s6,    # ⑥ 行业景气
+        }
+    }
+
+
+def cross_validate_signal(indicators: dict, regime: str) -> dict:
+    """
+    V3.0 温和版交叉验证：
+    用均值回归引擎的 calculate_score 做技术面检查
+    仅返回警告标注，不改变选股结果
+    """
+    try:
+        from mean_reversion_engine import calculate_score as mr_calc_score
+
+        # 构建均值回归所需的 indicators dict
+        close = indicators.get("close", 0)
+        rsi = indicators.get("rsi", 50)
+        mr_indicators = {
+            "rsi":       rsi,
+            "rsi_3":     rsi - 1,  # 近似
+            "bias":      indicators.get("ma_deviation", 0),
+            "percent_b": 0.5,   # 无布林带数据时默认中性
+            "vol_ratio": indicators.get("volume_ratio", 1.0),
+            "close":     close,
+            "ma20":      close / (1 + indicators.get("ma_deviation", 0) / 100) if indicators.get("ma_deviation", 0) != 0 else close,
+            "ma_n":      close * 0.97,  # 近似
+            "rsi_slope5": indicators.get("rsi_slope5", 0),
+            "kline_score": 0,
+            "kline_pattern": "neutral",
+        }
+        result = mr_calc_score(mr_indicators)
+        mr_total = result["total"]
+
+        safety_gate = REGIME_PARAMS.get(regime, REGIME_PARAMS["RANGE"])["signal_safety_gate"]
+
+        if mr_total < safety_gate:
+            return {
+                "warning": True,
+                "mr_score": mr_total,
+                "gate": safety_gate,
+                "message": f"⚠️ 技术面警告: 均值回归评分{mr_total}<门槛{safety_gate}",
+            }
+        return {"warning": False, "mr_score": mr_total, "gate": safety_gate, "message": ""}
+    except Exception as e:
+        return {"warning": False, "mr_score": 0, "gate": 0, "message": f"交叉验证失败: {e}"}
 
 
 # ====================================================================
@@ -338,22 +586,27 @@ def apply_diversification(ranked_signals: list, regime_params: dict, group_cap: 
 
 def generate_signals(etf_data: dict, env: dict) -> dict:
     """
-    核心信号生成流程：
-    1. 计算全部指标
-    2. 排名
-    3. 根据市场状态筛选 Top N
-    4. 应用分散化约束
+    V3.0 信号生成流程：
+    1. 获取Regime对应的活跃标的池
+    2. 计算全部指标 + 6维动量评分
+    3. 按Regime自适应权重排名
+    4. 温和交叉验证（标注警告）
+    5. 分散化约束
     """
     regime = env["regime"]
-    params = REGIME_PARAMS[regime]
+    params = REGIME_PARAMS.get(regime, REGIME_PARAMS["RANGE"])
     position_cap = env["final_cap"]
+    stop_loss = params.get("stop_loss", -8)
+
+    # V3.0: 根据Regime选择活跃标的池
+    active_pool = get_active_pool(regime)
 
     all_results = []
     errors = []
-    vol_values = []  # 收集波动率用于过滤
+    vol_values = []
 
-    # Step 1: 计算所有标的的指标
-    for item in MOMENTUM_POOL:
+    # Step 1: 计算所有标的的指标 + 6维评分
+    for item in active_pool:
         code = item["code"]
         try:
             df = etf_data.get(code)
@@ -368,20 +621,39 @@ def generate_signals(etf_data: dict, env: dict) -> dict:
                 errors.append({"code": code, "name": item["name"], "error": "指标计算失败"})
                 continue
 
+            # V3.0: 6维动量评分
+            score_dict = calculate_momentum_score(ind, regime)
+
+            # V3.0: 温和交叉验证
+            xv = cross_validate_signal(ind, regime)
+
             vol_values.append(ind["hist_vol"])
             all_results.append({
-                "code": code.split(".")[0],
-                "ts_code": code,
-                "name": item["name"],
-                "group": item["group"],
-                "max_pos": item["max_pos"],
-                "close": ind["close"],
-                "momentum_pct": ind["momentum_pct"],
-                "volume_ratio": ind["volume_ratio"],
-                "hist_vol": ind["hist_vol"],
-                "rsi": ind["rsi"],
-                "day_change": ind["day_change"],
-                "date": ind["date"],
+                "code":            code.split(".")[0],
+                "ts_code":         code,
+                "name":            item["name"],
+                "group":           item["group"],
+                "max_pos":         item["max_pos"],
+                "etf_type":        item.get("type", "offense"),   # V3.0
+                "close":           ind["close"],
+                "momentum_pct":    ind["momentum_pct"],
+                "momentum_m":      ind.get("momentum_m", 0),     # V3.0
+                "volume_ratio":    ind["volume_ratio"],
+                "hist_vol":        ind["hist_vol"],
+                "sharpe_factor":   ind.get("sharpe_factor", 0),  # V3.0
+                "slope":           ind.get("slope", 0),          # V3.0
+                "rsi":             ind["rsi"],
+                "rsi_slope5":      ind.get("rsi_slope5", 0),     # V3.0
+                "ma_deviation":    ind.get("ma_deviation", 0),   # V3.0
+                "day_change":      ind["day_change"],
+                "date":            ind["date"],
+                # V3.0 评分
+                "momentum_score":     score_dict["total"],
+                "score_breakdown":    score_dict["breakdown"],
+                # V3.0 交叉验证
+                "xv_warning":         xv.get("warning", False),
+                "xv_mr_score":        xv.get("mr_score", 0),
+                "xv_message":         xv.get("message", ""),
             })
         except Exception as e:
             errors.append({"code": code, "name": item["name"], "error": str(e)})
@@ -391,15 +663,14 @@ def generate_signals(etf_data: dict, env: dict) -> dict:
         return {"signals": [], "buy_signals": [], "sell_signals": [],
                 "errors": errors, "market_overview": _empty_overview(env)}
 
-    # Step 2: 动量排名（降序，Rank 1 = 最强）
-    all_results.sort(key=lambda x: x["momentum_pct"], reverse=True)
+    # Step 2: 按6维动量评分排名（降序）
+    all_results.sort(key=lambda x: x["momentum_score"], reverse=True)
     for i, r in enumerate(all_results):
         r["rank"] = i + 1
 
-    # 波动率均值（用于震荡市过滤）
     avg_vol = np.mean(vol_values) if vol_values else 30
 
-    # Step 3: 信号生成
+    # Step 3: 信号生成（Regime 自适应）
     top_n = params["top_n"]
     momentum_threshold = params["momentum_threshold"]
     use_vol_filter = params["volatility_filter"]
@@ -407,13 +678,9 @@ def generate_signals(etf_data: dict, env: dict) -> dict:
     sell_signals = []
 
     for r in all_results:
-        # 量比检查
         volume_ok = r["volume_ratio"] >= VOLUME_RATIO_MIN
-        # 动量阈值检查
         momentum_ok = r["momentum_pct"] > momentum_threshold
-        # 排名检查
         rank_ok = r["rank"] <= top_n
-        # 波动率过滤（震荡/熊市）
         vol_ok = (not use_vol_filter) or (r["hist_vol"] <= avg_vol * 1.2)
 
         if rank_ok and momentum_ok and volume_ok and vol_ok:
@@ -435,7 +702,6 @@ def generate_signals(etf_data: dict, env: dict) -> dict:
     # Step 4: 分散化约束
     buy_signals = apply_diversification(buy_candidates, params)
 
-    # 确保最少3只（如果可用标的够的话）
     if len(buy_signals) < MIN_HOLDINGS and len(buy_candidates) >= MIN_HOLDINGS:
         for r in buy_candidates:
             if r not in buy_signals:
@@ -452,35 +718,47 @@ def generate_signals(etf_data: dict, env: dict) -> dict:
             s["suggested_position"] = round(s["suggested_position"] * scale, 1)
         total_pos = position_cap
 
-    # 给所有非买入的标注 suggested_position
     for r in all_results:
         if "suggested_position" not in r:
             r["suggested_position"] = 0
         if "signal" not in r:
             r["signal"] = "hold"
 
-    # 统计概览
+    # V3.0 增强概览
     overview = {
-        "regime": env["regime"],
-        "regime_label": env["regime_label"],
-        "position_cap": env["final_cap"],
-        "layer1_trend": env["layer1_trend"],
-        "layer2_vix": env["layer2_vix"],
-        "layer3_crash": env["layer3_crash"],
-        "top1_momentum": all_results[0]["momentum_pct"] if all_results else 0,
-        "top1_name": all_results[0]["name"] if all_results else "-",
-        "avg_momentum": round(np.mean([r["momentum_pct"] for r in all_results]), 2),
-        "buy_count": len(buy_signals),
-        "sell_count": len(sell_signals),
+        "regime":           env["regime"],
+        "regime_label":     env["regime_label"],
+        "regime_strategy":  params.get("strategy", ""),
+        "position_cap":     env["final_cap"],
+        "stop_loss":        stop_loss,
+        "layer1_trend":     env["layer1_trend"],
+        "layer2_vix":       env["layer2_vix"],
+        "layer3_crash":     env["layer3_crash"],
+        "top1_momentum":    all_results[0]["momentum_pct"] if all_results else 0,
+        "top1_name":        all_results[0]["name"] if all_results else "-",
+        "top1_score":       all_results[0]["momentum_score"] if all_results else 0,
+        "avg_momentum":     round(np.mean([r["momentum_pct"] for r in all_results]), 2),
+        "buy_count":        len(buy_signals),
+        "sell_count":       len(sell_signals),
         "total_suggested_pos": round(total_pos, 1),
-        "total_etfs": len(all_results),
+        "total_etfs":       len(all_results),
+        "pool_offense":     sum(1 for r in all_results if r["etf_type"] == "offense"),
+        "pool_defense":     sum(1 for r in all_results if r["etf_type"] == "defense"),
+        "xv_warnings":      sum(1 for r in all_results if r.get("xv_warning")),
+        # V3.0 因子权重（供前端可视化）
+        "factor_weights": {
+            "MOM_S":  int(params["w_mom_s"] * 100),
+            "MOM_M":  int(params["w_mom_m"] * 100),
+            "SLOPE":  int(params["w_slope"] * 100),
+            "SHARPE": int(params["w_sharpe"] * 100),
+        },
     }
 
     return {
-        "signals": all_results,
-        "buy_signals": buy_signals,
-        "sell_signals": sell_signals,
-        "errors": errors,
+        "signals":        all_results,
+        "buy_signals":    buy_signals,
+        "sell_signals":   sell_signals,
+        "errors":         errors,
         "market_overview": overview,
     }
 
@@ -489,13 +767,17 @@ def _empty_overview(env):
     return {
         "regime": env["regime"],
         "regime_label": env["regime_label"],
+        "regime_strategy": "",
         "position_cap": env["final_cap"],
+        "stop_loss": -8,
         "layer1_trend": env["layer1_trend"],
         "layer2_vix": env["layer2_vix"],
         "layer3_crash": env["layer3_crash"],
-        "top1_momentum": 0, "top1_name": "-",
+        "top1_momentum": 0, "top1_name": "-", "top1_score": 0,
         "avg_momentum": 0, "buy_count": 0, "sell_count": 0,
         "total_suggested_pos": 0, "total_etfs": 0,
+        "pool_offense": 0, "pool_defense": 0, "xv_warnings": 0,
+        "factor_weights": {"MOM_S": 35, "MOM_M": 30, "SLOPE": 20, "SHARPE": 15},
     }
 
 
@@ -504,10 +786,10 @@ def _empty_overview(env):
 # ====================================================================
 
 def run_momentum_strategy() -> dict:
-    """运行完整行业动量轮动策略 V2.0（统一 Regime 算法）"""
-    print("[动量引擎] ========= 行业动量轮动策略 V2.0 启动 =========")
+    """运行完整行业动量轮动策略 V3.0（Regime自适应因子引擎）"""
+    print("[动量引擎] ========= 行业动量轮动策略 V3.0 启动 =========")
 
-    # 1. 获取ETF数据
+    # 1. 获取ETF数据（含防御型标的）
     etf_data = fetch_etf_data(days=60)
 
     # 2. 获取沪深300数据

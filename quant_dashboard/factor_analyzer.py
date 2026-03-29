@@ -142,26 +142,25 @@ class FactorAnalyzer:
         else:
             ic_stability = 1.0
 
-        # === 6. 因子质量评级 (Factor Grade) ===
-        abs_ic = abs(ic_mean)
-        abs_ir = abs(ir)
-
-        if abs_ic > 0.05 and abs_ir > 0.5 and ic_win_rate > 0.65:
-            grade = 'A'
-        elif abs_ic > 0.03 and abs_ir > 0.3 and ic_win_rate > 0.55:
-            grade = 'B'
-        elif abs_ic > 0.02 and abs_ir > 0.2:
-            grade = 'C'
-        elif abs_ic > 0.01:
-            grade = 'D'
-        else:
-            grade = 'F'
-
-        # === 7. 多空收益差 (Long-Short Spread) ===
+        # === 6. 多空收益差 (Long-Short Spread) ===
         if len(q_avg) >= 2:
             ls_spread = float(q_avg.iloc[-1] - q_avg.iloc[0])
         else:
             ls_spread = 0
+
+        # === 7. Alpha Score 综合评分 (0-100, 6维加权) ===
+        alpha_score, score_breakdown = self._calculate_alpha_score(
+            ic_mean, ir, ic_win_rate, monotonicity, ic_stability, ls_spread
+        )
+
+        # === 8. 因子质量评级 (6-tier: S/A/B/C/D/F) ===
+        grade = self._score_to_grade(alpha_score)
+
+        # === 9. 交易建议生成 ===
+        advice = self._generate_trade_advice(
+            alpha_score, grade, ic_mean, ic_win_rate,
+            monotonicity, ic_stability, ls_spread, q_avg
+        )
 
         return {
             "ic_mean": ic_mean,
@@ -174,6 +173,147 @@ class FactorAnalyzer:
             "ic_stability": ic_stability,
             "grade": grade,
             "ls_spread": ls_spread,
+            "alpha_score": alpha_score,
+            "score_breakdown": score_breakdown,
+            "advice": advice,
+        }
+
+    # ================================================================
+    #  Alpha Score Engine (MSCI Barra 参考框架)
+    # ================================================================
+
+    def _calculate_alpha_score(self, ic_mean, ir, ic_win_rate,
+                               monotonicity, ic_stability, ls_spread):
+        """
+        6 维加权综合评分 (0-100)
+        权重依据: IC强度(25%) > IR稳定(20%) = 胜率(20%) > 单调性(15%) > 时效(10%) = 盈利(10%)
+        """
+        s_ic = min(100, abs(ic_mean) / 0.05 * 100)           # IC 强度
+        s_ir = min(100, abs(ir) / 0.6 * 100)                  # IR 稳定
+        s_win = min(100, ic_win_rate / 0.70 * 100)            # IC 胜率
+        s_mono = monotonicity * 100                            # 单调性
+        s_stab = max(0, min(100, (1 - abs(ic_stability - 1)) * 100))  # 时效性
+        s_ls = min(100, abs(ls_spread) / 0.005 * 100)         # 多空盈利
+
+        weights = {
+            'ic_strength': 0.25,
+            'ir_stability': 0.20,
+            'win_rate': 0.20,
+            'monotonicity': 0.15,
+            'decay_health': 0.10,
+            'ls_profit': 0.10,
+        }
+
+        score = (
+            weights['ic_strength'] * s_ic +
+            weights['ir_stability'] * s_ir +
+            weights['win_rate'] * s_win +
+            weights['monotonicity'] * s_mono +
+            weights['decay_health'] * s_stab +
+            weights['ls_profit'] * s_ls
+        )
+
+        breakdown = {
+            'ic_strength': round(s_ic, 1),
+            'ir_stability': round(s_ir, 1),
+            'win_rate': round(s_win, 1),
+            'monotonicity': round(s_mono, 1),
+            'decay_health': round(s_stab, 1),
+            'ls_profit': round(s_ls, 1),
+        }
+
+        return round(score, 1), breakdown
+
+    @staticmethod
+    def _score_to_grade(score):
+        """Alpha Score → 6级评级"""
+        if score >= 80:
+            return 'S'
+        elif score >= 60:
+            return 'A'
+        elif score >= 45:
+            return 'B'
+        elif score >= 30:
+            return 'C'
+        elif score >= 15:
+            return 'D'
+        else:
+            return 'F'
+
+    def _generate_trade_advice(self, alpha_score, grade, ic_mean, ic_win_rate,
+                                monotonicity, ic_stability, ls_spread, q_avg):
+        """
+        交易建议生成器 — 基于统计推断，非预测
+        """
+        # 1. 信号强度
+        if alpha_score >= 60 and monotonicity >= 0.7:
+            signal = 'STRONG_BUY'
+            signal_label = '强烈看多'
+            signal_color = '#10b981'
+        elif alpha_score >= 45 and ic_mean > 0:
+            signal = 'BUY'
+            signal_label = '适度看多'
+            signal_color = '#34d399'
+        elif alpha_score >= 30:
+            signal = 'NEUTRAL'
+            signal_label = '中性观望'
+            signal_color = '#fbbf24'
+        else:
+            signal = 'AVOID'
+            signal_label = '规避'
+            signal_color = '#f87171'
+
+        # 2. 持有期 (基于5日IC窗口)
+        hold_period = '5-10 个交易日'
+
+        # 3. 止盈/止损 (基于Q5组的历史统计)
+        if len(q_avg) >= 2:
+            q5_avg = float(q_avg.iloc[-1])  # 最优分组的日均收益
+            target_ret = round(abs(q5_avg) * 5 * 100, 2)  # 5日累计 → 百分比
+            target_ret = max(target_ret, 0.5)  # 至少 0.5%
+        else:
+            target_ret = 2.0
+
+        stop_loss = round(max(2.0, target_ret * 0.5), 2)  # 止损不低于 2%
+
+        # 4. 仓位建议 (简化凯利公式)
+        if ic_win_rate > 0 and target_ret > 0 and stop_loss > 0:
+            payoff_ratio = target_ret / stop_loss
+            kelly = max(0, (ic_win_rate * payoff_ratio - (1 - ic_win_rate)) / payoff_ratio)
+            position_pct = round(min(30, kelly * 100), 1)
+        else:
+            position_pct = 0
+
+        # 5. 置信度
+        confidence = round(min(95, alpha_score * 1.1), 1)
+
+        # 6. 动态风险提示
+        risks = []
+        if ic_stability > 1.5:
+            risks.append(f'IC 近期放大({ic_stability:.1f}×)，可能是短期异常，建议减半仓位')
+        elif ic_stability < 0.5:
+            risks.append(f'IC 显著衰减({ic_stability:.1f}×)，因子可能已失效')
+        if monotonicity < 0.5:
+            risks.append(f'分组单调性不足({monotonicity:.2f})，选股区分力弱')
+        if ic_win_rate < 0.5:
+            risks.append('IC 胜率低于 50%，因子方向不稳定')
+        if ls_spread < 0:
+            risks.append('多空收益为负，做多高分组反而亏损')
+        if alpha_score < 30:
+            risks.append('综合评分过低，不建议作为交易依据')
+        if not risks:
+            risks.append('当前因子状态健康，无重大风险信号')
+
+        return {
+            'signal': signal,
+            'signal_label': signal_label,
+            'signal_color': signal_color,
+            'hold_period': hold_period,
+            'target_ret': target_ret,
+            'stop_loss': stop_loss,
+            'position_pct': position_pct,
+            'confidence': confidence,
+            'risks': risks,
         }
 
 

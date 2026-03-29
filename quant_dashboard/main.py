@@ -1275,7 +1275,7 @@ async def run_factor_analysis(req: FactorAnalysisRequest):
             if isinstance(q_rets, pd.Series) and isinstance(q_rets.index, pd.MultiIndex):
                 q_rets = q_rets.unstack()
             
-            # V2.0: 构建增强返回数据
+            # V3.0: 构建增强返回数据
             q_avg_vals = q_rets.mean().values if not q_rets.empty else []
             
             return {
@@ -1286,6 +1286,9 @@ async def run_factor_analysis(req: FactorAnalysisRequest):
                 "ic_stability": float(metrics["ic_stability"]),
                 "grade": metrics["grade"],
                 "ls_spread": float(metrics["ls_spread"]),
+                "alpha_score": float(metrics["alpha_score"]),
+                "score_breakdown": metrics["score_breakdown"],
+                "advice": metrics["advice"],
                 "ic_series": {
                     "dates": ic_series.index.strftime("%Y-%m-%d").tolist(),
                     "values": [float(x) if not np.isnan(x) else 0 for x in ic_series.values]

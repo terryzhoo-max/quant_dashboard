@@ -1,6 +1,6 @@
 /**
- * AlphaCore Factor Research Terminal V2.0
- * 因子研究终端：快选导航 + 质量评级 + 多维可视化
+ * AlphaCore Factor Research Terminal V3.0
+ * 因子研究终端：Alpha Score + 交易建议 + 多维可视化
  */
 document.addEventListener('DOMContentLoaded', function () {
     // === DOM ===
@@ -15,9 +15,9 @@ document.addEventListener('DOMContentLoaded', function () {
     const loadingFill = document.getElementById('loading-fill');
     const factorNav = document.getElementById('factor-nav');
 
-    let charts = { radar: null, ic: null, qAvg: null, qCum: null };
+    let charts = { radar: null, ic: null, qAvg: null, qCum: null, gauge: null };
     let currentFactor = 'roe';
-    let factorCache = {};  // 缓存已计算因子的结果
+    let factorCache = {};
 
     // === 因子元数据 ===
     const FACTORS = [
@@ -27,6 +27,16 @@ document.addEventListener('DOMContentLoaded', function () {
         { key: 'bps', name: 'BPS', label: '每股净资产', color: '#f59e0b' },
         { key: 'debt_to_assets', name: '负债率', label: '资产负债率', color: '#ef4444' },
     ];
+
+    // === 评级配色 ===
+    const GRADE_COLORS = {
+        S: '#10b981', A: '#34d399', B: '#60a5fa',
+        C: '#fbbf24', D: '#f97316', F: '#f87171'
+    };
+    const GRADE_LABELS = {
+        S: '顶级因子', A: '优质因子', B: '可用因子',
+        C: '边缘因子', D: '噪音因子', F: '无效因子'
+    };
 
     // === 初始化 ===
     function init() {
@@ -39,16 +49,15 @@ document.addEventListener('DOMContentLoaded', function () {
             highlightNav(currentFactor);
             runAnalysis(currentFactor);
         });
-        // 自动运行默认因子
         runAnalysis('roe');
     }
 
-    // === 因子导航条 ===
+    // === 因子导航条 (V3.0: 带 Alpha Score) ===
     function renderFactorNav() {
         factorNav.innerHTML = FACTORS.map(f => {
             const cached = factorCache[f.key];
             const grade = cached ? cached.grade : '—';
-            const ic = cached ? cached.ic_mean.toFixed(3) : '—';
+            const score = cached ? cached.alpha_score : null;
             const gradeClass = cached ? `grade-${cached.grade}` : '';
             return `
                 <div class="factor-tile ${f.key === currentFactor ? 'active' : ''}"
@@ -58,7 +67,9 @@ document.addEventListener('DOMContentLoaded', function () {
                         <span class="ft-grade ${gradeClass}">${grade}</span>
                     </div>
                     <div class="ft-stats">
-                        <span>IC: <span class="ft-ic">${ic}</span></span>
+                        <span class="ft-score" style="color: ${cached ? GRADE_COLORS[cached.grade] : '#64748b'}">
+                            ${score !== null ? '★' + score : '—'}
+                        </span>
                         <span>${f.label}</span>
                     </div>
                 </div>
@@ -112,7 +123,7 @@ document.addEventListener('DOMContentLoaded', function () {
         initCharts();
 
         try {
-            showLoading('正在计算 Rank-IC 分布...', 35);
+            showLoading('正在计算 Alpha Score...', 35);
 
             const response = await fetch('/api/v1/factor-analysis', {
                 method: 'POST',
@@ -122,9 +133,9 @@ document.addEventListener('DOMContentLoaded', function () {
             const result = await response.json();
 
             if (result.status === 'success') {
-                showLoading('正在渲染图表矩阵...', 75);
+                showLoading('正在渲染终端矩阵...', 75);
                 factorCache[factorKey] = result.data;
-                renderFactorNav(); // 更新导航条缓存数据
+                renderFactorNav();
                 highlightNav(factorKey);
 
                 await new Promise(r => setTimeout(r, 200));
@@ -153,6 +164,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // === ECharts 初始化 ===
     function initCharts() {
+        if (!charts.gauge) charts.gauge = echarts.init(document.getElementById('alpha-gauge'));
         if (!charts.radar) charts.radar = echarts.init(document.getElementById('radar-chart'));
         if (!charts.ic) charts.ic = echarts.init(document.getElementById('ic-series-chart'));
         if (!charts.qAvg) charts.qAvg = echarts.init(document.getElementById('quantile-avg-chart'));
@@ -161,28 +173,68 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // === 渲染结果 ===
     function renderResults(data) {
+        renderAlphaGauge(data);
         renderMetrics(data);
+        renderAdvice(data);
         renderRadar(data);
         renderICChart(data);
         renderQuantileAvg(data);
         renderQuantileCum(data);
     }
 
+    // --- Alpha Score 环形仪表 ---
+    function renderAlphaGauge(data) {
+        const score = data.alpha_score;
+        const grade = data.grade;
+        const color = GRADE_COLORS[grade] || '#94a3b8';
+
+        // 更新评级标签
+        const gradeEl = document.getElementById('asc-grade');
+        gradeEl.textContent = `${grade} 级 · ${GRADE_LABELS[grade]}`;
+        gradeEl.style.color = color;
+
+        // 更新卡片边框色
+        document.getElementById('alpha-score-card').style.borderColor =
+            color.replace(')', ', 0.3)').replace('rgb', 'rgba').replace('#', '');
+
+        charts.gauge.setOption({
+            backgroundColor: 'transparent',
+            series: [{
+                type: 'gauge',
+                startAngle: 220,
+                endAngle: -40,
+                min: 0,
+                max: 100,
+                radius: '90%',
+                progress: {
+                    show: true,
+                    width: 10,
+                    roundCap: true,
+                    itemStyle: { color: color }
+                },
+                pointer: { show: false },
+                axisLine: {
+                    lineStyle: { width: 10, color: [[1, 'rgba(255,255,255,0.06)']] }
+                },
+                axisTick: { show: false },
+                splitLine: { show: false },
+                axisLabel: { show: false },
+                title: { show: false },
+                detail: {
+                    fontSize: 28,
+                    fontWeight: 800,
+                    fontFamily: 'Outfit',
+                    color: color,
+                    offsetCenter: [0, '10%'],
+                    formatter: '{value}'
+                },
+                data: [{ value: score }]
+            }]
+        });
+    }
+
     // --- 指标卡 ---
     function renderMetrics(data) {
-        const gradeColors = {
-            A: '#34d399', B: '#60a5fa', C: '#94a3b8', D: '#fbbf24', F: '#f87171'
-        };
-        const gradeLabels = {
-            A: '精英因子', B: '可用因子', C: '边缘因子', D: '噪音因子', F: '无效因子'
-        };
-
-        // 评级
-        const gradeEl = document.getElementById('m-grade');
-        gradeEl.textContent = data.grade;
-        gradeEl.style.color = gradeColors[data.grade] || '#94a3b8';
-        document.getElementById('m-grade-label').textContent = gradeLabels[data.grade] || '—';
-
         // IC均值
         setMetric('m-ic-mean', data.ic_mean.toFixed(4),
             Math.abs(data.ic_mean) > 0.03 ? 'mc-good' : Math.abs(data.ic_mean) > 0.01 ? 'mc-warn' : 'mc-bad');
@@ -209,6 +261,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // 样本量
         document.getElementById('m-samples').textContent = data.ic_series.dates.length;
+
+        // 评级
+        const gradeEl = document.getElementById('m-grade');
+        gradeEl.textContent = data.grade;
+        gradeEl.style.color = GRADE_COLORS[data.grade] || '#94a3b8';
     }
 
     function setMetric(id, value, cssClass) {
@@ -219,18 +276,68 @@ document.addEventListener('DOMContentLoaded', function () {
         if (cssClass) card.classList.add(cssClass);
     }
 
-    // --- 因子质量雷达图 ---
-    function renderRadar(data) {
-        const ic_score = Math.min(100, Math.abs(data.ic_mean) / 0.06 * 100);
-        const ir_score = Math.min(100, Math.abs(data.ic_ir) / 0.8 * 100);
-        const win_score = Math.min(100, data.ic_win_rate / 0.75 * 100);
-        const mono_score = data.monotonicity * 100;
-        const stab_score = Math.min(100, Math.max(0, (1 - Math.abs(data.ic_stability - 1)) * 100));
+    // --- 交易建议卡 ---
+    function renderAdvice(data) {
+        const adv = data.advice;
+        if (!adv) return;
 
-        const gradeColors = {
-            A: '#34d399', B: '#60a5fa', C: '#94a3b8', D: '#fbbf24', F: '#f87171'
-        };
-        const color = gradeColors[data.grade] || '#94a3b8';
+        // 信号
+        const signalEl = document.getElementById('adv-signal');
+        signalEl.textContent = adv.signal_label;
+        signalEl.style.color = adv.signal_color;
+
+        // 持有期
+        document.getElementById('adv-hold').textContent = adv.hold_period;
+
+        // 止盈
+        document.getElementById('adv-target').textContent = '+' + adv.target_ret + '%';
+        document.getElementById('adv-target').style.color = '#34d399';
+
+        // 止损
+        document.getElementById('adv-stop').textContent = '-' + adv.stop_loss + '%';
+        document.getElementById('adv-stop').style.color = '#f87171';
+
+        // 仓位
+        document.getElementById('adv-position').textContent = adv.position_pct + '%';
+        document.getElementById('adv-position').style.color = '#60a5fa';
+
+        // 置信度
+        document.getElementById('advice-confidence').textContent =
+            `置信度: ${adv.confidence}%`;
+
+        // 风险提示
+        const riskStrip = document.getElementById('risk-strip');
+        const riskText = document.getElementById('risk-text');
+        const risks = adv.risks || [];
+
+        if (risks.length > 0) {
+            riskText.textContent = risks.join(' | ');
+            // 判断风险等级
+            const hasHighRisk = risks.some(r =>
+                r.includes('失效') || r.includes('为负') || r.includes('不建议'));
+            const hasWarn = risks.some(r =>
+                r.includes('不足') || r.includes('放大') || r.includes('低于'));
+
+            riskStrip.className = 'risk-strip ' + (
+                hasHighRisk ? 'risk-danger' :
+                hasWarn ? 'risk-warn' : 'risk-ok'
+            );
+            document.querySelector('#risk-strip .risk-icon').textContent =
+                hasHighRisk ? '🚨' : hasWarn ? '⚠️' : '✅';
+        }
+    }
+
+    // --- 因子质量雷达图 (V3.0: 使用 score_breakdown) ---
+    function renderRadar(data) {
+        const bd = data.score_breakdown || {};
+        const ic_score = bd.ic_strength || 0;
+        const ir_score = bd.ir_stability || 0;
+        const win_score = bd.win_rate || 0;
+        const mono_score = bd.monotonicity || 0;
+        const stab_score = bd.decay_health || 0;
+        const ls_score = bd.ls_profit || 0;
+
+        const color = GRADE_COLORS[data.grade] || '#94a3b8';
 
         charts.radar.setOption({
             backgroundColor: 'transparent',
@@ -240,11 +347,12 @@ document.addEventListener('DOMContentLoaded', function () {
                     { name: 'IR稳定', max: 100 },
                     { name: '胜率', max: 100 },
                     { name: '单调性', max: 100 },
-                    { name: '时效性', max: 100 }
+                    { name: '时效性', max: 100 },
+                    { name: '盈利力', max: 100 }
                 ],
                 shape: 'polygon',
-                radius: '68%',
-                axisName: { color: '#94a3b8', fontSize: 11 },
+                radius: '65%',
+                axisName: { color: '#94a3b8', fontSize: 10 },
                 splitArea: { areaStyle: { color: ['rgba(255,255,255,0.02)', 'rgba(255,255,255,0.04)'] } },
                 splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } },
                 axisLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } }
@@ -254,7 +362,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 symbol: 'circle',
                 symbolSize: 5,
                 data: [{
-                    value: [ic_score, ir_score, win_score, mono_score, stab_score],
+                    value: [ic_score, ir_score, win_score, mono_score, stab_score, ls_score],
                     name: '因子画像',
                     lineStyle: { color: color, width: 2 },
                     itemStyle: { color: color },
@@ -264,12 +372,11 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // --- IC 时间序列 (面积图) ---
+    // --- IC 时间序列 ---
     function renderICChart(data) {
         const dates = data.ic_series.dates;
         const values = data.ic_series.values;
 
-        // 计算 MA20
         const ma20 = values.map((_, i) => {
             if (i < 19) return null;
             const slice = values.slice(i - 19, i + 1);
@@ -321,7 +428,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // --- 分组收益柱状图 (渐变色) ---
+    // --- 分组收益柱状图 ---
     function renderQuantileAvg(data) {
         const qData = data.quantile_rets;
         const gradientColors = ['#475569', '#64748b', '#3b82f6', '#10b981', '#f59e0b'];
@@ -351,9 +458,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 type: 'text',
                 left: 'center', top: 10,
                 style: {
-                    text: `单调性: ${data.monotonicity.toFixed(2)}`,
+                    text: `单调性: ${data.monotonicity.toFixed(2)}  |  Alpha Score: ${data.alpha_score}`,
                     fill: data.monotonicity > 0.8 ? '#34d399' : data.monotonicity > 0.5 ? '#fbbf24' : '#f87171',
-                    fontSize: 12, fontWeight: 700, fontFamily: 'Outfit'
+                    fontSize: 11, fontWeight: 700, fontFamily: 'Outfit'
                 }
             }],
             series: [{

@@ -44,51 +44,73 @@ async function autoFillCalcRegime() {
 
 // ====== 实时信号评分计算器 (V3.0 · 状态自适应门槛) ======
 function calcSignalScore() {
-    const mom  = parseInt(document.getElementById('calc-mom')?.value  || 0);
-    const reg  = parseInt(document.getElementById('calc-regime')?.value || 0);
-    const vol  = parseInt(document.getElementById('calc-vol')?.value  || 0);
-    const rsi  = parseInt(document.getElementById('calc-rsi')?.value  || 0);
-    const vlt  = parseInt(document.getElementById('calc-vlt')?.value  || 0);
+    // ── 读取7个维度输入值 ──
+    const s1  = parseInt(document.getElementById('calc-rsi')?.value     || 10);  // ① RSI深度
+    const s2  = parseInt(document.getElementById('calc-rsi-dir')?.value  || 8);   // ② RSI动量方向
+    const s3  = parseInt(document.getElementById('calc-bias')?.value    || 13);   // ③ BIAS乖离率
+    const s4  = parseInt(document.getElementById('calc-vlt')?.value     || 10);   // ④ 布林带%B
+    const s5  = parseInt(document.getElementById('calc-vol')?.value     || 6);    // ⑤ 量比
+    const s6  = parseInt(document.getElementById('calc-trend')?.value   || 7);    // ⑥ 趋势位置
+    const s7  = parseInt(document.getElementById('calc-kline')?.value   || 3);    // ⑦ K线形态
+    const reg = parseInt(document.getElementById('calc-regime')?.value  || 12);   // 市场环境(门槛用)
 
-    const total = mom + reg + vol + rsi + vlt;
+    const total = Math.min(100, s1 + s2 + s3 + s4 + s5 + s6 + s7);
 
-    // ── 状态自适应门槛 ──
-    // 优先使用 calc-regime 下拉框的值推断市场状态门槛
-    // (下拉框是用户手动控制的主权，要始终响应)
+    // ── 市场状态自适应门槛 ──
     let gate;
-    if (reg === 20) {
-        gate = 65; // BULL 牛市
-    } else if (reg === 12) {
-        gate = 68; // RANGE 震荡
-    } else {
-        gate = 75; // BEAR 熊市 (reg === 0)
-    }
-    const halfGate  = Math.round(gate * 0.85);  // 半仓线约在门槛的85%
-    const fullGate  = Math.min(gate + 15, 95);  // 满仓线
+    if (reg === 20)      gate = 75;  // BULL牛市：门槛降低（回调即机会）
+    else if (reg === 12) gate = 68;  // RANGE震荡：标准
+    else                 gate = 78;  // BEAR熊市：严格（防接飞刀）
+    const halfGate = Math.round(gate * 0.85);
+    const fullGate = Math.min(gate + 15, 95);
 
+    // ── 更新UI ──
     const numEl  = document.getElementById('calc-score-num');
     const barEl  = document.getElementById('calc-score-bar');
     const vrdEl  = document.getElementById('calc-verdict');
     const actEl  = document.getElementById('calc-action');
     const thEl   = document.getElementById('calc-threshold-hint');
+    const bbEl   = document.getElementById('calc-breakdown-bar');
 
     if (numEl) numEl.textContent = total;
     if (barEl) barEl.style.width = total + '%';
-    if (thEl)  thEl.textContent  = `当前市场门槛: 全仓≥${fullGate} | 标准≥${gate} | 半仓≥${halfGate}`;
+    if (thEl)  thEl.textContent  = `当前市场门槛: 全仓≥${fullGate} · 标准≥${gate} · 半仓≥${halfGate}`;
 
+    // ── 7维度彩色分布条 ──
+    if (bbEl) {
+        const dims = [
+            { val: s1, max: 25, color: '#60a5fa' },   // ① 蓝
+            { val: s2, max: 15, color: '#a78bfa' },   // ② 紫 ✨
+            { val: s3, max: 20, color: '#2dd4bf' },   // ③ 青
+            { val: s4, max: 15, color: '#22d3ee' },   // ④ 蓝绿
+            { val: s5, max: 10, color: '#34d399' },   // ⑤ 绿
+            { val: s6, max: 10, color: '#fbbf24' },   // ⑥ 黄
+            { val: s7, max:  5, color: '#fb923c' },   // ⑦ 橙 ✨
+        ];
+        bbEl.innerHTML = dims.map(d =>
+            `<div style="flex:${d.val};background:${d.color};opacity:${d.val>0?0.85:0.12};border-radius:1px;transition:flex 0.4s ease;min-width:${d.val>0?2:1}px;" title="${d.val}/${d.max}分"></div>`
+        ).join('');
+
+        // 明细标签文本
+        const bText = document.getElementById('calc-breakdown-text');
+        if (bText) bText.textContent =
+            `①${s1} ②${s2} ③${s3} ④${s4} ⑤${s5} ⑥${s6} ⑦${s7}`;
+    }
+
+    // ── 颜色 + 判决 ──
     let color, verdict, action;
     if (total >= fullGate) {
         color = '#10b981'; verdict = '🟢 全仓入场';
-        action = `综合评分 ${total} 分（≥${fullGate}满仓线），信号极强。建议建仓至单标的上限，止损按当前状态止损线执行，追踪止盈 T1+15% / T2+25%。`;
+        action = `评分 ${total}分（≥${fullGate}满仓线）信号极强。建议建仓至单标的上限，执行当前Regime止损线，追踪止盈 T1+15% / T2+25%。`;
     } else if (total >= gate) {
         color = '#22d3ee'; verdict = '🔵 标准入场';
-        action = `综合评分 ${total} 分（≥${gate}达标），信号达标。建议建仓 2/3，等候量能确认后加到满仓。`;
+        action = `评分 ${total}分（≥${gate}达标）信号达标。建议建仓 2/3，量能确认后加至满仓。`;
     } else if (total >= halfGate) {
         color = '#fbbf24'; verdict = '🟡 半仓观察';
-        action = `综合评分 ${total} 分（≥${halfGate}半仓线），信号偏弱。建议建仓上限的 50%，等调仓日重新评估，不主动追涨。`;
+        action = `评分 ${total}分（≥${halfGate}半仓线）信号偏弱。建议建仓上限的 50%，调仓日重新评估。`;
     } else {
         color = '#f87171'; verdict = '❌ 不入场';
-        action = `综合评分 ${total} 分（<${halfGate}），信号不足。建议观望，等动量 Z 分提升或市场状态改善。`;
+        action = `评分 ${total}分（<${halfGate}）信号不足。建议观望，等待 RSI 动量好转（②维度）或市场状态改善。`;
     }
 
     if (numEl) numEl.style.color = color;
@@ -119,28 +141,28 @@ document.addEventListener('DOMContentLoaded', () => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('change', calcSignalScore);
     });
-    const divIds = ['div-calc-regime','div-calc-rsi','div-calc-bias','div-calc-yield','div-calc-boll','div-calc-vol'];
+    const divIds = ['div-calc-regime','div-calc-rsi','div-calc-bias','div-calc-yield','div-calc-boll','div-calc-vol','div-calc-rsi-dir'];
     divIds.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('change', calcDividendScore);
     });
 });
 
-// ====== 💰 红利策略专属评分器 V3.1 ======
-// 六维因子：市场环境 + RSI(9) + 乖离率 + 股息率估值 + 布林带位置 + 波动率
-// 评分满分：100分，门槛随市场状态自适应
+// ====== 💰 红利策略专属评分器 V4.0 ======
+// 七维因子：市场环境(15) + RSI(18) + 乖离率(18) + 股息率(20) + 布林(10) + 波动率(9) + RSI动量方向(10)
 function calcDividendScore() {
     const regime  = document.getElementById('div-calc-regime')?.value  || 'RANGE';
-    const rsiVal  = parseInt(document.getElementById('div-calc-rsi')?.value  || 10);
-    const biasVal = parseInt(document.getElementById('div-calc-bias')?.value || 8);
+    const rsiVal  = parseInt(document.getElementById('div-calc-rsi')?.value  || 9);
+    const biasVal = parseInt(document.getElementById('div-calc-bias')?.value || 7);
     const yldVal  = parseInt(document.getElementById('div-calc-yield')?.value || 12);
     const bollVal = parseInt(document.getElementById('div-calc-boll')?.value  || 6);
-    const volVal  = parseInt(document.getElementById('div-calc-vol')?.value   || 10);
+    const volVal  = parseInt(document.getElementById('div-calc-vol')?.value   || 9);
+    const rsiDirVal = parseInt(document.getElementById('div-calc-rsi-dir')?.value || 4);
 
-    // 维度1：市场环境得分
-    const envScore = { BULL: 20, RANGE: 12, BEAR: 5, CRASH: 0 }[regime] ?? 12;
+    // 维度1：市场环境得分（V4.0降权至15分）
+    const envScore = { BULL: 15, RANGE: 10, BEAR: 4, CRASH: 0 }[regime] ?? 10;
 
-    const total = envScore + rsiVal + biasVal + yldVal + bollVal + volVal;
+    const total = Math.min(envScore + rsiVal + biasVal + yldVal + bollVal + volVal + rsiDirVal, 100);
 
     // 状态自适应门槛
     const gates = { BULL: 55, RANGE: 65, BEAR: 75, CRASH: 999 };
@@ -777,17 +799,14 @@ function renderRegime(d) {
     const clr = d.regime_color || '#fbbf24';
     const p   = d.optimal_params || {};
 
-    // Badge
+    // Badge — use API color directly (no local meta dependency)
     const badge = document.getElementById('regime-badge');
-    if (badge) {
-        badge.style.background  = meta.bg;
-        badge.style.borderColor = meta.border;
-        badge.className = badge.className.replace(/regime-\w+-glow/g, '');
-        badge.classList.add(`regime-${regime.toLowerCase()}-glow`);
-    }
     if (badge) {
         badge.style.borderColor = clr + '55';
         badge.style.background  = clr + '15';
+        const regKey = (d.regime || 'RANGE').toLowerCase();
+        badge.className = badge.className.replace(/regime-\w+-glow/g, '');
+        badge.classList.add(`regime-${regKey}-glow`);
     }
     _setText('regime-icon-text', d.regime_icon  || '🟡');
     _setText('regime-name-cn',   d.regime_cn    || d.regime);
@@ -799,6 +818,7 @@ function renderRegime(d) {
     _setText('rm-csi',    d.csi300?.toFixed(0) ?? '—');
     _setText('rm-ma120',  d.ma120?.toFixed(0)  ?? '—');
 
+    // Field names matched to backend
     const r5  = d.ret5d  ?? 0;
     const r20 = d.ret20d ?? 0;
     const el5  = document.getElementById('rm-ret5');
@@ -809,7 +829,7 @@ function renderRegime(d) {
     const slope = d.ma120_slope5 ?? 0;
     const slopeEl = document.getElementById('rm-slope');
     if (slopeEl) {
-        slopeEl.textContent = (slope >= 0 ? '↑ +' : '↓ ') + slope.toFixed(2);
+        slopeEl.textContent = (slope >= 0 ? '↑ +' : '↓ ') + slope.toFixed(4);
         slopeEl.style.color = slope >= 0 ? '#10b981' : '#f87171';
     }
     _setText('rm-vol', (d.vol20d?.toFixed(1) ?? '—') + '%');
@@ -983,17 +1003,25 @@ async function runStrategy() {
         const resultTarget = strategyType === 'dividend-trend' ? dtResults
             : strategyType === 'momentum' ? momResults : mrResults;
         if (resultTarget) resultTarget.style.display = 'block';
+        const colSpan = strategyType === 'dividend-trend' ? 13
+            : strategyType === 'momentum' ? 11 : 10;
         safelySetHTML(errorTarget,
-            `<tr><td colspan="12" style="text-align:center;color:#ef4444;padding:40px;">❌ ${err.message}<br><small style="color:var(--text-muted)">请确认后端已启动：python main.py</small></td></tr>`
+            `<tr><td colspan="${colSpan}" style="text-align:center;color:#ef4444;padding:40px;">❌ ${err.message}<br><small style="color:var(--text-muted)">请确认后端已启动：python main.py</small></td></tr>`
         );
     } finally {
         if (btn) { btn.disabled = false; btn.textContent = '🚀 运行策略'; }
     }
 }
 
-// ====== 均值回归结果渲染 ======
+// ====== 均值回归结果渲染 V4.2 ======
 function renderMeanReversionResults(data, { safelySetText, safelySetHTML }) {
     const ov = data.market_overview;
+    // V4.2: Regime KPI
+    const firstSignal = data.signals?.[0];
+    const regime = firstSignal?.regime || 'RANGE';
+    const regimeColors = { 'BULL': '#10b981', 'RANGE': '#3b82f6', 'BEAR': '#f59e0b', 'CRASH': '#ef4444' };
+    const regimeCN = { 'BULL': '🟢 牛市', 'RANGE': '🟡 震荡', 'BEAR': '🟠 熊市', 'CRASH': '🔴 危机' };
+    safelySetHTML('ov-regime', `<span style="color:${regimeColors[regime] || '#3b82f6'}">${regimeCN[regime] || regime}</span>`);
     safelySetText('ov-avg-dev', ov.avg_deviation + '%');
     safelySetHTML('ov-max-dev', `${ov.max_deviation.name}<br><small style="color:var(--text-muted)">${ov.max_deviation.value}%</small>`);
     safelySetText('ov-buy-count', ov.signal_count.buy);
@@ -1015,13 +1043,31 @@ function renderMeanReversionResults(data, { safelySetText, safelySetHTML }) {
     }
 }
 
-// ====== 红利趋势结果渲染 ======
+// ====== 红利趋势结果渲染 V4.0 ======
 function renderDividendResults(data, { safelySetText, safelySetHTML }) {
     const ov = data.market_overview;
+    // V4.0: Regime + Cap KPI
+    const regime = data.regime_params?.regime || data.regime || 'RANGE';
+    const regimeColors = { 'BULL': '#10b981', 'RANGE': '#3b82f6', 'BEAR': '#f59e0b', 'CRASH': '#ef4444' };
+    const regimeCN = { 'BULL': '🟢 牛市', 'RANGE': '🟡 震荡', 'BEAR': '🟠 熊市', 'CRASH': '🔴 危机' };
+    safelySetHTML('dt-regime', `<span style="color:${regimeColors[regime] || '#3b82f6'}">${regimeCN[regime] || regime}</span>`);
     safelySetText('dt-trend-up', `${ov.trend_up_count} / 8`);
     safelySetText('dt-buy-count', ov.buy_count + ' 只');
     safelySetText('dt-sell-count', ov.sell_count + ' 只');
     safelySetText('dt-total-pos', ov.total_suggested_pos + '%');
+    safelySetText('dt-pos-cap', (ov.pos_cap || data.regime_params?.pos_cap || '—') + '%');
+
+    // V4.0: XV Banner
+    const xvWarnings = data.signals.filter(s => s.xv_warning);
+    const xvBanner = document.getElementById('dt-xv-banner');
+    const xvMsg = document.getElementById('dt-xv-message');
+    if (xvWarnings.length > 0 && xvBanner) {
+        xvBanner.style.display = 'block';
+        const names = xvWarnings.map(s => s.name).join(', ');
+        if (xvMsg) xvMsg.textContent = `${names} — 均值回归引擎检测到技术面偏弱信号，建议缩减仓位`;
+    } else if (xvBanner) {
+        xvBanner.style.display = 'none';
+    }
 
     // 操作建议双栏
     renderDividendActionList('dt-buy-list', data.signals.filter(s => s.signal === 'buy'), 'buy');
@@ -1047,18 +1093,22 @@ function renderDividendActionList(containerId, items, type) {
         container.innerHTML = `<p style="color:var(--text-muted);font-size:0.85rem;text-align:center;padding:20px 0;">暂无${type === 'buy' ? '买入' : '卖出'}信号</p>`;
         return;
     }
-    container.innerHTML = items.map(s => `
+    container.innerHTML = items.map(s => {
+        const score = s.signal_score || 0;
+        const scoreColor = getScoreColor(score);
+        const xvIcon = s.xv_warning ? ' ⚠️' : '';
+        return `
         <div class="st-action-item">
             <div class="st-ai-info">
-                <span class="st-ai-name">${s.name}</span>
+                <span class="st-ai-name">${s.name}${xvIcon}</span>
                 <span class="st-ai-code">${s.code}</span>
             </div>
             <div class="st-ai-meta">
-                <span class="st-ai-score ${type === 'buy' ? 'st-ai-score-buy' : 'st-ai-score-sell'}">${type === 'buy' ? '建仓' : '清仓'}</span>
+                <span class="st-ai-score ${type === 'buy' ? 'st-ai-score-buy' : 'st-ai-score-sell'}" style="color:${scoreColor}">${score}分</span>
                 <span class="st-ai-pos">${s.suggested_position > 0 ? s.suggested_position + '%' : '0%'}</span>
             </div>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
 }
 
 function renderDividendTable(signals) {
@@ -1079,16 +1129,28 @@ function renderDividendTable(signals) {
         const biasColor = s.bias <= -5 ? '#10b981' : (s.bias >= 15 ? '#ef4444' : 'inherit');
         const yieldColor = s.ttm_yield >= 6.0 ? '#ef4444' : (s.ttm_yield >= 5.0 ? '#f59e0b' : '#10b981');
         const yieldWeight = s.ttm_yield >= 6.0 ? '800' : '600';
+        // V4.0 new dimensions
+        const score = s.signal_score || 0;
+        const scoreColor = getScoreColor(score);
+        const rsiSlope = s.rsi_slope5 || 0;
+        const rsiDirIcon = rsiSlope > 2 ? '↑↑' : (rsiSlope > 0 ? '↑' : (rsiSlope > -2 ? '→' : '↓'));
+        const rsiDirColor = rsiSlope > 0 ? '#10b981' : (rsiSlope < -2 ? '#ef4444' : '#94a3b8');
+        const vol30d = s.vol_30d || 0;
+        const volColor = vol30d > 25 ? '#ef4444' : (vol30d > 18 ? '#f59e0b' : '#10b981');
+        const xvTag = s.xv_warning ? '<span style="color:#fbbf24">⚠️</span>' : '<span style="color:#10b981">✅</span>';
 
         return `<tr class="${rowClass}">
             <td style="font-weight:600;color:#fff;">${s.name}</td>
             <td style="font-family:monospace;color:#60a5fa;font-size:0.75rem;">${s.code}</td>
             <td>${s.close}</td>
+            <td style="color:${scoreColor};font-weight:700">${score}</td>
             <td style="color:${yieldColor};font-weight:${yieldWeight}">${s.ttm_yield}%</td>
-            <td style="color:var(--text-muted)">${s.ma120 || s.ma100}</td>
             <td>${trendTag}</td>
             <td style="color:${rsiColor}">${s.rsi}</td>
+            <td style="color:${rsiDirColor}">${rsiDirIcon} ${rsiSlope > 0 ? '+' : ''}${rsiSlope}</td>
             <td style="color:${biasColor}">${s.bias > 0 ? '+' : ''}${s.bias}%</td>
+            <td style="color:${volColor}">${vol30d}%</td>
+            <td>${xvTag}</td>
             <td>${signalTag}</td>
             <td style="font-weight:600">${s.suggested_position > 0 ? s.suggested_position + '%' : '—'}</td>
         </tr>`;
@@ -1106,10 +1168,10 @@ function renderActionList(containerId, items, type) {
         <div class="st-action-item">
             <div class="st-ai-info">
                 <span class="st-ai-name">${s.name}</span>
-                <span class="st-ai-code">${s.code}</span>
+                <span class="st-ai-code">${s.ts_code || s.code}</span>
             </div>
             <div class="st-ai-meta">
-                <span class="st-ai-score ${type === 'buy' ? 'st-ai-score-buy' : 'st-ai-score-sell'}">${s.score}分</span>
+                <span class="st-ai-score ${type === 'buy' ? 'st-ai-score-buy' : 'st-ai-score-sell'}">${s.signal_score || 0}分</span>
                 <span class="st-ai-pos">${s.suggested_position}%</span>
             </div>
         </div>
@@ -1127,13 +1189,24 @@ function renderSignalTable(signals) {
     tbody.innerHTML = signals.map(s => {
         const rowClass = s.signal === 'buy' ? 'st-row-buy' : (s.signal === 'sell' || s.signal === 'sell_weak' || s.signal === 'sell_half' ? 'st-row-sell' : '');
         const signalTag = getSignalTag(s.signal);
+        // V4.2 new columns
+        const score = s.signal_score || 0;
+        const scoreColor = getScoreColor(score);
+        const rsiSlope = s.rsi_slope5 || 0;
+        const rsiDirIcon = rsiSlope > 2 ? '↑↑' : (rsiSlope > 0 ? '↑' : (rsiSlope > -2 ? '→' : '↓'));
+        const rsiDirColor = rsiSlope > 0 ? '#10b981' : (rsiSlope < -2 ? '#ef4444' : '#94a3b8');
+        const klineMap = { 'hammer': '🔨 锤子', 'doji': '✖ 十字星', 'engulfing': '🟢 包裹', 'neutral': '—' };
+        const klineTag = klineMap[s.kline_pattern] || '—';
 
         return `<tr class="${rowClass}">
             <td style="font-weight:600;color:#fff">${s.name}</td>
-            <td style="font-family:monospace;color:#60a5fa;font-size:0.75rem">${s.code}</td>
+            <td style="font-family:monospace;color:#60a5fa;font-size:0.75rem">${s.ts_code || s.code}</td>
             <td>${s.close}</td>
+            <td style="color:${scoreColor};font-weight:700">${score}</td>
             <td style="color:${s.percent_b <= 0 ? '#10b981' : (s.percent_b >= 1 ? '#ef4444' : 'inherit')};font-weight:${s.percent_b <= 0 || s.percent_b >= 1 ? '700' : '400'}">${s.percent_b}</td>
             <td style="color:${s.rsi_3 <= 10 ? '#10b981' : (s.rsi_3 >= 90 ? '#ef4444' : 'inherit')}">${s.rsi_3}</td>
+            <td style="color:${rsiDirColor};font-size:0.8rem">${rsiDirIcon} ${rsiSlope > 0 ? '+' : ''}${rsiSlope}</td>
+            <td style="font-size:0.8rem;color:var(--text-muted)">${klineTag}</td>
             <td>${signalTag}</td>
             <td style="font-weight:600">${s.suggested_position > 0 ? s.suggested_position + '%' : '—'}</td>
         </tr>`;
@@ -1219,7 +1292,7 @@ function renderMomentumTable(signals) {
     const tbody = document.getElementById('mom-table-body');
     if (!tbody) return;
     if (!signals || signals.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-muted);padding:40px;">暂无信号数据</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text-muted);padding:40px;">暂无信号数据</td></tr>';
         return;
     }
 
@@ -1240,6 +1313,7 @@ function renderMomentumTable(signals) {
             <td style="text-align:center;font-weight:800;color:${rankColor};background:${rankBg};border-radius:8px 0 0 8px;">${s.rank || '-'}</td>
             <td style="font-weight:600;color:#fff;">${s.name}</td>
             <td style="font-family:monospace;color:#60a5fa;font-size:0.75rem;">${s.code}</td>
+            <td style="font-size:0.8rem;color:var(--text-muted)">${s.group || '—'}</td>
             <td>${s.close}</td>
             <td style="color:${momColor};font-weight:700;">${s.momentum_pct > 0 ? '+' : ''}${s.momentum_pct}%</td>
             <td style="color:${volRatioColor}">${s.volume_ratio}x</td>

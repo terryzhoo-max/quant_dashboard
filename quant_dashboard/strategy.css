@@ -928,3 +928,205 @@
 [onclick], button:not(:disabled) {
     transition: all 0.2s cubic-bezier(0.4,0,0.2,1) !important;
 }
+
+/* ================================================
+   标的池 V2.0 · 分色设计系统
+   ================================================ */
+.pool-grid-v2 {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.pool-card-v2 {
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(0,0,0,0.25);
+    backdrop-filter: blur(16px);
+    padding: 20px 20px 16px;
+    transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.pool-card-v2::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    border-radius: 16px 16px 0 0;
+    opacity: 0.8;
+}
+
+/* 颜色主题 */
+.pool-blue  { border-color: rgba(96,165,250,0.15);  background: rgba(59,130,246,0.04);  }
+.pool-purple{ border-color: rgba(167,139,250,0.15); background: rgba(139,92,246,0.04);  }
+.pool-orange{ border-color: rgba(251,146,60,0.15);  background: rgba(234,88,12,0.04);   }
+.pool-teal  { border-color: rgba(45,212,191,0.15);  background: rgba(20,184,166,0.04);  }
+
+.pool-blue::before   { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+.pool-purple::before { background: linear-gradient(90deg, #7c3aed, #a78bfa); }
+.pool-orange::before { background: linear-gradient(90deg, #ea580c, #fb923c); }
+.pool-teal::before   { background: linear-gradient(90deg, #0d9488, #2dd4bf); }
+
+.pool-card-v2:hover {
+    transform: translateY(-4px);
+}
+.pool-blue:hover   { box-shadow: 0 12px 32px rgba(59,130,246,0.18);  border-color: rgba(96,165,250,0.3);  }
+.pool-purple:hover { box-shadow: 0 12px 32px rgba(139,92,246,0.18);  border-color: rgba(167,139,250,0.3); }
+.pool-orange:hover { box-shadow: 0 12px 32px rgba(234,88,12,0.18);   border-color: rgba(251,146,60,0.3);  }
+.pool-teal:hover   { box-shadow: 0 12px 32px rgba(20,184,166,0.18);  border-color: rgba(45,212,191,0.3);  }
+
+/* 卡片头部 */
+.pool-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+
+.pool-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.pool-icon {
+    font-size: 1.6rem;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.pool-title {
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: #f1f5f9;
+    line-height: 1.2;
+}
+
+.pool-sub {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-top: 3px;
+}
+
+.pool-count {
+    font-size: 1.5rem;
+    font-weight: 900;
+    letter-spacing: -1px;
+}
+.pool-count span { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); margin-left: 2px; }
+.pool-blue   .pool-count { color: #60a5fa; }
+.pool-purple .pool-count { color: #a78bfa; }
+.pool-orange .pool-count { color: #fb923c; }
+.pool-teal   .pool-count { color: #2dd4bf; }
+
+/* 分隔线 */
+.pool-divider {
+    height: 1px;
+    margin: 12px 0;
+    border-radius: 1px;
+}
+.pool-divider-blue   { background: linear-gradient(90deg, rgba(59,130,246,0.4), transparent); }
+.pool-divider-purple { background: linear-gradient(90deg, rgba(139,92,246,0.4), transparent); }
+.pool-divider-orange { background: linear-gradient(90deg, rgba(234,88,12,0.4), transparent); }
+.pool-divider-teal   { background: linear-gradient(90deg, rgba(20,184,166,0.4), transparent); }
+
+/* ETF 列表 */
+.pool-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.pool-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    background: rgba(0,0,0,0.2);
+    border: 1px solid rgba(255,255,255,0.03);
+    transition: background 0.18s, border-color 0.18s;
+}
+.pool-blue   .pool-item:hover { background: rgba(59,130,246,0.1);  border-color: rgba(59,130,246,0.2);  }
+.pool-purple .pool-item:hover { background: rgba(139,92,246,0.1);  border-color: rgba(139,92,246,0.2);  }
+.pool-orange .pool-item:hover { background: rgba(234,88,12,0.1);   border-color: rgba(234,88,12,0.2);   }
+.pool-teal   .pool-item:hover { background: rgba(20,184,166,0.1);  border-color: rgba(20,184,166,0.2);  }
+
+.pool-item-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+}
+
+/* 代码标签 */
+.pool-code {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 5px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.pool-code-blue   { color: #60a5fa; background: rgba(59,130,246,0.12);  }
+.pool-code-purple { color: #a78bfa; background: rgba(139,92,246,0.12);  }
+.pool-code-orange { color: #fb923c; background: rgba(234,88,12,0.12);   }
+.pool-code-teal   { color: #2dd4bf; background: rgba(20,184,166,0.12);  }
+
+.pool-name {
+    font-size: 0.8rem;
+    color: #cbd5e1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* 仓位上限进度条 */
+.pool-bar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    width: 80px;
+}
+
+.pool-bar {
+    height: 4px;
+    border-radius: 2px;
+    animation: pool-bar-grow 0.8s ease-out both;
+}
+.pool-bar-blue   { background: linear-gradient(90deg, #3b82f6, #93c5fd); }
+.pool-bar-purple { background: linear-gradient(90deg, #7c3aed, #c4b5fd); }
+.pool-bar-orange { background: linear-gradient(90deg, #ea580c, #fdba74); }
+.pool-bar-teal   { background: linear-gradient(90deg, #0d9488, #5eead4); }
+
+@keyframes pool-bar-grow {
+    from { width: 0 !important; opacity: 0; }
+    to   { opacity: 1; }
+}
+
+.pool-pct {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    white-space: nowrap;
+    min-width: 28px;
+    text-align: right;
+}
+
+/* 响应式 */
+@media (max-width: 1600px) {
+    .pool-grid-v2 { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 900px) {
+    .pool-grid-v2 { grid-template-columns: 1fr; }
+}

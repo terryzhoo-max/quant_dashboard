@@ -1,11 +1,12 @@
 """
-AlphaCore · 均值回归 V4.0 自适应参数引擎
+AlphaCore · 均值回归 V4.2 自适应参数引擎
 ==========================================
 特性：
 - 按实时 Regime 动态加载三套专属参数
 - 无需重启服务器（读取 mr_per_regime_params.json）
 - BULL 状态：均值回归仓位上限 35%，超跌补仓逻辑
 - 60天自动重优化检测
+- V4.2 新增：RSI动量方向（Δ RSI₅）+ K线形态识别（7维度100分制）
 """
 
 import pandas as pd
@@ -191,10 +192,10 @@ def _classify_regime_from_series(close_arr) -> dict:
         "regime_icon":  ri,
         "ma60":         round(float(ma60), 2),
         "ma120":        round(float(ma120), 2),
-        "slope5":       round(slope5, 4),
-        "ret5":         round(ret5, 2),
-        "ret20":        round(ret20, 2),
-        "above_ma120":  above,
+        "slope5":       round(float(slope5), 4),
+        "ret5":         round(float(ret5), 2),
+        "ret20":        round(float(ret20), 2),
+        "above_ma120":  bool(above),   # ← 强制转为 Python bool，避免 numpy.bool_ 序列化失败
     }
 
 
@@ -258,7 +259,7 @@ def detect_regime() -> dict:
 
 def calculate_indicators(df: pd.DataFrame) -> dict:
     close  = df["close"]
-    volume = df["volume"]
+    volume = df["vol"] if "vol" in df.columns else df["volume"]
 
     # V4.0：参数从文件动态读取
     regime_info = detect_regime()
@@ -298,20 +299,44 @@ def calculate_indicators(df: pd.DataFrame) -> dict:
     vol_ma5   = volume.rolling(5).mean()
     vol_ratio = (volume / vol_ma5.replace(0, 1)).clip(0, 10)
 
+    # V4.2 新增 ①：RSI 5日动量斜率（判断超卖是否开始反转）
+    rsi_slope5 = 0.0
+    if len(rsi.dropna()) >= 6:
+        rsi_slope5 = float(rsi.iloc[-1] - rsi.iloc[-6])
+
+    # V4.2 新增 ②：K线形态识别（锤子线 / 十字星 / 下影线）
+    kline_pattern = "neutral"
+    kline_score_val = 0
+    if "open" in df.columns and "high" in df.columns and "low" in df.columns:
+        lw = df.iloc[-1]
+        rng = lw["high"] - lw["low"]
+        if rng > 1e-6:
+            body_ratio   = abs(lw["open"] - lw["close"]) / rng
+            lower_shadow = (min(lw["open"], lw["close"]) - lw["low"]) / rng
+            if lower_shadow >= 0.6 and body_ratio <= 0.3:
+                kline_pattern = "hammer";    kline_score_val = 5
+            elif lower_shadow >= 0.4:
+                kline_pattern = "shadow";    kline_score_val = 3
+            elif body_ratio <= 0.15:
+                kline_pattern = "doji";      kline_score_val = 2
+
     latest = df.iloc[-1]
     return {
         "close":           float(latest["close"]),
         "ma20":            float(ma20.iloc[-1]) if not ma20.isnull().all() else 0,
         "ma_n":            float(ma_n.iloc[-1]) if not ma_n.isnull().all() else 0,
-        "ma60":            float(close.rolling(60).mean().iloc[-1]),  # 保留，用于 BEAR Regime上展示
+        "ma60":            float(close.rolling(60).mean().iloc[-1]),
         "boll_upper":      float(boll_upper.iloc[-1]) if not boll_upper.isnull().all() else 0,
         "boll_lower":      float(boll_lower.iloc[-1]) if not boll_lower.isnull().all() else 0,
         "percent_b":       float(percent_b[-1]) if hasattr(percent_b, '__len__') else 0,
         "rsi":             float(rsi.iloc[-1]) if not rsi.isnull().all() else 50,
         "rsi_3":           float(rsi_3.iloc[-1]) if not rsi_3.isnull().all() else 50,
+        "rsi_slope5":      round(rsi_slope5, 2),          # V4.2 新增
         "bias":            float(bias.iloc[-1]) if not bias.isnull().all() else 0,
         "deviation":       float(deviation.iloc[-1]) if not deviation.isnull().all() else 0,
         "vol_ratio":       float(vol_ratio.iloc[-1]) if not vol_ratio.isnull().all() else 1,
+        "kline_pattern":   kline_pattern,                  # V4.2 新增
+        "kline_score":     kline_score_val,                # V4.2 新增
         "regime":          regime_info["regime"],
         "regime_params":   p,
         "pos_cap":         regime_info["pos_cap"],
@@ -320,64 +345,109 @@ def calculate_indicators(df: pd.DataFrame) -> dict:
     }
 
 
-def calculate_score(indicators: dict) -> int:
-    """V4.0 评分：从 Regime 专属参数动态生成门槛"""
+def calculate_score(indicators: dict) -> dict:
+    """
+    V4.2 评分：7维度100分制，返回总分和各维度明细
+    新增：② RSI动量方向（Δ RSI₅反转检测）、⑦ K线形态（锤子线/下影线/十字星）
+    """
     p = indicators.get("regime_params", FALLBACK_PARAMS["RANGE"])
     rsi_buy_opt  = p.get("rsi_buy", 40)
     bias_buy_opt = p.get("bias_buy", -2.0)
 
-    score = 0
-    rsi   = indicators["rsi"]
-    bias  = indicators["bias"]
-    pb    = indicators["percent_b"]
+    rsi        = indicators["rsi"]
+    bias       = indicators["bias"]
+    pb         = indicators["percent_b"]
+    vr         = indicators["vol_ratio"]
+    close      = indicators["close"]
+    ma_n       = indicators["ma_n"]
+    rsi_slope5 = indicators.get("rsi_slope5", 0.0)
+    kline_sc   = indicators.get("kline_score", 0)
 
-    # 维度1：RSI 超卖评分（0-30，基于 Regime 专属阈值，完全替代原"布林带"指标）
-    # RSI ≤ rsi_buy_opt → 30分; RSI ≤ rsi_buy_opt+10 → 15分；其他按比例
+    # ① RSI 超卖深度（0-25）—— 基于 Regime 专属阈值
+    s1 = 0
     if rsi <= rsi_buy_opt:
-        score += 30
+        s1 = 25
+    elif rsi <= rsi_buy_opt + 5:
+        s1 = 17
     elif rsi <= rsi_buy_opt + 10:
-        score += int((rsi_buy_opt + 10 - rsi) / 10 * 15)
+        s1 = 10
     elif rsi <= rsi_buy_opt + 20:
-        score += int((rsi_buy_opt + 20 - rsi) / 20 * 8)
+        s1 = 4
 
-    # 维度2：乖离率评分（0-25）
+    # ② RSI 动量方向（0-15）—— 5日斜率：判断超卖区底部反转
+    s2 = 0
+    if rsi_slope5 >= 3.0:
+        s2 = 15    # 明确向上反转
+    elif rsi_slope5 >= 1.0:
+        s2 = 8     # 开始改善
+    elif rsi_slope5 >= 0:
+        s2 = 3     # 持平/微升
+    # 负斜率（继续恶化）：0分，防止飞刀
+
+    # ③ BIAS 乖离率（0-20）
+    s3 = 0
     if bias <= bias_buy_opt:
-        score += 25
+        s3 = 20
     elif bias <= bias_buy_opt / 2:
-        score += 15
+        s3 = 13
     elif bias <= 0:
-        score += 8
+        s3 = 6
 
-    # 维度3：布林带位置（0-20）
-    if pb <= 0.1:
-        score += 20
+    # ④ 布林带 %B（0-15）
+    s4 = 0
+    if pb <= 0.10:
+        s4 = 15
     elif pb <= 0.25:
-        score += 14
-    elif pb <= 0.4:
-        score += 7
+        s4 = 10
+    elif pb <= 0.40:
+        s4 = 5
 
-    # 维度4：成交量信号（0-15）—— 恐慌放量或绝望缩量
-    vr = indicators["vol_ratio"]
-    if vr > 2.5 or vr < 0.4:
-        score += 15
-    elif vr > 1.8 or vr < 0.6:
-        score += 10
-    elif vr > 1.3 or vr < 0.8:
-        score += 5
+    # ⑤ 成交量信号（0-10）—— 恐慌放量 or 缩量筑底
+    s5 = 0
+    if vr >= 2.0:
+        s5 = 10    # 恐慌性放量，典型底部特征
+    elif vr >= 1.5:
+        s5 = 6
+    elif vr <= 0.5:
+        s5 = 10    # 绝望性缩量，另一种底部特征
+    elif vr <= 0.7:
+        s5 = 6
+    elif 0.8 <= vr <= 1.3:
+        s5 = 3     # 平量震荡，中性
 
-    # 维度5：趋势位置（0-10）—— 在趋势均线之上加分
-    close = indicators["close"]
-    ma_n  = indicators["ma_n"]
-    if close > ma_n:
-        score += 10
-    elif close > ma_n * 0.97:
-        score += 5
+    # ⑥ 趋势位置（0-10）—— 5档细化
+    s6 = 0
+    if close >= ma_n * 1.02:
+        s6 = 10    # 强势区间回调，高质量均值回归
+    elif close >= ma_n:
+        s6 = 7     # 均线上方
+    elif close >= ma_n * 0.97:
+        s6 = 4     # 轻度破位
+    elif close >= ma_n * 0.94:
+        s6 = 1     # 破位较深
+    # 深度破位（< ma_n*0.94）：0分
 
-    return min(100, score)
+    # ⑦ K线形态（0-5）
+    s7 = min(5, kline_sc)
+
+    total = min(100, s1 + s2 + s3 + s4 + s5 + s6 + s7)
+
+    return {
+        "total":       total,
+        "breakdown": {
+            "rsi_depth":   s1,   # ① RSI超卖深度
+            "rsi_momentum":s2,   # ② RSI动量方向
+            "bias":        s3,   # ③ BIAS乖离率
+            "boll":        s4,   # ④ 布林带%B
+            "volume":      s5,   # ⑤ 成交量
+            "trend":       s6,   # ⑥ 趋势位置
+            "kline":       s7,   # ⑦ K线形态
+        }
+    }
 
 
 def generate_signal(indicators: dict, score: int) -> str:
-    """V4.0 信号生成 — 从 Regime 专属参数读取阈值"""
+    """V4.2 信号生成 — score 为总分整数，从 Regime 专属参数读取阈值"""
     p = indicators.get("regime_params", FALLBACK_PARAMS["RANGE"])
 
     close    = indicators["close"]
@@ -392,34 +462,28 @@ def generate_signal(indicators: dict, score: int) -> str:
     rsi_buy  = p["rsi_buy"]
     rsi_sell = p["rsi_sell"]
     bias_buy = p["bias_buy"]
-    # stop_loss 为负数，如 -0.05 表示浮亏 5% 触发止损
     sl       = p.get("stop_loss", -0.07)
 
     # CRASH：全面禁入
     if regime == "CRASH":
         return "no_entry"
     if regime == "BULL" and score < score_gate:
-        return "hold"      # 牛市：评分不够不主动建仓
+        return "hold"
 
-    # 止损检查：浮亏超过止损线 → 强制清仓（stop_loss 为负数）
-    cost_price = indicators.get("cost_price")  # 可选：传入持仓成本
+    cost_price = indicators.get("cost_price")
     if cost_price and cost_price > 0:
         ret = (close / cost_price) - 1
-        if ret <= sl:  # sl 为负，如 ret=-0.06 <= -0.05 → 触发
+        if ret <= sl:
             return "stop_loss"
 
-    # 趋势过滤
     trend_ok = close > ma_n
 
-    # 买入：RSI超卖 OR BIAS乖离
     if trend_ok and (rsi <= rsi_buy or bias <= bias_buy) and score >= score_gate:
         return "buy"
 
-    # 卖出：RSI超买
     if rsi >= rsi_sell:
         return "sell"
 
-    # 止盈半仓
     if close >= ma20 and pb > 0.6:
         return "sell_half"
 
@@ -446,9 +510,11 @@ def run_strategy(ts_codes: list = None, regime_override: str = None) -> list:
                 continue
             df = df.sort_values("trade_date").reset_index(drop=True)
 
-            indicators = calculate_indicators(df)
-            score      = calculate_score(indicators)
-            signal     = generate_signal(indicators, score)
+            indicators  = calculate_indicators(df)
+            score_dict  = calculate_score(indicators)
+            score       = score_dict["total"]
+            breakdown   = score_dict["breakdown"]
+            signal      = generate_signal(indicators, score)
 
             name = next((e["name"] for e in MR_POOL if e["code"] == code), code)
             results.append({
@@ -456,8 +522,11 @@ def run_strategy(ts_codes: list = None, regime_override: str = None) -> list:
                 "name":          name,
                 "signal":        signal,
                 "signal_score":  score,
+                "score_breakdown": breakdown,       # V4.2 新增明细
                 "rsi":           round(indicators["rsi"], 1),
                 "rsi_3":         round(indicators["rsi_3"], 1),
+                "rsi_slope5":    round(indicators.get("rsi_slope5", 0), 2),  # V4.2
+                "kline_pattern": indicators.get("kline_pattern", "neutral"), # V4.2
                 "bias":          round(indicators["bias"], 2),
                 "percent_b":     round(indicators["percent_b"], 3),
                 "vol_ratio":     round(indicators["vol_ratio"], 2),
