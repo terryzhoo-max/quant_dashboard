@@ -3,110 +3,380 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AlphaCore | 因子看板中心</title>
+    <title>AlphaCore | 因子研究终端 V2.0</title>
     <link rel="stylesheet" href="./styles.css?v=2">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
     <script src="./echarts.min.js"></script>
     <style>
-        :root {
-            --terminal-sidebar-width: 320px;
-        }
-        .factor-container {
-            display: grid;
-            grid-template-columns: var(--terminal-sidebar-width) 1fr;
+        :root { --terminal-sidebar-width: 280px; }
+
+        /* === 全局容器 === */
+        .factor-terminal {
+            display: flex;
+            flex-direction: column;
             height: calc(100vh - 80px);
-            gap: 20px;
-            padding: 20px;
-        }
-        .config-sidebar {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-            overflow-y: auto;
-            padding-right: 10px;
-        }
-        .main-terminal {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
+            gap: 0;
+            padding: 16px 20px;
             overflow-y: auto;
         }
-        .config-group {
-            padding: 20px;
+
+        /* === 因子快选导航条 === */
+        .factor-nav-strip {
+            padding: 10px 0;
+            overflow-x: auto;
+            white-space: nowrap;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255,255,255,0.08) transparent;
+            margin-bottom: 16px;
         }
-        .config-title {
-            font-size: 0.9rem;
-            font-weight: 700;
-            color: var(--accent);
-            margin-bottom: 15px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+        .factor-nav-strip::-webkit-scrollbar { height: 4px; }
+        .factor-nav-strip::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+        .factor-nav-container { display: flex; gap: 8px; }
+        .factor-tile {
+            position: relative;
+            min-width: 140px;
+            padding: 12px 16px;
+            border-radius: 10px;
+            background: linear-gradient(145deg, rgba(30,41,59,0.6), rgba(15,23,42,0.8));
+            border: 1px solid rgba(255,255,255,0.06);
+            cursor: pointer;
+            transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            flex-shrink: 0;
+            overflow: hidden;
         }
-        .input-item {
-            margin-bottom: 15px;
+        .factor-tile::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            background: var(--tile-color, #64748b);
+            opacity: 0.5;
+            transition: opacity 0.3s;
         }
-        .input-item label {
-            display: block;
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            margin-bottom: 6px;
+        .factor-tile:hover {
+            transform: translateY(-2px);
+            border-color: rgba(255,255,255,0.15);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.25);
         }
-        .input-item select, .input-item input {
-            width: 100%;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 10px;
-            border-radius: 8px;
-            color: #fff;
-            font-family: inherit;
+        .factor-tile:hover::before { opacity: 1; }
+        .factor-tile.active {
+            border-color: var(--tile-color, rgba(59,130,246,0.6));
+            background: linear-gradient(145deg, rgba(30,41,59,0.9), rgba(15,23,42,0.95));
+            box-shadow: 0 0 20px color-mix(in srgb, var(--tile-color) 20%, transparent);
         }
-        .chart-panel {
-            min-height: 350px;
-            padding: 24px;
+        .factor-tile.active::before { opacity: 1; height: 4px; }
+        .ft-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .ft-name { font-size: 0.82rem; font-weight: 600; color: #e2e8f0; }
+        .ft-grade {
+            font-size: 0.6rem; font-weight: 800; font-family: 'Outfit', sans-serif;
+            width: 20px; height: 20px; border-radius: 5px;
+            display: flex; align-items: center; justify-content: center;
+            line-height: 1;
         }
-        .metrics-grid {
+        .ft-grade.grade-A { background: rgba(16,185,129,0.3); color: #34d399; }
+        .ft-grade.grade-B { background: rgba(59,130,246,0.3); color: #60a5fa; }
+        .ft-grade.grade-C { background: rgba(148,163,184,0.15); color: #94a3b8; }
+        .ft-grade.grade-D { background: rgba(245,158,11,0.2); color: #fbbf24; }
+        .ft-grade.grade-F { background: rgba(239,68,68,0.2); color: #f87171; }
+        .ft-stats { display: flex; gap: 10px; font-size: 0.7rem; color: #64748b; }
+        .ft-stats span { font-family: 'Outfit', sans-serif; }
+        .ft-ic { font-weight: 700; }
+
+        /* === 指标仪表盘 === */
+        .metrics-dashboard {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 15px;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 10px;
+            margin-bottom: 16px;
         }
-        .metric-mini-card {
-            padding: 15px;
+        @media (max-width: 1400px) {
+            .metrics-dashboard { grid-template-columns: repeat(4, 1fr); }
+        }
+        .metric-card {
+            padding: 14px 12px;
             text-align: center;
+            border-radius: 10px;
+            background: linear-gradient(145deg, rgba(30,41,59,0.5), rgba(15,23,42,0.7));
+            border: 1px solid rgba(255,255,255,0.05);
+            transition: border-color 0.3s;
         }
-        .metric-mini-card .label {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            margin-bottom: 5px;
+        .metric-card .mc-label {
+            font-size: 0.68rem;
+            color: #64748b;
+            margin-bottom: 6px;
+            font-weight: 500;
+            letter-spacing: 0.03em;
         }
-        .metric-mini-card .value {
-            font-size: 1.5rem;
+        .metric-card .mc-value {
+            font-size: 1.2rem;
             font-weight: 700;
             font-family: 'Outfit', sans-serif;
+            color: #e2e8f0;
         }
+        .metric-card .mc-hint {
+            font-size: 0.58rem;
+            color: #475569;
+            margin-top: 4px;
+        }
+        .metric-card.mc-good { border-color: rgba(16,185,129,0.3); }
+        .metric-card.mc-good .mc-value { color: #34d399; }
+        .metric-card.mc-warn { border-color: rgba(245,158,11,0.3); }
+        .metric-card.mc-warn .mc-value { color: #fbbf24; }
+        .metric-card.mc-bad { border-color: rgba(239,68,68,0.3); }
+        .metric-card.mc-bad .mc-value { color: #f87171; }
+
+        /* 评级大卡 */
+        .metric-card.mc-grade {
+            position: relative;
+            overflow: hidden;
+        }
+        .mc-grade-badge {
+            font-size: 2rem;
+            font-weight: 800;
+            font-family: 'Outfit', sans-serif;
+            line-height: 1;
+        }
+        .mc-grade-label {
+            font-size: 0.62rem;
+            margin-top: 4px;
+            color: #64748b;
+        }
+
+        /* === 图表矩阵 === */
+        .charts-matrix {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        .chart-panel {
+            padding: 20px;
+            border-radius: 12px;
+            background: linear-gradient(145deg, rgba(30,41,59,0.4), rgba(15,23,42,0.6));
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+        .chart-panel-title {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #94a3b8;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .chart-panel-title span { font-size: 0.9rem; }
+
+        /* 全宽图表行 */
+        .chart-full-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        /* === 空状态引导 === */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 60px 20px;
+            color: #475569;
+            gap: 12px;
+        }
+        .empty-state-icon { font-size: 3rem; opacity: 0.3; }
+        .empty-state-text { font-size: 0.9rem; text-align: center; line-height: 1.6; }
+
+        /* === 加载进度 === */
         .loading-overlay {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(7, 9, 14, 0.8);
-            backdrop-filter: blur(8px);
+            background: rgba(7, 9, 14, 0.85);
+            backdrop-filter: blur(10px);
             display: none;
             justify-content: center;
             align-items: center;
             z-index: 1000;
             flex-direction: column;
-            gap: 20px;
+            gap: 16px;
+        }
+        .loading-progress {
+            width: 320px;
+            height: 4px;
+            background: rgba(255,255,255,0.06);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .loading-progress-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+        .loading-step {
+            font-size: 0.82rem;
+            color: #94a3b8;
+            font-weight: 500;
         }
         .spinner {
-            width: 50px;
-            height: 50px;
-            border: 4px solid rgba(59, 130, 246, 0.1);
-            border-top: 4px solid var(--accent);
+            width: 40px; height: 40px;
+            border: 3px solid rgba(59, 130, 246, 0.1);
+            border-top: 3px solid #3b82f6;
             border-radius: 50%;
-            animation: spin 1s linear infinite;
+            animation: spin 0.8s linear infinite;
         }
         @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        /* === 配置面板 (右侧弹出抽屉) === */
+        .config-drawer-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 900;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+        .config-drawer-overlay.open { opacity: 1; pointer-events: auto; }
+        .config-drawer {
+            position: fixed; top: 0; right: -400px; bottom: 0;
+            width: 360px;
+            background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+            border-left: 1px solid rgba(255,255,255,0.08);
+            z-index: 910;
+            padding: 28px 24px;
+            overflow-y: auto;
+            transition: right 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .config-drawer.open { right: 0; }
+        .config-drawer h3 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #e2e8f0;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .config-drawer .close-btn {
+            background: none; border: none; color: #64748b;
+            font-size: 1.4rem; cursor: pointer; line-height: 1;
+            transition: color 0.2s;
+        }
+        .config-drawer .close-btn:hover { color: #e2e8f0; }
+        .config-group { margin-bottom: 24px; }
+        .config-group-title {
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #3b82f6;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .input-item { margin-bottom: 14px; }
+        .input-item label {
+            display: block;
+            font-size: 0.75rem;
+            color: #94a3b8;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+        .input-item select, .input-item input {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 10px 12px;
+            border-radius: 8px;
+            color: #fff;
+            font-family: inherit;
+            font-size: 0.85rem;
+            transition: border-color 0.2s;
+        }
+        .input-item select:focus, .input-item input:focus {
+            outline: none;
+            border-color: rgba(59,130,246,0.5);
+        }
+        .btn-run {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #3b82f6, #6366f1);
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            font-weight: 700;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.2s;
+        }
+        .btn-run:hover { opacity: 0.9; transform: translateY(-1px); }
+
+        /* 方法论面板 */
+        .methodology-panel {
+            margin-top: 24px;
+            padding: 16px;
+            border-radius: 10px;
+            background: rgba(59,130,246,0.05);
+            border: 1px solid rgba(59,130,246,0.1);
+            font-size: 0.75rem;
+            color: #64748b;
+            line-height: 1.6;
+        }
+        .methodology-panel h4 {
+            color: #3b82f6;
+            margin-bottom: 8px;
+            font-size: 0.8rem;
+        }
+        .methodology-panel b { color: #94a3b8; }
+
+        /* === fadeIn 动画 === */
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in { animation: fadeInUp 0.5s ease forwards; }
+
+        /* === 顶部工具栏 === */
+        .factor-topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .factor-topbar h2 {
+            font-size: 1.4rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .version-badge {
+            font-size: 0.65rem;
+            font-weight: 700;
+            padding: 3px 8px;
+            border-radius: 4px;
+            background: rgba(99,102,241,0.2);
+            color: #818cf8;
+            font-family: 'Outfit', sans-serif;
+        }
+        .topbar-actions { display: flex; gap: 10px; }
+        .topbar-actions button {
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.04);
+            color: #94a3b8;
+        }
+        .topbar-actions button:hover { border-color: rgba(255,255,255,0.2); color: #e2e8f0; }
+        .topbar-actions .btn-primary-sm {
+            background: linear-gradient(135deg, #3b82f6, #6366f1);
+            border: none;
+            color: #fff;
+        }
+        .topbar-actions .btn-primary-sm:hover { opacity: 0.9; }
     </style>
 </head>
 <body>
@@ -137,7 +407,6 @@
             <a href="./backtest.html" class="nav-item">
                 <span class="icon">🧪</span>
                 <span>量化回测</span>
-                <span class="badge-beta">Beta</span>
             </a>
             <div class="nav-group-title">账 户 管 理</div>
             <a href="./portfolio.html" class="nav-item">
@@ -148,93 +417,153 @@
     </aside>
 
     <main class="dashboard">
-        <header class="topbar">
-            <div class="welcome-box" style="margin:0">
-                <h2 style="font-size: 1.5rem">因子看板中心 <span style="font-size: 0.8rem; font-weight: 300; opacity: 0.6">/ Factor Intelligence Terminal</span></h2>
+        <!-- 顶部工具栏 -->
+        <div class="factor-topbar">
+            <h2>📈 因子研究终端 <span class="version-badge">V2.0</span></h2>
+            <div class="topbar-actions">
+                <button id="config-btn">⚙️ 配置</button>
+                <button class="btn-primary-sm" id="run-btn">▶ 运行分析</button>
             </div>
-            <div class="actions">
-                <button class="btn btn-primary" id="run-analysis-btn">运行因子性能测评</button>
-            </div>
-        </header>
+        </div>
 
-        <div class="factor-container">
-            <div class="config-sidebar">
-                <div class="config-group glass-panel">
-                    <div class="config-title"><span>🧪</span> 测评设置</div>
-                    <div class="input-item">
-                        <label>选择分析因子</label>
-                        <select id="factor-select">
-                            <option value="roe">ROE (净资产收益率)</option>
-                            <option value="netprofit_margin">销售净利率</option>
-                            <option value="debt_to_assets">资产负债率</option>
-                            <option value="bps">每股净资产</option>
-                            <option value="eps">每股收益</option>
-                        </select>
-                    </div>
-                    <div class="input-item">
-                        <label>股票样本池</label>
-                        <select id="pool-select">
-                            <option value="top30">A股全市场 Top 30 (测试)</option>
-                            <option value="top100">A股全市场 Top 100</option>
-                        </select>
-                    </div>
-                    <div class="input-item">
-                        <label>回看开始日期</label>
-                        <input type="text" id="start-date" value="20200101">
-                    </div>
-                    <div class="input-item">
-                        <label>回看结束日期</label>
-                        <input type="text" id="end-date" value="20231231">
-                    </div>
-                </div>
-                
-                <div class="glass-panel" style="padding: 20px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.6;">
-                    <h4 style="color: var(--accent); margin-bottom: 10px;">ℹ️ 测评方法论</h4>
-                    <p>• <b>Rank IC</b>: 因子值排名与未来5日收益率排名的秩相关系数。</p>
-                    <p>• <b>Quantile</b>: 按因子值从小到大平分为5组，观察历史累计收益率的单调性。</p>
-                    <p>• <b>IR</b>: IC 均值 / IC 标准差，衡量因子表现的稳定性。</p>
-                </div>
+        <div class="factor-terminal">
+            <!-- 因子快选导航条 -->
+            <div class="factor-nav-strip">
+                <div class="factor-nav-container" id="factor-nav"></div>
             </div>
 
-            <div class="main-terminal">
-                <div class="metrics-grid">
-                    <div class="metric-mini-card glass-panel">
-                        <div class="label">IC 均值 (Mean)</div>
-                        <div class="value" id="res-ic-mean">--</div>
-                    </div>
-                    <div class="metric-mini-card glass-panel">
-                        <div class="label">信息比率 (IR)</div>
-                        <div class="value" id="res-ic-ir">--</div>
-                    </div>
-                    <div class="metric-mini-card glass-panel">
-                        <div class="label">分析样本量 (Ticks)</div>
-                        <div class="value" id="res-sample-count">--</div>
-                    </div>
+            <!-- 指标仪表盘 -->
+            <div class="metrics-dashboard" id="metrics-dashboard">
+                <div class="metric-card mc-grade">
+                    <div class="mc-label">因子评级</div>
+                    <div class="mc-grade-badge" id="m-grade">—</div>
+                    <div class="mc-grade-label" id="m-grade-label">等待分析</div>
                 </div>
-
-                <div class="chart-panel glass-panel">
-                    <h3 style="font-size: 0.9rem; margin-bottom: 15px; color: var(--text-muted);">📈 因子历史 IC 序列 (IC Series)</h3>
-                    <div id="ic-series-chart" style="height: 300px;"></div>
+                <div class="metric-card">
+                    <div class="mc-label">IC 均值</div>
+                    <div class="mc-value" id="m-ic-mean">—</div>
+                    <div class="mc-hint">>0.03 可用</div>
                 </div>
-
-                <div class="chart-panel glass-panel">
-                    <h3 style="font-size: 0.9rem; margin-bottom: 15px; color: var(--text-muted);">📊 分组收益单调性 (Quantile Avg Returns)</h3>
-                    <div id="quantile-avg-chart" style="height: 300px;"></div>
+                <div class="metric-card">
+                    <div class="mc-label">信息比率 IR</div>
+                    <div class="mc-value" id="m-ir">—</div>
+                    <div class="mc-hint">>0.5 优秀</div>
                 </div>
+                <div class="metric-card">
+                    <div class="mc-label">IC 胜率</div>
+                    <div class="mc-value" id="m-win-rate">—</div>
+                    <div class="mc-hint">>55% 可用</div>
+                </div>
+                <div class="metric-card">
+                    <div class="mc-label">单调性</div>
+                    <div class="mc-value" id="m-mono">—</div>
+                    <div class="mc-hint">>0.8 优</div>
+                </div>
+                <div class="metric-card">
+                    <div class="mc-label">IC 稳定性</div>
+                    <div class="mc-value" id="m-stability">—</div>
+                    <div class="mc-hint">0.8-1.2 稳</div>
+                </div>
+                <div class="metric-card">
+                    <div class="mc-label">多空价差</div>
+                    <div class="mc-value" id="m-ls-spread">—</div>
+                    <div class="mc-hint">>0 有效</div>
+                </div>
+                <div class="metric-card">
+                    <div class="mc-label">样本量</div>
+                    <div class="mc-value" id="m-samples">—</div>
+                    <div class="mc-hint">截面数</div>
+                </div>
+            </div>
 
-                <div class="chart-panel glass-panel">
-                    <h3 style="font-size: 0.9rem; margin-bottom: 15px; color: var(--text-muted);">🌊 分组累计收益曲线 (Quantile Cumulative)</h3>
-                    <div id="quantile-cum-chart" style="height: 400px;"></div>
+            <!-- 雷达图 + IC序列 -->
+            <div class="charts-matrix">
+                <div class="chart-panel">
+                    <div class="chart-panel-title"><span>🎯</span> 因子质量雷达</div>
+                    <div id="radar-chart" style="height: 230px;"></div>
+                </div>
+                <div class="chart-panel">
+                    <div class="chart-panel-title"><span>📈</span> IC 时间序列</div>
+                    <div id="ic-series-chart" style="height: 230px;"></div>
+                </div>
+            </div>
+
+            <!-- 分组柱状图 + 累计曲线 -->
+            <div class="chart-full-row">
+                <div class="chart-panel">
+                    <div class="chart-panel-title"><span>📊</span> 分组收益单调性</div>
+                    <div id="quantile-avg-chart" style="height: 280px;"></div>
+                </div>
+                <div class="chart-panel">
+                    <div class="chart-panel-title"><span>🌊</span> 分组累计收益曲线</div>
+                    <div id="quantile-cum-chart" style="height: 280px;"></div>
                 </div>
             </div>
         </div>
     </main>
 
-    <div class="loading-overlay" id="loading-overlay">
-        <div class="spinner"></div>
-        <p style="color: #fff; font-weight: 500;">AlphaCore 正在处理大规模横截面因子矩阵...</p>
+    <!-- 配置抽屉 -->
+    <div class="config-drawer-overlay" id="config-overlay"></div>
+    <div class="config-drawer" id="config-drawer">
+        <h3>
+            ⚙️ 测评配置
+            <button class="close-btn" id="config-close">×</button>
+        </h3>
+        <div class="config-group">
+            <div class="config-group-title">🧪 分析参数</div>
+            <div class="input-item">
+                <label>选择分析因子</label>
+                <select id="factor-select">
+                    <option value="roe">ROE (净资产收益率)</option>
+                    <option value="netprofit_margin">销售净利率</option>
+                    <option value="debt_to_assets">资产负债率</option>
+                    <option value="bps">每股净资产</option>
+                    <option value="eps">每股收益 (EPS)</option>
+                </select>
+            </div>
+            <div class="input-item">
+                <label>股票样本池</label>
+                <select id="pool-select">
+                    <option value="top30">A股 Top 30 (快速)</option>
+                    <option value="top100">A股 Top 100</option>
+                </select>
+            </div>
+            <div class="input-item">
+                <label>回看开始日期</label>
+                <input type="text" id="start-date" value="20200101">
+            </div>
+            <div class="input-item">
+                <label>回看结束日期</label>
+                <input type="text" id="end-date" value="20231231">
+            </div>
+            <button class="btn-run" id="drawer-run-btn">▶ 运行因子分析</button>
+        </div>
+
+        <div class="methodology-panel">
+            <h4>📚 测评方法论</h4>
+            <p>• <b>Rank IC</b>: 因子值排名与未来5日收益率排名的Spearman秩相关系数。</p>
+            <p>• <b>IR</b>: IC均值 / IC标准差，衡量因子预测的稳定性。</p>
+            <p>• <b>IC胜率</b>: IC > 0 的日期占比，反映因子方向正确率。</p>
+            <p>• <b>单调性</b>: 分组收益与组别的相关性，越高说明因子区分力越强。</p>
+            <p>• <b>IC稳定性</b>: 后半段IC均值 / 前半段IC均值，检测因子是否在衰减。</p>
+            <p>• <b>评级标准</b>:<br>
+               A: IC>0.05 + IR>0.5 + 胜率>65%<br>
+               B: IC>0.03 + IR>0.3 + 胜率>55%<br>
+               C: IC>0.02 + IR>0.2<br>
+               D: IC>0.01<br>
+               F: IC≤0.01</p>
+        </div>
     </div>
 
-    <script src="./factor.js"></script>
+    <!-- 加载遮罩 -->
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="spinner"></div>
+        <div class="loading-step" id="loading-step">正在初始化因子矩阵...</div>
+        <div class="loading-progress">
+            <div class="loading-progress-fill" id="loading-fill"></div>
+        </div>
+    </div>
+
+    <script src="./factor.js?v=2"></script>
 </body>
 </html>

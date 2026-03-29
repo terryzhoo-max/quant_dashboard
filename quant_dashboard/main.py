@@ -22,6 +22,7 @@ from data_manager import FactorDataManager
 from industry_engine import IndustryEngine
 from portfolio_engine import PortfolioEngine
 from backtest_engine import AlphaBacktester
+from factor_analyzer import FactorAnalyzer
 from strategies_backtest import (
     mean_reversion_strategy_vectorized,
     dividend_trend_strategy_vectorized,
@@ -198,6 +199,134 @@ def apply_strategy_filters(regime_weights: dict, mom_crowding: float = 60.0,
             adjusted[k] = round(adjusted[k] / total, 2)
 
     return adjusted, filters
+
+
+# --- V6.0 五因子科学仓位决策引擎 (Scientific Position Engine) ---
+
+def compute_scientific_position(
+    total_temp: float,
+    vix_analysis: dict,
+    total_money_z: float,
+    erp_z: float,
+    mr_res: dict,
+    mom_res: dict,
+    div_res: dict,
+    is_circuit_breaker: bool
+) -> dict:
+    """
+    AlphaCore V6.0: 五因子加权合成仓位引擎
+    权重依据: 信息层级原则 (风险 > 资金流 > 宽度 > 估值 > 策略反馈)
+    
+    因子权重:
+      VIX 恐慌指数    30%  — 前瞻性最强，期权隐含波动率
+      资金流向 Z-Score 20%  — 机构级日频信号，smart money 定位
+      宏观温度         20%  — 复合宽度指标，降权避免 double-counting
+      ERP 估值         15%  — 慢变量战略锚，股债性价比
+      策略信号共振     15%  — 自下而上反馈，三引擎买卖信号密度
+    """
+    # === 1. 各因子独立评分 (0-100, 越高越利于加仓) ===
+    
+    # 因子A: VIX 恐慌 (反向映射 — VIX 越低越利于加仓)
+    vix_p = vix_analysis.get('percentile', 50)
+    vix_score = max(0, min(100, 100 - vix_p))
+    vix_label = "恐慌低位" if vix_score >= 70 else ("恐慌中性" if vix_score >= 40 else "恐慌高位")
+    
+    # 因子B: 资金流向 (Z-Score → 0-100 映射)
+    # Z ∈ [-3, +3] → Score ∈ [0, 100], 中性=50
+    capital_score = max(0, min(100, 50 + total_money_z * 16.67))
+    capital_label = "资金强流入" if capital_score >= 70 else ("资金中性" if capital_score >= 40 else "资金流出")
+    
+    # 因子C: 宏观温度 (反向 — 温度越低越利于建仓)
+    temp_score = max(0, min(100, 100 - total_temp))
+    temp_label = "宏观偏冷" if temp_score >= 60 else ("宏观中性" if temp_score >= 40 else "宏观偏热")
+    
+    # 因子D: ERP 估值 (Z-Score → 0-100, Z 越高越便宜越利于加仓)
+    # Z ∈ [-2, +2] → Score ∈ [0, 100]
+    erp_score = max(0, min(100, 50 + erp_z * 25))
+    erp_label = "极度低估" if erp_score >= 80 else ("估值合理" if erp_score >= 40 else "估值偏高")
+    
+    # 因子E: 策略信号共振度
+    mr_overview = mr_res.get("data", {}).get("market_overview", {})
+    mom_overview = mom_res.get("data", {}).get("market_overview", {})
+    div_overview = div_res.get("data", {}).get("market_overview", {})
+    
+    mr_buy = mr_overview.get("signal_count", {}).get("buy", 0)
+    mr_sell = mr_overview.get("signal_count", {}).get("sell", 0)
+    mom_buy = mom_overview.get("buy_count", 0)
+    div_buy = div_overview.get("buy_count", 0)
+    div_trend_up = div_overview.get("trend_up_count", 0)
+    
+    total_buy = mr_buy + mom_buy + div_buy
+    total_sell = mr_sell
+    signal_denominator = max(total_buy + total_sell, 1)
+    signal_ratio = total_buy / signal_denominator
+    # 加入红利趋势方向作为修正 (trend_up_count / 8)
+    trend_bonus = (div_trend_up / 8.0) * 20  # 最多+20分
+    signal_score = max(0, min(100, signal_ratio * 80 + trend_bonus))
+    signal_label = "策略共振" if signal_score >= 65 else ("策略分歧" if signal_score >= 35 else "策略空头")
+    
+    # === 2. 五因子加权合成 ===
+    W = {"vix": 0.30, "capital": 0.20, "temp": 0.20, "erp": 0.15, "signal": 0.15}
+    scores = {
+        "vix": vix_score,
+        "capital": capital_score,
+        "temp": temp_score,
+        "erp": erp_score,
+        "signal": signal_score
+    }
+    
+    composite_score = sum(scores[k] * W[k] for k in W)
+    
+    # === 3. 仓位映射 (非线性 S-Curve) ===
+    # composite ∈ [0,100] → position ∈ [10%, 95%]
+    # 使用 S 形曲线使中间区段更敏感、两端钝化
+    import math
+    x = (composite_score - 50) / 15  # 标准化到 ~[-3, +3]
+    sigmoid = 1 / (1 + math.exp(-x))
+    raw_position = 10 + sigmoid * 85  # 映射到 [10, 95]
+    
+    # === 4. 安全边际 ===
+    # 流动性熔断保护
+    if is_circuit_breaker:
+        final_position = min(raw_position, 10)
+        position_label = "0% (流动性熔断)"
+    elif total_temp > 90:
+        final_position = min(raw_position, 15)
+        position_label = f"{int(final_position)}% (极度过热)"
+    else:
+        final_position = round(raw_position, 1)
+        position_label = get_tactical_label(final_position, total_temp, erp_z, False)
+    
+    # === 5. 决策置信度 (因子一致性) ===
+    # 如果 5 个因子方向一致（都高或都低），置信度高
+    scores_list = list(scores.values())
+    mean_s = sum(scores_list) / len(scores_list)
+    variance = sum((s - mean_s) ** 2 for s in scores_list) / len(scores_list)
+    std_dev = variance ** 0.5
+    # 标准差越小 → 因子一致性越高 → 置信度越高
+    # std_dev ∈ [0, ~35] → confidence ∈ [100, 30]
+    confidence = max(30, min(100, int(100 - std_dev * 2)))
+    
+    return {
+        "position": round(final_position, 1),
+        "position_label": position_label,
+        "composite_score": round(composite_score, 1),
+        "confidence": confidence,
+        "factors": {
+            "vix_fear":     {"score": round(vix_score, 1),     "weight": W["vix"],     "label": vix_label},
+            "capital_flow": {"score": round(capital_score, 1), "weight": W["capital"], "label": capital_label},
+            "macro_temp":   {"score": round(temp_score, 1),    "weight": W["temp"],    "label": temp_label},
+            "erp_value":    {"score": round(erp_score, 1),     "weight": W["erp"],     "label": erp_label},
+            "signal_sync":  {"score": round(signal_score, 1),  "weight": W["signal"],  "label": signal_label}
+        },
+        "signal_detail": {
+            "buy_total": total_buy,
+            "sell_total": total_sell,
+            "mr_buy": mr_buy, "mr_sell": mr_sell,
+            "mom_buy": mom_buy, "div_buy": div_buy,
+            "div_trend_up": div_trend_up
+        }
+    }
 
 
 def get_vix_analysis(vix_val: float):
@@ -447,6 +576,10 @@ async def get_dashboard_data():
         
         mr_res, div_res, mom_res = await asyncio.gather(mr_future, div_future, mom_future)
         
+        # 包装MR裸list为标准结构
+        if isinstance(mr_res, list):
+            mr_res = _wrap_mr_results(mr_res)
+
         # 存储到缓存中供单独接口调用
         STRATEGY_CACHE["strategy_results"] = {"mr": mr_res, "div": div_res, "mom": mom_res}
 
@@ -482,15 +615,15 @@ async def get_dashboard_data():
         vetted_buy = []
         # 从 MR 选 Top 2
         for s in mr_res.get("data", {}).get("buy_signals", [])[:2]:
-            vetted_buy.append({"name": s['name'], "code": s['code'], "score": s['score'], "pe": round(s.get('close', 0)/s.get('ma20', 1), 2), "badge": "均值回归", "badgeClass": "buy"})
+            vetted_buy.append({"name": s.get('name',''), "code": s.get('ts_code', s.get('code','')), "score": s.get('signal_score', s.get('score',0)), "pe": round(s.get('close', 0)/max(s.get('ma20', 1), 0.01), 2), "badge": "均值回归", "badgeClass": "buy"})
         # 从 MOM 选 Top 1
         for s in mom_res.get("data", {}).get("buy_signals", [])[:1]:
-            vetted_buy.append({"name": s['name'], "code": s['code'], "score": 85, "metric": f"动量:{s['momentum_pct']}%", "badge": "动量爆发", "badgeClass": "buy"})
+            vetted_buy.append({"name": s.get('name',''), "code": s.get('ts_code', s.get('code','')), "score": s.get('signal_score', 85), "metric": f"动量:{s.get('momentum_pct',0)}%", "badge": "动量爆发", "badgeClass": "buy"})
         
         vetted_sell = []
         # 从 MR 选 Top 2 卖出
         for s in mr_res.get("data", {}).get("sell_signals", [])[:2]:
-            vetted_sell.append({"name": s['name'], "code": s['code'], "score": s['score'], "pe": "超买", "badge": "偏离过大", "badgeClass": "sell"})
+            vetted_sell.append({"name": s.get('name',''), "code": s.get('ts_code', s.get('code','')), "score": s.get('signal_score', s.get('score',0)), "pe": "超买", "badge": "偏离过大", "badgeClass": "sell"})
 
         # 5. HSGT & Liquidity Score (A+H 跨境流量共振引擎)
         total_money_z = 0.0 # 初始化中性流量
@@ -584,40 +717,39 @@ async def get_dashboard_data():
         
         erp_multiplier, valuation_label, erp_z = get_erp_multiplier()
         
-        # 1. 基础仓位 (100 - Temp)
-        base_pos_val = max(5, min(100, 100 - total_temp))
+        # V6.0: 五因子科学仓位决策引擎 (替代旧版 100-temp 线性映射)
+        hub_result = compute_scientific_position(
+            total_temp=total_temp,
+            vix_analysis=vix_analysis,
+            total_money_z=total_money_z,
+            erp_z=erp_z,
+            mr_res=mr_res,
+            mom_res=mom_res,
+            div_res=div_res,
+            is_circuit_breaker=is_circuit_breaker
+        )
         
-        # 2. 战略调优 (ERP Multiplier)
-        pre_scaled_pos = min(100, base_pos_val * erp_multiplier)
-
-        # 最终实得仓位 (结合 VIX 乘数)
-        final_pos_val = round(pre_scaled_pos * vix_analysis["multiplier"], 1)
+        final_pos_val = hub_result["position"]
+        pos_advice = hub_result["position_label"]
         
-        # 3. 风格识别 (Regime Allocation - V3.9 纠偏版)
-        regime_weights_raw, regime_name = get_regime_allocation(total_temp)
-        
-        # 4. V3.9 策略级风险过滤器
-        regime_weights, strategy_filters = apply_strategy_filters(regime_weights_raw)
-        
-        # 5. 极端熔断保护
+        # 温度定性标签
         if is_circuit_breaker:
-            final_pos_val = min(final_pos_val, 10)
             status_label = "流动性熔断"
         else:
             status_label = "过热" if total_temp > 80 else ("偏冷" if total_temp < 30 else "温暖")
-
-        # 6. 实战对策矩阵标签 (Tactical Tier)
-        pos_advice = get_tactical_label(final_pos_val, total_temp, erp_z, is_circuit_breaker)
         temp_label = f"{status_label} | {valuation_label}"
         
-        # 7. V3.9 各策略名义仓位计算
+        # 策略权重分配 (仍使用温度驱动的 regime)
+        regime_weights_raw, regime_name = get_regime_allocation(total_temp)
+        regime_weights, strategy_filters = apply_strategy_filters(regime_weights_raw)
+        
+        # 各策略名义仓位 (由新引擎的总仓位 × 权重)
         strategy_positions = {
             "mr_pos":  round(final_pos_val * regime_weights["mr"], 1),
             "mom_pos": round(final_pos_val * regime_weights["mom"], 1),
             "div_pos": round(final_pos_val * regime_weights["div"], 1),
             "total":   round(final_pos_val, 1)
         }
-
 
         # 7. 行业热力全景图 V4.0 (Sector Rotation Heatmap with RPS)
         # 扩展至 12 个核心行业 ETF，覆盖 A 股主要赛道。采用 ETF 代理确保极速与稳定。
@@ -691,6 +823,13 @@ async def get_dashboard_data():
             
             # 最终按 5D Trend 降序排列 (满足用户对“5天当前排名”的要求)
             comparison_list.sort(key=lambda x: x['trend_5d'], reverse=True)
+            # V5.0: 交叉标注策略信号
+            _mr_sigs = {s.get('ts_code',''): s.get('signal','') for s in mr_res.get("data",{}).get("signals",[])}
+            _mom_sigs = {s.get('ts_code',''): s.get('signal','') for s in mom_res.get("data",{}).get("signals",[])}
+            for _item in comparison_list:
+                _c = _item["code"]
+                _item["mr_signal"] = _mr_sigs.get(_c, "")
+                _item["mom_signal"] = _mom_sigs.get(_c, "")
             sector_heatmap = comparison_list
 
         except Exception as e:
@@ -723,7 +862,19 @@ async def get_dashboard_data():
                     "tomorrow_plan": get_tomorrow_plan(vix_analysis, total_temp),
                     "capital_a": capital_a,
                     "capital_h": capital_h,
-                    "signal": {"value": "引擎同步", "trend": f"发现{len(vetted_buy)}信号", "status": "up"},
+                    "signal": {
+                        "value": f"MR {mr_overview.get('signal_count',{}).get('buy',0)}买/{mr_overview.get('signal_count',{}).get('sell',0)}卖",
+                        "trend": f"DT {div_overview.get('trend_up_count',0)}/8趋 · MOM {mom_overview.get('top1_name','—')}",
+                        "status": "up" if (mr_overview.get('signal_count',{}).get('buy',0) + div_overview.get('buy_count',0)) > 0 else "neutral"
+                    },
+                    "regime_banner": {
+                        "regime": regime_name,
+                        "temp": total_temp,
+                        "advice": pos_advice,
+                        "vix": round(latest_vix, 2),
+                        "vix_label": vix_analysis.get('label','—'),
+                        "z_capital": round(total_money_z, 2)
+                    },
                     "market_temp": {
                         "value": total_temp, 
                         "label": temp_label, 
@@ -734,15 +885,23 @@ async def get_dashboard_data():
                         "regime_name": regime_name,
                         "regime_weights": regime_weights,
                         "strategy_positions": strategy_positions,
-                        "market_vix_multiplier": vix_analysis["multiplier"],  # V4.2 新增
+                        "market_vix_multiplier": vix_analysis["multiplier"],
                         "strategy_filters": strategy_filters,
-                        "pos_path": get_position_path(final_pos_val, vix_analysis), # V4.5 新增
+                        "pos_path": get_position_path(final_pos_val, vix_analysis),
                         "mindset": get_institutional_mindset(total_temp),
                         "holding_cycle_a": "5-8 个交易日",
-                        "holding_cycle_hk": "15-22 个交易日"
+                        "holding_cycle_hk": "15-22 个交易日",
+                        "hub_factors": hub_result["factors"],
+                        "hub_confidence": hub_result["confidence"],
+                        "hub_composite": hub_result["composite_score"],
+                        "hub_signal_detail": hub_result["signal_detail"],
+                        "z_capital": round(total_money_z, 2)
                     },
-
-                    "erp": {"value": "3.5%", "trend": "极度低估", "status": "up"}
+                    "erp": {
+                        "value": f"{round(erp_val, 2)}%",
+                        "trend": valuation_label,
+                        "status": "up" if erp_z > 0.5 else ("down" if erp_z < -0.5 else "neutral")
+                    }
                 },
                 "sector_heatmap": sector_heatmap,
                 "strategy_status": {"mr": mr_status, "mom": mom_status, "div": div_status},
@@ -761,10 +920,71 @@ async def get_dashboard_data():
 
 @app.get("/api/v1/strategy")
 async def get_strategy():
-    """均值回归策略详情"""
+    """均值回归策略详情 — V4.2 包装层"""
     if STRATEGY_CACHE["strategy_results"]["mr"]:
-        return STRATEGY_CACHE["strategy_results"]["mr"]
-    return await asyncio.get_event_loop().run_in_executor(executor, run_strategy)
+        cached = STRATEGY_CACHE["strategy_results"]["mr"]
+        # 如果缓存已经是包装格式就直接返回
+        if isinstance(cached, dict) and "status" in cached:
+            return cached
+        # 否则包装裸list
+        return _wrap_mr_results(cached)
+    raw = await asyncio.get_event_loop().run_in_executor(executor, run_strategy)
+    wrapped = _wrap_mr_results(raw)
+    STRATEGY_CACHE["strategy_results"]["mr"] = wrapped
+    return wrapped
+
+
+def _wrap_mr_results(signals_list: list) -> dict:
+    """把 run_strategy() 返回的裸 list 包装成前端期望的标准结构"""
+    from datetime import datetime as _dt
+
+    # 补算 suggested_position（MR引擎不输出该字段）
+    for s in signals_list:
+        if "suggested_position" not in s:
+            sig = s.get("signal", "hold")
+            score = s.get("signal_score", 0)
+            if sig == "buy":
+                s["suggested_position"] = 15 if score >= 85 else (10 if score >= 70 else 5)
+            elif sig in ("sell", "sell_half", "sell_weak", "stop_loss", "no_entry"):
+                s["suggested_position"] = 0
+            else:
+                s["suggested_position"] = 0
+
+    valid = [s for s in signals_list if s.get("signal") != "error"]
+    errors = [s for s in signals_list if s.get("signal") == "error"]
+    buy_signals = [s for s in valid if s.get("signal") == "buy"]
+    sell_signals = [s for s in valid if s.get("signal") in ("sell", "sell_half", "sell_weak")]
+
+    # 计算 market_overview
+    biases = [abs(s.get("bias", 0)) for s in valid]
+    max_dev_item = max(valid, key=lambda x: abs(x.get("bias", 0)), default={})
+    above_3 = sum(1 for s in valid if abs(s.get("bias", 0)) >= 3)
+    total_pos = sum(s.get("suggested_position", 0) for s in buy_signals)
+    divergence = "偏离中" if above_3 > 3 else "正常"
+
+    overview = {
+        "avg_deviation": round(sum(biases) / len(biases), 2) if biases else 0,
+        "max_deviation": {
+            "name": max_dev_item.get("name", "—"),
+            "value": round(abs(max_dev_item.get("bias", 0)), 2),
+        },
+        "signal_count": {"buy": len(buy_signals), "sell": len(sell_signals)},
+        "total_suggested_position": total_pos,
+        "above_3pct": above_3,
+        "market_divergence": divergence,
+    }
+
+    return {
+        "status": "success",
+        "timestamp": _dt.now().isoformat(),
+        "data": {
+            "signals": valid,
+            "market_overview": overview,
+            "buy_signals": buy_signals,
+            "sell_signals": sell_signals,
+            "errors": errors,
+        },
+    }
 
 @app.get("/api/v1/dividend_strategy")
 async def get_dividend_strategy(regime: str = None):
@@ -1027,55 +1247,58 @@ class FactorAnalysisRequest(BaseModel):
 @app.post("/api/v1/factor-analysis")
 async def run_factor_analysis(req: FactorAnalysisRequest):
     """
-    因子看板核心 API：计算 IC 分布及分组收益
+    因子看板核心 API V2.0：IC分布 + 分组收益 + 质量评级
     """
     try:
-        from data_manager import FactorDataManager
         dm = FactorDataManager()
         fa = FactorAnalyzer()
         
-        # 1. 获取样本池 (演示逻辑：从 top 30 开始)
+        # 1. 获取样本池
         all_stocks = dm.get_all_stocks()
         if req.stock_pool == "top30":
             sample_codes = all_stocks.head(30)["ts_code"].tolist()
         else:
             sample_codes = all_stocks.head(100)["ts_code"].tolist()
             
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] Factor Analysis: {req.factor_name} on {len(sample_codes)} stocks")
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Factor Analysis V2.0: {req.factor_name} on {len(sample_codes)} stocks")
         
-        # 2. 准备数据 (异步执行，因为涉及大量数据读取)
         def run_analysis():
-            # 确保行情数据已同步 (演示逻辑，实际应按需同步或预同步)
-            # dm.sync_daily_prices(sample_codes) # 可能会很慢，假定已同步
-            
             analysis_data = fa.prepare_analysis_data(sample_codes, req.factor_name)
             if analysis_data.empty:
                 return {"error": "未找到有效数据，请检查数据同步情况"}
                 
             metrics = fa.calculate_metrics(analysis_data, req.factor_name)
             
-            # 3. 序列化转换
             ic_series = metrics["ic_series"]
             q_rets = metrics["quantile_rets"]
             
-            # 如果 q_rets 是 MultiIndex Series，需要展开
             if isinstance(q_rets, pd.Series) and isinstance(q_rets.index, pd.MultiIndex):
                 q_rets = q_rets.unstack()
             
-            # 转为 ECharts 友好格式
+            # V2.0: 构建增强返回数据
+            q_avg_vals = q_rets.mean().values if not q_rets.empty else []
+            
             return {
                 "ic_mean": float(metrics["ic_mean"]),
-                "ic_ir": float(metrics["ir"]), 
+                "ic_ir": float(metrics["ir"]),
+                "ic_win_rate": float(metrics["ic_win_rate"]),
+                "monotonicity": float(metrics["monotonicity"]),
+                "ic_stability": float(metrics["ic_stability"]),
+                "grade": metrics["grade"],
+                "ls_spread": float(metrics["ls_spread"]),
                 "ic_series": {
                     "dates": ic_series.index.strftime("%Y-%m-%d").tolist(),
                     "values": [float(x) if not np.isnan(x) else 0 for x in ic_series.values]
                 },
                 "quantile_rets": {
-                    "quantiles": [f"Q{i+1}" for i in range(5)],
-                    "avg_rets": [float(x) for x in q_rets.mean().values],
+                    "quantiles": [f"Q{i+1}" for i in range(len(q_avg_vals))],
+                    "avg_rets": [float(x) for x in q_avg_vals],
                     "cum_rets": {
-                        "dates": q_rets.index.strftime("%Y-%m-%d").tolist(),
-                        "series": [ ((1 + q_rets[c]).cumprod() - 1).fillna(0).tolist() for c in q_rets.columns ]
+                        "dates": q_rets.index.strftime("%Y-%m-%d").tolist() if not q_rets.empty else [],
+                        "series": [
+                            ((1 + q_rets[c]).cumprod() - 1).fillna(0).tolist()
+                            for c in q_rets.columns
+                        ] if not q_rets.empty else []
                     }
                 }
             }
@@ -1230,19 +1453,297 @@ async def get_market_regime():
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-# --- Industry Tracking API ---
+# --- Industry Tracking API V2.0 (Capital Heat Engine) ---
+
+# --- V2.0 PE 分位 Mock (生产环境应接入 index_dailybasic) ---
+_PE_PERCENTILE_MAP = {
+    "512760.SH": 72.5, "512720.SH": 68.4, "515030.SH": 15.2,
+    "512010.SH": 12.5, "512690.SH": 35.0, "512880.SH": 55.3,
+    "512800.SH": 42.1, "512660.SH": 48.7, "512100.SH": 62.0,
+    "512400.SH": 58.9, "510180.SH": 38.5, "159915.SZ": 45.2
+}
+
+def compute_sector_heat_score(p_df, trend_5d: float) -> dict:
+    """
+    V2.0 资金热度多因子引擎
+    三因子加权: 成交额放量比(40%) + 5D价格动量(35%) + 拥挤度修正(25%)
+    输出: heat_score 0-100, heat_tier 分层标签
+    """
+    if p_df.empty or len(p_df) < 5:
+        return {"heat_score": 30.0, "heat_tier": "❄️ 冷淡", "vol_ratio": 1.0,
+                "vol_score": 50.0, "mom_score": 50.0, "crowd_score": 80.0}
+
+    latest_amount = float(p_df['amount'].iloc[-1]) if 'amount' in p_df.columns else 0
+    vol_ma20 = float(p_df['amount'].tail(20).mean()) if 'amount' in p_df.columns else 1
+
+    # 因子 A: 成交额放量比 (1x=50分, 1.5x=75分, 2x=100分)
+    vol_ratio = latest_amount / vol_ma20 if vol_ma20 > 0 else 1.0
+    vol_score = min(100, max(0, vol_ratio * 50))
+
+    # 因子 B: 5D 价格动量 (0%=50分, +3%=80分, -3%=20分)
+    mom_score = min(100, max(0, 50 + trend_5d * 10))
+
+    # 因子 C: 拥挤度修正 (1x=满分, >2x 开始惩罚)
+    if vol_ratio > 2.0:
+        crowd_score = max(0, 100 - (vol_ratio - 2.0) * 60)
+    else:
+        crowd_score = 80 + min(20, vol_ratio * 10)
+
+    # 加权合成
+    heat_score = vol_score * 0.40 + mom_score * 0.35 + crowd_score * 0.25
+    heat_score = round(min(100, max(0, heat_score)), 1)
+
+    # 分层
+    if heat_score >= 70:
+        tier = "🔥 激进"
+    elif heat_score >= 45:
+        tier = "⚡ 活跃"
+    else:
+        tier = "❄️ 冷淡"
+
+    return {
+        "heat_score": heat_score,
+        "heat_tier": tier,
+        "vol_ratio": round(vol_ratio, 2),
+        "vol_score": round(vol_score, 1),
+        "mom_score": round(mom_score, 1),
+        "crowd_score": round(crowd_score, 1)
+    }
+
+
+def compute_alpha_score(p_df, heat_score: float, trend_5d: float, pe_pct: float) -> dict:
+    """
+    V3.0 综合投资评分引擎 (Alpha Score)
+    四因子加权:
+      热度因子(30%): 直接取 heat_score
+      动量因子(25%): 5D动量(60%) + 20D趋势(40%)，归一化到0-100
+      估值安全(25%): 100 - PE百分位 (低估=高分)
+      趋势强度(20%): 站上MA20 + 站上MA60 + MA20斜率
+    输出: alpha_score 0-100, alpha_grade A/B/C/D/F, trend_strength{}
+    """
+    # --- 因子 1: 热度 (直接复用) ---
+    f_heat = min(100, max(0, heat_score))
+
+    # --- 因子 2: 动量 (5D + 20D 混合) ---
+    ret_20d = 0.0
+    if not p_df.empty and len(p_df) >= 20:
+        ret_20d = round(float((p_df['close'].iloc[-1] / p_df['close'].iloc[-20] - 1) * 100), 2)
+    mom_5d_score = min(100, max(0, 50 + trend_5d * 10))   # 与 heat 同口径
+    mom_20d_score = min(100, max(0, 50 + ret_20d * 5))     # 20D 灵敏度略低
+    f_momentum = mom_5d_score * 0.60 + mom_20d_score * 0.40
+
+    # --- 因子 3: 估值安全 (反转: 低PE=高分) ---
+    f_valuation = min(100, max(0, 100 - pe_pct))
+
+    # --- 因子 4: 趋势强度 (MA体系) ---
+    above_ma20 = False
+    above_ma60 = False
+    ma20_slope = 0.0
+    if not p_df.empty and len(p_df) >= 60:
+        closes = p_df['close'].values
+        ma20 = float(np.mean(closes[-20:]))
+        ma60 = float(np.mean(closes[-60:]))
+        latest = float(closes[-1])
+        above_ma20 = latest > ma20
+        above_ma60 = latest > ma60
+        # MA20 斜率: (MA20_now - MA20_5d_ago) / MA20_5d_ago * 100
+        if len(closes) >= 25:
+            ma20_5d_ago = float(np.mean(closes[-25:-5]))
+            ma20_slope = round((ma20 / ma20_5d_ago - 1) * 100, 3) if ma20_5d_ago > 0 else 0.0
+    elif not p_df.empty and len(p_df) >= 20:
+        closes = p_df['close'].values
+        ma20 = float(np.mean(closes[-20:]))
+        latest = float(closes[-1])
+        above_ma20 = latest > ma20
+
+    trend_pts = 0
+    if above_ma20: trend_pts += 30
+    if above_ma60: trend_pts += 30
+    trend_pts += min(40, max(0, (ma20_slope + 1) * 20))  # 斜率归一化
+    f_trend = min(100, max(0, trend_pts))
+
+    # --- 加权合成 ---
+    alpha_score = f_heat * 0.30 + f_momentum * 0.25 + f_valuation * 0.25 + f_trend * 0.20
+    alpha_score = round(min(100, max(0, alpha_score)), 1)
+
+    # --- 评级 ---
+    if alpha_score >= 80:
+        grade = "A"
+    elif alpha_score >= 65:
+        grade = "B"
+    elif alpha_score >= 50:
+        grade = "C"
+    elif alpha_score >= 35:
+        grade = "D"
+    else:
+        grade = "F"
+
+    return {
+        "alpha_score": alpha_score,
+        "alpha_grade": grade,
+        "ret_20d": ret_20d,
+        "f_heat": round(f_heat, 1),
+        "f_momentum": round(f_momentum, 1),
+        "f_valuation": round(f_valuation, 1),
+        "f_trend": round(f_trend, 1),
+        "trend_strength": {
+            "above_ma20": above_ma20,
+            "above_ma60": above_ma60,
+            "ma20_slope": ma20_slope
+        }
+    }
+
+
+def compute_risk_alerts(vol_ratio: float, pe_pct: float, trend_5d: float,
+                         heat_score: float, crowd_score: float) -> list:
+    """
+    V3.0 风险警示检测引擎
+    根据多个条件产出 0~N 条风险警示或正面信号
+    """
+    alerts = []
+
+    # ⚠️ 拥挤度过高 — 追高风险
+    if vol_ratio > 2.0:
+        alerts.append({
+            "level": "danger",
+            "icon": "🔴",
+            "text": f"拥挤度 {vol_ratio:.1f}x 场内过度拥挤，追高风险极大",
+            "metric": "crowd"
+        })
+    elif vol_ratio > 1.5:
+        alerts.append({
+            "level": "warning",
+            "icon": "🟡",
+            "text": f"拥挤度 {vol_ratio:.1f}x 偏高，注意仓位控制",
+            "metric": "crowd"
+        })
+
+    # ⚠️ PE分位过高 — 估值泡沫
+    if pe_pct > 80:
+        alerts.append({
+            "level": "danger",
+            "icon": "🔴",
+            "text": f"PE分位 {pe_pct:.0f}% 历史极高估区域",
+            "metric": "pe"
+        })
+    elif pe_pct > 70:
+        alerts.append({
+            "level": "warning",
+            "icon": "🟡",
+            "text": f"PE分位 {pe_pct:.0f}% 估值偏高",
+            "metric": "pe"
+        })
+
+    # ⚠️ 短期暴涨 + 拥挤 — 见顶信号
+    if trend_5d > 8 and vol_ratio > 1.5:
+        alerts.append({
+            "level": "danger",
+            "icon": "🔴",
+            "text": f"5D暴涨 +{trend_5d:.1f}% 且拥挤 {vol_ratio:.1f}x → 见顶概率高",
+            "metric": "top_signal"
+        })
+
+    # ⚠️ 热度过热 — 情绪过热
+    if heat_score > 85:
+        alerts.append({
+            "level": "warning",
+            "icon": "🟡",
+            "text": f"热度 {heat_score:.0f} 资金过度聚集，警惕回调",
+            "metric": "overheat"
+        })
+
+    # 🛡️ 正面信号: 深度价值区
+    if pe_pct < 15 and heat_score < 40:
+        alerts.append({
+            "level": "positive",
+            "icon": "💎",
+            "text": f"PE仅 {pe_pct:.0f}% + 关注度低 → 深度价值区",
+            "metric": "deep_value"
+        })
+
+    # 🛡️ 正面信号: 放量突破
+    if vol_ratio > 1.3 and trend_5d > 3 and pe_pct < 50:
+        alerts.append({
+            "level": "positive",
+            "icon": "🚀",
+            "text": f"放量 {vol_ratio:.1f}x 突破 +{trend_5d:.1f}%，估值安全",
+            "metric": "breakout"
+        })
+
+    return alerts
+
+
+def generate_sector_advice(alpha_score: float, alpha_grade: str, heat_score: float,
+                           pe_pct: float, trend_5d: float, trend_strength: dict) -> dict:
+    """
+    V3.0 五级投资建议矩阵
+    基于 Alpha Score 驱动，附带量化买入/止盈策略
+    """
+    above_ma20 = trend_strength.get("above_ma20", False)
+    above_ma60 = trend_strength.get("above_ma60", False)
+
+    if alpha_grade == "A":  # Alpha >= 80
+        return {
+            "text": "低估+放量+强势，最佳配置窗口",
+            "action": "strong_buy",
+            "label": "🟢 强力买入",
+            "buy_strategy": "分批建仓 20%→40%→60%，5-10个交易日完成",
+            "take_profit": "PE分位升至>70% 或 热度分降至<40 或 动量衰减连续3日",
+            "stop_loss": "跌破MA60 无条件止损",
+            "position_cap": "单行业上限60%"
+        }
+    elif alpha_grade == "B":  # Alpha 65-79
+        return {
+            "text": "热度好估值合理，可积极参与",
+            "action": "buy",
+            "label": "🟢 积极关注",
+            "buy_strategy": "左侧小仓试探 10%→20%，确认站稳MA20后加至30%",
+            "take_profit": "热度分降至<40 或 跌破MA20",
+            "stop_loss": "跌破MA60 或 5D回撤>-6%",
+            "position_cap": "单行业上限30%"
+        }
+    elif alpha_grade == "C":  # Alpha 50-64
+        return {
+            "text": "均衡态势，列入观察池等待确认",
+            "action": "watch",
+            "label": "🔵 跟踪观察",
+            "buy_strategy": "暂不建仓，等待Alpha升至65+再介入",
+            "take_profit": "—",
+            "stop_loss": "—",
+            "position_cap": "0%（仅观察）"
+        }
+    elif alpha_grade == "D":  # Alpha 35-49
+        return {
+            "text": "热度降温或估值偏高，谨慎持有",
+            "action": "caution",
+            "label": "🟡 谨慎持有",
+            "buy_strategy": "已持仓者减至半仓，新资金禁入",
+            "take_profit": "立即止盈已有浮盈仓位",
+            "stop_loss": "跌破MA60 全部离场",
+            "position_cap": "已持仓减至<15%"
+        }
+    else:  # F, Alpha < 35
+        return {
+            "text": "冷门+高估+弱势，严格回避",
+            "action": "avoid",
+            "label": "🔴 回避清仓",
+            "buy_strategy": "严禁新建仓",
+            "take_profit": "若持有立即清仓",
+            "stop_loss": "无条件清仓",
+            "position_cap": "0%"
+        }
 
 
 @app.get("/api/v1/industry-tracking")
 async def get_industry_tracking(date: Optional[str] = None):
     """
-    行业追踪核心 API：返回 12 个核心行业 ETF 的表现及排序
+    V3.0 行业追踪核心 API: Alpha Score 综合评分 + 风险警示 + 五级建议矩阵
     """
     try:
         def run_ind_analysis():
             dm = FactorDataManager()
             target_dt = pd.to_datetime(date) if date else pd.Timestamp.now().normalize()
-            
+
             etf_list = [
                 {"code": "512760.SH", "name": "半导体/芯片"},
                 {"code": "512720.SH", "name": "计算机/AI"},
@@ -1257,31 +1758,88 @@ async def get_industry_tracking(date: Optional[str] = None):
                 {"code": "510180.SH", "name": "上证180/主板"},
                 {"code": "159915.SZ", "name": "创业板/成长"}
             ]
-            
+
             sector_data = []
             for etf in etf_list:
                 code = etf['code']
                 p_df = dm.get_price_payload(code)
                 if p_df.empty:
-                    sector_data.append({"ts_code": code, "name": etf['name'], "trend_5d": 0.0})
+                    sector_data.append({
+                        "ts_code": code, "code": code, "name": etf['name'],
+                        "trend_5d": 0.0, "ret_20d": 0.0,
+                        "heat_score": 30.0, "heat_tier": "❄️ 冷淡",
+                        "vol_ratio": 1.0, "vol_score": 50.0, "mom_score": 50.0, "crowd_score": 80.0,
+                        "pe_percentile": _PE_PERCENTILE_MAP.get(code, 50),
+                        "alpha_score": 30.0, "alpha_grade": "F",
+                        "f_heat": 30.0, "f_momentum": 50.0, "f_valuation": 50.0, "f_trend": 0.0,
+                        "trend_strength": {"above_ma20": False, "above_ma60": False, "ma20_slope": 0.0},
+                        "risk_alerts": [],
+                        "advice": "数据同步中", "advice_action": "neutral", "advice_label": "⚪ 等待同步",
+                        "buy_strategy": "等待数据同步后再评估", "take_profit": "—", "stop_loss": "—", "position_cap": "0%"
+                    })
                     continue
-                
-                # 过滤并计算 5 日收益
+
+                # 过滤至目标日期
                 p_df = p_df[p_df['trade_date'] <= target_dt].sort_values('trade_date')
                 if len(p_df) >= 5:
                     ret = (p_df['close'].iloc[-1] / p_df['close'].iloc[-5] - 1)
                     trend = round(float(ret) * 100, 2) if np.isfinite(ret) else 0.0
                 else:
                     trend = 0.0
-                
+
+                # V2.0: 计算资金热度得分
+                heat = compute_sector_heat_score(p_df, trend)
+                pe_pct = _PE_PERCENTILE_MAP.get(code, 50.0)
+
+                # V3.0: 计算 Alpha Score 综合评分
+                alpha = compute_alpha_score(p_df, heat['heat_score'], trend, pe_pct)
+
+                # V3.0: 风险警示检测
+                alerts = compute_risk_alerts(
+                    heat['vol_ratio'], pe_pct, trend,
+                    heat['heat_score'], heat['crowd_score']
+                )
+
+                # V3.0: 生成五级建议 (入参升级为 alpha 驱动)
+                advice = generate_sector_advice(
+                    alpha['alpha_score'], alpha['alpha_grade'],
+                    heat['heat_score'], pe_pct, trend,
+                    alpha['trend_strength']
+                )
+
                 sector_data.append({
-                    "ts_code": code, 
-                    "code": code, # 增加兼容性 key
-                    "name": etf['name'], 
-                    "trend_5d": trend
+                    "ts_code": code, "code": code, "name": etf['name'],
+                    "trend_5d": trend,
+                    # V2.0 热度字段
+                    "heat_score": heat['heat_score'],
+                    "heat_tier": heat['heat_tier'],
+                    "vol_ratio": heat['vol_ratio'],
+                    "vol_score": heat['vol_score'],
+                    "mom_score": heat['mom_score'],
+                    "crowd_score": heat['crowd_score'],
+                    "pe_percentile": pe_pct,
+                    # V3.0 Alpha Score 字段
+                    "alpha_score": alpha['alpha_score'],
+                    "alpha_grade": alpha['alpha_grade'],
+                    "ret_20d": alpha['ret_20d'],
+                    "f_heat": alpha['f_heat'],
+                    "f_momentum": alpha['f_momentum'],
+                    "f_valuation": alpha['f_valuation'],
+                    "f_trend": alpha['f_trend'],
+                    "trend_strength": alpha['trend_strength'],
+                    # V3.0 风险警示
+                    "risk_alerts": alerts,
+                    # V3.0 五级建议
+                    "advice": advice['text'],
+                    "advice_action": advice['action'],
+                    "advice_label": advice['label'],
+                    "buy_strategy": advice.get('buy_strategy', '—'),
+                    "take_profit": advice.get('take_profit', '—'),
+                    "stop_loss": advice.get('stop_loss', '—'),
+                    "position_cap": advice.get('position_cap', '—')
                 })
-            
-            # 影子排序数据兜底 (如果回测或同步未完全就绪)
+
+            # 影子排序数据兜底 (如果同步未就绪)
             if all(r['trend_5d'] == 0.0 for r in sector_data):
                 fallback = {
                     "512760.SH": 2.1, "512720.SH": 1.8, "515030.SH": 1.5,
@@ -1291,8 +1849,31 @@ async def get_industry_tracking(date: Optional[str] = None):
                 }
                 for r in sector_data:
                     r['trend_5d'] = fallback.get(r['ts_code'], 0.0)
-            
-            # 轮动矩阵 (保留核心引擎调用)
+                    heat = compute_sector_heat_score(pd.DataFrame(), r['trend_5d'])
+                    r.update({"heat_score": heat['heat_score'], "heat_tier": heat['heat_tier'], "vol_ratio": 1.0})
+                    pe_pct = r.get('pe_percentile', 50)
+                    alpha = compute_alpha_score(pd.DataFrame(), heat['heat_score'], r['trend_5d'], pe_pct)
+                    r.update({
+                        "alpha_score": alpha['alpha_score'], "alpha_grade": alpha['alpha_grade'],
+                        "ret_20d": 0.0, "f_heat": alpha['f_heat'], "f_momentum": alpha['f_momentum'],
+                        "f_valuation": alpha['f_valuation'], "f_trend": alpha['f_trend'],
+                        "trend_strength": alpha['trend_strength'], "risk_alerts": []
+                    })
+                    adv = generate_sector_advice(
+                        alpha['alpha_score'], alpha['alpha_grade'],
+                        heat['heat_score'], pe_pct, r['trend_5d'],
+                        alpha['trend_strength']
+                    )
+                    r.update({
+                        "advice": adv['text'], "advice_action": adv['action'], "advice_label": adv['label'],
+                        "buy_strategy": adv.get('buy_strategy', '—'), "take_profit": adv.get('take_profit', '—'),
+                        "stop_loss": adv.get('stop_loss', '—'), "position_cap": adv.get('position_cap', '—')
+                    })
+
+            # V3.0: 按 alpha_score 降序排列 (综合评分优先)
+            sector_data.sort(key=lambda x: x.get('alpha_score', 0), reverse=True)
+
+            # 轮动矩阵
             try:
                 engine = IndustryEngine()
                 rotation = engine.get_industry_rotation(base_date=date)
@@ -1306,14 +1887,11 @@ async def get_industry_tracking(date: Optional[str] = None):
                 "hsgt": sector_data[:10],
                 "last_update": datetime.now().strftime("%Y%m%d")
             }
-        
+
         loop = asyncio.get_event_loop()
         results = await loop.run_in_executor(executor, run_ind_analysis)
-        
-        return {
-            "status": "success",
-            "data": results
-        }
+
+        return {"status": "success", "data": results}
     except Exception as e:
         print(f"Industry Analysis Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
