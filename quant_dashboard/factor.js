@@ -1,6 +1,6 @@
 /**
- * AlphaCore Factor Research Terminal V3.0
- * 因子研究终端：Alpha Score + 交易建议 + 多维可视化
+ * AlphaCore Factor Research Terminal V4.0
+ * 因子研究终端：科学评分 + 三档止盈 + 因子百科 + 健康监控 + 推理链
  */
 document.addEventListener('DOMContentLoaded', function () {
     // === DOM ===
@@ -38,10 +38,51 @@ document.addEventListener('DOMContentLoaded', function () {
         C: '边缘因子', D: '噪音因子', F: '无效因子'
     };
 
+    // === 因子百科 (V4.0 新增) ===
+    const FACTOR_WIKI = {
+        roe: {
+            name: 'ROE (净资产收益率)',
+            definition: '净利润 ÷ 平均股东权益 × 100%',
+            quant_meaning: '衡量公司用股东资金创造利润的效率，高ROE → 盈利能力强 → 理论上应获得超额收益',
+            empirical: 'A股实证IC均值通常 0.01-0.03 (偏弱)，但多空价差常为正，长期有微弱Alpha',
+            trap: '高杠杆也会放大ROE，需结合负债率交叉验证; 周期性行业ROE波动大'
+        },
+        eps: {
+            name: 'EPS (每股收益)',
+            definition: '净利润 ÷ 总股本',
+            quant_meaning: '标准化的盈利指标，可跨公司比较。高EPS → 强现金流 → 市场偏好',
+            empirical: 'A股实证IC通常 0.02-0.04，在消费/科技板块表现较好',
+            trap: '一次性收益(如资产出售)会扭曲EPS; 不同行业EPS区间差异极大'
+        },
+        netprofit_margin: {
+            name: '销售净利率',
+            definition: '净利润 ÷ 营业收入 × 100%',
+            quant_meaning: '衡量销售转化为利润的效率，高净利率 → 护城河深 → 抗风险能力强',
+            empirical: 'A股实证IC通常 0.01-0.03，在高毛利行业(医药/软件)区分度更高',
+            trap: '不同行业净利率天然差异大(银行2-3% vs 软件30%+)，建议行业内比较'
+        },
+        bps: {
+            name: 'BPS (每股净资产)',
+            definition: '(总资产 - 总负债) ÷ 总股本',
+            quant_meaning: '价值因子的基石，低PB(=Price/BPS)→ 被低估 → 均值回归收益',
+            empirical: 'A股实证BPS本身IC较弱，但PB(市净率)是最经典的价值因子之一',
+            trap: 'BPS不反映无形资产价值(品牌/专利); 轻资产公司BPS低但可能很赚钱'
+        },
+        debt_to_assets: {
+            name: '资产负债率',
+            definition: '总负债 ÷ 总资产 × 100%',
+            quant_meaning: '风险因子，高负债率 → 财务风险大 → 理论上低负债应获正超额收益(质量溢价)',
+            empirical: 'A股实证IC通常为负(低负债组表现好)，需反转因子方向使用',
+            trap: '金融行业天然高杠杆(85%+)，需剔除或行业中性化处理'
+        }
+    };
+
     // === 初始化 ===
     function init() {
         renderFactorNav();
+        renderFactorWiki(currentFactor);
         initDrawer();
+        initReasoningToggle();
         runBtn.addEventListener('click', () => runAnalysis(currentFactor));
         drawerRunBtn.addEventListener('click', () => {
             closeDrawer();
@@ -52,7 +93,47 @@ document.addEventListener('DOMContentLoaded', function () {
         runAnalysis('roe');
     }
 
-    // === 因子导航条 (V3.0: 带 Alpha Score) ===
+    // === 因子百科渲染 (V4.0) ===
+    function renderFactorWiki(factorKey) {
+        const wiki = FACTOR_WIKI[factorKey];
+        if (!wiki) return;
+        document.getElementById('wiki-title').textContent = `📖 ${wiki.name}`;
+        document.getElementById('wiki-content').innerHTML = `
+            <div class="wiki-item">
+                <div class="wiki-item-title">📐 定义</div>
+                <div class="wiki-item-text">${wiki.definition}</div>
+            </div>
+            <div class="wiki-item">
+                <div class="wiki-item-title">🔬 量化含义</div>
+                <div class="wiki-item-text">${wiki.quant_meaning}</div>
+            </div>
+            <div class="wiki-item">
+                <div class="wiki-item-title">📊 A股实证</div>
+                <div class="wiki-item-text">${wiki.empirical}</div>
+            </div>
+            <div class="wiki-item">
+                <div class="wiki-item-title">⚠️ 常见陷阱</div>
+                <div class="wiki-item-text wiki-warn">${wiki.trap}</div>
+            </div>
+        `;
+    }
+
+    // 百科折叠
+    document.getElementById('wiki-toggle-btn').addEventListener('click', () => {
+        document.getElementById('wiki-card').classList.toggle('open');
+    });
+
+    // === 推理链折叠 ===
+    function initReasoningToggle() {
+        const toggle = document.getElementById('reasoning-toggle');
+        const strip = document.getElementById('reasoning-strip');
+        toggle.addEventListener('click', () => {
+            strip.classList.toggle('open');
+            toggle.classList.toggle('open');
+        });
+    }
+
+    // === 因子导航条 ===
     function renderFactorNav() {
         factorNav.innerHTML = FACTORS.map(f => {
             const cached = factorCache[f.key];
@@ -83,6 +164,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 currentFactor = key;
                 document.getElementById('factor-select').value = key;
                 highlightNav(key);
+                renderFactorWiki(key);
                 runAnalysis(key);
             });
         });
@@ -123,7 +205,7 @@ document.addEventListener('DOMContentLoaded', function () {
         initCharts();
 
         try {
-            showLoading('正在计算 Alpha Score...', 35);
+            showLoading('正在计算 Alpha Score V4.0...', 35);
 
             const response = await fetch('/api/v1/factor-analysis', {
                 method: 'POST',
@@ -176,6 +258,7 @@ document.addEventListener('DOMContentLoaded', function () {
         renderAlphaGauge(data);
         renderMetrics(data);
         renderAdvice(data);
+        renderHealthLamps(data);
         renderRadar(data);
         renderICChart(data);
         renderQuantileAvg(data);
@@ -188,14 +271,9 @@ document.addEventListener('DOMContentLoaded', function () {
         const grade = data.grade;
         const color = GRADE_COLORS[grade] || '#94a3b8';
 
-        // 更新评级标签
         const gradeEl = document.getElementById('asc-grade');
         gradeEl.textContent = `${grade} 级 · ${GRADE_LABELS[grade]}`;
         gradeEl.style.color = color;
-
-        // 更新卡片边框色
-        document.getElementById('alpha-score-card').style.borderColor =
-            color.replace(')', ', 0.3)').replace('rgb', 'rgba').replace('#', '');
 
         charts.gauge.setOption({
             backgroundColor: 'transparent',
@@ -233,34 +311,32 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // --- 指标卡 ---
+    // --- 指标卡 V4.0 (带阈值条) ---
     function renderMetrics(data) {
-        // IC均值
         setMetric('m-ic-mean', data.ic_mean.toFixed(4),
-            Math.abs(data.ic_mean) > 0.03 ? 'mc-good' : Math.abs(data.ic_mean) > 0.01 ? 'mc-warn' : 'mc-bad');
+            Math.abs(data.ic_mean) > 0.03 ? 'mc-good' : Math.abs(data.ic_mean) > 0.01 ? 'mc-warn' : 'mc-bad',
+            'bar-ic', Math.min(100, Math.abs(data.ic_mean) / 0.05 * 100));
 
-        // IR
         setMetric('m-ir', data.ic_ir.toFixed(3),
-            Math.abs(data.ic_ir) > 0.5 ? 'mc-good' : Math.abs(data.ic_ir) > 0.2 ? 'mc-warn' : 'mc-bad');
+            Math.abs(data.ic_ir) > 0.3 ? 'mc-good' : Math.abs(data.ic_ir) > 0.1 ? 'mc-warn' : 'mc-bad',
+            'bar-ir', Math.min(100, Math.abs(data.ic_ir) / 0.5 * 100));
 
-        // IC胜率
         setMetric('m-win-rate', (data.ic_win_rate * 100).toFixed(1) + '%',
-            data.ic_win_rate > 0.55 ? 'mc-good' : data.ic_win_rate > 0.45 ? 'mc-warn' : 'mc-bad');
+            data.ic_win_rate > 0.55 ? 'mc-good' : data.ic_win_rate > 0.45 ? 'mc-warn' : 'mc-bad',
+            'bar-win', Math.min(100, Math.max(0, (data.ic_win_rate - 0.4) / 0.3 * 100)));
 
-        // 单调性
         setMetric('m-mono', data.monotonicity.toFixed(2),
-            data.monotonicity > 0.8 ? 'mc-good' : data.monotonicity > 0.5 ? 'mc-warn' : 'mc-bad');
+            data.monotonicity > 0.8 ? 'mc-good' : data.monotonicity > 0.5 ? 'mc-warn' : 'mc-bad',
+            'bar-mono', data.monotonicity * 100);
 
-        // IC稳定性
         setMetric('m-stability', data.ic_stability.toFixed(2),
-            (data.ic_stability > 0.7 && data.ic_stability < 1.3) ? 'mc-good' : 'mc-warn');
+            (data.ic_stability > 0.7 && data.ic_stability < 1.3) ? 'mc-good' :
+            (data.ic_stability > 0.5 && data.ic_stability < 1.5) ? 'mc-warn' : 'mc-bad',
+            'bar-stab', Math.max(0, (1 - Math.abs(data.ic_stability - 1)) * 100));
 
-        // 多空价差
         setMetric('m-ls-spread', (data.ls_spread * 10000).toFixed(1) + 'bp',
-            data.ls_spread > 0 ? 'mc-good' : 'mc-bad');
-
-        // 样本量
-        document.getElementById('m-samples').textContent = data.ic_series.dates.length;
+            data.ls_spread > 0.001 ? 'mc-good' : data.ls_spread >= 0 ? 'mc-warn' : 'mc-bad',
+            'bar-ls', Math.min(100, Math.max(0, data.ls_spread / 0.005 * 100)));
 
         // 评级
         const gradeEl = document.getElementById('m-grade');
@@ -268,15 +344,22 @@ document.addEventListener('DOMContentLoaded', function () {
         gradeEl.style.color = GRADE_COLORS[data.grade] || '#94a3b8';
     }
 
-    function setMetric(id, value, cssClass) {
+    function setMetric(id, value, cssClass, barId, barPct) {
         const el = document.getElementById(id);
         el.textContent = value;
         const card = el.closest('.metric-card');
         card.classList.remove('mc-good', 'mc-warn', 'mc-bad');
         if (cssClass) card.classList.add(cssClass);
+        // 阈值条
+        if (barId) {
+            const bar = document.getElementById(barId);
+            if (bar) {
+                bar.style.width = Math.max(3, Math.min(100, barPct)) + '%';
+            }
+        }
     }
 
-    // --- 交易建议卡 ---
+    // --- 交易建议卡 V4.0 ---
     function renderAdvice(data) {
         const adv = data.advice;
         if (!adv) return;
@@ -286,57 +369,79 @@ document.addEventListener('DOMContentLoaded', function () {
         signalEl.textContent = adv.signal_label;
         signalEl.style.color = adv.signal_color;
 
-        // 持有期
+        // 持有期 + 注释
         document.getElementById('adv-hold').textContent = adv.hold_period;
+        const holdNote = document.getElementById('adv-hold-note');
+        if (holdNote) holdNote.textContent = adv.hold_note || '';
 
-        // 止盈
-        document.getElementById('adv-target').textContent = '+' + adv.target_ret + '%';
-        document.getElementById('adv-target').style.color = '#34d399';
+        // 三档止盈 V4.0
+        document.getElementById('adv-target-t2').textContent = '+' + parseFloat(adv.target_t2).toFixed(2) + '%';
+        document.getElementById('adv-t1').textContent = 'T1 +' + parseFloat(adv.target_t1).toFixed(2) + '%';
+        document.getElementById('adv-t2-badge').textContent = 'T2 +' + parseFloat(adv.target_t2).toFixed(2) + '%';
+        document.getElementById('adv-t3').textContent = 'T3 +' + parseFloat(adv.target_t3).toFixed(2) + '%';
 
         // 止损
-        document.getElementById('adv-stop').textContent = '-' + adv.stop_loss + '%';
-        document.getElementById('adv-stop').style.color = '#f87171';
+        document.getElementById('adv-stop').textContent = '-' + parseFloat(adv.stop_loss).toFixed(2) + '%';
 
         // 仓位
         document.getElementById('adv-position').textContent = adv.position_pct + '%';
-        document.getElementById('adv-position').style.color = '#60a5fa';
+        document.getElementById('adv-position').style.color = adv.position_pct > 0 ? '#60a5fa' : '#f87171';
 
         // 置信度
-        document.getElementById('advice-confidence').textContent =
-            `置信度: ${adv.confidence}%`;
+        document.getElementById('adv-confidence-val').textContent = adv.confidence + '%';
+        document.getElementById('advice-confidence').textContent = `置信度: ${adv.confidence}%`;
+
+        // 推理链 V4.0
+        const reasoningText = document.getElementById('reasoning-text');
+        if (adv.reasoning) {
+            reasoningText.textContent = adv.reasoning;
+        }
 
         // 风险提示
-        const riskStrip = document.getElementById('risk-strip');
+        const riskMsg = document.getElementById('risk-message');
         const riskText = document.getElementById('risk-text');
+        const riskIcon = document.getElementById('risk-icon');
         const risks = adv.risks || [];
 
         if (risks.length > 0) {
-            riskText.textContent = risks.join(' | ');
-            // 判断风险等级
-            const hasHighRisk = risks.some(r =>
-                r.includes('失效') || r.includes('为负') || r.includes('不建议'));
-            const hasWarn = risks.some(r =>
-                r.includes('不足') || r.includes('放大') || r.includes('低于'));
+            // V4.0: risks 是对象数组 {level, text}
+            const textParts = risks.map(r => typeof r === 'string' ? r : r.text);
+            riskText.textContent = textParts.join(' | ');
 
-            riskStrip.className = 'risk-strip ' + (
+            const hasHighRisk = risks.some(r =>
+                (r.level === 'danger') ||
+                (typeof r === 'string' && (r.includes('失效') || r.includes('为负') || r.includes('不建议'))));
+            const hasWarn = risks.some(r =>
+                (r.level === 'warn') ||
+                (typeof r === 'string' && (r.includes('不足') || r.includes('放大') || r.includes('低于'))));
+
+            riskMsg.className = 'risk-message ' + (
                 hasHighRisk ? 'risk-danger' :
                 hasWarn ? 'risk-warn' : 'risk-ok'
             );
-            document.querySelector('#risk-strip .risk-icon').textContent =
-                hasHighRisk ? '🚨' : hasWarn ? '⚠️' : '✅';
+            riskIcon.textContent = hasHighRisk ? '🚨' : hasWarn ? '⚠️' : '✅';
         }
     }
 
-    // --- 因子质量雷达图 (V3.0: 使用 score_breakdown) ---
+    // --- 健康监控灯 V4.0 ---
+    function renderHealthLamps(data) {
+        const container = document.getElementById('health-lamps');
+        const items = data.health_status || [];
+        if (items.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+        container.innerHTML = items.map(item => `
+            <div class="health-lamp" title="${item.detail || ''}">
+                <span class="lamp-dot ${item.status}"></span>
+                <span>${item.label}</span>
+            </div>
+        `).join('');
+    }
+
+    // --- 因子质量雷达图 ---
     function renderRadar(data) {
         const bd = data.score_breakdown || {};
-        const ic_score = bd.ic_strength || 0;
-        const ir_score = bd.ir_stability || 0;
-        const win_score = bd.win_rate || 0;
-        const mono_score = bd.monotonicity || 0;
-        const stab_score = bd.decay_health || 0;
-        const ls_score = bd.ls_profit || 0;
-
         const color = GRADE_COLORS[data.grade] || '#94a3b8';
 
         charts.radar.setOption({
@@ -362,7 +467,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 symbol: 'circle',
                 symbolSize: 5,
                 data: [{
-                    value: [ic_score, ir_score, win_score, mono_score, stab_score, ls_score],
+                    value: [
+                        bd.ic_strength || 0, bd.ir_stability || 0, bd.win_rate || 0,
+                        bd.monotonicity || 0, bd.decay_health || 0, bd.ls_profit || 0
+                    ],
                     name: '因子画像',
                     lineStyle: { color: color, width: 2 },
                     itemStyle: { color: color },
@@ -372,16 +480,22 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // --- IC 时间序列 ---
+    // --- IC 时间序列 (V4.0: 含 ±2σ 波动带) ---
     function renderICChart(data) {
         const dates = data.ic_series.dates;
         const values = data.ic_series.values;
+        const icStd = data.ic_std || 0;
+        const icMean = data.ic_mean || 0;
 
         const ma20 = values.map((_, i) => {
             if (i < 19) return null;
             const slice = values.slice(i - 19, i + 1);
             return slice.reduce((a, b) => a + b, 0) / 20;
         });
+
+        // ±2σ 波动带 V4.0
+        const upper2s = values.map(() => icMean + 2 * icStd);
+        const lower2s = values.map(() => icMean - 2 * icStd);
 
         charts.ic.setOption({
             backgroundColor: 'transparent',
@@ -392,7 +506,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 textStyle: { color: '#e2e8f0', fontSize: 12 }
             },
             legend: {
-                data: ['Rank IC', 'MA20'],
+                data: ['Rank IC', 'MA20', '+2σ', '-2σ'],
                 textStyle: { color: '#64748b', fontSize: 11 },
                 top: 0, right: 10
             },
@@ -423,6 +537,18 @@ document.addEventListener('DOMContentLoaded', function () {
                     smooth: true, showSymbol: false,
                     lineStyle: { color: '#f59e0b', width: 2 },
                     z: 10
+                },
+                {
+                    name: '+2σ', type: 'line', data: upper2s,
+                    showSymbol: false,
+                    lineStyle: { color: 'rgba(239,68,68,0.3)', width: 1, type: 'dashed' },
+                    z: 5
+                },
+                {
+                    name: '-2σ', type: 'line', data: lower2s,
+                    showSymbol: false,
+                    lineStyle: { color: 'rgba(239,68,68,0.3)', width: 1, type: 'dashed' },
+                    z: 5
                 }
             ]
         });
@@ -458,7 +584,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 type: 'text',
                 left: 'center', top: 10,
                 style: {
-                    text: `单调性: ${data.monotonicity.toFixed(2)}  |  Alpha Score: ${data.alpha_score}`,
+                    text: `单调性: ${data.monotonicity.toFixed(2)}  |  Alpha Score: ${data.alpha_score}  |  ${data.grade}级`,
                     fill: data.monotonicity > 0.8 ? '#34d399' : data.monotonicity > 0.5 ? '#fbbf24' : '#f87171',
                     fontSize: 11, fontWeight: 700, fontFamily: 'Outfit'
                 }
