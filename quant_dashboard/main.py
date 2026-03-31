@@ -13,11 +13,14 @@ from typing import Dict, List, Optional
 from concurrent.futures import ThreadPoolExecutor
 import time
 import traceback
+import threading
+import copy
 from datetime import datetime, timedelta
 from mean_reversion_engine import run_strategy, detect_regime, get_all_regime_params, load_regime_params, needs_reoptimize
 from dividend_trend_engine import run_dividend_strategy
 from momentum_rotation_engine import run_momentum_strategy
 from momentum_backtest_engine import run_momentum_backtest, run_momentum_optimize
+from erp_timing_engine import get_erp_engine
 from data_manager import FactorDataManager
 from industry_engine import IndustryEngine
 from portfolio_engine import PortfolioEngine
@@ -72,6 +75,64 @@ def _get_cache_ttl() -> int:
     return 300 if in_session else 3600
 
 CACHE_TTL = 3600  # 向下兼容，实际使用 _get_cache_ttl()
+
+# ─── 收盘后自动预热缓存 (每日 15:30 触发) ───
+
+def _warmup_erp_cache():
+    """后台预热 ERP 引擎缓存: 拉取最新 PE/Yield/M1 + 生成报告"""
+    try:
+        engine = get_erp_engine()
+        report = engine.generate_report()
+        status = report.get('status', 'unknown')
+        snap = report.get('current_snapshot', {})
+        erp = snap.get('erp_value', '?')
+        print(f"[ERP Warmup] 预热完成 · status={status} · ERP={erp}%")
+    except Exception as e:
+        print(f"[ERP Warmup] 预热失败: {e}")
+
+def _warmup_dashboard_cache():
+    """后台预热量化总览缓存: 强制清除旧缓存, 触发全量策略引擎刷新"""
+    try:
+        # 清除旧缓存, 强制下次请求全量刷新
+        STRATEGY_CACHE["last_update"] = None
+        STRATEGY_CACHE["dashboard_data"] = None
+        print(f"[Dashboard Warmup] 缓存已清除, 下次请求将触发全量策略引擎")
+        # 注: 实际全量刷新由下一次 HTTP 请求触发 (因为 async 函数无法在 threading 中直接调用)
+        # 但清除缓存确保收盘后第一次访问会拿到最新数据
+    except Exception as e:
+        print(f"[Dashboard Warmup] 预热失败: {e}")
+
+def _schedule_daily_warmup():
+    """计算距下一个 15:30 的秒数, 注册定时器"""
+    now = datetime.now()
+    # 目标: 今天或明天的 15:30
+    target = now.replace(hour=15, minute=30, second=0, microsecond=0)
+    if now >= target:
+        target += timedelta(days=1)
+    # 跳过周末
+    while target.weekday() >= 5:  # 5=周六, 6=周日
+        target += timedelta(days=1)
+    delay = (target - now).total_seconds()
+    print(f"[Scheduler] 下次预热: {target.strftime('%Y-%m-%d %H:%M')} ({delay/3600:.1f}h后)")
+    timer = threading.Timer(delay, _daily_warmup_callback)
+    timer.daemon = True
+    timer.start()
+
+def _daily_warmup_callback():
+    """定时回调: 执行全部预热 + 注册下一次"""
+    print(f"[Scheduler] ⏰ 收盘预热触发 @ {datetime.now().strftime('%H:%M:%S')}")
+    _warmup_erp_cache()
+    _warmup_dashboard_cache()
+    _schedule_daily_warmup()  # 注册明天的
+
+@app.on_event("startup")
+async def startup_event():
+    """服务启动: 后台预热 ERP + 注册每日定时任务"""
+    # 异步预热 (不阻塞启动)
+    threading.Thread(target=_warmup_erp_cache, daemon=True).start()
+    # 注册收盘后定时预热
+    _schedule_daily_warmup()
+    print("[Startup] AlphaCore 服务启动完成 · ERP预热已触发 · 每日15:30自动刷新ERP+Dashboard")
 
 # --- AlphaCore DMSO Sub-Engines (V3.3 机构级) ---
 
@@ -515,6 +576,75 @@ async def get_dashboard_data():
         ttl_type = "盘中5min" if ttl == 300 else ("周末24h" if ttl == 86400 else "盘后1h")
         print(f"[{datetime.now().strftime('%H:%M:%S')}] Dashboard Cache Hit [{ttl_type}] ({age}s ago).")
         return STRATEGY_CACHE["dashboard_data"]
+
+    # ─── 盘中热刷新: 只刷 VIX/CNY, 策略引擎不重跑 ───
+    now_dt = datetime.now()
+    is_trading_hours = now_dt.weekday() < 5 and ((now_dt.hour == 9 and now_dt.minute >= 30) or (10 <= now_dt.hour < 15))
+    has_strategy_cache = STRATEGY_CACHE["dashboard_data"] is not None
+
+    if is_trading_hours and has_strategy_cache:
+        # 盘中: 只拉 VIX + CNY (约 2 秒), 合并旧策略数据
+        print(f"[{now_dt.strftime('%H:%M:%S')}] ⚡ 盘中热刷新: 仅更新 VIX/CNY, 跳过策略引擎")
+        try:
+            loop = asyncio.get_event_loop()
+            def _fetch_yf(ticker, period="5d"):
+                try:
+                    return yf.Ticker(ticker).history(period=period, timeout=5)
+                except:
+                    return pd.DataFrame()
+
+            vix_hist, cny_hist = await asyncio.gather(
+                loop.run_in_executor(executor, _fetch_yf, "^VIX", "5d"),
+                loop.run_in_executor(executor, _fetch_yf, "USDCNY=X", "2d")
+            )
+
+            # 解析 VIX
+            hot_vix, hot_vix_change, hot_vix_status = 18.25, 0.0, "neutral"
+            if not vix_hist.empty and len(vix_hist) >= 2:
+                hot_vix = float(vix_hist['Close'].iloc[-1])
+                prev_vix = float(vix_hist['Close'].iloc[-2])
+                hot_vix_change = ((hot_vix - prev_vix) / prev_vix) * 100
+                hot_vix_status = "down" if hot_vix_change < 0 else "up"
+
+            # 解析 CNY
+            hot_cny = 7.23
+            if not cny_hist.empty:
+                hot_cny = float(cny_hist['Close'].iloc[-1])
+
+            # VIX 分析
+            hot_vix_analysis = get_vix_analysis(hot_vix)
+
+            # 复制旧缓存, 只更新 VIX/CNY 相关字段
+            hot_data = copy.deepcopy(STRATEGY_CACHE["dashboard_data"])
+            mc = hot_data["data"]["macro_cards"]
+            mc["vix"] = {
+                "value": round(hot_vix, 2),
+                "trend": f"{round(hot_vix_change, 1)}%",
+                "status": hot_vix_status,
+                "regime": hot_vix_analysis["label"],
+                "class": hot_vix_analysis["class"],
+                "desc": hot_vix_analysis.get("desc", ""),
+                "percentile": hot_vix_analysis.get("percentile", 0)
+            }
+            # 更新决策矩阵中的 VIX 相关字段
+            if mc.get("regime_banner"):
+                mc["regime_banner"]["vix"] = round(hot_vix, 2)
+                mc["regime_banner"]["vix_label"] = hot_vix_analysis.get("label", "—")
+            if mc.get("market_temp"):
+                mc["market_temp"]["market_vix_multiplier"] = hot_vix_analysis["multiplier"]
+            # 更新明日决策矩阵
+            mc["tomorrow_plan"] = get_tomorrow_plan(hot_vix_analysis, mc.get("market_temp", {}).get("value", 50))
+            hot_data["timestamp"] = now_dt.isoformat()
+
+            # 更新缓存
+            STRATEGY_CACHE["last_update"] = current_time
+            STRATEGY_CACHE["dashboard_data"] = hot_data
+            print(f"[{now_dt.strftime('%H:%M:%S')}] ⚡ 热刷新完成: VIX={hot_vix:.2f} CNY={hot_cny:.4f}")
+            return hot_data
+        except Exception as e:
+            print(f"[Hot Refresh] 降级到全量刷新: {e}")
+            # fall through to full refresh below
+
 
     # 默认值初始化
     capital_value, capital_trend, capital_status = "---", "数据提取中", "up"
@@ -1008,6 +1138,235 @@ async def get_momentum_strategy():
         return STRATEGY_CACHE["strategy_results"]["mom"]
     return await asyncio.get_event_loop().run_in_executor(executor, run_momentum_strategy)
 
+# ─────────────────────────────────────────────
+# 三策略并行执行 + 共振分析 API (V2.0)
+# ─────────────────────────────────────────────
+def _extract_signals_normalized(strategy_type: str, raw_result) -> list:
+    """从各策略原始返回中提取标准化信号列表"""
+    if strategy_type == "mr":
+        if isinstance(raw_result, dict) and "data" in raw_result:
+            return raw_result["data"].get("signals", [])
+        if isinstance(raw_result, list):
+            return [s for s in raw_result if s.get("signal") != "error"]
+        return []
+    elif strategy_type == "div":
+        if isinstance(raw_result, dict) and "data" in raw_result:
+            return raw_result["data"].get("signals", [])
+        return []
+    elif strategy_type == "mom":
+        if isinstance(raw_result, dict) and "data" in raw_result:
+            return raw_result["data"].get("signals", [])
+        return []
+    return []
+
+
+def _compute_resonance(mr_signals, div_signals, mom_signals):
+    """计算三策略信号共振：找到多策略一致看好/看空的重叠标的"""
+    # 建立 code -> signal 映射
+    def build_map(signals):
+        m = {}
+        for s in signals:
+            code = s.get("ts_code") or s.get("code", "")
+            if code:
+                m[code] = {
+                    "name": s.get("name", ""),
+                    "signal": s.get("signal", "hold"),
+                    "score": s.get("signal_score", 0),
+                    "position": s.get("suggested_position", 0),
+                }
+        return m
+
+    mr_map = build_map(mr_signals)
+    div_map = build_map(div_signals)
+    mom_map = build_map(mom_signals)
+
+    all_codes = set(list(mr_map.keys()) + list(div_map.keys()) + list(mom_map.keys()))
+
+    consensus_buy = []
+    consensus_sell = []
+    divergence = []
+
+    for code in all_codes:
+        mr_s = mr_map.get(code, {})
+        div_s = div_map.get(code, {})
+        mom_s = mom_map.get(code, {})
+
+        # 至少出现在2个策略中
+        present = sum([1 for s in [mr_s, div_s, mom_s] if s])
+        if present < 2:
+            continue
+
+        name = mr_s.get("name") or div_s.get("name") or mom_s.get("name", code)
+        signals = {
+            "mr": mr_s.get("signal", "-"),
+            "div": div_s.get("signal", "-"),
+            "mom": mom_s.get("signal", "-"),
+        }
+
+        buy_count = sum(1 for v in signals.values() if v == "buy")
+        sell_count = sum(1 for v in signals.values() if v in ("sell", "sell_half", "sell_weak"))
+
+        entry = {
+            "code": code,
+            "name": name,
+            "signals": signals,
+            "scores": {
+                "mr": mr_s.get("score", 0),
+                "div": div_s.get("score", 0),
+                "mom": mom_s.get("score", 0),
+            },
+        }
+
+        if buy_count >= 2:
+            entry["resonance"] = "strong_buy"
+            entry["label"] = "Strong Buy Resonance"
+            consensus_buy.append(entry)
+        elif sell_count >= 2:
+            entry["resonance"] = "strong_sell"
+            entry["label"] = "Strong Sell Resonance"
+            consensus_sell.append(entry)
+        elif buy_count >= 1 and sell_count >= 1:
+            entry["resonance"] = "divergence"
+            entry["label"] = "Signal Divergence"
+            divergence.append(entry)
+
+    # 按共振强度排序
+    consensus_buy.sort(key=lambda x: sum(x["scores"].values()), reverse=True)
+    consensus_sell.sort(key=lambda x: sum(x["scores"].values()))
+
+    return {
+        "consensus_buy": consensus_buy,
+        "consensus_sell": consensus_sell,
+        "divergence": divergence,
+        "total_overlap": len(consensus_buy) + len(consensus_sell) + len(divergence),
+    }
+
+
+def _compute_risk_overlay(all_signals):
+    """计算风险覆盖层：集中度+波动率预警"""
+    # 统计行业/板块集中度
+    sector_counts = {}
+    vol_alerts = []
+
+    for s in all_signals:
+        group = s.get("group", s.get("sector", "unknown"))
+        if group and group != "unknown":
+            sector_counts[group] = sector_counts.get(group, 0) + 1
+
+        vol = s.get("vol_30d", s.get("annualized_vol", 0))
+        if vol and float(vol) > 25:
+            vol_alerts.append({
+                "name": s.get("name", ""),
+                "code": s.get("ts_code") or s.get("code", ""),
+                "vol_30d": round(float(vol), 1),
+            })
+
+    # 找最集中的板块
+    top_sector = max(sector_counts, key=sector_counts.get) if sector_counts else "N/A"
+    top_ratio = round(sector_counts.get(top_sector, 0) / max(len(all_signals), 1) * 100) if sector_counts else 0
+
+    # 波动率预警按波动率降序
+    vol_alerts.sort(key=lambda x: x["vol_30d"], reverse=True)
+
+    return {
+        "concentration": {
+            "top_sector": top_sector,
+            "ratio": f"{top_ratio}%",
+            "sectors": dict(sorted(sector_counts.items(), key=lambda x: x[1], reverse=True)[:5]),
+        },
+        "volatility_alerts": vol_alerts[:5],
+        "alert_count": len(vol_alerts),
+    }
+
+
+@app.get("/api/v1/strategy/run-all")
+async def run_all_strategies():
+    """V2.0 三策略并行执行 + 共振分析 + 风险覆盖"""
+    from datetime import datetime as _dt
+    loop = asyncio.get_event_loop()
+
+    try:
+        # 并行执行3策略
+        mr_task = loop.run_in_executor(executor, run_strategy)
+        div_task = loop.run_in_executor(executor, lambda: run_dividend_strategy(regime=None))
+        mom_task = loop.run_in_executor(executor, run_momentum_strategy)
+
+        mr_raw, div_raw, mom_raw = await asyncio.gather(mr_task, div_task, mom_task)
+
+        # 包装 MR 结果
+        mr_result = _wrap_mr_results(mr_raw) if isinstance(mr_raw, list) else mr_raw
+        div_result = div_raw
+        mom_result = mom_raw
+
+        # 缓存
+        STRATEGY_CACHE["strategy_results"]["mr"] = mr_result
+        STRATEGY_CACHE["strategy_results"]["div"] = div_result
+        STRATEGY_CACHE["strategy_results"]["mom"] = mom_result
+
+        # 提取标准化信号
+        mr_signals = _extract_signals_normalized("mr", mr_result)
+        div_signals = _extract_signals_normalized("div", div_result)
+        mom_signals = _extract_signals_normalized("mom", mom_result)
+
+        # 共振分析
+        resonance = _compute_resonance(mr_signals, div_signals, mom_signals)
+
+        # 风险覆盖
+        all_buy_signals = (
+            [s for s in mr_signals if s.get("signal") == "buy"] +
+            [s for s in div_signals if s.get("signal") == "buy"] +
+            [s for s in mom_signals if s.get("signal") == "buy"]
+        )
+        risk_overlay = _compute_risk_overlay(all_buy_signals)
+
+        # 全局指标
+        mr_ov = mr_result.get("data", {}).get("market_overview", {}) if isinstance(mr_result, dict) else {}
+        div_ov = div_result.get("data", {}).get("market_overview", {}) if isinstance(div_result, dict) else {}
+        mom_ov = mom_result.get("data", {}).get("market_overview", {}) if isinstance(mom_result, dict) else {}
+
+        mr_regime = mr_signals[0].get("regime", "RANGE") if mr_signals else "RANGE"
+        total_buy = mr_ov.get("signal_count", {}).get("buy", 0) + div_ov.get("buy_count", 0) + mom_ov.get("buy_count", 0)
+        total_sell = mr_ov.get("signal_count", {}).get("sell", 0) + div_ov.get("sell_count", 0) + mom_ov.get("sell_count", 0)
+
+        # 三策略建议仓位加权平均
+        mr_pos = mr_ov.get("total_suggested_position", 0)
+        div_pos = div_ov.get("total_suggested_pos", 0)
+        mom_pos = mom_ov.get("total_suggested_pos", 0)
+        avg_pos = round((mr_pos * 0.4 + div_pos * 0.35 + mom_pos * 0.25))
+
+        # 策略一致性评估
+        regimes = [mr_regime]
+        div_regime = div_result.get("data", {}).get("regime_params", {}).get("regime", "RANGE") if isinstance(div_result, dict) else "RANGE"
+        regimes.append(div_regime)
+        consistency = "high" if len(set(regimes)) == 1 else "low"
+
+        return {
+            "status": "success",
+            "timestamp": _dt.now().isoformat(),
+            "data": {
+                "global": {
+                    "regime": mr_regime,
+                    "total_position": avg_pos,
+                    "total_buy": total_buy,
+                    "total_sell": total_sell,
+                    "consistency": consistency,
+                    "strategy_count": 3,
+                },
+                "strategies": {
+                    "mr": mr_result.get("data", mr_result) if isinstance(mr_result, dict) else {"signals": mr_signals},
+                    "div": div_result.get("data", div_result) if isinstance(div_result, dict) else {"signals": div_signals},
+                    "mom": mom_result.get("data", mom_result) if isinstance(mom_result, dict) else {"signals": mom_signals},
+                },
+                "resonance": resonance,
+                "risk_overlay": risk_overlay,
+            },
+        }
+    except Exception as e:
+        import traceback
+        print(f"[RUN-ALL] Error: {traceback.format_exc()}")
+        return {"status": "error", "message": str(e)}
+
+
 # --- V4.8 Industry Deep-Dive Engine (Value-Flow Synergy) ---
 
 def get_etf_constituents(ts_code):
@@ -1027,6 +1386,21 @@ def get_etf_constituents(ts_code):
         "159915.SZ": [{"name": "宁德时代", "weight": "18%"}, {"name": "东方财富", "weight": "12%"}, {"name": "迈瑞医疗", "weight": "10%"}, {"name": "汇川技术", "weight": "9%"}, {"name": "阳光电源", "weight": "8%"}]
     }
     return mapping.get(ts_code, [])
+
+
+# ─────────────────────────────────────────────
+# 宏观ERP择时引擎 V1.0 API
+# ─────────────────────────────────────────────
+@app.get("/api/v1/strategy/erp-timing")
+async def get_erp_timing():
+    """宏观ERP择时引擎 — 三维信号 + 历史走势"""
+    try:
+        engine = get_erp_engine()
+        report = await asyncio.get_event_loop().run_in_executor(executor, engine.generate_report)
+        return {"status": "success", "data": report}
+    except Exception as e:
+        print(f"[ERP API] Error: {traceback.format_exc()}")
+        return {"status": "error", "message": str(e)}
 
 
 # ─────────────────────────────────────────────
@@ -1097,59 +1471,84 @@ async def get_stock_name(ts_code: str):
 @app.get("/api/v1/industry-detail")
 async def get_industry_detail(code: str):
     """
-    产业深度追踪核心接口: 聚合 Value (估值) & Flow (资金)
+    V4.0 产业深度追踪接口: 复用tracking缓存 + 补充图表数据
+    消灭所有Mock: RPS动态 + PE实时 + 20D动量(替代北向)
     """
     try:
         def fetch_data():
-            # 使用关键字参数确保传递正确
-            return ts.pro_bar(ts_code=code, asset='FD', start_date='20241001', adj='qfq')
+            # V4.0: 优先从tracking缓存取指标数据
+            cached = _TRACKING_CACHE.get("data")
+            cached_item = None
+            if cached:
+                cached_item = next((d for d in cached if (d.get('ts_code') or d.get('code')) == code), None)
 
-        df = await asyncio.get_event_loop().run_in_executor(executor, fetch_data)
-        
-        if df is None or df.empty:
-            # 兜底逻辑：如果 Tushare 接口受限，返回模拟数据以保证 UI 渲染
-            print(f"Warning: No data for {code}, using mock fallback.")
-            dates = [(datetime.now() - timedelta(days=i)).strftime('%Y%m%d') for i in range(30, 0, -1)]
-            prices = [round(1.0 + i*0.01 + np.random.normal(0, 0.02), 3) for i in range(30)]
-            df = pd.DataFrame({'trade_date': dates, 'close': prices, 'amount': [1000000]*30, 'pct_chg': [0.5]*30})
-        
-        df = df.sort_values('trade_date')
-        latest = df.iloc[-1]
-        
-        # 2. 计算拥挤度 (Crowding Index: 当前成交额 / 20日均值)
-        vol_ma20 = df['amount'].tail(20).mean()
-        crowding = round(latest['amount'] / vol_ma20, 2) if vol_ma20 > 0 else 1.0
-        
-        # 3. 估值分位 (Mock 逻辑: 基于行业特征与近期热度模拟 PE Percentile)
-        # 生产环境应从 pro.idx_daily 或 pro.fina_indicator 获取真实 PE 分位
-        val_map = {
-            "512760.SH": 72.5, "512720.SH": 68.4, "515030.SH": 15.2, 
-            "512010.SH": 12.5, "512690.SH": 35.0, "512800.SH": 42.1
-        }
-        pe_percentile = val_map.get(code, 50.0)
-        
-        # 4. 北向资金追踪 (Mock 基于 HSGT Z-Score)
-        # 生产环境应匹配 ETF 到申万行业再取 moneyflow_hsgt
-        hsgt_trend = "流入" if latest['pct_chg'] > 0 else "持平"
-        
-        # 5. 组装深度数据
-        detail_data = {
-            "code": code,
-            "metrics": {
-                "rps": 85, # 应由前端结合主看板 RPS 传入或重新计算
-                "pe_percentile": pe_percentile,
-                "crowding": crowding,
-                "hsgt_flow": f"{round(latest['amount']*0.05/10000, 1)}亿 (估)", # 模拟板块流入
-                "constituents": get_etf_constituents(code)
-            },
-            "chart_data": {
-                "dates": df['trade_date'].tail(30).tolist(),
-                "prices": df['close'].tail(30).tolist(),
-                "relative_strength": (df['close'] / df['close'].iloc[0] * 100).tail(30).tolist()
+            # 获取图表用价格数据
+            dm = FactorDataManager()
+            p_df = dm.get_price_payload(code)
+
+            if p_df.empty:
+                # Tushare实时拉取兜底
+                try:
+                    df_live = ts.pro_bar(ts_code=code, asset='FD', start_date='20241001', adj='qfq')
+                    if df_live is not None and not df_live.empty:
+                        p_df = df_live.sort_values('trade_date')
+                        p_df['trade_date'] = p_df['trade_date'].astype(str)
+                except:
+                    pass
+
+            if p_df.empty:
+                return {"code": code, "metrics": {"rps": 50, "pe_percentile": 50, "crowding": 1.0,
+                        "momentum_20d": {"ret_20d": 0, "label": "数据不足", "trend": "neutral"},
+                        "constituents": get_etf_constituents(code)},
+                        "chart_data": {"dates": [], "prices": [], "relative_strength": []}}
+
+            p_df = p_df.sort_values('trade_date')
+
+            # V4.0: 从缓存取已计算的真实指标
+            if cached_item:
+                rps_val = cached_item.get('rps', 50)
+                pe_val = cached_item.get('pe_percentile', 50)
+                crowding_val = cached_item.get('vol_ratio', 1.0)
+                mom_20d = cached_item.get('momentum_20d', {"ret_20d": 0, "label": "—", "trend": "neutral"})
+            else:
+                # 无缓存时动态计算
+                rps_val = 50.0
+                pe_val = compute_price_percentile(p_df)
+                amt_col = 'amount' if 'amount' in p_df.columns else None
+                if amt_col and len(p_df) >= 20:
+                    vol_ma20 = float(p_df[amt_col].tail(20).mean())
+                    crowding_val = round(float(p_df[amt_col].iloc[-1]) / vol_ma20, 2) if vol_ma20 > 0 else 1.0
+                else:
+                    crowding_val = 1.0
+                mom_20d = compute_momentum_20d(p_df)
+
+            # 图表数据 (取最近60天做more context)
+            chart_df = p_df.tail(60)
+            dates = chart_df['trade_date'].astype(str).tolist()
+            prices = chart_df['close'].tolist()
+            base = float(chart_df['close'].iloc[0]) if not chart_df.empty else 1
+            rs = [(float(p) / base * 100) for p in prices]
+
+            detail_data = {
+                "code": code,
+                "metrics": {
+                    "rps": rps_val,
+                    "pe_percentile": pe_val,
+                    "crowding": crowding_val,
+                    "momentum_20d": mom_20d,
+                    "constituents": get_etf_constituents(code)
+                },
+                "chart_data": {
+                    "dates": dates[-30:],
+                    "prices": prices[-30:],
+                    "relative_strength": rs[-30:]
+                }
             }
-        }
-        
-        return {"status": "success", "data": detail_data}
+            return detail_data
+
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(executor, fetch_data)
+        return {"status": "success", "data": result}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -1193,30 +1592,35 @@ async def run_backtest_api(req: BacktestRequest):
         if df.empty:
             return {"status": "error", "message": f"未找到代码 {req.ts_code} 的历史数据，请检查代码或日期范围。"}
         
-        # 2. 选择并执行策略逻辑 (防崩溃参数过滤)
+        # 2. 选择并执行策略逻辑 (V2.0: 与策略中心生产引擎参数完全对齐)
         p = req.params
         if req.strategy == 'mr':
-            valid_keys = ['rsi_period', 'rsi_buy', 'rsi_sell', 'boll_period', 'ma_trend_period']
+            valid_keys = ['N_trend', 'rsi_period', 'rsi_buy', 'rsi_sell', 'bias_buy', 'stop_loss']
             filtered_p = {k: v for k, v in p.items() if k in valid_keys}
+            # bias_buy 从前端 ×10 格式转换 (前端-20 → 引擎-2.0)
+            if 'bias_buy' in filtered_p:
+                filtered_p['bias_buy'] = filtered_p['bias_buy'] / 10.0
             signals = mean_reversion_strategy_vectorized(df, **filtered_p)
         elif req.strategy == 'div':
-            valid_keys = ['ma_slow', 'ma_fast', 'rsi_period', 'rsi_buy']
+            valid_keys = ['ma_trend', 'rsi_period', 'rsi_buy', 'rsi_sell', 'bias_buy', 'ma_defend', 'stop_loss']
             filtered_p = {k: v for k, v in p.items() if k in valid_keys}
+            if 'bias_buy' in filtered_p:
+                filtered_p['bias_buy'] = filtered_p['bias_buy'] / 10.0
             signals = dividend_trend_strategy_vectorized(df, **filtered_p)
         elif req.strategy == 'mom':
-            valid_keys = ['lookback', 'top_n']
+            valid_keys = ['lookback_s', 'lookback_m', 'momentum_threshold', 'stop_loss']
             filtered_p = {k: v for k, v in p.items() if k in valid_keys}
             signals = momentum_rotation_strategy_vectorized(df, **filtered_p)
         else:
             return {"status": "error", "message": "无效的策略类型"}
             
-        # 3. 运行回测引擎 (传入 ts_code)
+        # 3. V2.0 回测引擎 (含 grade/round_trips/diagnosis)
         results = bt.run_vectorized(df, signals, ts_code=req.ts_code, order_pct=req.order_pct)
         
-        # 4. 附加蒙特卡洛模拟
+        # 4. V2.0 蒙特卡洛 (Block Bootstrap 500x + 破产概率)
         equity_cv = pd.Series(results['equity_curve'])
         strat_returns = equity_cv.pct_change().fillna(0)
-        results['monte_carlo'] = bt.run_monte_carlo(strat_returns, iterations=50) 
+        results['monte_carlo'] = bt.run_monte_carlo(strat_returns, iterations=500)
             
         return {
             "status": "success",
@@ -1459,15 +1863,65 @@ async def get_market_regime():
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-# --- Industry Tracking API V2.0 (Capital Heat Engine) ---
+# --- Industry Tracking API V4.0 (Data-Honest Engine) ---
 
-# --- V2.0 PE 分位 Mock (生产环境应接入 index_dailybasic) ---
-_PE_PERCENTILE_MAP = {
-    "512760.SH": 72.5, "512720.SH": 68.4, "515030.SH": 15.2,
-    "512010.SH": 12.5, "512690.SH": 35.0, "512880.SH": 55.3,
-    "512800.SH": 42.1, "512660.SH": 48.7, "512100.SH": 62.0,
-    "512400.SH": 58.9, "510180.SH": 38.5, "159915.SZ": 45.2
-}
+# V4.0 Tracking数据缓存 (detail API 复用)
+_TRACKING_CACHE = {"data": None, "timestamp": None}
+
+def compute_price_percentile(p_df, lookback_days: int = 1250) -> float:
+    """
+    V4.0 价格百分位 (替代硬编码PE分位)
+    当前价格在过去N个交易日中的百分位位置
+    lookback_days=1250 ≈ 5年交易日
+    低百分位=便宜(均值回归机会)  高百分位=昂贵(回撤风险)
+    """
+    if p_df.empty or len(p_df) < 20:
+        return 50.0  # 数据不足返回中性
+    closes = p_df['close'].values
+    # 取可用的历史数据(最多lookback_days)
+    history = closes[-min(len(closes), lookback_days):]
+    current = float(closes[-1])
+    # 百分位 = 低于当前价的天数 / 总天数 × 100
+    percentile = float(np.sum(history < current)) / len(history) * 100
+    return round(min(100, max(0, percentile)), 1)
+
+
+def compute_dynamic_rps(sector_data: list, code: str) -> float:
+    """
+    V4.0 动态RPS (Relative Price Strength)
+    基于12个ETF的20D收益率，计算当前ETF在池内的排名百分位
+    """
+    if not sector_data:
+        return 50.0
+    # 按 ret_20d 排序
+    sorted_data = sorted(sector_data, key=lambda x: x.get('ret_20d', 0))
+    total = len(sorted_data)
+    for i, d in enumerate(sorted_data):
+        if (d.get('ts_code') or d.get('code')) == code:
+            return round((i + 1) / total * 100, 1)
+    return 50.0
+
+
+def compute_momentum_20d(p_df) -> dict:
+    """
+    V4.0 20D动量趋势卡 (替代虚假北向资金卡)
+    返回: 20D累计收益 + 趋势方向 + 动量强度描述
+    """
+    if p_df.empty or len(p_df) < 20:
+        return {"ret_20d": 0.0, "label": "数据不足", "trend": "neutral"}
+    closes = p_df['close'].values
+    ret = round(float((closes[-1] / closes[-20] - 1) * 100), 2)
+    if ret > 5:
+        label, trend = f"+{ret:.1f}% 强势上攻", "strong_up"
+    elif ret > 2:
+        label, trend = f"+{ret:.1f}% 温和上行", "up"
+    elif ret > -2:
+        label, trend = f"{ret:+.1f}% 横盘震荡", "neutral"
+    elif ret > -5:
+        label, trend = f"{ret:.1f}% 弱势调整", "down"
+    else:
+        label, trend = f"{ret:.1f}% 深度回调", "strong_down"
+    return {"ret_20d": ret, "label": label, "trend": trend}
 
 def compute_sector_heat_score(p_df, trend_5d: float) -> dict:
     """
@@ -1743,7 +2197,7 @@ def generate_sector_advice(alpha_score: float, alpha_grade: str, heat_score: flo
 @app.get("/api/v1/industry-tracking")
 async def get_industry_tracking(date: Optional[str] = None):
     """
-    V3.0 行业追踪核心 API: Alpha Score 综合评分 + 风险警示 + 五级建议矩阵
+    V4.0 行业追踪核心 API: Data-Honest Alpha Score + 动态RPS + 真实价格百分位
     """
     try:
         def run_ind_analysis():
@@ -1766,6 +2220,9 @@ async def get_industry_tracking(date: Optional[str] = None):
             ]
 
             sector_data = []
+            # V4.0: 保存每个ETF的price_df用于detail API复用
+            _price_cache = {}
+
             for etf in etf_list:
                 code = etf['code']
                 p_df = dm.get_price_payload(code)
@@ -1775,11 +2232,12 @@ async def get_industry_tracking(date: Optional[str] = None):
                         "trend_5d": 0.0, "ret_20d": 0.0,
                         "heat_score": 30.0, "heat_tier": "❄️ 冷淡",
                         "vol_ratio": 1.0, "vol_score": 50.0, "mom_score": 50.0, "crowd_score": 80.0,
-                        "pe_percentile": _PE_PERCENTILE_MAP.get(code, 50),
+                        "pe_percentile": 50.0,
                         "alpha_score": 30.0, "alpha_grade": "F",
                         "f_heat": 30.0, "f_momentum": 50.0, "f_valuation": 50.0, "f_trend": 0.0,
                         "trend_strength": {"above_ma20": False, "above_ma60": False, "ma20_slope": 0.0},
                         "risk_alerts": [],
+                        "momentum_20d": {"ret_20d": 0.0, "label": "数据同步中", "trend": "neutral"},
                         "advice": "数据同步中", "advice_action": "neutral", "advice_label": "⚪ 等待同步",
                         "buy_strategy": "等待数据同步后再评估", "take_profit": "—", "stop_loss": "—", "position_cap": "0%"
                     })
@@ -1787,6 +2245,8 @@ async def get_industry_tracking(date: Optional[str] = None):
 
                 # 过滤至目标日期
                 p_df = p_df[p_df['trade_date'] <= target_dt].sort_values('trade_date')
+                _price_cache[code] = p_df  # V4.0: 缓存用于detail复用
+
                 if len(p_df) >= 5:
                     ret = (p_df['close'].iloc[-1] / p_df['close'].iloc[-5] - 1)
                     trend = round(float(ret) * 100, 2) if np.isfinite(ret) else 0.0
@@ -1795,7 +2255,12 @@ async def get_industry_tracking(date: Optional[str] = None):
 
                 # V2.0: 计算资金热度得分
                 heat = compute_sector_heat_score(p_df, trend)
-                pe_pct = _PE_PERCENTILE_MAP.get(code, 50.0)
+
+                # V4.0: 动态价格百分位 (替代硬编码PE分位)
+                pe_pct = compute_price_percentile(p_df)
+
+                # V4.0: 20D动量趋势 (替代虚假北向资金)
+                mom_20d = compute_momentum_20d(p_df)
 
                 # V3.0: 计算 Alpha Score 综合评分
                 alpha = compute_alpha_score(p_df, heat['heat_score'], trend, pe_pct)
@@ -1835,6 +2300,8 @@ async def get_industry_tracking(date: Optional[str] = None):
                     "trend_strength": alpha['trend_strength'],
                     # V3.0 风险警示
                     "risk_alerts": alerts,
+                    # V4.0 20D动量趋势 (替代北向资金)
+                    "momentum_20d": mom_20d,
                     # V3.0 五级建议
                     "advice": advice['text'],
                     "advice_action": advice['action'],
@@ -1857,13 +2324,15 @@ async def get_industry_tracking(date: Optional[str] = None):
                     r['trend_5d'] = fallback.get(r['ts_code'], 0.0)
                     heat = compute_sector_heat_score(pd.DataFrame(), r['trend_5d'])
                     r.update({"heat_score": heat['heat_score'], "heat_tier": heat['heat_tier'], "vol_ratio": 1.0})
-                    pe_pct = r.get('pe_percentile', 50)
+                    pe_pct = 50.0  # V4.0: 兜底时用中性值而非硬编码
+                    r['pe_percentile'] = pe_pct
                     alpha = compute_alpha_score(pd.DataFrame(), heat['heat_score'], r['trend_5d'], pe_pct)
                     r.update({
                         "alpha_score": alpha['alpha_score'], "alpha_grade": alpha['alpha_grade'],
                         "ret_20d": 0.0, "f_heat": alpha['f_heat'], "f_momentum": alpha['f_momentum'],
                         "f_valuation": alpha['f_valuation'], "f_trend": alpha['f_trend'],
-                        "trend_strength": alpha['trend_strength'], "risk_alerts": []
+                        "trend_strength": alpha['trend_strength'], "risk_alerts": [],
+                        "momentum_20d": {"ret_20d": 0.0, "label": "数据兜底", "trend": "neutral"}
                     })
                     adv = generate_sector_advice(
                         alpha['alpha_score'], alpha['alpha_grade'],
@@ -1879,6 +2348,10 @@ async def get_industry_tracking(date: Optional[str] = None):
             # V3.0: 按 alpha_score 降序排列 (综合评分优先)
             sector_data.sort(key=lambda x: x.get('alpha_score', 0), reverse=True)
 
+            # V4.0: 计算动态RPS排名 (需要全部sector_data准备好后)
+            for item in sector_data:
+                item['rps'] = compute_dynamic_rps(sector_data, item.get('ts_code') or item.get('code'))
+
             # 轮动矩阵
             try:
                 engine = IndustryEngine()
@@ -1886,13 +2359,18 @@ async def get_industry_tracking(date: Optional[str] = None):
             except:
                 rotation = {}
 
-            return {
+            result = {
                 "performance": sector_data,
                 "sector_heatmap": sector_data,
                 "rotation": rotation,
-                "hsgt": sector_data[:10],
                 "last_update": datetime.now().strftime("%Y%m%d")
             }
+
+            # V4.0: 缓存tracking数据供detail API复用
+            _TRACKING_CACHE["data"] = sector_data
+            _TRACKING_CACHE["timestamp"] = datetime.now().isoformat()
+
+            return result
 
         loop = asyncio.get_event_loop()
         results = await loop.run_in_executor(executor, run_ind_analysis)

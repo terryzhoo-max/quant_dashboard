@@ -9,6 +9,8 @@
     <!-- 引入高级无衬线字体 Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Chart.js 移除 (极简主义与性能优化) -->
+    <!-- ECharts 可视化引擎 -->
+    <script src="./echarts.min.js"></script>
 </head>
 <body>
     <!-- 左侧导航栏 -->
@@ -299,6 +301,15 @@
                 <div class="plan-disclaimer">基于 VIX 4阶矩阵 · AlphaCore V4.4 Real-time Protocol</div>
             </div>
 
+            <!-- ERP 历史走势图 (近5年) · 买卖区间可视化 -->
+            <div class="glass-panel" style="padding:16px;margin-top:14px;" id="erp-history-section">
+                <h3 style="margin:0 0 8px;font-size:0.85rem;color:#94a3b8;">📈 ERP 历史走势 (近5年) · 买卖区间可视化</h3>
+                <div id="erp-history-chart" style="width:100%;height:380px;display:none;"></div>
+                <div id="erp-chart-loading" style="text-align:center;padding:80px 20px;color:#64748b;font-size:0.8rem;">
+                    ⏳ 正在拉取 ERP 五年历史序列数据...
+                </div>
+            </div>
+
             <!-- 策略状态雷达卡片区 (Option C) -->
 
             <div class="strategy-cards-grid">
@@ -374,6 +385,6 @@
         </div>
     </main>
 
-    <script src="./script.js?v=6"></script>
+    <script src="./script.js?v=7"></script>
 </body>
 </html>

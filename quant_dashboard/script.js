@@ -534,4 +534,152 @@ document.addEventListener('DOMContentLoaded', () => {
             item.classList.add('active');
         });
     });
+
+    // ERP 历史走势图异步加载
+    fetchAndRenderERPChart();
+});
+
+// ====== ERP 历史走势图 (近5年) · 买卖区间可视化 ======
+
+let _erpDashboardChart = null;
+
+/**
+ * 从后端拉取 ERP 择时引擎数据并渲染图表
+ * 降级策略: 后端未启动时显示友好提示
+ */
+async function fetchAndRenderERPChart() {
+    const loadingEl = document.getElementById('erp-chart-loading');
+    const chartEl = document.getElementById('erp-history-chart');
+    
+    if (!chartEl) return;
+    
+    // ECharts 库检测
+    if (typeof echarts === 'undefined') {
+        if (loadingEl) loadingEl.innerHTML = '⚠️ ECharts 可视化库未加载，图表不可用';
+        return;
+    }
+    
+    try {
+        const resp = await fetch('/api/v1/strategy/erp-timing');
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const json = await resp.json();
+        
+        if (json.status === 'success' && json.data && json.data.chart && json.data.chart.status === 'success') {
+            // 隐藏 loading，显示图表
+            if (loadingEl) loadingEl.style.display = 'none';
+            chartEl.style.display = 'block';
+            renderERPDashboardChart(json.data.chart);
+        } else {
+            if (loadingEl) loadingEl.innerHTML = '⚠️ ERP 数据暂不可用 (' + (json.message || '格式异常') + ')';
+        }
+    } catch (err) {
+        console.warn('[ERP Chart] 拉取失败，降级处理:', err);
+        if (loadingEl) {
+            loadingEl.innerHTML = '📡 请启动 <code style="background:rgba(96,165,250,0.15);padding:2px 6px;border-radius:4px;color:#60a5fa;">python main.py</code> 以获取 ERP 历史数据';
+        }
+    }
+}
+
+/**
+ * 渲染 ERP 五年走势 ECharts 图表
+ * 移植自 strategy.js renderERPHistoryChart() — 已验证稳定
+ */
+function renderERPDashboardChart(chart) {
+    const dom = document.getElementById('erp-history-chart');
+    if (!dom || typeof echarts === 'undefined') return;
+    
+    if (_erpDashboardChart) _erpDashboardChart.dispose();
+    _erpDashboardChart = echarts.init(dom);
+    
+    const stats = chart.stats || {};
+    
+    // 买卖区间着色数据
+    const buyZone = chart.erp.map(v => v >= (stats.overweight_line || 99) ? v : null);
+    const sellZone = chart.erp.map(v => v <= (stats.underweight_line || -99) ? v : null);
+    
+    _erpDashboardChart.setOption({
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(15,23,42,0.95)',
+            borderColor: '#334155',
+            textStyle: { fontSize: 11, color: '#e2e8f0' },
+            formatter: function(params) {
+                let r = '<div style="font-size:0.7rem;color:#64748b;margin-bottom:4px;">' + params[0].axisValue + '</div>';
+                params.forEach(p => {
+                    if (p.value != null) {
+                        r += '<div>' + p.marker + ' ' + p.seriesName + ': <b>' + p.value + (p.seriesIndex <= 2 ? '%' : '') + '</b></div>';
+                    }
+                });
+                return r;
+            }
+        },
+        legend: {
+            data: ['ERP', '买入区', '卖出区', 'PE-TTM', '10Y国债'],
+            top: 0,
+            textStyle: { color: '#94a3b8', fontSize: 10 }
+        },
+        grid: { top: 40, bottom: 30, left: 50, right: 50 },
+        xAxis: {
+            type: 'category',
+            data: chart.dates,
+            axisLabel: { color: '#64748b', fontSize: 10, interval: Math.floor(chart.dates.length / 6) }
+        },
+        yAxis: [
+            {
+                type: 'value', name: 'ERP %',
+                nameTextStyle: { color: '#64748b', fontSize: 10 },
+                axisLabel: { color: '#64748b', fontSize: 10, formatter: '{value}%' },
+                splitLine: { lineStyle: { color: 'rgba(100,116,139,0.1)' } }
+            },
+            {
+                type: 'value', name: 'PE-TTM',
+                nameTextStyle: { color: '#64748b', fontSize: 10 },
+                axisLabel: { color: '#64748b', fontSize: 10 },
+                splitLine: { show: false }
+            }
+        ],
+        series: [
+            {
+                name: 'ERP', type: 'line', data: chart.erp, yAxisIndex: 0,
+                lineStyle: { color: '#f59e0b', width: 2 },
+                itemStyle: { color: '#f59e0b' },
+                symbol: 'none', z: 10,
+                markLine: {
+                    silent: true, symbol: 'none',
+                    lineStyle: { type: 'dashed', width: 1 },
+                    data: [
+                        { yAxis: stats.mean, label: { formatter: '均值 ' + stats.mean + '%', color: '#94a3b8', fontSize: 9 }, lineStyle: { color: '#64748b' } },
+                        { yAxis: stats.overweight_line, label: { formatter: '超配线 ' + stats.overweight_line + '%', color: '#10b981', fontSize: 9, position: 'insideEndTop' }, lineStyle: { color: '#10b981' } },
+                        { yAxis: stats.underweight_line, label: { formatter: '低配线 ' + stats.underweight_line + '%', color: '#ef4444', fontSize: 9, position: 'insideEndTop' }, lineStyle: { color: '#ef4444' } },
+                        { yAxis: stats.strong_buy_line, label: { formatter: '强买线 ' + stats.strong_buy_line + '%', color: '#10b981', fontSize: 9, position: 'insideEndTop' }, lineStyle: { color: '#10b98180', type: 'dotted' } }
+                    ]
+                }
+            },
+            {
+                name: '买入区', type: 'line', data: buyZone, yAxisIndex: 0,
+                lineStyle: { width: 0 }, itemStyle: { color: '#10b981' }, symbol: 'none',
+                areaStyle: { color: 'rgba(16,185,129,0.15)' }
+            },
+            {
+                name: '卖出区', type: 'line', data: sellZone, yAxisIndex: 0,
+                lineStyle: { width: 0 }, itemStyle: { color: '#ef4444' }, symbol: 'none',
+                areaStyle: { color: 'rgba(239,68,68,0.15)' }
+            },
+            {
+                name: 'PE-TTM', type: 'line', data: chart.pe_ttm, yAxisIndex: 1,
+                lineStyle: { color: '#3b82f6', width: 1.5, type: 'dashed' },
+                itemStyle: { color: '#3b82f6' }, symbol: 'none'
+            },
+            {
+                name: '10Y国债', type: 'line', data: chart.yield_10y, yAxisIndex: 0,
+                lineStyle: { color: '#ef4444', width: 1, type: 'dotted' },
+                itemStyle: { color: '#ef4444' }, symbol: 'none'
+            }
+        ]
+    });
+}
+
+// ERP 图表响应式 resize
+window.addEventListener('resize', () => {
+    if (_erpDashboardChart) _erpDashboardChart.resize();
 });

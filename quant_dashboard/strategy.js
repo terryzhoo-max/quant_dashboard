@@ -917,69 +917,90 @@ document.addEventListener('DOMContentLoaded', () => {
             if (targetId === 'st-signal-rules') {
                 setTimeout(() => loadMarketRegime(), 100);
             }
+            // 切换到ERP择时时自动加载数据
+            if (targetId === 'st-erp-timing') {
+                setTimeout(() => loadERPTimingData(), 100);
+            }
         });
     });
 });
 
-// ====== 全局策略执行函数 ======
+// ====== 全局策略执行函数 V2.0 ======
 async function runStrategy() {
     const btn = document.getElementById('st-run-btn');
-    const loading = document.getElementById('st-loading');
     const timeEl = document.getElementById('st-data-time');
-    const strategyType = document.getElementById('st-strategy-select')?.value || 'mean-reversion';
+    const strategyType = document.getElementById('st-strategy-select')?.value || 'run-all';
 
-    // 助手函数：安全设置内容
-    const safelySetText = (id, text) => {
+    const safelySetText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    const safelySetHTML = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+
+    // 隐藏所有结果区
+    ['st-results-mr', 'st-results-dt', 'st-results-mom', 'exec-zone1', 'exec-zone23', 'exec-zone4', 'exec-zone5', 'exec-zone6'].forEach(id => {
         const el = document.getElementById(id);
-        if (el) el.textContent = text;
-    };
-    const safelySetHTML = (id, html) => {
-        const el = document.getElementById(id);
-        if (el) el.innerHTML = html;
-    };
+        if (el) el.style.display = 'none';
+    });
 
-    // 重置：隐藏所有结果区
-    const mrResults = document.getElementById('st-results-mr');
-    const dtResults = document.getElementById('st-results-dt');
-    const momResults = document.getElementById('st-results-mom');
-    if (mrResults) mrResults.style.display = 'none';
-    if (dtResults) dtResults.style.display = 'none';
-    if (momResults) momResults.style.display = 'none';
-
-    // 禁用按钮 + 显示加载
     if (btn) { btn.disabled = true; btn.textContent = '⏳ 运行中...'; }
-    if (loading) loading.style.display = 'flex';
 
-    // 更新加载文案
-    const loadingP = loading?.querySelector('p');
-    if (loadingP) {
-        if (strategyType === 'dividend-trend') {
-            loadingP.textContent = '正在拉取红利ETF收盘数据并计算趋势信号...';
-        } else if (strategyType === 'momentum') {
-            loadingP.textContent = '正在获取板块数据、评估市场环境、计算动量排名...';
-        } else {
-            loadingP.textContent = '正在拉取全量ETF数据并计算共振信号...';
+    // === run-all 模式 ===
+    if (strategyType === 'run-all') {
+        const progressBar = document.getElementById('exec-progress-bar');
+        const progressText = document.getElementById('exec-progress-text');
+        if (progressBar) progressBar.style.display = 'block';
+
+        // 进度动画
+        const setProgress = (stage, text) => {
+            for (let i = 1; i <= 4; i++) {
+                const seg = document.getElementById(`prog-seg-${i}`);
+                if (seg) seg.style.background = i <= stage ? 'linear-gradient(90deg, #6366f1, #8b5cf6)' : 'rgba(255,255,255,0.06)';
+            }
+            if (progressText) progressText.textContent = text;
+        };
+        setProgress(1, '🔄 正在并行拉取3策略数据...');
+
+        try {
+            const timer2 = setTimeout(() => setProgress(2, '📊 均值回归 + 红利趋势 + 动量轮动计算中...'), 5000);
+            const timer3 = setTimeout(() => setProgress(3, '🔗 共振分析 + 风险覆盖计算中...'), 12000);
+
+            const resp = await fetch(`${API_URL}/api/v1/strategy/run-all`);
+            const json = await resp.json();
+
+            clearTimeout(timer2); clearTimeout(timer3);
+            setProgress(4, '✅ 完成！正在渲染仪表盘...');
+
+            if (json.status !== 'success') throw new Error(json.message || '全量运行失败');
+
+            if (timeEl) timeEl.textContent = `数据截至 ${json.timestamp.substring(0, 16).replace('T', ' ')}`;
+
+            // 渲染V2.0仪表盘
+            renderExecutionDashboard(json.data, { safelySetText, safelySetHTML });
+
+            setTimeout(() => { if (progressBar) progressBar.style.display = 'none'; }, 1500);
+
+        } catch (err) {
+            setProgress(0, `❌ ${err.message}`);
+            console.error('[run-all]', err);
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = '🚀 运行策略'; }
         }
+        return;
     }
 
+    // === Legacy 单策略模式 ===
     try {
         let endpoint;
-        if (strategyType === 'dividend-trend') {
-            endpoint = `${API_URL}/api/v1/dividend_strategy`;
-        } else if (strategyType === 'momentum') {
-            endpoint = `${API_URL}/api/v1/momentum_strategy`;
-        } else {
-            endpoint = `${API_URL}/api/v1/strategy`;
-        }
+        if (strategyType === 'dividend-trend') endpoint = `${API_URL}/api/v1/dividend_strategy`;
+        else if (strategyType === 'momentum') endpoint = `${API_URL}/api/v1/momentum_strategy`;
+        else endpoint = `${API_URL}/api/v1/strategy`;
 
         const resp = await fetch(endpoint);
         const json = await resp.json();
-
         if (json.status !== 'success') throw new Error(json.message || '策略执行失败');
+        if (timeEl) timeEl.textContent = `数据截至 ${json.timestamp.substring(0, 16).replace('T', ' ')}`;
 
-        if (timeEl) {
-            timeEl.textContent = `数据截至 ${json.timestamp.substring(0, 16).replace('T', ' ')}`;
-        }
+        const mrResults = document.getElementById('st-results-mr');
+        const dtResults = document.getElementById('st-results-dt');
+        const momResults = document.getElementById('st-results-mom');
 
         if (strategyType === 'dividend-trend') {
             renderDividendResults(json.data, { safelySetText, safelySetHTML });
@@ -991,26 +1012,254 @@ async function runStrategy() {
             renderMeanReversionResults(json.data, { safelySetText, safelySetHTML });
             if (mrResults) mrResults.style.display = 'block';
         }
-
-        if (loading) loading.style.display = 'none';
-
     } catch (err) {
-        if (loading) loading.style.display = 'none';
-
-        // 在对应的表格中显示错误
-        const errorTarget = strategyType === 'dividend-trend' ? 'dt-table-body'
-            : strategyType === 'momentum' ? 'mom-table-body' : 'st-table-body';
-        const resultTarget = strategyType === 'dividend-trend' ? dtResults
-            : strategyType === 'momentum' ? momResults : mrResults;
-        if (resultTarget) resultTarget.style.display = 'block';
-        const colSpan = strategyType === 'dividend-trend' ? 13
-            : strategyType === 'momentum' ? 11 : 10;
-        safelySetHTML(errorTarget,
-            `<tr><td colspan="${colSpan}" style="text-align:center;color:#ef4444;padding:40px;">❌ ${err.message}<br><small style="color:var(--text-muted)">请确认后端已启动：python main.py</small></td></tr>`
-        );
+        console.error('[strategy]', err);
     } finally {
         if (btn) { btn.disabled = false; btn.textContent = '🚀 运行策略'; }
     }
+}
+
+// ====== V2.0 执行仪表盘总入口 ======
+function renderExecutionDashboard(data, helpers) {
+    const { safelySetText, safelySetHTML } = helpers;
+    const g = data.global || {};
+    const resonance = data.resonance || {};
+    const risk = data.risk_overlay || {};
+
+    // --- Zone 1: 仪表盘 + KPI ---
+    const zone1 = document.getElementById('exec-zone1');
+    if (zone1) zone1.style.display = 'block';
+
+    // 仪表盘
+    const pos = g.total_position || 0;
+    safelySetText('exec-gauge-label', pos + '%');
+    renderExecGauge(pos);
+
+    // KPI cards
+    const regimeMap = { 'BULL': '🟢 牛市', 'RANGE': '🟡 震荡', 'BEAR': '🟠 熊市', 'CRASH': '🔴 危机' };
+    const regimeColor = { 'BULL': '#10b981', 'RANGE': '#eab308', 'BEAR': '#f59e0b', 'CRASH': '#ef4444' };
+    safelySetHTML('exec-regime', `<span style="color:${regimeColor[g.regime] || '#3b82f6'}">${regimeMap[g.regime] || g.regime}</span>`);
+    safelySetHTML('exec-buy-total', `<span style="color:#10b981">${g.total_buy || 0} 只</span>`);
+    safelySetHTML('exec-sell-total', `<span style="color:#ef4444">${g.total_sell || 0} 只</span>`);
+    safelySetHTML('exec-consistency', g.consistency === 'high'
+        ? '<span style="color:#10b981">✅ 高一致</span>'
+        : '<span style="color:#f59e0b">⚠️ 分歧</span>');
+    safelySetText('exec-resonance-count', resonance.total_overlap || 0);
+    safelySetHTML('exec-vol-alerts', risk.alert_count > 0
+        ? `<span style="color:#ef4444">${risk.alert_count} 只</span>`
+        : '<span style="color:#10b981">0</span>');
+
+    // --- Zone 2+3: 行动信号 + 风险预警 ---
+    const zone23 = document.getElementById('exec-zone23');
+    if (zone23) zone23.style.display = 'block';
+    renderTopSignals(data.strategies, helpers);
+    renderRiskOverlay(risk, helpers);
+
+    // --- Zone 4: 信号矩阵 ---
+    const zone4 = document.getElementById('exec-zone4');
+    if (zone4) zone4.style.display = 'block';
+
+    // 全局存储策略数据供tab切换使用
+    window._execStrategies = data.strategies;
+    renderHeatmapTable('mr', data.strategies.mr);
+    renderHeatmapTable('div', data.strategies.div);
+    renderHeatmapTable('mom', data.strategies.mom);
+
+    // 更新tab计数
+    const mrSigs = (data.strategies.mr?.signals || []).length;
+    const divSigs = (data.strategies.div?.signals || []).length;
+    const momSigs = (data.strategies.mom?.signals || []).length;
+    safelySetText('exec-mr-count', mrSigs);
+    safelySetText('exec-div-count', divSigs);
+    safelySetText('exec-mom-count', momSigs);
+
+    // --- Zone 5: 共振分析 ---
+    const zone5 = document.getElementById('exec-zone5');
+    if (zone5) zone5.style.display = 'block';
+    renderResonancePanel(resonance, helpers);
+
+    // --- Zone 6: 规则百科 ---
+    const zone6 = document.getElementById('exec-zone6');
+    if (zone6) zone6.style.display = 'block';
+}
+
+// ====== 仪表盘渲染 ======
+function renderExecGauge(value) {
+    const container = document.getElementById('exec-gauge-container');
+    if (!container || typeof echarts === 'undefined') return;
+
+    let chart = echarts.getInstanceByDom(container);
+    if (!chart) chart = echarts.init(container, 'dark');
+
+    const color = value >= 60 ? '#10b981' : value >= 30 ? '#eab308' : '#ef4444';
+    chart.setOption({
+        series: [{
+            type: 'gauge', startAngle: 180, endAngle: 0, min: 0, max: 100,
+            radius: '100%', center: ['50%', '85%'],
+            progress: { show: true, width: 14, roundCap: true, itemStyle: { color } },
+            pointer: { show: false },
+            axisLine: { lineStyle: { width: 14, color: [[1, 'rgba(255,255,255,0.06)']] } },
+            axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false },
+            detail: { show: false },
+            data: [{ value }]
+        }]
+    });
+}
+
+// ====== Top 行动信号渲染 ======
+function renderTopSignals(strategies, { safelySetHTML }) {
+    const allSignals = [];
+    ['mr', 'div', 'mom'].forEach(key => {
+        const sigs = strategies[key]?.signals || [];
+        sigs.forEach(s => {
+            if (s.signal === 'buy' || s.signal === 'sell' || s.signal === 'sell_half' || s.signal === 'sell_weak') {
+                allSignals.push({ ...s, source: key });
+            }
+        });
+    });
+
+    const sourceLabel = { mr: '均值回归', div: '红利趋势', mom: '动量轮动' };
+    const buys = allSignals.filter(s => s.signal === 'buy').sort((a, b) => (b.signal_score || 0) - (a.signal_score || 0)).slice(0, 3);
+    const sells = allSignals.filter(s => s.signal !== 'buy').sort((a, b) => (a.signal_score || 100) - (b.signal_score || 100)).slice(0, 3);
+
+    let html = '';
+    if (buys.length === 0 && sells.length === 0) {
+        html = '<p style="color:var(--text-muted);font-size:0.85rem;text-align:center;padding:16px 0;">当前无强信号</p>';
+    }
+    buys.forEach(s => {
+        html += `<div class="top-signal-card top-signal-buy">
+            <div><strong style="color:#fff;font-size:0.88rem;">${s.name || ''}</strong>
+            <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">${s.ts_code || s.code || ''} · ${sourceLabel[s.source] || ''}</div></div>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <span class="st-ai-score st-ai-score-buy">${s.signal_score || 0}分</span>
+                <span style="font-size:0.78rem;color:var(--text-muted)">${s.suggested_position || 0}%</span>
+            </div></div>`;
+    });
+    sells.forEach(s => {
+        html += `<div class="top-signal-card top-signal-sell">
+            <div><strong style="color:#fff;font-size:0.88rem;">${s.name || ''}</strong>
+            <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">${s.ts_code || s.code || ''} · ${sourceLabel[s.source] || ''}</div></div>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <span class="st-ai-score st-ai-score-sell">${s.signal_score || 0}分</span>
+                <span style="font-size:0.78rem;color:var(--text-muted)">${s.suggested_position || 0}%</span>
+            </div></div>`;
+    });
+
+    safelySetHTML('exec-top-signals', html);
+}
+
+// ====== 风险预警渲染 ======
+function renderRiskOverlay(risk, { safelySetHTML }) {
+    let html = '';
+    const conc = risk.concentration || {};
+    if (conc.top_sector && conc.top_sector !== 'N/A') {
+        html += `<div class="risk-alert-item risk-concentration">
+            <span style="font-size:1.1rem;">📊</span>
+            <div><strong style="color:#fbbf24;font-size:0.82rem;">行业集中度</strong>
+            <div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;">最集中板块：${conc.top_sector} (${conc.ratio})</div></div></div>`;
+    }
+    const volAlerts = risk.volatility_alerts || [];
+    if (volAlerts.length > 0) {
+        html += `<div class="risk-alert-item">
+            <span style="font-size:1.1rem;">⚡</span>
+            <div><strong style="color:#f87171;font-size:0.82rem;">高波动标的 (${volAlerts.length}只)</strong>
+            <div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;">${volAlerts.map(v => `${v.name} ${v.vol_30d}%`).join(' / ')}</div></div></div>`;
+    }
+    if (!html) html = '<p style="color:#10b981;font-size:0.85rem;text-align:center;padding:16px 0;">✅ 风险正常，无预警</p>';
+    safelySetHTML('exec-risk-overlay', html);
+}
+
+// ====== 热力紧凑表渲染 ======
+function renderHeatmapTable(strategyKey, strategyData) {
+    const tbody = document.getElementById(`exec-tbody-${strategyKey}`);
+    if (!tbody) return;
+
+    const signals = strategyData?.signals || [];
+    if (signals.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px;">暂无数据</td></tr>';
+        return;
+    }
+
+    // 按信号排序：buy > hold > sell
+    const signalOrder = { buy: 0, hold: 1, sell: 2, sell_half: 2, sell_weak: 2 };
+    signals.sort((a, b) => (signalOrder[a.signal] || 1) - (signalOrder[b.signal] || 1) || (b.signal_score || 0) - (a.signal_score || 0));
+
+    let html = '';
+    signals.forEach(s => {
+        const score = s.signal_score || 0;
+        const tier = score >= 85 ? 5 : score >= 70 ? 4 : score >= 50 ? 3 : score >= 30 ? 2 : 1;
+        const signal = s.signal || 'hold';
+        const tagClass = signal === 'buy' ? 'st-tag-buy' : (signal.includes('sell') ? 'st-tag-sell' : 'st-tag-hold');
+        const tagLabel = signal === 'buy' ? '买入' : signal === 'sell_half' ? '减半' : signal.includes('sell') ? '卖出' : '持有';
+        const rowClass = signal === 'buy' ? 'st-row-buy' : signal.includes('sell') ? 'st-row-sell' : '';
+
+        // 关键因子紧凑展示
+        let factors = '';
+        if (strategyKey === 'mr') {
+            factors = `<span class="f-key">%B:</span><span class="f-val">${s.pctB !== undefined ? s.pctB.toFixed(2) : '-'}</span> <span class="f-key">RSI:</span><span class="f-val">${s.rsi3 !== undefined ? Math.round(s.rsi3) : '-'}</span> <span class="f-key">BIAS:</span><span class="f-val">${s.bias !== undefined ? s.bias.toFixed(1) + '%' : '-'}</span>`;
+        } else if (strategyKey === 'div') {
+            factors = `<span class="f-key">DIV:</span><span class="f-val">${s.dividend_yield !== undefined ? s.dividend_yield.toFixed(1) + '%' : '-'}</span> <span class="f-key">RSI:</span><span class="f-val">${s.rsi_14 !== undefined ? Math.round(s.rsi_14) : '-'}</span> <span class="f-key">BIAS:</span><span class="f-val">${s.bias !== undefined ? s.bias.toFixed(1) + '%' : '-'}</span>`;
+        } else {
+            factors = `<span class="f-key">MOM:</span><span class="f-val">${s.momentum_20d !== undefined ? s.momentum_20d.toFixed(1) + '%' : '-'}</span> <span class="f-key">VOL:</span><span class="f-val">${s.volume_ratio !== undefined ? s.volume_ratio.toFixed(1) + 'x' : '-'}</span> <span class="f-key">RSI:</span><span class="f-val">${s.rsi_14 !== undefined ? Math.round(s.rsi_14) : '-'}</span>`;
+        }
+
+        html += `<tr class="${rowClass}">
+            <td style="font-weight:600;color:#fff;">${s.name || '-'}</td>
+            <td style="font-family:monospace;font-size:0.72rem;color:var(--text-muted);">${s.ts_code || s.code || '-'}</td>
+            <td><span class="score-cell score-tier-${tier}">${score}</span></td>
+            <td class="factor-compact">${factors}</td>
+            <td><span class="st-signal-tag ${tagClass}">${tagLabel}</span></td>
+            <td style="font-weight:700;color:#fff;">${s.suggested_position || 0}%</td>
+        </tr>`;
+    });
+    tbody.innerHTML = html;
+}
+
+// ====== Tab切换 ======
+function switchExecTab(key) {
+    ['mr', 'div', 'mom'].forEach(k => {
+        const table = document.getElementById(`exec-table-${k}`);
+        if (table) table.style.display = k === key ? 'block' : 'none';
+    });
+    document.querySelectorAll('.exec-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.strategy === key);
+    });
+}
+
+// ====== 共振面板渲染 ======
+function renderResonancePanel(resonance, { safelySetHTML }) {
+    const panel = document.getElementById('exec-resonance-panel');
+    if (!panel) return;
+    let html = '';
+
+    const renderCard = (item, type) => {
+        const typeClass = type === 'buy' ? 'resonance-strong-buy' : type === 'sell' ? 'resonance-strong-sell' : 'resonance-divergence';
+        const typeLabel = type === 'buy' ? '🟢 强共振买入' : type === 'sell' ? '🔴 强共振卖出' : '⚠️ 信号分歧';
+        const dotFor = (sig) => sig === 'buy' ? 'dot-buy' : sig?.includes('sell') ? 'dot-sell' : sig === '-' ? 'dot-none' : 'dot-hold';
+
+        return `<div class="resonance-card ${typeClass}">
+            <div style="font-weight:700;color:#fff;font-size:0.88rem;margin-bottom:6px;">${item.name}</div>
+            <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:10px;">${item.code}</div>
+            <div style="display:flex;gap:12px;font-size:0.78rem;">
+                <span><span class="resonance-signal-dot ${dotFor(item.signals?.mr)}"></span>MR</span>
+                <span><span class="resonance-signal-dot ${dotFor(item.signals?.div)}"></span>DIV</span>
+                <span><span class="resonance-signal-dot ${dotFor(item.signals?.mom)}"></span>MOM</span>
+            </div>
+            <div style="margin-top:8px;font-size:0.72rem;font-weight:600;color:${type === 'buy' ? '#10b981' : type === 'sell' ? '#ef4444' : '#f59e0b'};">${typeLabel}</div>
+        </div>`;
+    };
+
+    (resonance.consensus_buy || []).forEach(item => { html += renderCard(item, 'buy'); });
+    (resonance.consensus_sell || []).forEach(item => { html += renderCard(item, 'sell'); });
+    (resonance.divergence || []).forEach(item => { html += renderCard(item, 'divergence'); });
+
+    if (!html) {
+        html = `<div style="grid-column:1/-1;text-align:center;padding:24px;color:var(--text-muted);font-size:0.85rem;">
+            暂无跨策略重叠标的 — 3个策略标的池独立，无交叉信号
+        </div>`;
+    }
+
+    panel.innerHTML = html;
 }
 
 // ====== 均值回归结果渲染 V4.2 ======
@@ -1688,3 +1937,456 @@ if (document.readyState === 'loading') {
 } else {
     initAllCustomPools();
 }
+
+// ====== ERP择时引擎 V2.0 · 前端渲染模块 ======
+let _erpLoaded = false;
+let _erpLastFetchTime = 0;          // 上次拉取时间戳 (ms)
+let _erpCountdownTimer = null;      // P1: 倒计时定时器
+let _erpGaugeChart = null;
+let _erpHistoryChart = null;
+const ERP_COOLDOWN_MS = 5 * 60 * 1000;  // 5 分钟冷却
+
+// P1: 注入变化高亮 CSS
+(function injectERPHighlightCSS() {
+    if (document.getElementById('erp-highlight-style')) return;
+    const style = document.createElement('style');
+    style.id = 'erp-highlight-style';
+    style.textContent = `
+        @keyframes erpValueFlash {
+            0% { background: rgba(245,158,11,0.35); }
+            100% { background: transparent; }
+        }
+        .erp-value-changed {
+            animation: erpValueFlash 1.2s ease-out;
+            border-radius: 4px;
+        }
+    `;
+    document.head.appendChild(style);
+})();
+
+/**
+ * P1: 启动/重启倒计时显示
+ */
+function startERPCountdown() {
+    if (_erpCountdownTimer) clearInterval(_erpCountdownTimer);
+    const el = document.getElementById('erp-refresh-countdown');
+    if (!el) return;
+    _erpCountdownTimer = setInterval(() => {
+        const elapsed = Date.now() - _erpLastFetchTime;
+        const remaining = Math.max(0, ERP_COOLDOWN_MS - elapsed);
+        if (remaining <= 0) {
+            el.textContent = '可刷新';
+            el.style.color = '#10b981';
+            clearInterval(_erpCountdownTimer);
+            _erpCountdownTimer = null;
+        } else {
+            const mins = Math.floor(remaining / 60000);
+            const secs = Math.floor((remaining % 60000) / 1000);
+            el.textContent = `${mins}m${secs.toString().padStart(2,'0')}s 后可刷新`;
+            el.style.color = '#475569';
+        }
+    }, 1000);
+}
+
+/**
+ * P1: 检测数值变化并添加高亮动画
+ */
+function highlightERPChanges(oldSnap, newSnap) {
+    if (!oldSnap || !newSnap) return;
+    const pairs = [
+        ['erp-val-erp',    oldSnap.erp_value,    newSnap.erp_value],
+        ['erp-val-pe',     oldSnap.pe_ttm,       newSnap.pe_ttm],
+        ['erp-val-yield',  oldSnap.yield_10y,    newSnap.yield_10y],
+    ];
+    pairs.forEach(([id, oldVal, newVal]) => {
+        if (oldVal != null && newVal != null && oldVal !== newVal) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.classList.remove('erp-value-changed');
+                void el.offsetWidth;  // force reflow
+                el.classList.add('erp-value-changed');
+            }
+        }
+    });
+}
+
+let _erpPrevSnapshot = null;  // P1: 保存上次快照用于变化比较
+
+/**
+ * 刷新按钮入口 — 带 5 分钟冷却 + Loading 状态
+ */
+async function refreshERPData() {
+    const btn = document.getElementById('erp-refresh-btn');
+    const elapsed = Date.now() - _erpLastFetchTime;
+    
+    // 5 分钟冷却检查
+    if (_erpLoaded && elapsed < ERP_COOLDOWN_MS) {
+        const remaining = Math.ceil((ERP_COOLDOWN_MS - elapsed) / 60000);
+        // 闪烁提示
+        if (btn) {
+            const orig = btn.innerHTML;
+            btn.innerHTML = '✅ 数据仍为最新';
+            btn.style.borderColor = 'rgba(16,185,129,0.4)';
+            btn.style.color = '#10b981';
+            setTimeout(() => {
+                btn.innerHTML = orig;
+                btn.style.borderColor = 'rgba(245,158,11,0.3)';
+                btn.style.color = '#f59e0b';
+            }, 1500);
+        }
+        return;
+    }
+    
+    // 解锁 + 设置 Loading 状态
+    _erpLoaded = false;
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '⏳ 刷新中...';
+        btn.style.opacity = '0.6';
+    }
+    
+    try {
+        await loadERPTimingData();
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '🔄 刷新实时数据';
+            btn.style.opacity = '1';
+        }
+    }
+}
+
+async function loadERPTimingData() {
+    if (_erpLoaded) return;
+    
+    // Loading 状态: 信号 Badge
+    const sigLabel = document.getElementById('erp-signal-label');
+    const sigEmoji = document.getElementById('erp-signal-emoji');
+    if (sigLabel) { sigLabel.textContent = '刷新中...'; sigLabel.style.color = '#f59e0b'; }
+    if (sigEmoji) sigEmoji.textContent = '⏳';
+    
+    try {
+        const resp = await fetch('/api/v1/strategy/erp-timing');
+        const json = await resp.json();
+        if (json.status !== 'success' || !json.data) { console.error('ERP API error:', json); return; }
+        const data = json.data;
+        
+        // P1: 变化高亮 (比较新旧快照)
+        const newSnap = data.current_snapshot || {};
+        highlightERPChanges(_erpPrevSnapshot, newSnap);
+        _erpPrevSnapshot = { ...newSnap };
+        
+        renderERPSnapshot(data);
+        renderERPAlerts(data.alerts || []);
+        renderERPTradeHub(data.trade_rules || {});
+        renderERPDimBars(data.dimensions, data.encyclopedia || {});
+        renderERPGauge(data.signal, data.trade_rules);
+        if (data.chart && data.chart.status === 'success') renderERPHistoryChart(data.chart);
+        renderERPEncyclopedia(data.encyclopedia || {});
+        renderERPDiagnosis(data.diagnosis || []);
+        // 头部徽章
+        const sig = data.signal || {};
+        const tr = data.trade_rules || {};
+        document.getElementById('erp-signal-emoji').textContent = sig.emoji || '?';
+        const lbl = document.getElementById('erp-signal-label');
+        lbl.textContent = sig.label || '--'; lbl.style.color = sig.color || '#94a3b8';
+        document.getElementById('erp-signal-position').textContent = '\u5EFA\u8BAE\u4ED3\u4F4D ' + (sig.position||'--') + ' \u00B7 \u5F97\u5206 ' + (sig.score||'--');
+        document.getElementById('erp-resonance-badge').textContent = tr.resonance_label || '';
+        document.getElementById('erp-update-time').textContent = '\u6700\u540E\u66F4\u65B0: ' + new Date().toLocaleString('zh-CN');
+        // 脉冲动画
+        const alerts = data.alerts || [];
+        const hasPulse = alerts.some(a => a.pulse);
+        if (hasPulse) {
+            const bar = document.getElementById('erp-identity-bar');
+            const pulseAlert = alerts.find(a => a.pulse);
+            const pulseColor = pulseAlert.level === 'danger' ? '#ef4444' : (pulseAlert.level === 'opportunity' ? '#10b981' : '#f59e0b');
+            bar.style.boxShadow = '0 0 20px ' + pulseColor + '40';
+            bar.style.borderLeftColor = pulseColor;
+        }
+        _erpLoaded = true;
+        _erpLastFetchTime = Date.now();
+        
+        // P1: 启动倒计时
+        startERPCountdown();
+        
+    } catch (e) {
+        console.error('ERP load error:', e);
+        // 错误恢复: 保持 _erpLoaded = false 允许重试
+        if (sigLabel) { sigLabel.textContent = '加载失败'; sigLabel.style.color = '#ef4444'; }
+        if (sigEmoji) sigEmoji.textContent = '❌';
+    }
+}
+
+
+function renderERPSnapshot(data) {
+    const snap = data.current_snapshot || {};
+    const dims = data.dimensions || {};
+    const m1 = dims.m1_trend?.m1_info || {};
+    const vol = dims.volatility?.vol_info || {};
+    const credit = dims.credit?.credit_info || {};
+    // ERP
+    const erpEl = document.getElementById('erp-val-erp');
+    erpEl.textContent = (snap.erp_value || '--') + '%';
+    erpEl.style.color = snap.erp_value >= 5 ? '#10b981' : (snap.erp_value >= 3.5 ? '#f59e0b' : '#ef4444');
+    document.getElementById('erp-sub-erp').textContent = '\u8FD15\u5E74 ' + (snap.erp_percentile || '--') + '% \u5206\u4F4D';
+    const trendErp = document.getElementById('erp-trend-erp');
+    if (snap.erp_value >= 5) { trendErp.textContent = '\u2191'; trendErp.style.color = '#10b981'; }
+    else if (snap.erp_value < 3.5) { trendErp.textContent = '\u2193'; trendErp.style.color = '#ef4444'; }
+    else { trendErp.textContent = '\u2192'; trendErp.style.color = '#f59e0b'; }
+    // PE
+    document.getElementById('erp-val-pe').textContent = (snap.pe_ttm || '--') + 'x';
+    document.getElementById('erp-sub-pe').textContent = '\u76C8\u5229\u6536\u76CA\u7387 ' + (snap.earnings_yield || '--') + '%';
+    // 10Y
+    document.getElementById('erp-val-yield').textContent = (snap.yield_10y || '--') + '%';
+    // M1
+    const m1El = document.getElementById('erp-val-m1');
+    m1El.textContent = (m1.current ?? '--') + '%';
+    m1El.style.color = m1.current > 0 ? '#10b981' : '#ef4444';
+    document.getElementById('erp-sub-m1').textContent = 'M2 \u540C\u6BD4: ' + (m1.m2_yoy ?? '--') + '%';
+    const trendM1 = document.getElementById('erp-trend-m1');
+    if (m1.direction === 'rising') { trendM1.textContent = '\u2191'; trendM1.style.color = '#10b981'; }
+    else { trendM1.textContent = '\u2193'; trendM1.style.color = '#ef4444'; }
+    // Vol
+    const volEl = document.getElementById('erp-val-vol');
+    volEl.textContent = (vol.current ?? '--');
+    volEl.style.color = vol.regime === 'calm' ? '#10b981' : (vol.regime === 'extreme_panic' ? '#ef4444' : '#94a3b8');
+    document.getElementById('erp-sub-vol').textContent = (vol.pct ?? '--') + '% \u5206\u4F4D | ' + ({calm:'\u5E73\u9759',normal:'\u6B63\u5E38',high:'\u504F\u9AD8',extreme_panic:'\u6050\u614C'}[vol.regime]||'--');
+    // Credit
+    const creditEl = document.getElementById('erp-val-credit');
+    const scissor = m1.scissor ?? credit.scissor ?? '--';
+    creditEl.textContent = (typeof scissor === 'number' ? (scissor >= 0 ? '+' : '') + scissor.toFixed(1) : scissor) + '%';
+    creditEl.style.color = scissor >= -2 ? '#10b981' : '#f59e0b';
+    document.getElementById('erp-sub-credit').textContent = scissor >= 0 ? '\u8D44\u91D1\u6D3B\u5316' : '\u8D44\u91D1\u6C89\u6DC0';
+}
+
+function renderERPAlerts(alerts) {
+    const banner = document.getElementById('erp-alert-banner');
+    if (!alerts.length || (alerts.length === 1 && alerts[0].level === 'normal')) { banner.style.display = 'none'; return; }
+    const colorMap = { danger: '#ef4444', warning: '#f59e0b', opportunity: '#10b981', normal: '#64748b' };
+    banner.style.display = 'flex';
+    banner.style.cssText += 'display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;';
+    banner.innerHTML = alerts.filter(a => a.level !== 'normal').map(a => {
+        const c = colorMap[a.level] || '#64748b';
+        const pulse = a.pulse ? 'animation:erpPulse 2s infinite;' : '';
+        return '<div style="font-size:0.7rem;padding:4px 10px;border-radius:6px;background:' + c + '15;border:1px solid ' + c + '40;color:' + c + ';' + pulse + '">' + a.icon + ' ' + a.text + '</div>';
+    }).join('');
+    // 注入脉冲动画CSS
+    if (!document.getElementById('erp-pulse-style')) {
+        const style = document.createElement('style');
+        style.id = 'erp-pulse-style';
+        style.textContent = '@keyframes erpPulse{0%,100%{opacity:1;box-shadow:0 0 8px rgba(245,158,11,0.3)}50%{opacity:0.7;box-shadow:0 0 16px rgba(245,158,11,0.6)}}';
+        document.head.appendChild(style);
+    }
+}
+
+function renderERPTradeHub(trade) {
+    // 信号等级条
+    const levelBar = document.getElementById('erp-signal-level-bar');
+    const levels = ['cash','underweight','reduce','hold','buy','strong_buy'];
+    const levelLabels = ['\u6E05\u4ED3','\u4F4E\u914D','\u51CF\u4ED3','\u6807\u914D','\u4E70\u5165','\u5F3A\u4E70'];
+    const levelColors = ['#ef4444','#f97316','#f59e0b','#3b82f6','#34d399','#10b981'];
+    if (levelBar) {
+        levelBar.innerHTML = levels.map((l, i) => {
+            const active = l === trade.signal_key;
+            return '<div style="width:' + (active ? '40' : '20') + 'px;height:8px;border-radius:4px;background:' + (active ? levelColors[i] : 'rgba(100,116,139,0.2)') + ';transition:all 0.5s;" title="' + levelLabels[i] + '"></div>';
+        }).join('');
+    }
+    // ETF
+    const etfC = document.getElementById('erp-etf-advice');
+    if (etfC && trade.etf_advice) {
+        etfC.innerHTML = trade.etf_advice.map(e => {
+            return '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:rgba(100,116,139,0.1);border-radius:4px;">' +
+                '<div><span style="font-size:0.75rem;color:#e2e8f0;">' + e.etf.name + '</span><span style="font-size:0.6rem;color:#64748b;margin-left:6px;">' + e.etf.code + '</span></div>' +
+                '<div style="text-align:right;"><span style="font-size:0.8rem;font-weight:700;color:#f59e0b;">' + e.ratio + '</span><div style="font-size:0.55rem;color:#64748b;">' + e.reason + '</div></div></div>';
+        }).join('');
+    }
+    // 止盈
+    const tpC = document.getElementById('erp-take-profit');
+    if (tpC && trade.take_profit) {
+        tpC.innerHTML = trade.take_profit.map(r =>
+            '<div style="font-size:0.65rem;padding:4px 6px;background:rgba(16,185,129,0.08);border-radius:4px;border-left:2px solid #10b981;">' +
+            '<div style="color:#10b981;">' + r.trigger + '</div><div style="color:#94a3b8;margin-top:2px;">\u2192 ' + r.action + '</div></div>'
+        ).join('');
+    }
+    // 止损
+    const slC = document.getElementById('erp-stop-loss');
+    if (slC && trade.stop_loss) {
+        slC.innerHTML = trade.stop_loss.map(r => {
+            const c = r.color || '#f59e0b';
+            return '<div style="font-size:0.65rem;padding:4px 6px;background:' + c + '10;border-radius:4px;border-left:2px solid ' + c + ';">' +
+                '<div style="color:' + c + ';">' + r.trigger + '</div><div style="color:#94a3b8;margin-top:2px;">\u2192 ' + r.action + '</div></div>';
+        }).join('');
+    }
+}
+
+function renderERPDimBars(dims, encyclopedia) {
+    const container = document.getElementById('erp-dim-bars');
+    if (!container || !dims) return;
+    const order = ['erp_abs', 'erp_pct', 'm1_trend', 'volatility', 'credit'];
+    const icons = { erp_abs: '\uD83D\uDCCA', erp_pct: '\uD83D\uDCD0', m1_trend: '\uD83D\uDCA7', volatility: '\uD83C\uDF0A', credit: '\uD83D\uDD17' };
+    const encKeys = { erp_abs: 'erp_abs', erp_pct: 'erp_pct', m1_trend: 'm1_trend', volatility: 'volatility', credit: 'credit' };
+    container.innerHTML = order.map(key => {
+        const d = dims[key];
+        if (!d) return '';
+        const barColor = d.score >= 70 ? '#10b981' : (d.score >= 40 ? '#f59e0b' : '#ef4444');
+        const weightPct = Math.round(d.weight * 100);
+        const enc = encyclopedia[encKeys[key]];
+        const encHtml = enc ? '<div id="erp-enc-' + key + '" style="display:none;margin-top:6px;padding:8px;background:rgba(59,130,246,0.08);border-radius:6px;border:1px solid rgba(59,130,246,0.2);font-size:0.63rem;color:#cbd5e1;line-height:1.6;">' +
+            '<div style="color:#60a5fa;font-weight:600;margin-bottom:3px;">' + enc.title + '</div>' +
+            '<div>\uD83D\uDCD6 ' + enc.what + '</div>' +
+            '<div>\u2753 ' + enc.why + '</div>' +
+            '<div style="color:#f59e0b;">\u26A0\uFE0F ' + enc.alert + '</div>' +
+            '<div style="color:#64748b;">\uD83D\uDCDC ' + enc.history + '</div></div>' : '';
+        return '<div>' +
+            '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">' +
+            '<span style="font-size:0.78rem;color:#e2e8f0;">' + (icons[key]||'') + ' ' + d.label + ' <span style="color:#64748b;font-size:0.65rem;">(' + weightPct + '%)</span>' +
+            (enc ? ' <span style="cursor:pointer;font-size:0.65rem;" onclick="var e=document.getElementById(\'erp-enc-' + key + '\');e.style.display=e.style.display===\'none\'?\'block\':\'none\';">\u2139\uFE0F</span>' : '') +
+            '</span>' +
+            '<span style="font-size:0.82rem;font-weight:700;color:' + barColor + ';">' + d.score + '</span></div>' +
+            '<div style="height:8px;background:rgba(100,116,139,0.2);border-radius:4px;overflow:hidden;position:relative;">' +
+            '<div style="height:100%;width:' + d.score + '%;background:linear-gradient(90deg,' + barColor + '80,' + barColor + ');border-radius:4px;transition:width 0.8s ease;"></div>' +
+            '<div style="position:absolute;top:0;left:35%;width:1px;height:100%;background:rgba(255,255,255,0.15);"></div>' +
+            '<div style="position:absolute;top:0;left:70%;width:1px;height:100%;background:rgba(255,255,255,0.15);"></div></div>' +
+            '<div style="font-size:0.63rem;color:#94a3b8;margin-top:3px;">' + (d.desc || '') + '</div>' +
+            encHtml + '</div>';
+    }).join('');
+}
+
+function renderERPGauge(signal, trade) {
+    const dom = document.getElementById('erp-gauge-chart');
+    if (!dom) return;
+    if (_erpGaugeChart) _erpGaugeChart.dispose();
+    _erpGaugeChart = echarts.init(dom);
+    const score = signal.score || 50;
+    const color = signal.color || '#64748b';
+    _erpGaugeChart.setOption({
+        series: [{
+            type: 'gauge', startAngle: 200, endAngle: -20, min: 0, max: 100,
+            center: ['50%', '60%'], radius: '88%',
+            itemStyle: { color: color },
+            progress: { show: true, width: 16, roundCap: true },
+            pointer: { show: false },
+            axisLine: { lineStyle: { width: 16, color: [[0.25, '#ef4444'], [0.40, '#f59e0b'], [0.55, '#3b82f6'], [0.70, '#34d399'], [1, '#10b981']] } },
+            axisTick: { show: false }, splitLine: { show: false },
+            axisLabel: {
+                distance: 22, fontSize: 9, color: '#64748b',
+                formatter: function(v) { if(v===0) return '\u6E05\u4ED3'; if(v===25) return '\u4F4E\u914D'; if(v===40) return '\u51CF\u4ED3'; if(v===55) return '\u6807\u914D'; if(v===70) return '\u4E70\u5165'; if(v===100) return ''; return ''; }
+            },
+            detail: {
+                valueAnimation: true, fontSize: 26, fontWeight: 'bold', color: color,
+                offsetCenter: [0, '10%'],
+                formatter: function(v) { return v + '\n' + (signal.label || ''); }
+            },
+            data: [{ value: score }]
+        }]
+    });
+    // 信号矩阵
+    const matrix = document.getElementById('erp-signal-matrix');
+    if (matrix && trade) {
+        matrix.innerHTML = (trade.resonance_label || '') + ' | \u4ED3\u4F4D\u5EFA\u8BAE: <span style="color:' + color + ';font-weight:700;">' + (signal.position || '--') + '</span>';
+    }
+}
+
+function renderERPHistoryChart(chart) {
+    const dom = document.getElementById('erp-history-chart');
+    if (!dom) return;
+    if (_erpHistoryChart) _erpHistoryChart.dispose();
+    _erpHistoryChart = echarts.init(dom);
+    const stats = chart.stats || {};
+    // 买卖区间着色数据
+    const buyZone = chart.erp.map(v => v >= (stats.overweight_line || 99) ? v : null);
+    const sellZone = chart.erp.map(v => v <= (stats.underweight_line || -99) ? v : null);
+    _erpHistoryChart.setOption({
+        tooltip: { trigger: 'axis', backgroundColor: 'rgba(15,23,42,0.95)', borderColor: '#334155', textStyle: { fontSize: 11, color: '#e2e8f0' },
+            formatter: function(params) {
+                let r = '<div style="font-size:0.7rem;color:#64748b;margin-bottom:4px;">' + params[0].axisValue + '</div>';
+                params.forEach(p => { if(p.value!=null) r += '<div>' + p.marker + ' ' + p.seriesName + ': <b>' + p.value + (p.seriesIndex <= 2 ? '%' : '') + '</b></div>'; });
+                return r;
+            }
+        },
+        legend: { data: ['ERP', '\u4E70\u5165\u533A', '\u5356\u51FA\u533A', 'PE-TTM', '10Y\u56FD\u503A'], top: 0, textStyle: { color: '#94a3b8', fontSize: 10 } },
+        grid: { top: 40, bottom: 30, left: 50, right: 50 },
+        xAxis: { type: 'category', data: chart.dates, axisLabel: { color: '#64748b', fontSize: 10, interval: Math.floor(chart.dates.length / 6) } },
+        yAxis: [
+            { type: 'value', name: 'ERP %', nameTextStyle: { color: '#64748b', fontSize: 10 }, axisLabel: { color: '#64748b', fontSize: 10, formatter: '{value}%' }, splitLine: { lineStyle: { color: 'rgba(100,116,139,0.1)' } } },
+            { type: 'value', name: 'PE-TTM', nameTextStyle: { color: '#64748b', fontSize: 10 }, axisLabel: { color: '#64748b', fontSize: 10 }, splitLine: { show: false } }
+        ],
+        series: [
+            {
+                name: 'ERP', type: 'line', data: chart.erp, yAxisIndex: 0,
+                lineStyle: { color: '#f59e0b', width: 2 }, itemStyle: { color: '#f59e0b' },
+                symbol: 'none', z: 10,
+                markLine: {
+                    silent: true, symbol: 'none', lineStyle: { type: 'dashed', width: 1 },
+                    data: [
+                        { yAxis: stats.mean, label: { formatter: '\u5747\u503C ' + stats.mean + '%', color: '#94a3b8', fontSize: 9 }, lineStyle: { color: '#64748b' } },
+                        { yAxis: stats.overweight_line, label: { formatter: '\u8D85\u914D\u7EBF ' + stats.overweight_line + '%', color: '#10b981', fontSize: 9, position: 'insideEndTop' }, lineStyle: { color: '#10b981' } },
+                        { yAxis: stats.underweight_line, label: { formatter: '\u4F4E\u914D\u7EBF ' + stats.underweight_line + '%', color: '#ef4444', fontSize: 9, position: 'insideEndTop' }, lineStyle: { color: '#ef4444' } },
+                        { yAxis: stats.strong_buy_line, label: { formatter: '\u5F3A\u4E70\u7EBF ' + stats.strong_buy_line + '%', color: '#10b981', fontSize: 9, position: 'insideEndTop' }, lineStyle: { color: '#10b98180', type: 'dotted' } }
+                    ]
+                }
+            },
+            {
+                name: '\u4E70\u5165\u533A', type: 'line', data: buyZone, yAxisIndex: 0,
+                lineStyle: { width: 0 }, itemStyle: { color: '#10b981' }, symbol: 'none',
+                areaStyle: { color: 'rgba(16,185,129,0.15)' }
+            },
+            {
+                name: '\u5356\u51FA\u533A', type: 'line', data: sellZone, yAxisIndex: 0,
+                lineStyle: { width: 0 }, itemStyle: { color: '#ef4444' }, symbol: 'none',
+                areaStyle: { color: 'rgba(239,68,68,0.15)' }
+            },
+            {
+                name: 'PE-TTM', type: 'line', data: chart.pe_ttm, yAxisIndex: 1,
+                lineStyle: { color: '#3b82f6', width: 1.5, type: 'dashed' }, itemStyle: { color: '#3b82f6' }, symbol: 'none'
+            },
+            {
+                name: '10Y\u56FD\u503A', type: 'line', data: chart.yield_10y, yAxisIndex: 0,
+                lineStyle: { color: '#ef4444', width: 1, type: 'dotted' }, itemStyle: { color: '#ef4444' }, symbol: 'none'
+            }
+        ]
+    });
+}
+
+function renderERPEncyclopedia(enc) {
+    const body = document.getElementById('erp-encyclopedia-body');
+    if (!body || !enc) return;
+    const order = ['erp_abs', 'erp_pct', 'm1_trend', 'volatility', 'credit'];
+    const colors = ['#f59e0b', '#8b5cf6', '#3b82f6', '#ec4899', '#06b6d4'];
+    body.innerHTML = order.map((key, i) => {
+        const e = enc[key];
+        if (!e) return '';
+        const c = colors[i];
+        return '<div style="background:rgba(15,23,42,0.6);border:1px solid ' + c + '30;border-radius:8px;padding:12px;">' +
+            '<div style="font-size:0.8rem;font-weight:600;color:' + c + ';margin-bottom:6px;">' + e.title + '</div>' +
+            '<div style="font-size:0.65rem;color:#cbd5e1;line-height:1.7;">' +
+            '<div style="margin-bottom:4px;">\uD83D\uDCD6 <b>\u662F\u4EC0\u4E48:</b> ' + e.what + '</div>' +
+            '<div style="margin-bottom:4px;">\u2753 <b>\u4E3A\u4EC0\u4E48\u91CD\u8981:</b> ' + e.why + '</div>' +
+            '<div style="margin-bottom:4px;color:#f59e0b;">\u26A0\uFE0F <b>\u8B66\u793A:</b> ' + e.alert + '</div>' +
+            '<div style="color:#64748b;">\uD83D\uDCDC <b>\u5386\u53F2:</b> ' + e.history + '</div></div></div>';
+    }).join('');
+}
+
+function renderERPDiagnosis(cards) {
+    const container = document.getElementById('erp-diagnosis-cards');
+    if (!container) return;
+    const typeMap = {
+        success: { bg: 'rgba(16,185,129,0.08)', border: '#10b981', icon: '\u2705' },
+        info:    { bg: 'rgba(59,130,246,0.08)', border: '#3b82f6', icon: '\u2139\uFE0F' },
+        warning: { bg: 'rgba(245,158,11,0.08)', border: '#f59e0b', icon: '\u26A0\uFE0F' },
+        danger:  { bg: 'rgba(239,68,68,0.08)',  border: '#ef4444', icon: '\uD83D\uDEA8' }
+    };
+    container.innerHTML = cards.map(c => {
+        const style = typeMap[c.type] || typeMap.info;
+        return '<div style="background:' + style.bg + ';border:1px solid ' + style.border + '33;border-left:3px solid ' + style.border + ';border-radius:8px;padding:10px 12px;">' +
+            '<div style="font-size:0.75rem;font-weight:600;color:' + style.border + ';margin-bottom:3px;">' + style.icon + ' ' + c.title + '</div>' +
+            '<div style="font-size:0.65rem;color:#cbd5e1;line-height:1.5;">' + c.text + '</div></div>';
+    }).join('');
+}
+
+// 窗口resize
+window.addEventListener('resize', () => {
+    if (_erpGaugeChart) _erpGaugeChart.resize();
+    if (_erpHistoryChart) _erpHistoryChart.resize();
+});
+

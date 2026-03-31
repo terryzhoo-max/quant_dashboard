@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const syncBtn = document.getElementById('sync-btn');
     const overlay = document.getElementById('loading-overlay');
 
-    let charts = { rps: null, value: null, risk: null, rsLine: null, radar: null };
+    let charts = { rps: null, value: null, risk: null, rsLine: null, heatmap: null };
     let currentCode = null;
     let allSectorData = [];
 
@@ -23,16 +23,16 @@ document.addEventListener('DOMContentLoaded', function() {
         { code: "159915.SZ", name: "创业板/成长" }
     ];
 
-    // === 指标百科数据 ===
+    // === 指标百科数据 V4.0 ===
     const GLOSSARY = [
         { name: "Alpha Score (综合评分)", desc: "四因子加权的综合投资评分。热度30% + 动量25% + 估值安全25% + 趋势强度20%。分数越高越值得配置。", range: "60-80 优质", warn: "< 35 需回避" },
-        { name: "RPS (相对强度排名)", desc: "该行业ETF价格在全市场ETF中的相对强度排名位置。反映板块在同类中的涨幅表现。", range: "> 80 优秀", warn: "< 30 极弱，谨慎追入" },
-        { name: "PE 分位 (估值百分位)", desc: "当前市盈率在过去5年中的百分位。低分位=便宜=安全边际高，高分位=昂贵=回撤风险大。", range: "20-60 合理", warn: "> 80 极贵，< 15 极便宜" },
+        { name: "RPS (动态相对强度)", desc: "该行业ETF近20日收益率在12个核心ETF中的排名百分位。反映板块在同类中的相对表现。", range: "> 80 优秀", warn: "< 30 极弱，谨慎追入" },
+        { name: "价格百分位 (估值代理)", desc: "当前价格在过去5年(1250个交易日)价格分布中的百分位。低=便宜=安全边际高，高=昂贵=回撤风险大。", range: "20-60 合理", warn: "> 80 极贵，< 15 极便宜" },
         { name: "成交拥挤度", desc: "当日成交额与20日平均成交额的比值。衡量场内资金的拥挤程度，过高表示追涨情绪浓厚。", range: "0.8-1.5x 健康", warn: "> 2.0x 极度拥挤，追高危险" },
         { name: "热度分 (Heat Score)", desc: "资金关注度综合评分。成交放量比40% + 5日动量35% + 拥挤度修正25%。反映市场资金对该行业的关注热情。", range: "45-70 活跃", warn: "> 85 过热，可能见顶" },
         { name: "放量比 (Vol Ratio)", desc: "当日成交金额与20日均量的比值，>1表示放量。配合价格方向判断：放量上涨=强势，放量下跌=出货。", range: "0.8-1.5x", warn: "> 2.5x 可能见顶放量" },
         { name: "MA20 / MA60", desc: "20日/60日均线。站上MA20=短期趋势向好，站上MA60=中期趋势健康。MA20斜率向上=趋势加速。", range: "站上MA20+MA60 最佳", warn: "跌破MA60 → 中线止损" },
-        { name: "5D / 20D 动量", desc: "近5日/20日的累计涨跌幅。正值=上涨趋势，负值=下跌趋势。20D动量更稳定，适合判断中期方向。", range: "5D +1~5% 健康", warn: "5D > +8% 短期过热" }
+        { name: "20D 动量趋势", desc: "近20日的累计涨跌幅。替代原北向资金卡(北向数据需要申万行业对照)。正值=上涨趋势，负值=下跌趋势。", range: "+2~8% 健康上行", warn: "> +12% 短期严重过热" }
     ];
 
     // === 颜色工具 ===
@@ -40,6 +40,9 @@ document.addEventListener('DOMContentLoaded', function() {
         return { A: '#10b981', B: '#3b82f6', C: '#64748b', D: '#f59e0b', F: '#ef4444' }[grade] || '#64748b';
     }
     function trendColor(v) { return v > 0 ? '#f87171' : (v < 0 ? '#34d399' : '#94a3b8'); }
+    function momTrendColor(trend) {
+        return { strong_up: '#f87171', up: '#fb923c', neutral: '#94a3b8', down: '#34d399', strong_down: '#10b981' }[trend] || '#94a3b8';
+    }
 
     // === 初始化 ===
     async function initPage() {
@@ -47,6 +50,7 @@ document.addEventListener('DOMContentLoaded', function() {
         initCharts();
         renderGlossary();
         initGlossaryToggle();
+        loadRegimeBanner();
         await loadRotationMatrix();
         if (currentCode) loadIndustryDetail(currentCode);
     }
@@ -56,7 +60,31 @@ document.addEventListener('DOMContentLoaded', function() {
         charts.value = echarts.init(document.getElementById('gauge-value'));
         charts.risk = echarts.init(document.getElementById('gauge-risk'));
         charts.rsLine = echarts.init(document.getElementById('rs-line-chart'));
-        charts.radar = echarts.init(document.getElementById('radar-chart'));
+        charts.heatmap = echarts.init(document.getElementById('heatmap-chart'));
+    }
+
+    // === V4.0 Regime Banner ===
+    async function loadRegimeBanner() {
+        try {
+            const res = await fetch('/api/v1/market/regime');
+            const result = await res.json();
+            if (result.status === 'ok') {
+                const r = result;
+                const banner = document.getElementById('regime-banner');
+                if (!banner) return;
+                const colorMap = { BULL: '#10b981', RANGE: '#f59e0b', BEAR: '#ef4444', CRASH: '#dc2626' };
+                const bgMap = { BULL: 'rgba(16,185,129,0.08)', RANGE: 'rgba(245,158,11,0.08)', BEAR: 'rgba(239,68,68,0.08)', CRASH: 'rgba(220,38,38,0.12)' };
+                const bc = colorMap[r.regime] || '#94a3b8';
+                banner.style.borderColor = bc;
+                banner.style.background = bgMap[r.regime] || 'rgba(148,163,184,0.05)';
+                banner.innerHTML = `
+                    <span style="font-weight:800; color:${bc}; font-size:0.9rem;">${r.regime_icon || '🟡'} ${r.regime_cn || r.regime}</span>
+                    <span style="color:#94a3b8; font-size:0.82rem;">CSI300 <b style="color:#e2e8f0">${r.csi300}</b> · MA120 ${r.ma120}</span>
+                    <span style="color:#94a3b8; font-size:0.82rem;">VIX <b style="color:${r.layer2_vix > 25 ? '#f87171':'#e2e8f0'}">${r.ret5d !== undefined ? r.ret5d + '%' : '--'}</b> 5D</span>
+                    <span style="font-size:0.78rem; padding:3px 10px; border-radius:6px; background:${bgMap[r.regime]}; color:${bc}; font-weight:600;">建议仓位 ${r.pos_cap}%</span>
+                `;
+            }
+        } catch(e) { console.log('Regime banner skipped:', e); }
     }
 
     // === V3.0 指标百科 ===
@@ -80,7 +108,6 @@ document.addEventListener('DOMContentLoaded', function() {
         const drawerOverlay = document.getElementById('glossary-overlay');
         const closeBtn = document.getElementById('glossary-close');
 
-        // 首次访问闪烁提示
         if (!localStorage.getItem('alphacore_glossary_seen')) {
             toggle.classList.add('pulse-hint');
             setTimeout(() => {
@@ -98,7 +125,7 @@ document.addEventListener('DOMContentLoaded', function() {
         document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
     }
 
-    // === V3.2 导航条渲染 (Alpha分数 + 排名奖牌) ===
+    // === V4.0 导航条渲染 + 自动滚动聚焦 ===
     function renderSectorNav(rankData = []) {
         if (rankData.length > 0) {
             rankData.sort((a, b) => (b.alpha_score || 0) - (a.alpha_score || 0));
@@ -153,7 +180,15 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // === V3.0 Alpha Score 排行榜 ===
+    // V4.0: 自动滚动到选中tile
+    function scrollToActiveTile() {
+        const activeTile = document.querySelector('.sector-tile.active');
+        if (activeTile) {
+            activeTile.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        }
+    }
+
+    // === V4.0 Alpha Score 排行榜 (带stagger动画) ===
     function renderAlphaRanking(data) {
         const container = document.getElementById('alpha-ranking-list');
         const strongCount = data.filter(d => d.alpha_grade === 'A' || d.alpha_grade === 'B').length;
@@ -173,8 +208,23 @@ document.addEventListener('DOMContentLoaded', function() {
                 `<span class="risk-tag ${a.level}">${a.icon} ${a.text}</span>`
             ).join('');
 
+            // V4.0: Mini factor bars (紧凑模式可见)
+            const fBars = [
+                { label: '热', val: d.f_heat || 0, color: '#f87171' },
+                { label: '动', val: d.f_momentum || 0, color: '#3b82f6' },
+                { label: '值', val: d.f_valuation || 0, color: '#10b981' },
+                { label: '趋', val: d.f_trend || 0, color: '#a78bfa' }
+            ];
+            const miniBarsHtml = `<div class="mini-factor-bars">
+                ${fBars.map(f => `<div class="mini-bar-item">
+                    <span class="mini-bar-label">${f.label}</span>
+                    <div class="mini-bar-track"><div class="mini-bar-fill" style="width:${Math.min(100,f.val)}%;background:${f.color};opacity:${f.val>=60?1:0.4}"></div></div>
+                    <span class="mini-bar-val" style="color:${f.val>=60?f.color:'#64748b'}">${f.val.toFixed(0)}</span>
+                </div>`).join('')}
+            </div>`;
+
             return `
-                <div class="alpha-card grade-${d.alpha_grade || 'C'} ${isActive ? 'active-card' : ''}" data-code="${code}">
+                <div class="alpha-card grade-${d.alpha_grade || 'C'} ${isActive ? 'active-card' : ''}" data-code="${code}" style="animation-delay:${idx * 60}ms">
                     <div class="alpha-card-top">
                         <div class="alpha-card-info">
                             <span class="alpha-card-rank">#${idx+1}</span>
@@ -197,13 +247,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                     </div>
 
-                    <div class="alpha-factors">
-                        <span class="alpha-factor-tag">🔥 热度 ${(d.heat_score||0).toFixed(0)}</span>
-                        <span class="alpha-factor-tag">📊 放量 ${(d.vol_ratio||1).toFixed(1)}x</span>
-                        <span class="alpha-factor-tag">📈 动量 ${(d.f_momentum||0).toFixed(0)}</span>
-                        <span class="alpha-factor-tag">💰 PE ${(d.pe_percentile||50).toFixed(0)}%</span>
-                        <span class="alpha-factor-tag">${d.trend_strength?.above_ma20 ? '✅' : '❌'} MA20</span>
-                    </div>
+                    ${miniBarsHtml}
 
                     <div class="alpha-strategy">
                         <div class="alpha-strat-row">
@@ -232,13 +276,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 const code = card.getAttribute('data-code');
                 if (code === currentCode) return;
                 currentCode = code;
-                // 同步导航条
                 document.querySelectorAll('.sector-tile').forEach(t => {
                     t.classList.toggle('active', t.getAttribute('data-code') === code);
                 });
                 updateActiveCard();
                 renderStrategyCard(code);
                 loadIndustryDetail(code);
+                scrollToActiveTile();
             });
         });
     }
@@ -323,67 +367,67 @@ document.addEventListener('DOMContentLoaded', function() {
         `;
     }
 
-    // === V3.0 行业雷达图 (新增Alpha维度) ===
-    function renderRadarChart(data) {
+    // === V4.0 热力矩阵 (替代雷达图) ===
+    function renderHeatmapChart(data) {
         if (!data || data.length === 0) return;
         const names = data.map(d => d.name);
-        const alphaScores = data.map(d => d.alpha_score || 0);
-        const heatScores = data.map(d => d.heat_score || 0);
-        const momScores = data.map(d => d.f_momentum || 50);
-        const peScores = data.map(d => 100 - (d.pe_percentile || 50));
+        const dims = ['Alpha', '热度', '动量', '估值安全'];
+        const heatData = [];
 
-        charts.radar.setOption({
+        data.forEach((d, xi) => {
+            const scores = [d.alpha_score || 0, d.heat_score || 0, d.f_momentum || 50, d.f_valuation || 50];
+            scores.forEach((val, yi) => {
+                heatData.push([xi, yi, Math.round(val)]);
+            });
+        });
+
+        charts.heatmap.setOption({
             tooltip: {
-                trigger: 'item',
+                position: 'top',
                 backgroundColor: 'rgba(10, 10, 10, 0.92)',
                 borderColor: 'rgba(255,255,255,0.1)',
-                textStyle: { color: '#fff', fontSize: 12 }
+                textStyle: { color: '#fff', fontSize: 12 },
+                formatter: p => `<b>${names[p.data[0]]}</b><br/>${dims[p.data[1]]}: <b>${p.data[2]}</b>`
             },
-            legend: {
-                data: ['Alpha综合', '资金热度', '价格动量', '估值安全'],
-                textStyle: { color: '#94a3b8', fontSize: 11 },
-                bottom: 10, icon: 'circle'
+            grid: { top: 10, bottom: 60, left: 80, right: 20 },
+            xAxis: {
+                type: 'category',
+                data: names,
+                axisLabel: { color: '#cbd5e1', fontSize: 10, rotate: 35 },
+                splitArea: { show: false }
             },
-            radar: {
-                indicator: names.map(n => ({ name: n, max: 100 })),
-                center: ['50%', '48%'],
-                radius: '62%',
-                shape: 'polygon',
-                splitNumber: 4,
-                axisName: { color: '#cbd5e1', fontSize: 11, fontWeight: 500 },
-                nameGap: 10,
-                splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } },
-                splitArea: { show: true, areaStyle: { color: ['rgba(59,130,246,0.02)', 'rgba(59,130,246,0.04)', 'rgba(59,130,246,0.06)', 'rgba(59,130,246,0.08)'] } },
-                axisLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } }
+            yAxis: {
+                type: 'category',
+                data: dims,
+                axisLabel: { color: '#cbd5e1', fontSize: 11 },
+                splitArea: { show: false }
+            },
+            visualMap: {
+                min: 0, max: 100,
+                calculable: false,
+                orient: 'horizontal',
+                left: 'center',
+                bottom: 0,
+                itemWidth: 14, itemHeight: 100,
+                textStyle: { color: '#94a3b8', fontSize: 10 },
+                inRange: {
+                    color: ['#1e293b', '#1e3a5f', '#1d4ed8', '#059669', '#10b981', '#fbbf24', '#ef4444']
+                }
             },
             series: [{
-                type: 'radar',
-                data: [
-                    {
-                        value: alphaScores, name: 'Alpha综合',
-                        lineStyle: { color: '#a78bfa', width: 2.5 },
-                        areaStyle: { color: 'rgba(167, 139, 250, 0.15)' },
-                        itemStyle: { color: '#a78bfa' }, symbol: 'circle', symbolSize: 5
-                    },
-                    {
-                        value: heatScores, name: '资金热度',
-                        lineStyle: { color: '#ef4444', width: 1.5 },
-                        areaStyle: { color: 'rgba(239, 68, 68, 0.08)' },
-                        itemStyle: { color: '#ef4444' }, symbol: 'circle', symbolSize: 4
-                    },
-                    {
-                        value: momScores, name: '价格动量',
-                        lineStyle: { color: '#3b82f6', width: 1.5 },
-                        areaStyle: { color: 'rgba(59, 130, 246, 0.08)' },
-                        itemStyle: { color: '#3b82f6' }, symbol: 'circle', symbolSize: 4
-                    },
-                    {
-                        value: peScores, name: '估值安全',
-                        lineStyle: { color: '#10b981', width: 1.5, type: 'dashed' },
-                        areaStyle: { color: 'rgba(16, 185, 129, 0.06)' },
-                        itemStyle: { color: '#10b981' }, symbol: 'diamond', symbolSize: 5
-                    }
-                ]
+                type: 'heatmap',
+                data: heatData,
+                label: {
+                    show: true,
+                    color: '#fff',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    fontFamily: 'Outfit'
+                },
+                emphasis: {
+                    itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.5)' }
+                },
+                itemStyle: { borderColor: 'rgba(7,9,14,0.8)', borderWidth: 3, borderRadius: 4 }
             }]
         });
     }
@@ -414,7 +458,7 @@ document.addEventListener('DOMContentLoaded', function() {
         };
     }
 
-    // === 加载行业详情 ===
+    // === V4.0 加载行业详情 (适配新数据结构) ===
     async function loadIndustryDetail(code) {
         try {
             const res = await fetch(`/api/v1/industry-detail?code=${code}`);
@@ -423,14 +467,24 @@ document.addEventListener('DOMContentLoaded', function() {
                 const data = result.data;
                 const m = data.metrics;
 
-                charts.rps.setOption(getGaugeOption('RPS', m.rps, m.rps > 80 ? '#3b82f6' : '#94a3b8'));
+                charts.rps.setOption(getGaugeOption('RPS', m.rps, m.rps > 80 ? '#3b82f6' : (m.rps < 30 ? '#ef4444' : '#94a3b8')));
                 charts.value.setOption(getGaugeOption('Value', m.pe_percentile, m.pe_percentile > 70 ? '#ef4444' : (m.pe_percentile < 30 ? '#10b981' : '#f59e0b'), '%'));
                 charts.risk.setOption(getGaugeOption('Risk', m.crowding, m.crowding > 1.5 ? '#ef4444' : '#6366f1', 'x'));
 
-                const valFlow = document.getElementById('val-flow');
-                valFlow.textContent = m.hsgt_flow;
+                // V4.0: 20D动量趋势卡 (替代北向资金)
+                const mom20d = m.momentum_20d || {};
+                const momEl = document.getElementById('val-mom20d');
+                const momDescEl = document.getElementById('desc-mom20d');
+                if (momEl) {
+                    const momColor = momTrendColor(mom20d.trend);
+                    momEl.textContent = mom20d.ret_20d !== undefined ? `${mom20d.ret_20d > 0 ? '+' : ''}${mom20d.ret_20d.toFixed(1)}%` : '--';
+                    momEl.style.color = momColor;
+                }
+                if (momDescEl) {
+                    momDescEl.textContent = mom20d.label || '—';
+                }
 
-                document.getElementById('desc-rps').innerHTML = `<span style="color:${m.rps > 80 ? '#3b82f6' : '#94a3b8'}">${m.rps > 80 ? "🔥 强势领涨" : "🛡️ 震荡蓄势"}</span>`;
+                document.getElementById('desc-rps').innerHTML = `<span style="color:${m.rps > 80 ? '#3b82f6' : (m.rps < 30 ? '#ef4444':'#94a3b8')}">${m.rps > 80 ? "🔥 强势领涨" : (m.rps < 30 ? "⚠️ 极度弱势" : "🛡️ 震荡蓄势")}</span>`;
                 document.getElementById('desc-value').innerHTML = `<span style="color:${m.pe_percentile < 30 ? '#10b981' : (m.pe_percentile > 70 ? '#ef4444' : '#f59e0b')}">${m.pe_percentile < 30 ? "💎 极度低估" : (m.pe_percentile > 70 ? "⚠️ 估值偏高" : "⚖️ 合理区间")}</span>`;
                 document.getElementById('desc-risk').innerHTML = `<span style="color:${m.crowding > 1.5 ? '#ef4444' : '#6366f1'}">${m.crowding > 1.5 ? "🚫 极其拥挤" : "✅ 筹码健康"}</span>`;
 
@@ -455,17 +509,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
 
                 // RS Line Chart
-                charts.rsLine.setOption({
-                    tooltip: { trigger: 'axis', backgroundColor: 'rgba(10,10,10,0.85)', borderColor: 'rgba(255,255,255,0.1)', textStyle: { color: '#fff' } },
-                    grid: { top: 30, bottom: 30, left: 45, right: 20 },
-                    xAxis: { type: 'category', data: data.chart_data.dates.map(d => d.substring(4)), axisLabel: { color: '#64748b', fontSize: 10 } },
-                    yAxis: { type: 'value', axisLabel: { color: '#64748b' }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.04)' } } },
-                    legend: { data: ['中枢价格', '相对强度(RS)'], textStyle: { color: '#94a3b8', fontSize: 10 }, right: 0, icon: 'circle' },
-                    series: [
-                        { name: '中枢价格', type: 'line', data: data.chart_data.prices, itemStyle: { color: '#3b82f6' }, smooth: true, showSymbol: false, areaStyle: { color: new echarts.graphic.LinearGradient(0,0,0,1, [{offset:0, color:'rgba(59,130,246,0.15)'},{offset:1, color:'transparent'}]) } },
-                        { name: '相对强度(RS)', type: 'line', data: data.chart_data.relative_strength, itemStyle: { color: '#10b981' }, smooth: true, showSymbol: false }
-                    ]
-                });
+                if (data.chart_data && data.chart_data.dates.length > 0) {
+                    charts.rsLine.setOption({
+                        tooltip: { trigger: 'axis', backgroundColor: 'rgba(10,10,10,0.85)', borderColor: 'rgba(255,255,255,0.1)', textStyle: { color: '#fff' } },
+                        grid: { top: 30, bottom: 30, left: 45, right: 20 },
+                        xAxis: { type: 'category', data: data.chart_data.dates.map(d => String(d).substring(4)), axisLabel: { color: '#64748b', fontSize: 10 } },
+                        yAxis: { type: 'value', axisLabel: { color: '#64748b' }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.04)' } } },
+                        legend: { data: ['中枢价格', '相对强度(RS)'], textStyle: { color: '#94a3b8', fontSize: 10 }, right: 0, icon: 'circle' },
+                        series: [
+                            { name: '中枢价格', type: 'line', data: data.chart_data.prices, itemStyle: { color: '#3b82f6' }, smooth: true, showSymbol: false, areaStyle: { color: new echarts.graphic.LinearGradient(0,0,0,1, [{offset:0, color:'rgba(59,130,246,0.15)'},{offset:1, color:'transparent'}]) } },
+                            { name: '相对强度(RS)', type: 'line', data: data.chart_data.relative_strength, itemStyle: { color: '#10b981' }, smooth: true, showSymbol: false }
+                        ]
+                    });
+                }
 
                 // 成分股列表
                 const listEl = document.getElementById('list-constituents');
@@ -487,10 +543,10 @@ document.addEventListener('DOMContentLoaded', function() {
             if (result.status === 'success') {
                 allSectorData = result.data.sector_heatmap;
 
-                // V3.0: 渲染四大组件
+                // V4.0: 渲染四大组件
                 renderSectorNav(allSectorData);
                 renderAlphaRanking(allSectorData);
-                renderRadarChart(allSectorData);
+                renderHeatmapChart(allSectorData);
 
                 // 自动选中排名第一并渲染策略卡
                 if (allSectorData.length > 0 && currentCode) {

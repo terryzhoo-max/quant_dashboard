@@ -3,163 +3,785 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AlphaCore | 工业级回测终端</title>
+    <title>AlphaCore | 回测研究终端 V5.0</title>
+    <meta name="description" content="AlphaCore V5.0 量化回测终端 — 策略中心对齐、Regime预设、Radar评级、Alpha/IR、蒙特卡洛置信区间、Premium视觉升级">
     <link rel="stylesheet" href="./styles.css?v=2">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
     <script src="./echarts.min.js"></script>
     <style>
+        /* ═══════════════════════════════════════════════════════════════
+           AlphaCore Backtest Terminal V5.0 — Premium Design System
+           Sections: Tokens → Layout → Config → Drawer → Grade →
+                     Metrics → Charts → Bottom → Heatmap → PK →
+                     Empty → Loading → Error → Animations
+           ═══════════════════════════════════════════════════════════════ */
+
+        /* ===== §1 Design Tokens ===== */
         :root {
-            --terminal-sidebar-width: 320px;
+            --bt-gap: 16px;
+            --bt-radius: 12px;
+            --bt-glass: rgba(255, 255, 255, 0.03);
+            --bt-border: rgba(255, 255, 255, 0.06);
+            --bt-green: #10b981;
+            --bt-red: #ef4444;
+            --bt-amber: #f59e0b;
+            --bt-blue: #3b82f6;
+            --bt-purple: #8b5cf6;
+            --bt-cyan: #06b6d4;
+            --bt-bg: #0f1219;
         }
-        .backtest-container {
-            display: grid;
-            grid-template-columns: var(--terminal-sidebar-width) 1fr;
+
+        /* ===== Full-width Block Layout (no sidebar) ===== */
+        .bt-terminal {
+            display: flex;
+            flex-direction: column;
+            gap: var(--bt-gap);
+            padding: var(--bt-gap) 24px;
+            overflow-y: auto;
             height: calc(100vh - 80px);
-            gap: 20px;
-            padding: 20px;
         }
-        .config-sidebar {
+
+        /* ===== Top Bar: Config Strip ===== */
+        .bt-config-strip {
             display: flex;
-            flex-direction: column;
-            gap: 20px;
-            overflow-y: auto;
-            padding-right: 10px;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 20px;
+            background: var(--bt-glass);
+            border: 1px solid var(--bt-border);
+            border-radius: var(--bt-radius);
+            flex-wrap: wrap;
         }
-        .main-terminal {
+        .bt-config-strip .cfg-item {
             display: flex;
-            flex-direction: column;
-            gap: 20px;
-            overflow-y: auto;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.78rem;
+            color: var(--text-muted);
         }
-        .config-group {
-            padding: 20px;
+        .bt-config-strip .cfg-item label {
+            white-space: nowrap;
+            font-weight: 500;
         }
-        .config-title {
-            font-size: 0.9rem;
+        .bt-config-strip .cfg-item select,
+        .bt-config-strip .cfg-item input {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            padding: 6px 10px;
+            border-radius: 8px;
+            color: #fff;
+            font-family: inherit;
+            font-size: 0.78rem;
+        }
+        .bt-config-strip .cfg-item input[type="text"] { width: 100px; }
+        .bt-config-strip .cfg-item input[type="date"] { width: 125px; }
+        .bt-config-strip .cfg-item input[type="number"] { width: 85px; }
+        .bt-config-strip .cfg-item select { min-width: 130px; }
+
+        .bt-run-btn {
+            margin-left: auto;
+            padding: 8px 24px;
+            background: linear-gradient(135deg, var(--bt-blue), #2563eb);
+            border: none;
+            border-radius: 8px;
+            color: #fff;
             font-weight: 700;
-            color: var(--accent);
-            margin-bottom: 15px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 16px rgba(59,130,246,0.3);
+            white-space: nowrap;
+        }
+        .bt-run-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(59,130,246,0.5); }
+        .bt-run-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        /* ===== Config Drawer ===== */
+        .bt-drawer-toggle {
+            background: rgba(59,130,246,0.1);
+            border: 1px solid rgba(59,130,246,0.2);
+            color: var(--bt-blue);
+            padding: 6px 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.78rem;
+            font-weight: 600;
+            font-family: inherit;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .bt-drawer-toggle:hover { background: rgba(59,130,246,0.2); }
+
+        .bt-drawer-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 999;
+            display: none;
+            backdrop-filter: blur(4px);
+        }
+        .bt-drawer-overlay.open { display: block; }
+
+        .bt-drawer {
+            position: fixed;
+            top: 0; right: -420px;
+            width: 400px;
+            height: 100vh;
+            background: #0f1219;
+            border-left: 1px solid var(--bt-border);
+            z-index: 1000;
+            overflow-y: auto;
+            padding: 24px;
+            transition: right 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .bt-drawer.open { right: 0; }
+        .bt-drawer h3 {
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--bt-blue);
+            margin-bottom: 12px;
             text-transform: uppercase;
             letter-spacing: 1px;
             display: flex;
             align-items: center;
             gap: 8px;
         }
-        .input-item {
-            margin-bottom: 15px;
+        .bt-drawer .drawer-section {
+            padding: 16px;
+            background: var(--bt-glass);
+            border: 1px solid var(--bt-border);
+            border-radius: var(--bt-radius);
         }
-        .input-item label {
-            display: block;
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            margin-bottom: 6px;
-        }
-        .input-item select, .input-item input {
-            width: 100%;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 10px;
-            border-radius: 8px;
-            color: #fff;
-            font-family: inherit;
-        }
-        .input-item input:focus {
-            border-color: var(--accent);
-            outline: none;
-        }
-        .chart-panel {
-            min-height: 400px;
-            padding: 24px;
-        }
-        .metrics-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 15px;
-        }
-        .metric-mini-card {
-            padding: 15px;
-            text-align: center;
-        }
-        .metric-mini-card .label {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            margin-bottom: 5px;
-        }
-        .metric-mini-card .value {
-            font-size: 1.25rem;
-            font-weight: 700;
-            font-family: 'Outfit', sans-serif;
-        }
-        .value.pos { color: var(--success); }
-        .value.neg { color: var(--danger); }
-
-        /* Monte Carlo Legend */
-        .mc-legend {
-            display: flex;
-            gap: 15px;
-            font-size: 0.75rem;
-            margin-top: 10px;
-            justify-content: center;
-        }
-        .legend-item { display: flex; align-items: center; gap: 5px; }
-        .dot { width: 8px; height: 8px; border-radius: 50%; }
-
-        #run-backtest-btn {
-            width: 100%;
-            padding: 15px;
-            font-size: 1rem;
-            margin-top: 10px;
-        }
-
-        /* 策略参数面板 */
-        .param-row {
+        .bt-drawer .param-row {
             display: flex;
             align-items: center;
             justify-content: space-between;
             margin-bottom: 12px;
             gap: 10px;
         }
-        .param-row label {
+        .bt-drawer .param-row label {
             font-size: 0.78rem;
             color: var(--text-muted);
             white-space: nowrap;
             min-width: 80px;
         }
-        .param-row input[type="range"] {
+        .bt-drawer .param-row input[type="range"] {
             flex: 1;
-            accent-color: var(--accent);
+            accent-color: var(--bt-blue);
             cursor: pointer;
         }
-        .param-row .param-value {
+        .bt-drawer .param-row .param-value {
             font-size: 0.85rem;
             font-weight: 600;
-            color: var(--accent);
+            color: var(--bt-blue);
             min-width: 36px;
             text-align: right;
             font-family: 'Outfit', monospace;
         }
+        .bt-drawer-close {
+            position: absolute;
+            top: 16px; right: 16px;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.2rem;
+            cursor: pointer;
+        }
+        .bt-drawer .input-item {
+            margin-bottom: 12px;
+        }
+        .bt-drawer .input-item label {
+            display: block;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+        .bt-drawer .input-item select,
+        .bt-drawer .input-item input {
+            width: 100%;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            padding: 8px 10px;
+            border-radius: 8px;
+            color: #fff;
+            font-family: inherit;
+            font-size: 0.8rem;
+        }
+        /* ===== V4.0 Strategy Description Bar ===== */
+        .strategy-desc-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            margin-bottom: 12px;
+            background: rgba(59,130,246,0.06);
+            border: 1px solid rgba(59,130,246,0.12);
+            border-radius: 8px;
+        }
+        .strategy-icon {
+            font-size: 1.1rem;
+        }
+        .strategy-desc-text {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
 
-        .loading-overlay {
+        /* ===== V4.0 Regime Preset Buttons ===== */
+        .regime-presets {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 14px;
+        }
+        .preset-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-right: 4px;
+            font-weight: 600;
+        }
+        .preset-btn {
+            padding: 4px 12px;
+            font-size: 0.7rem;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 6px;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: 600;
+            transition: all 0.25s ease;
+        }
+        .preset-btn:hover {
+            background: rgba(59,130,246,0.1);
+            border-color: rgba(59,130,246,0.3);
+            color: #fff;
+        }
+        .preset-btn.active {
+            background: rgba(59,130,246,0.15);
+            border-color: var(--bt-blue);
+            color: var(--bt-blue);
+            box-shadow: 0 0 8px rgba(59,130,246,0.2);
+        }
+        .preset-bear.active {
+            background: rgba(239,68,68,0.12);
+            border-color: var(--bt-red);
+            color: var(--bt-red);
+            box-shadow: 0 0 8px rgba(239,68,68,0.2);
+        }
+        .preset-bull.active {
+            background: rgba(16,185,129,0.12);
+            border-color: var(--bt-green);
+            color: var(--bt-green);
+            box-shadow: 0 0 8px rgba(16,185,129,0.2);
+        }
+
+        .bt-drawer .reset-btn {
+            padding: 6px 14px;
+            font-size: 0.75rem;
+            background: rgba(59,130,246,0.1);
+            border: 1px solid rgba(59,130,246,0.2);
+            border-radius: 8px;
+            color: var(--bt-blue);
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: 600;
+        }
+
+        /* ===== §5 Grade Panel + Score Gauge ===== */
+        .bt-grade-row {
+            display: flex;
+            gap: var(--bt-gap);
+            align-items: stretch;
+        }
+        .bt-grade-panel {
+            width: 280px;
+            min-width: 280px;
+            padding: 16px;
+            background: var(--bt-glass);
+            border: 1px solid var(--bt-border);
+            border-radius: var(--bt-radius);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            position: relative;
+            overflow: hidden;
+        }
+        /* V5.0: Grade panel particle glow ring */
+        .bt-grade-panel::before {
+            content: '';
+            position: absolute;
+            top: -50%; left: -50%;
+            width: 200%; height: 200%;
+            background: conic-gradient(from 0deg, transparent 0deg, transparent 270deg, rgba(59,130,246,0.08) 310deg, transparent 360deg);
+            animation: bt-grade-orbit 8s linear infinite;
+            pointer-events: none;
+        }
+        @keyframes bt-grade-orbit { 100% { transform: rotate(360deg); } }
+        .bt-grade-top {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 4px;
+            position: relative; z-index: 1;
+        }
+        .bt-grade-badge {
+            font-size: 2.2rem;
+            font-weight: 900;
+            font-family: 'Outfit', sans-serif;
+            line-height: 1;
+        }
+        .bt-grade-badge.grade-S { color: #f59e0b; text-shadow: 0 0 25px rgba(245,158,11,0.6); animation: bt-glow-gold 2s ease-in-out infinite alternate; }
+        .bt-grade-badge.grade-A { color: #10b981; text-shadow: 0 0 20px rgba(16,185,129,0.5); animation: bt-glow-green 2s ease-in-out infinite alternate; }
+        .bt-grade-badge.grade-B { color: #3b82f6; text-shadow: 0 0 15px rgba(59,130,246,0.3); }
+        .bt-grade-badge.grade-C { color: #f59e0b; }
+        .bt-grade-badge.grade-D { color: #ef4444; animation: bt-pulse-red 1.5s ease-in-out infinite; }
+        .bt-grade-badge.grade-F { color: #dc2626; text-shadow: 0 0 20px rgba(220,38,38,0.5); animation: bt-pulse-red 1.5s ease-in-out infinite; }
+        @keyframes bt-glow-gold { from { text-shadow: 0 0 15px rgba(245,158,11,0.3); } to { text-shadow: 0 0 35px rgba(245,158,11,0.8), 0 0 60px rgba(245,158,11,0.3); } }
+        @keyframes bt-glow-green { from { text-shadow: 0 0 12px rgba(16,185,129,0.2); } to { text-shadow: 0 0 25px rgba(16,185,129,0.6), 0 0 50px rgba(16,185,129,0.2); } }
+        @keyframes bt-pulse-red { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
+        .bt-grade-score {
+            font-size: 1.4rem;
+            font-weight: 700;
+            font-family: 'Outfit', sans-serif;
+            color: #f1f5f9;
+            position: relative; z-index: 1;
+        }
+        .bt-grade-label {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            position: relative; z-index: 1;
+        }
+        #grade-radar { width: 100%; height: 170px; position: relative; z-index: 1; }
+
+        /* ===== §6 Metrics Grid (8 cards, 2 rows x 4) ===== */
+        .bt-metrics-grid {
+            flex: 1;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            grid-template-rows: repeat(2, 1fr);
+            gap: 10px;
+        }
+        .bt-metric-card {
+            padding: 14px 16px;
+            background: var(--bt-glass);
+            border: 1px solid var(--bt-border);
+            border-radius: var(--bt-radius);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden;
+        }
+        .bt-metric-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+            border-color: rgba(255,255,255,0.15);
+        }
+        /* V5.0: Hover → bar expands from 4px to 6px */
+        .bt-metric-card:hover .mc-bar { height: 6px; }
+        .bt-metric-card .mc-label {
+            font-size: 0.68rem;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .bt-metric-card .mc-value {
+            font-size: 1.2rem;
+            font-weight: 700;
+            font-family: 'Outfit', sans-serif;
+            color: #f1f5f9;
+        }
+        .bt-metric-card .mc-value.pos { color: var(--bt-green); }
+        .bt-metric-card .mc-value.neg { color: var(--bt-red); }
+        /* Threshold micro-bar (V5.0: transition on height) */
+        .bt-metric-card .mc-bar {
+            position: absolute;
+            bottom: 0; left: 0; right: 0;
+            height: 4px;
+            border-radius: 0 0 var(--bt-radius) var(--bt-radius);
+            transition: height 0.3s ease;
+        }
+        .bt-metric-card .mc-bar.bar-green { background: linear-gradient(90deg, var(--bt-green), rgba(16,185,129,0.3)); }
+        .bt-metric-card .mc-bar.bar-amber { background: linear-gradient(90deg, var(--bt-amber), rgba(245,158,11,0.3)); }
+        .bt-metric-card .mc-bar.bar-red { background: linear-gradient(90deg, var(--bt-red), rgba(239,68,68,0.3)); }
+
+        /* ===== V3.0: Diagnosis Card Grid ===== */
+        .bt-diagnosis-grid {
+            display: none;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 10px;
+        }
+        .bt-diagnosis-grid.show { display: grid; }
+        .bt-diag-card {
+            padding: 12px 14px;
+            background: var(--bt-glass);
+            border-radius: 10px;
+            border-left: 4px solid var(--bt-blue);
+            font-size: 0.78rem;
+            color: #cbd5e1;
+            line-height: 1.5;
+            transition: all 0.2s ease;
+        }
+        .bt-diag-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+        .bt-diag-card .diag-label {
+            font-size: 0.62rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+        }
+        .bt-diag-card.level-success { border-left-color: var(--bt-green); }
+        .bt-diag-card.level-success .diag-label { color: var(--bt-green); }
+        .bt-diag-card.level-warning { border-left-color: var(--bt-amber); }
+        .bt-diag-card.level-warning .diag-label { color: var(--bt-amber); }
+        .bt-diag-card.level-danger { border-left-color: var(--bt-red); }
+        .bt-diag-card.level-danger .diag-label { color: var(--bt-red); }
+        .bt-diag-card.level-info { border-left-color: var(--bt-blue); }
+        .bt-diag-card.level-info .diag-label { color: var(--bt-blue); }
+
+        /* ===== §8 Chart Panels ===== */
+        .bt-chart-panel {
+            padding: 20px;
+            background: var(--bt-glass);
+            border: 1px solid var(--bt-border);
+            border-radius: var(--bt-radius);
+            min-height: 380px;
+            position: relative;
+        }
+        /* V5.0: Left accent line on chart panels */
+        .bt-chart-panel::before {
+            content: '';
+            position: absolute;
+            top: 16px; left: 0;
+            width: 3px; height: 24px;
+            border-radius: 0 3px 3px 0;
+            background: linear-gradient(180deg, var(--bt-blue), var(--bt-purple));
+        }
+        .bt-chart-panel h4 {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #94a3b8;
+            margin-bottom: 12px;
+            padding-left: 8px;
+        }
+
+        /* ===== §9 Three-column bottom row ===== */
+        .bt-bottom-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: var(--bt-gap);
+        }
+        .bt-bottom-panel {
+            padding: 16px;
+            background: var(--bt-glass);
+            border: 1px solid var(--bt-border);
+            border-radius: var(--bt-radius);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+        /* V5.0: Left accent line on bottom panels */
+        .bt-bottom-panel::before {
+            content: '';
+            position: absolute;
+            top: 14px; left: 0;
+            width: 3px; height: 20px;
+            border-radius: 0 3px 3px 0;
+            background: linear-gradient(180deg, var(--bt-cyan), var(--bt-blue));
+        }
+        .bt-bottom-panel h4 {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #94a3b8;
+            margin-bottom: 12px;
+            padding-left: 8px;
+        }
+        .bt-stat-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            font-size: 0.78rem;
+        }
+        .bt-stat-item .stat-label { color: var(--text-muted); }
+        .bt-stat-item .stat-value { font-weight: 600; font-family: 'Outfit', monospace; color: #e2e8f0; }
+        .bt-stat-item .stat-value.pos { color: var(--bt-green); }
+        .bt-stat-item .stat-value.neg { color: var(--bt-red); }
+        .bt-stat-item .stat-value.warn { color: var(--bt-amber); }
+
+        /* ===== Trade Log ===== */
+        .bt-trade-log {
+            flex: 1;
+            overflow-y: auto;
+            max-height: 320px;
+        }
+        .bt-trade-log table {
+            width: 100%;
+            font-size: 0.75rem;
+            border-collapse: collapse;
+        }
+        .bt-trade-log thead {
+            position: sticky;
+            top: 0;
+            background: #0f1219;
+            z-index: 1;
+        }
+        .bt-trade-log th {
+            text-align: left;
+            padding: 8px 6px;
+            color: var(--text-muted);
+            font-weight: 500;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+        .bt-trade-log td {
+            padding: 7px 6px;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+        }
+        .bt-trade-log .tag-buy {
+            background: #065f46;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+        .bt-trade-log .tag-sell {
+            background: #991b1b;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+
+        /* ===== PK Mode ===== */
+        #pk-comparison-panel {
+            display: none;
+            padding: 16px;
+            background: var(--bt-glass);
+            border: 1px solid var(--bt-border);
+            border-radius: var(--bt-radius);
+        }
+        #pk-comparison-panel table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        #pk-comparison-panel th {
+            padding: 10px;
+            text-align: left;
+            color: var(--text-muted);
+            border-bottom: 2px solid rgba(255,255,255,0.1);
+        }
+        #pk-comparison-panel td {
+            padding: 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+        }
+
+        /* ===== §12 Empty State ===== */
+        .bt-empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 80px 20px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        /* V5.0: Animated dot grid background */
+        .bt-empty-state::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-image: radial-gradient(circle, rgba(59,130,246,0.08) 1px, transparent 1px);
+            background-size: 28px 28px;
+            animation: bt-grid-drift 20s linear infinite;
+            pointer-events: none;
+        }
+        @keyframes bt-grid-drift {
+            0% { transform: translate(0, 0); }
+            100% { transform: translate(28px, 28px); }
+        }
+        .bt-empty-state .empty-icon {
+            font-size: 3.5rem;
+            margin-bottom: 20px;
+            position: relative; z-index: 1;
+            animation: bt-float 3s ease-in-out infinite;
+        }
+        @keyframes bt-float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-8px); }
+        }
+        .bt-empty-state .empty-title {
+            font-size: 1.15rem;
+            font-weight: 600;
+            color: #94a3b8;
+            margin-bottom: 10px;
+            position: relative; z-index: 1;
+        }
+        .bt-empty-state .empty-desc {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            max-width: 440px;
+            line-height: 1.6;
+            position: relative; z-index: 1;
+        }
+
+        /* ===== §13 Loading Overlay ===== */
+        .bt-loading-overlay {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(7, 9, 14, 0.8);
-            backdrop-filter: blur(8px);
+            background: rgba(7, 9, 14, 0.88);
+            backdrop-filter: blur(12px);
             display: none;
             justify-content: center;
             align-items: center;
             z-index: 1000;
             flex-direction: column;
-            gap: 20px;
+            gap: 24px;
         }
-        .spinner {
+        .bt-loading-overlay.show { display: flex; }
+        .bt-spinner {
             width: 50px;
             height: 50px;
-            border: 4px solid rgba(59, 130, 246, 0.1);
-            border-top: 4px solid var(--accent);
+            border: 4px solid rgba(59,130,246,0.1);
+            border-top: 4px solid var(--bt-blue);
             border-radius: 50%;
-            animation: spin 1s linear infinite;
+            animation: bt-spin 1s linear infinite;
         }
-        @keyframes spin { 100% { transform: rotate(360deg); } }
+        @keyframes bt-spin { 100% { transform: rotate(360deg); } }
+        /* V5.0: Multi-step progress bar */
+        .bt-progress-container {
+            width: 320px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+        .bt-progress-track {
+            width: 100%;
+            height: 4px;
+            background: rgba(255,255,255,0.06);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .bt-progress-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--bt-blue), var(--bt-purple));
+            border-radius: 2px;
+            transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .bt-progress-steps {
+            display: flex;
+            gap: 16px;
+            font-size: 0.68rem;
+            color: rgba(255,255,255,0.3);
+        }
+        .bt-progress-steps .step.active { color: var(--bt-blue); font-weight: 600; }
+        .bt-progress-steps .step.done { color: var(--bt-green); }
+
+        /* ===== §14 Error ===== */
+        .bt-error {
+            display: none;
+            padding: 14px 20px;
+            border: 1px solid var(--bt-red);
+            background: rgba(239,68,68,0.08);
+            border-radius: var(--bt-radius);
+            color: var(--bt-red);
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+        .bt-error.show { display: flex; align-items: center; gap: 10px; }
+        .bt-error span { color: #f1f5f9; font-weight: 400; }
+
+        /* ===== §15 Heatmap Panel ===== */
+        .bt-heatmap-panel {
+            padding: 20px;
+            background: var(--bt-glass);
+            border: 1px solid var(--bt-border);
+            border-radius: var(--bt-radius);
+            min-height: 300px;
+            position: relative;
+        }
+        .bt-heatmap-panel::before {
+            content: '';
+            position: absolute;
+            top: 16px; left: 0;
+            width: 3px; height: 24px;
+            border-radius: 0 3px 3px 0;
+            background: linear-gradient(180deg, var(--bt-amber), var(--bt-red));
+        }
+        .bt-heatmap-panel h4 {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #94a3b8;
+            margin-bottom: 12px;
+            padding-left: 8px;
+        }
+
+        /* ===== §16 V5.0 Annual Statistics Panel ===== */
+        .bt-annual-panel {
+            padding: 20px;
+            background: var(--bt-glass);
+            border: 1px solid var(--bt-border);
+            border-radius: var(--bt-radius);
+            position: relative;
+        }
+        .bt-annual-panel::before {
+            content: '';
+            position: absolute;
+            top: 16px; left: 0;
+            width: 3px; height: 24px;
+            border-radius: 0 3px 3px 0;
+            background: linear-gradient(180deg, var(--bt-green), var(--bt-cyan));
+        }
+        .bt-annual-panel h4 {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #94a3b8;
+            margin-bottom: 12px;
+            padding-left: 8px;
+        }
+
+        /* ===== §17 V5.0 Stagger Entrance Animations ===== */
+        .bt-fade-in {
+            opacity: 0;
+            transform: translateY(16px);
+            animation: bt-stagger-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        @keyframes bt-stagger-in {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ===== §18 Trade Log Export Button ===== */
+        .bt-export-btn {
+            padding: 4px 12px;
+            font-size: 0.68rem;
+            background: rgba(59,130,246,0.1);
+            border: 1px solid rgba(59,130,246,0.2);
+            border-radius: 6px;
+            color: var(--bt-blue);
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: 600;
+            float: right;
+            transition: all 0.2s ease;
+        }
+        .bt-export-btn:hover {
+            background: rgba(59,130,246,0.2);
+        }
     </style>
 </head>
 <body>
@@ -191,7 +813,7 @@
             <a href="./backtest.html" class="nav-item active">
                 <span class="icon">🧪</span>
                 <span>量化回测</span>
-                <span class="badge-beta">Beta</span>
+                <span class="badge-beta" style="background: linear-gradient(135deg, var(--bt-blue), var(--bt-purple)); color:#fff; font-size:0.6rem; padding:1px 6px; border-radius:4px; font-weight:700;">V5.0</span>
             </a>
 
             <div class="nav-group-title">账 户 管 理</div>
@@ -205,237 +827,251 @@
     <main class="dashboard">
         <header class="topbar">
             <div class="welcome-box" style="margin:0">
-                <h2 style="font-size: 1.5rem">工业级回测工作台 <span style="font-size: 0.8rem; font-weight: 300; opacity: 0.6">/ High-Fidelity Backtest Terminal</span></h2>
-            </div>
-            <div class="actions">
-                <button class="btn btn-primary" id="run-backtest-btn">开始压力测试</button>
+                <h2 style="font-size: 1.4rem">回测研究终端 <span style="font-size: 0.75rem; font-weight: 300; opacity: 0.6">/ Backtest Research Terminal V5.0</span></h2>
             </div>
         </header>
 
-        <div class="backtest-container">
-            <!-- 配置侧边栏 -->
-            <div class="config-sidebar">
-                <div class="config-group glass-panel">
-                    <div class="config-title"><span>🎯</span> 策略与标的</div>
-                    <div class="input-item">
-                        <label>选择回测策略</label>
-                        <select id="strategy-select">
-                            <option value="mr">均值回归 V2.0 (Mean Reversion)</option>
-                            <option value="mom">动量轮动 V1.0 (Momentum)</option>
-                            <option value="div">红利防线 V1.0 (Dividend)</option>
-                        </select>
-                    </div>
-                    <div class="input-item">
-                        <label>回测标的代码</label>
-                        <input type="text" id="ts-code" value="510300.SH">
-                    </div>
-                    <div class="input-item">
-                        <label>价格复权类型</label>
-                        <select id="adj-select">
-                            <option value="qfq">前复权 (QFQ)</option>
-                            <option value="hfq">后复权 (HFQ)</option>
-                            <option value="None">不复权 (None)</option>
-                        </select>
-                    </div>
-                    <div class="input-item">
-                        <label>对比基准 (Benchmark)</label>
-                        <select id="benchmark-select">
-                            <option value="000300.SH">沪深300 (000300.SH)</option>
-                            <option value="000001.SH">上证指数 (000001.SH)</option>
-                            <option value="000905.SH">中证500 (000905.SH)</option>
-                            <option value="399006.SZ">创业板指 (399006.SZ)</option>
-                        </select>
-                    </div>
+        <div class="bt-terminal">
+            <!-- Config Strip (compact inline) -->
+            <div class="bt-config-strip">
+                <div class="cfg-item">
+                    <label>策略</label>
+                    <select id="strategy-select">
+                        <option value="mr">📐 均值回归 V4.2</option>
+                        <option value="div">💰 红利趋势 V4.0</option>
+                        <option value="mom">🚀 动量轮动 V3.0</option>
+                    </select>
                 </div>
-
-                <!-- 策略参数动态面板 -->
-                <div class="config-group glass-panel" id="strategy-params-group">
-                    <div class="config-title" style="display: flex; justify-content: space-between; align-items: center;">
-                        <span><span>🔧</span> 策略参数调节</span>
-                        <button class="btn" id="reset-params-btn" style="padding: 6px 14px; font-size: 0.75rem; background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(59, 130, 246, 0.05)); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 8px; color: #60a5fa; transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.2), 0 0 10px rgba(59, 130, 246, 0.1); backdrop-filter: blur(8px); font-family: 'Inter', sans-serif; font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">
-                            <span style="font-size: 0.9rem; filter: drop-shadow(0 0 4px rgba(59,130,246,0.6)); animation: pulse 2s infinite;">⚡</span> 恢复默认
-                        </button>
-                    </div>
-                    <div id="strategy-params-panel">
-                        <!-- 由 JS 动态填充 -->
-                    </div>
+                <div class="cfg-item">
+                    <label>标的</label>
+                    <input type="text" id="ts-code" value="510300.SH" placeholder="代码">
                 </div>
-
-                <div class="config-group glass-panel">
-                    <div class="config-title"><span>📅</span> 时间与规模</div>
-                    <div class="input-item">
-                        <label>开始日期</label>
-                        <div class="date-picker-wrapper" style="display: flex; align-items: center; gap: 8px; background: rgba(59, 130, 246, 0.08); padding: 5px 12px; border-radius: 8px; border: 1px solid rgba(59, 130, 246, 0.2); transition: all 0.3s ease;">
-                            <span style="font-size: 0.9rem; filter: saturate(1.5);">🗓️</span>
-                            <input type="date" id="start-date" value="2023-01-01" style="background: transparent; color: #f8fafc; border: none; outline: none; font-size: 0.85rem; font-family: 'Inter', sans-serif; cursor: pointer; width: 100%;">
-                        </div>
-                    </div>
-                    <div class="input-item">
-                        <label>结束日期</label>
-                        <div class="date-picker-wrapper" style="display: flex; align-items: center; gap: 8px; background: rgba(59, 130, 246, 0.08); padding: 5px 12px; border-radius: 8px; border: 1px solid rgba(59, 130, 246, 0.2); transition: all 0.3s ease;">
-                            <span style="font-size: 0.9rem; filter: saturate(1.5);">🗓️</span>
-                            <input type="date" id="end-date" value="2023-12-31" style="background: transparent; color: #f8fafc; border: none; outline: none; font-size: 0.85rem; font-family: 'Inter', sans-serif; cursor: pointer; width: 100%;">
-                        </div>
-                    </div>
-                    <div class="input-item">
-                        <label>初始资金 (CNY)</label>
-                        <input type="number" id="initial-cash" value="1000000">
-                    </div>
-                    <div class="input-item">
-                        <label>成交占比 (POV Model %)</label>
-                        <input type="number" step="0.01" id="order-pct" value="0.01">
-                        <small style="color: var(--text-muted); font-size: 0.65rem">模拟大额交易对市场的冲击深度</small>
-                    </div>
+                <div class="cfg-item">
+                    <label>起止</label>
+                    <input type="date" id="start-date" value="2021-01-01">
+                    <span style="color: var(--text-muted)">→</span>
+                    <input type="date" id="end-date" value="2025-12-31">
                 </div>
-
-                <div class="config-group glass-panel">
-                    <div class="config-title"><span>⚔️</span> 竞技场/对比</div>
-                    <div class="input-item" style="display: flex; align-items: center; gap: 10px; margin-bottom: 0;">
-                        <input type="checkbox" id="pk-mode" style="width: 20px; height: 20px; cursor: pointer;">
-                        <label for="pk-mode" style="margin-bottom: 0; cursor: pointer; color: var(--accent); font-weight: 600;">开启多策略 PK 模式</label>
-                    </div>
-                    <p style="font-size: 0.65rem; color: var(--text-muted); margin-top: 5px;">开启后，主标的字段可输入多个代码（逗号分隔）进行横向对比</p>
+                <div class="cfg-item">
+                    <label>基准</label>
+                    <select id="benchmark-select">
+                        <option value="000300.SH">沪深300</option>
+                        <option value="000001.SH">上证指数</option>
+                        <option value="000905.SH">中证500</option>
+                        <option value="399006.SZ">创业板指</option>
+                    </select>
                 </div>
+                <button class="bt-drawer-toggle" id="drawer-toggle-btn">⚙ 高级配置</button>
+                <div class="cfg-item" style="gap: 4px;">
+                    <input type="checkbox" id="pk-mode" style="width:14px; height:14px; cursor:pointer;">
+                    <label for="pk-mode" style="cursor:pointer; color: var(--bt-purple); font-weight:600; font-size:0.72rem;">PK模式</label>
+                </div>
+                <button class="bt-run-btn" id="run-backtest-btn">▶ 开始回测</button>
+            </div>
 
-                <div class="config-group glass-panel">
-                    <div class="config-title"><span>💰</span> 交易成本</div>
-                    <div class="input-item">
-                        <label>佣金 (单边)</label>
-                        <input type="number" step="0.0001" id="commission" value="0.0003">
-                    </div>
-                    <div class="input-item">
-                        <label>印花税 (卖出)</label>
-                        <input type="number" step="0.0001" id="stamp-duty" value="0.0005">
-                    </div>
-                    <div class="input-item">
-                        <label>流动性冲击因子 (Slippage)</label>
-                        <input type="number" step="0.0001" id="slippage" value="0.001">
-                    </div>
+            <!-- Error Container -->
+            <div class="bt-error" id="error-container">
+                ⚠️ <span id="error-message"></span>
+            </div>
+
+            <!-- Empty State (before first run) -->
+            <div id="empty-state" class="bt-empty-state">
+                <div class="empty-icon">🧪</div>
+                <div class="empty-title">配置策略参数，点击「开始回测」</div>
+                <div class="empty-desc">
+                    V5.0 · 策略中心完全对齐：均值回归V4.2 / 红利趋势V4.0 / 动量轮动V3.0<br>
+                    Regime 三态预设 · Radar 6维评级 · 蒙特卡洛 500x · 年度统计 · Alpha Overlay
                 </div>
             </div>
 
-            <!-- 主回测终端 -->
-            <div class="main-terminal">
-                <!-- 错误提示容器 -->
-                <div id="error-container" class="glass-panel" style="display: none; padding: 15px; border-color: var(--danger); background: rgba(239, 68, 68, 0.1); margin-bottom: 20px;">
-                    <div style="display: flex; align-items: center; gap: 10px; color: var(--danger); font-weight: 600;">
-                        <span>⚠️ 运行异常:</span>
-                        <span id="error-message" style="font-weight: 400; color: #fff;"></span>
+            <!-- ===== Results Area (hidden until run) ===== -->
+            <div id="results-area" style="display: none;">
+                <!-- Grade (Radar) + 8 Metrics -->
+                <div class="bt-grade-row">
+                    <div class="bt-grade-panel" id="grade-panel">
+                        <div class="bt-grade-top">
+                            <div>
+                                <div class="bt-grade-label">策略评级</div>
+                                <div class="bt-grade-badge" id="grade-badge">--</div>
+                            </div>
+                            <div style="text-align:center">
+                                <div class="bt-grade-score" id="grade-score">--</div>
+                                <div class="bt-grade-label">SCORE</div>
+                            </div>
+                        </div>
+                        <div id="grade-radar"></div>
+                    </div>
+                    <div class="bt-metrics-grid" id="metrics-grid">
+                        <div class="bt-metric-card"><div class="mc-label">累计收益</div><div class="mc-value" id="m-total-return">--%</div><div class="mc-bar"></div></div>
+                        <div class="bt-metric-card"><div class="mc-label">夏普比率 (Sharpe)</div><div class="mc-value" id="m-sharpe">--</div><div class="mc-bar"></div></div>
+                        <div class="bt-metric-card"><div class="mc-label">最大回撤 (MDD)</div><div class="mc-value neg" id="m-mdd">--%</div><div class="mc-bar"></div></div>
+                        <div class="bt-metric-card"><div class="mc-label">卡玛比率 (Calmar)</div><div class="mc-value" id="m-calmar">--</div><div class="mc-bar"></div></div>
+                        <div class="bt-metric-card"><div class="mc-label">索提诺 (Sortino)</div><div class="mc-value" id="m-sortino">--</div><div class="mc-bar"></div></div>
+                        <div class="bt-metric-card"><div class="mc-label">年化Alpha</div><div class="mc-value" id="m-alpha">--%</div><div class="mc-bar"></div></div>
+                        <div class="bt-metric-card"><div class="mc-label">盈利因子 (PF)</div><div class="mc-value" id="m-pf">--</div><div class="mc-bar"></div></div>
+                        <div class="bt-metric-card"><div class="mc-label">凯利准则 (Kelly)</div><div class="mc-value" id="m-kelly">--</div><div class="mc-bar"></div></div>
                     </div>
                 </div>
 
-                <!-- 核心指标摘要 -->
-                <div class="metrics-grid" id="metrics-grid">
-                    <div class="metric-mini-card glass-panel">
-                        <div class="label">累计收益率</div>
-                        <div class="value" id="res-total-return">--%</div>
-                    </div>
-                    <div class="metric-mini-card glass-panel">
-                        <div class="label">夏普比率 (Sharpe)</div>
-                        <div class="value" id="res-sharpe">--</div>
-                    </div>
-                    <div class="metric-mini-card glass-panel">
-                        <div class="label">最大回撤 (MDD)</div>
-                        <div class="value neg" id="res-mdd">--%</div>
-                    </div>
-                    <div class="metric-mini-card glass-panel">
-                        <div class="label">凯利准则 (Kelly)</div>
-                        <div class="value" id="res-kelly">--</div>
-                    </div>
+                <!-- V3.0: Diagnosis Card Grid -->
+                <div class="bt-diagnosis-grid" id="diagnosis-grid"></div>
+
+                <!-- PK Comparison Panel -->
+                <div id="pk-comparison-panel">
+                    <h4>⚔️ 多标的横向测评</h4>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>标的</th>
+                                <th style="text-align:right">评级</th>
+                                <th style="text-align:right">累计收益</th>
+                                <th style="text-align:right">年化</th>
+                                <th style="text-align:right">夏普</th>
+                                <th style="text-align:right">最大回撤</th>
+                                <th style="text-align:right">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pk-table-body"></tbody>
+                    </table>
                 </div>
 
-                <!-- 扩展指标 -->
-                <div class="metrics-grid" style="grid-template-columns: repeat(4, 1fr); margin-top: -10px;">
-                    <div class="metric-mini-card glass-panel" style="padding: 10px;">
-                        <div class="label" style="font-size: 0.65rem">偏度 (Skew)</div>
-                        <div class="value" id="res-skew" style="font-size: 1rem">--</div>
-                    </div>
-                    <div class="metric-mini-card glass-panel" style="padding: 10px;">
-                        <div class="label" style="font-size: 0.65rem">峰度 (Kurtosis)</div>
-                        <div class="value" id="res-kurt" style="font-size: 1rem">--</div>
-                    </div>
-                    <div class="metric-mini-card glass-panel" style="padding: 10px;">
-                        <div class="label" style="font-size: 0.65rem">卡玛 (Calmar)</div>
-                        <div class="value" id="res-calmar" style="font-size: 1rem">--</div>
-                    </div>
-                    <div class="metric-mini-card glass-panel" style="padding: 10px;">
-                        <div class="label" style="font-size: 0.65rem">胜率 (Win%)</div>
-                        <div class="value" id="res-win-rate" style="font-size: 1rem">--%</div>
-                    </div>
+                <!-- Equity Curve -->
+                <div class="bt-chart-panel">
+                    <h4>📈 策略净值 vs 基准 (Alpha Overlay)</h4>
+                    <div id="equity-chart" style="height: 350px;"></div>
                 </div>
 
-                <!-- PK 模式对比面板 (仅在 PK 模式下显示) -->
-                <div id="pk-comparison-panel" class="glass-panel" style="display: none; padding: 20px;">
-                    <h3 style="margin-bottom: 20px; font-size: 1.1rem; color: var(--accent);">⚔️ 竞技场: 多标的横向测评</h3>
-                    <div style="overflow-x: auto;">
-                        <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;" id="pk-table">
-                            <thead>
-                                <tr style="border-bottom: 2px solid rgba(255,255,255,0.1); text-align: left; color: var(--text-muted);">
-                                    <th style="padding: 12px;">标的代码</th>
-                                    <th style="padding: 12px; text-align: right;">累计收益</th>
-                                    <th style="padding: 12px; text-align: right;">年化收益</th>
-                                    <th style="padding: 12px; text-align: right;">夏普比率</th>
-                                    <th style="padding: 12px; text-align: right;">最大回撤</th>
-                                    <th style="padding: 12px; text-align: right;">核心操作</th>
-                                </tr>
-                            </thead>
-                            <tbody id="pk-table-body">
-                                <!-- 由 JS 动态填充 -->
-                            </tbody>
-                        </table>
-                    </div>
+                <!-- Drawdown -->
+                <div class="bt-chart-panel" style="min-height: 280px;">
+                    <h4>📉 回撤水下图 (Underwater Curve)</h4>
+                    <div id="drawdown-chart" style="height: 230px;"></div>
                 </div>
 
-                <!-- 净值曲线图 -->
-                <div class="chart-panel glass-panel" id="equity-chart"></div>
-
-                <!-- 回撤水下图 (Underwater Curve) -->
-                <div class="chart-panel glass-panel" id="drawdown-chart" style="min-height: 250px;"></div>
-
-                <!-- 蒙特卡洛与交易日志 -->
-                <div class="lists-grid">
-                    <div class="list-panel glass-panel">
-                        <h3 style="margin-bottom: 15px">蒙特卡洛置信区间 (Confidence Bands)</h3>
-                        <div id="mc-chart" style="height: 300px;"></div>
-                        <div class="mc-legend">
-                            <div class="legend-item"><span class="dot" style="background:#3b82f6"></span> 策略轨迹</div>
-                            <div class="legend-item"><span class="dot" style="background:rgba(59,130,246,0.1)"></span> 随机扰动域</div>
+                <!-- Three-column: Trade Stats | MC | Trade Log -->
+                <div class="bt-bottom-row">
+                    <!-- Trade Statistics -->
+                    <div class="bt-bottom-panel">
+                        <h4>📊 交易轮次统计</h4>
+                        <div id="round-trip-stats">
+                            <div class="bt-stat-item"><span class="stat-label">总轮次</span><span class="stat-value" id="rt-total">--</span></div>
+                            <div class="bt-stat-item"><span class="stat-label">轮次胜率</span><span class="stat-value" id="rt-winrate">--%</span></div>
+                            <div class="bt-stat-item"><span class="stat-label">盈亏比</span><span class="stat-value" id="rt-plr">--</span></div>
+                            <div class="bt-stat-item"><span class="stat-label">平均盈利</span><span class="stat-value pos" id="rt-avgwin">--%</span></div>
+                            <div class="bt-stat-item"><span class="stat-label">平均亏损</span><span class="stat-value neg" id="rt-avgloss">--%</span></div>
+                            <div class="bt-stat-item"><span class="stat-label">持仓天数(中位)</span><span class="stat-value" id="rt-holddays">--</span></div>
+                            <div class="bt-stat-item"><span class="stat-label">最大连续亏损</span><span class="stat-value" id="rt-maxconsec">--</span></div>
+                            <div class="bt-stat-item"><span class="stat-label">最大单笔亏损</span><span class="stat-value neg" id="rt-maxloss">--%</span></div>
                         </div>
                     </div>
-                    <div class="list-panel glass-panel" style="overflow: hidden; display: flex; flex-direction: column;">
-                        <h3 style="margin-bottom: 15px">交易执行日志 (Trade Log)</h3>
-                        <div style="flex: 1; overflow-y: auto;">
-                            <table style="width: 100%; font-size: 0.8rem; border-collapse: collapse;" id="trade-log-table">
-                                <thead style="position: sticky; top: 0; background: #1e293b; z-index: 1;">
-                                    <tr>
-                                        <th style="text-align: left; padding: 8px;">日期</th>
-                                        <th style="text-align: left; padding: 8px;">类型</th>
-                                        <th style="text-align: right; padding: 8px;">成交价</th>
-                                        <th style="text-align: right; padding: 8px;">仓位</th>
-                                    </tr>
+
+                    <!-- Monte Carlo -->
+                    <div class="bt-bottom-panel">
+                        <h4>🎲 蒙特卡洛置信区间 (500x)</h4>
+                        <div id="mc-chart" style="height: 240px;"></div>
+                        <div style="display: flex; gap:12px; justify-content:center; font-size:0.7rem; color: var(--text-muted); margin-top:8px;">
+                            <span>🔴 破产概率: <b id="mc-ruin" style="color: var(--bt-red);">--%</b></span>
+                            <span>P5终值: <b id="mc-t5">--</b></span>
+                            <span>中位终值: <b id="mc-t50">--</b></span>
+                            <span>P95终值: <b id="mc-t95">--</b></span>
+                        </div>
+                    </div>
+
+                    <!-- Trade Log -->
+                    <div class="bt-bottom-panel">
+                        <h4>📋 交易执行日志 <button class="bt-export-btn" id="export-trades-btn" title="导出CSV">⬇ CSV</button></h4>
+                        <div class="bt-trade-log">
+                            <table>
+                                <thead>
+                                    <tr><th>日期</th><th>方向</th><th style="text-align:right">价格</th><th style="text-align:right">盈亏</th><th style="text-align:right">净值</th></tr>
                                 </thead>
                                 <tbody id="trade-log-body">
-                                    <tr><td colspan="4" style="text-align: center; padding: 20px; color: var(--text-muted);">暂无交易数据</td></tr>
+                                    <tr><td colspan="5" style="text-align:center; padding:20px; color: var(--text-muted)">暂无交易数据</td></tr>
                                 </tbody>
                             </table>
                         </div>
                     </div>
                 </div>
 
-                <!-- 月度收益热力图 -->
-                <div class="chart-panel glass-panel" style="min-height: 320px;">
-                    <h3 style="margin-bottom: 10px; font-size: 0.95rem;">📅 月度收益热力图 (Monthly Returns Heatmap)</h3>
-                    <div id="monthly-heatmap" style="height: 280px;"></div>
+                <!-- Monthly Heatmap -->
+                <div class="bt-heatmap-panel">
+                    <h4>📅 月度收益热力图</h4>
+                    <div id="monthly-heatmap" style="height: 260px;"></div>
+                </div>
+
+                <!-- V5.0: Annual Statistics -->
+                <div class="bt-annual-panel">
+                    <h4>📊 年度收益统计</h4>
+                    <div id="annual-chart" style="height: 220px;"></div>
                 </div>
             </div>
         </div>
     </main>
 
-    <div class="loading-overlay" id="loading-overlay">
-        <div class="spinner"></div>
-        <p style="color: #fff; font-weight: 500;">AlphaCore 正在加速计算向量化回测矩阵...</p>
+    <!-- Config Drawer -->
+    <div class="bt-drawer-overlay" id="drawer-overlay"></div>
+    <div class="bt-drawer" id="config-drawer">
+        <button class="bt-drawer-close" id="drawer-close-btn">✕</button>
+
+        <div class="drawer-section">
+            <h3>🔧 策略参数调节</h3>
+            <div style="display:flex; justify-content:flex-end; margin-bottom:8px;">
+                <button class="reset-btn" id="reset-params-btn">⚡ 恢复默认</button>
+            </div>
+            <div id="strategy-params-panel"><!-- JS fills --></div>
+        </div>
+
+        <div class="drawer-section">
+            <h3>💰 交易成本</h3>
+            <div class="input-item">
+                <label>佣金 (单边)</label>
+                <input type="number" step="0.0001" id="commission" value="0.0003">
+            </div>
+            <div class="input-item">
+                <label>印花税 (卖出)</label>
+                <input type="number" step="0.0001" id="stamp-duty" value="0.0005">
+            </div>
+            <div class="input-item">
+                <label>滑点 (Slippage)</label>
+                <input type="number" step="0.0001" id="slippage" value="0.001">
+            </div>
+        </div>
+
+        <div class="drawer-section">
+            <h3>📅 资金与规模</h3>
+            <div class="input-item">
+                <label>初始资金 (CNY)</label>
+                <input type="number" id="initial-cash" value="1000000">
+            </div>
+            <div class="input-item">
+                <label>成交占比 (POV %)</label>
+                <input type="number" step="0.01" id="order-pct" value="0.01">
+                <small style="color: var(--text-muted); font-size: 0.65rem">模拟大额交易冲击深度</small>
+            </div>
+            <div class="input-item">
+                <label>价格复权</label>
+                <select id="adj-select">
+                    <option value="qfq">前复权 (QFQ)</option>
+                    <option value="hfq">后复权 (HFQ)</option>
+                    <option value="None">不复权</option>
+                </select>
+            </div>
+        </div>
     </div>
 
-    <script src="./backtest.js?v=8"></script>
+    <!-- Loading Overlay -->
+    <div class="bt-loading-overlay" id="loading-overlay">
+        <div class="bt-spinner"></div>
+        <div class="bt-progress-container">
+            <div class="bt-progress-track"><div class="bt-progress-fill" id="progress-fill"></div></div>
+            <div class="bt-progress-steps">
+                <span class="step" id="step-data">📡 数据获取</span>
+                <span class="step" id="step-backtest">🧮 策略回测</span>
+                <span class="step" id="step-analysis">📊 轮次分析</span>
+                <span class="step" id="step-mc">🎲 蒙特卡洛</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="./backtest.js?v=50"></script>
 </body>
 </html>

@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AlphaCore | 产业深研终端 V3.1</title>
-    <meta name="description" content="AlphaCore 产业追踪深研终端 - 12大核心行业ETF实时Alpha Score综合评分、资金热度排行、买入止盈策略建议与风险警示">
+    <title>AlphaCore | 产业深研终端 V4.0</title>
+    <meta name="description" content="AlphaCore 产业追踪深研终端 - 12大核心行业ETF实时Alpha Score综合评分、动态RPS排名、真实价格百分位、买入止盈策略建议与风险警示">
     <link rel="stylesheet" href="./styles.css?v=6">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
     <script src="./echarts.min.js"></script>
     <style>
         /* ============================================ */
-        /*  V3.1 产业深研终端 · 精炼视觉系统            */
+        /*  V4.0 产业深研终端 · Data-Honest 视觉系统    */
         /* ============================================ */
 
         .industry-layout {
@@ -22,7 +22,22 @@
             overflow-y: auto;
         }
 
-        /* --- 顶部行业脉冲导航 V3.2 --- */
+        /* --- V4.0 Regime Banner --- */
+        .regime-banner {
+            margin: 0 24px;
+            padding: 10px 18px;
+            border-radius: 10px;
+            border: 1px solid rgba(148,163,184,0.15);
+            background: rgba(148,163,184,0.05);
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            font-size: 0.82rem;
+            transition: all 0.5s;
+            min-height: 40px;
+        }
+
+        /* --- 顶部行业脉冲导航 V4.0 --- */
         .sector-pulse-nav { margin: 0 24px 0; padding: 10px 14px; overflow-x: auto; white-space: nowrap; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.08) transparent; }
         .sector-pulse-nav::-webkit-scrollbar { height: 4px; }
         .sector-pulse-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
@@ -39,7 +54,6 @@
             flex-shrink: 0;
             overflow: hidden;
         }
-        /* 顶部评级色带 */
         .sector-tile::before {
             content: '';
             position: absolute;
@@ -49,7 +63,6 @@
             opacity: 0.6;
             transition: opacity 0.3s, height 0.3s;
         }
-        /* 底部热度发光条 */
         .sector-tile::after {
             content: '';
             position: absolute;
@@ -73,7 +86,6 @@
         .sector-tile.active::before { opacity: 1; height: 4px; }
         .sector-tile.active::after { height: 4px; box-shadow: 0 0 12px var(--tile-heat-color); }
 
-        /* 排名标签 */
         .tile-rank {
             position: absolute; top: 6px; left: 8px;
             font-size: 0.62rem; font-weight: 800; font-family: 'Outfit', sans-serif;
@@ -85,7 +97,6 @@
         .tile-rank.rank-2 { color: #cbd5e1; }
         .tile-rank.rank-3 { color: #d97706; }
 
-        /* Alpha分数 (右上角) */
         .tile-alpha {
             position: absolute; top: 5px; right: 8px;
             display: flex; align-items: center; gap: 4px;
@@ -108,10 +119,8 @@
         .tile-grade.grade-D { background: rgba(245,158,11,0.2); color: #fbbf24; }
         .tile-grade.grade-F { background: rgba(239,68,68,0.2); color: #f87171; }
 
-        /* 行业名称 */
         .tile-name { display: block; font-size: 0.82rem; font-weight: 600; color: #e2e8f0; margin-top: 0; line-height: 1.2; }
 
-        /* 底部信息行: 涨跌幅 + 热度 */
         .tile-bottom {
             display: flex; justify-content: space-between; align-items: center;
             margin-top: 6px;
@@ -127,12 +136,11 @@
             display: inline-block;
         }
 
-        /* 热度进度条 */
         .tile-heat-bar { height: 4px; border-radius: 2px; margin-top: 6px; background: rgba(255,255,255,0.04); overflow: hidden; position: relative; }
         .tile-heat-fill { height: 100%; border-radius: 2px; transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1); position: relative; }
         .sector-tile.active .tile-heat-fill { box-shadow: 0 0 6px var(--tile-heat-color); }
 
-        /* --- 指标百科 侧拉抽屉 (V3.1 Drawer) --- */
+        /* --- 指标百科 侧拉抽屉 --- */
         .glossary-toggle {
             display: inline-flex; align-items: center; gap: 8px;
             padding: 6px 16px; border-radius: 8px; cursor: pointer;
@@ -141,9 +149,7 @@
             transition: all 0.3s; margin: 0 24px 0; width: fit-content;
         }
         .glossary-toggle:hover { background: rgba(59,130,246,0.15); transform: translateY(-1px); }
-        .glossary-toggle.pulse-hint {
-            animation: glossaryPulse 2s ease-in-out 3;
-        }
+        .glossary-toggle.pulse-hint { animation: glossaryPulse 2s ease-in-out 3; }
         @keyframes glossaryPulse {
             0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); }
             50% { box-shadow: 0 0 0 8px rgba(59,130,246,0.15); }
@@ -178,9 +184,7 @@
             display: flex; align-items: center; justify-content: center;
         }
         .glossary-drawer-close:hover { background: rgba(239,68,68,0.15); color: #f87171; }
-        .glossary-grid {
-            display: flex; flex-direction: column; gap: 12px;
-        }
+        .glossary-grid { display: flex; flex-direction: column; gap: 12px; }
         .glossary-item {
             padding: 14px; border-radius: 10px;
             background: rgba(255,255,255,0.02);
@@ -203,10 +207,16 @@
         @media (max-width: 1200px) { .main-two-col { grid-template-columns: 1fr; } }
 
         /* --- 综合评分排行榜 (左栏) --- */
-        .alpha-ranking { padding: 20px; max-height: calc(100vh - 260px); overflow-y: auto; }
+        .alpha-ranking { padding: 20px; max-height: calc(100vh - 300px); overflow-y: auto; }
         .alpha-ranking-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
         .alpha-ranking-header h3 { font-size: 1rem; margin: 0; }
         .alpha-ranking-header .badge-count { font-size: 0.7rem; padding: 2px 10px; border-radius: 10px; background: rgba(16,185,129,0.15); color: #34d399; font-weight: 600; }
+
+        /* V4.0: Stagger fadeIn 动画 */
+        @keyframes cardStaggerIn {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
 
         .alpha-card {
             padding: 12px 14px;
@@ -217,6 +227,7 @@
             cursor: pointer;
             position: relative;
             overflow: hidden;
+            animation: cardStaggerIn 0.4s ease-out both;
         }
         .alpha-card::before {
             content: '';
@@ -231,7 +242,7 @@
         .alpha-card.grade-D { background: linear-gradient(135deg, rgba(245,158,11,0.06), rgba(245,158,11,0.02)); --grade-color: #f59e0b; }
         .alpha-card.grade-F { background: linear-gradient(135deg, rgba(239,68,68,0.05), rgba(239,68,68,0.02)); --grade-color: #ef4444; }
 
-        /* V3.1 紧凑模式: 非选中卡片折叠策略行+风险标签 */
+        /* V4.0 紧凑模式: 非选中卡片折叠策略行+风险标签 */
         .alpha-card .alpha-strategy,
         .alpha-card .risk-tags,
         .alpha-card .alpha-advice-row { max-height: 0; overflow: hidden; opacity: 0; margin: 0; padding: 0; border: none; transition: max-height 0.35s, opacity 0.25s, margin 0.3s; }
@@ -240,8 +251,16 @@
         .alpha-card.active-card .alpha-advice-row { max-height: 40px; opacity: 1; margin-top: 8px; }
         .alpha-card.active-card { border-color: var(--grade-color); box-shadow: 0 0 20px rgba(59,130,246,0.1); }
 
+        /* V4.0 Mini factor bars */
+        .mini-factor-bars { display: flex; gap: 4px; margin-top: 6px; }
+        .mini-bar-item { display: flex; align-items: center; gap: 2px; flex: 1; }
+        .mini-bar-label { font-size: 0.6rem; color: #64748b; min-width: 10px; }
+        .mini-bar-track { flex: 1; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.04); overflow: hidden; }
+        .mini-bar-fill { height: 100%; border-radius: 2px; transition: width 0.8s ease; }
+        .mini-bar-val { font-size: 0.62rem; font-weight: 700; font-family: 'Outfit'; min-width: 16px; text-align: right; }
+
         /* Alpha Score 环形指示器 */
-        .alpha-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .alpha-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
         .alpha-card-info { display: flex; align-items: center; gap: 10px; }
         .alpha-card-rank { font-size: 0.65rem; color: #64748b; font-weight: 700; min-width: 20px; }
         .alpha-card-name { font-weight: 700; font-size: 0.95rem; color: #f1f5f9; }
@@ -262,14 +281,6 @@
             padding: 1px 5px; border-radius: 4px; color: #fff;
         }
 
-        /* 因子指标行 */
-        .alpha-factors { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
-        .alpha-factor-tag {
-            font-size: 0.68rem; padding: 2px 6px; border-radius: 5px;
-            background: rgba(255,255,255,0.04); color: #94a3b8;
-            display: flex; align-items: center; gap: 2px;
-        }
-
         /* 买入/止盈建议行 */
         .alpha-strategy { padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.04); margin-top: 4px; }
         .alpha-strat-row { display: flex; gap: 6px; align-items: flex-start; margin-bottom: 4px; }
@@ -285,10 +296,7 @@
         .risk-tag.danger { background: rgba(239,68,68,0.12); color: #f87171; animation: riskPulse 2s infinite; }
         .risk-tag.warning { background: rgba(245,158,11,0.12); color: #fbbf24; }
         .risk-tag.positive { background: rgba(16,185,129,0.12); color: #34d399; }
-        @keyframes riskPulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.65; }
-        }
+        @keyframes riskPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.65; } }
 
         /* 建议标签 */
         .alpha-advice-label {
@@ -341,7 +349,6 @@
         .metric-card .value { font-size: 1.8rem; font-weight: 700; color: var(--accent); font-family: 'Outfit', sans-serif; }
         .metric-threshold { font-size: 0.68rem; color: #64748b; margin-top: 6px; padding: 2px 8px; border-radius: 4px; background: rgba(255,255,255,0.03); display: inline-block; }
 
-        /* V3.1 仪表盘风险脉冲 */
         .metric-card.metric-danger {
             border: 1px solid rgba(239,68,68,0.35);
             box-shadow: 0 0 16px rgba(239,68,68,0.08);
@@ -367,7 +374,6 @@
         .factor-bar-fill { height: 100%; border-radius: 3px; transition: width 0.8s ease; }
         .factor-bar-value { font-size: 0.75rem; font-weight: 700; font-family: 'Outfit'; min-width: 28px; }
 
-        /* V3.1 策略卡 fadeIn */
         @keyframes socFadeIn {
             from { opacity: 0; transform: translateY(8px); }
             to { opacity: 1; transform: translateY(0); }
@@ -385,8 +391,8 @@
         .constituent-name { font-weight: 600; color: #e2e8f0; }
         .constituent-weight { font-size: 0.82rem; color: #94a3b8; font-family: 'Outfit'; }
 
-        /* 雷达图 */
-        .radar-section { padding: 24px; }
+        /* 热力矩阵 */
+        .heatmap-section { padding: 24px; }
 
         /* Loading */
         .loading-overlay {
@@ -444,7 +450,7 @@
     <main class="dashboard">
         <header class="topbar">
             <div class="welcome-box" style="margin:0">
-                <h2 style="font-size: 1.5rem">产业深研终端 <span class="badge-beta">V3.1</span></h2>
+                <h2 style="font-size: 1.5rem">产业深研终端 <span class="badge-beta">V4.0</span></h2>
             </div>
             <div class="actions" style="display: flex; align-items: center; gap: 15px;">
                 <div class="date-picker-wrapper" style="display: flex; align-items: center; gap: 8px; background: rgba(59, 130, 246, 0.08); padding: 5px 12px; border-radius: 8px; border: 1px solid rgba(59, 130, 246, 0.2);">
@@ -454,7 +460,12 @@
             </div>
         </header>
 
-        <!-- V3.0: 行业导航条 (热度色彩编码 + Alpha评级) -->
+        <!-- V4.0: Regime Banner -->
+        <div class="regime-banner" id="regime-banner">
+            <span style="color:#64748b; font-size:0.82rem;">🔄 加载市场环境...</span>
+        </div>
+
+        <!-- V4.0: 行业导航条 -->
         <div class="sector-pulse-nav glass-panel">
             <div id="sector-nav-container"></div>
         </div>
@@ -502,13 +513,13 @@
                     <!-- 仪表盘 -->
                     <div class="metric-row">
                         <div class="stat-card glass-panel metric-card">
-                            <div class="label">RPS 强度轨迹</div>
+                            <div class="label">RPS 动态强度</div>
                             <div id="gauge-rps" style="height: 140px;"></div>
                             <div class="stat-desc" id="desc-rps">侦测中...</div>
                             <div class="metric-threshold">健康: >80 优秀 · <30 极弱</div>
                         </div>
                         <div class="stat-card glass-panel metric-card">
-                            <div class="label">估值百分位 (5Y)</div>
+                            <div class="label">价格百分位 (5Y)</div>
                             <div id="gauge-value" style="height: 140px;"></div>
                             <div class="stat-desc" id="desc-value">侦测中...</div>
                             <div class="metric-threshold">安全: <30 低估 · >70 高估</div>
@@ -519,11 +530,11 @@
                             <div class="stat-desc" id="desc-risk">侦测中...</div>
                             <div class="metric-threshold">健康: 0.8-1.5x · >2x 危险</div>
                         </div>
-                        <div class="stat-card glass-panel metric-card" style="background: linear-gradient(135deg, rgba(59,130,246,0.08), rgba(16,185,129,0.08));">
-                            <div class="label">北向资金 (5D)</div>
-                            <div class="stat-value highlight-up" id="val-flow" style="font-size: 1.8rem; justify-content: center; margin-top: 16px;">--</div>
-                            <div class="stat-desc" style="text-align: center;">主力净流入估算</div>
-                            <div class="metric-threshold">持续流入 = 看多信号</div>
+                        <div class="stat-card glass-panel metric-card" style="background: linear-gradient(135deg, rgba(59,130,246,0.08), rgba(139,92,246,0.08));">
+                            <div class="label">20D 动量趋势</div>
+                            <div class="stat-value" id="val-mom20d" style="font-size: 1.8rem; justify-content: center; margin-top: 16px; color: #94a3b8;">--</div>
+                            <div class="stat-desc" id="desc-mom20d" style="text-align: center;">中期趋势方向</div>
+                            <div class="metric-threshold">+2~8% 健康 · >12% 过热</div>
                         </div>
                     </div>
 
@@ -541,19 +552,19 @@
                 </div>
             </div>
 
-            <!-- 底部: 行业雷达图 -->
-            <div class="radar-section glass-panel">
-                <h3 style="font-size: 1rem; margin-bottom: 16px;">🌀 行业多维雷达矩阵 (Alpha × Heat × Momentum × Valuation)</h3>
-                <div id="radar-chart" style="height: 420px;"></div>
+            <!-- V4.0: 热力矩阵 (替代雷达图) -->
+            <div class="heatmap-section glass-panel">
+                <h3 style="font-size: 1rem; margin-bottom: 16px;">🔥 行业多维热力矩阵 (Alpha × Heat × Momentum × Valuation)</h3>
+                <div id="heatmap-chart" style="height: 280px;"></div>
             </div>
         </div>
     </main>
 
     <div class="loading-overlay" id="loading-overlay">
         <div class="spinner"></div>
-        <p style="color: #fff; font-weight: 500; margin-top: 20px;">AlphaCore V3.0 正在计算 Alpha Score 综合评分矩阵...</p>
+        <p style="color: #fff; font-weight: 500; margin-top: 20px;">AlphaCore V4.0 正在计算 Alpha Score 综合评分矩阵...</p>
     </div>
 
-    <script src="./industry.js?v=3"></script>
+    <script src="./industry.js?v=4"></script>
 </body>
 </html>
