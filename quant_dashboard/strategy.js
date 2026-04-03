@@ -956,11 +956,11 @@ async function runStrategy() {
             }
             if (progressText) progressText.textContent = text;
         };
-        setProgress(1, '🔄 正在并行拉取3策略数据...');
+        setProgress(1, '🔄 正在并行拉取4策略数据...');
 
         try {
-            const timer2 = setTimeout(() => setProgress(2, '📊 均值回归 + 红利趋势 + 动量轮动计算中...'), 5000);
-            const timer3 = setTimeout(() => setProgress(3, '🔗 共振分析 + 风险覆盖计算中...'), 12000);
+            const timer2 = setTimeout(() => setProgress(2, '📊 均值回归 + 红利趋势 + 动量轮动 + ERP择时计算中...'), 5000);
+            const timer3 = setTimeout(() => setProgress(3, '🔗 四策略共振分析 + ERP仓位调节中...'), 12000);
 
             const resp = await fetch(`${API_URL}/api/v1/strategy/run-all`);
             const json = await resp.json();
@@ -1035,6 +1035,23 @@ function renderExecutionDashboard(data, helpers) {
     safelySetText('exec-gauge-label', pos + '%');
     renderExecGauge(pos);
 
+    // 仪表盘下方 regime cap 注释
+    const regimeCapEl = document.getElementById('exec-gauge-regime-cap');
+    if (regimeCapEl) {
+        const regimeCN = { 'BULL': '牛市', 'RANGE': '震荡', 'BEAR': '熊市', 'CRASH': '危机' };
+        regimeCapEl.textContent = `${regimeCN[g.regime] || g.regime}上限 ${g.regime_cap || 100}%`;
+    }
+
+    // 权重条下方：各策略信心度
+    const conf = g.confidence || {};
+    const confLabels = document.querySelectorAll('.gw-conf-label');
+    if (confLabels.length >= 4) {
+        confLabels[0].textContent = `MR ${conf.mr || 0}%`;
+        confLabels[1].textContent = `DIV ${conf.div || 0}%`;
+        confLabels[2].textContent = `MOM ${conf.mom || 0}%`;
+        confLabels[3].textContent = `ERP ${conf.erp || 0}%`;
+    }
+
     // KPI cards
     const regimeMap = { 'BULL': '🟢 牛市', 'RANGE': '🟡 震荡', 'BEAR': '🟠 熊市', 'CRASH': '🔴 危机' };
     const regimeColor = { 'BULL': '#10b981', 'RANGE': '#eab308', 'BEAR': '#f59e0b', 'CRASH': '#ef4444' };
@@ -1048,6 +1065,13 @@ function renderExecutionDashboard(data, helpers) {
     safelySetHTML('exec-vol-alerts', risk.alert_count > 0
         ? `<span style="color:#ef4444">${risk.alert_count} 只</span>`
         : '<span style="color:#10b981">0</span>');
+
+    // 新增KPI: ERP评分 + 覆盖标的
+    const erpScore = g.erp_score || 0;
+    const erpColor = erpScore >= 55 ? '#10b981' : erpScore >= 40 ? '#f59e0b' : '#ef4444';
+    safelySetHTML('exec-erp-score', `<span style="color:${erpColor}">${erpScore}</span>`);
+    const totalCoverage = (data.strategies.mr?.signals?.length || 0) + (data.strategies.div?.signals?.length || 0) + (data.strategies.mom?.signals?.length || 0) + (data.strategies.erp?.signals?.length || 0);
+    safelySetHTML('exec-coverage', `<span style="color:#a78bfa">${totalCoverage} <span style="font-size:0.6rem;color:var(--text-muted)">只</span></span>`);
 
     // --- Zone 2+3: 行动信号 + 风险预警 ---
     const zone23 = document.getElementById('exec-zone23');
@@ -1064,14 +1088,35 @@ function renderExecutionDashboard(data, helpers) {
     renderHeatmapTable('mr', data.strategies.mr);
     renderHeatmapTable('div', data.strategies.div);
     renderHeatmapTable('mom', data.strategies.mom);
+    renderHeatmapTable('erp', data.strategies.erp);
 
     // 更新tab计数
     const mrSigs = (data.strategies.mr?.signals || []).length;
     const divSigs = (data.strategies.div?.signals || []).length;
     const momSigs = (data.strategies.mom?.signals || []).length;
+    const erpSigs = (data.strategies.erp?.signals || []).length;
     safelySetText('exec-mr-count', mrSigs);
     safelySetText('exec-div-count', divSigs);
     safelySetText('exec-mom-count', momSigs);
+    safelySetText('exec-erp-count', erpSigs);
+
+    // ERP宏观评分徽章 (erpScore 已在上方声明)
+    const erpBadge = document.getElementById('erp-macro-score-badge');
+    if (erpBadge) {
+        erpBadge.textContent = `综合分: ${erpScore}`;
+        erpBadge.style.color = erpScore >= 55 ? '#10b981' : erpScore >= 40 ? '#f59e0b' : '#ef4444';
+    }
+
+    // ERP仓位屏障警告
+    if (g.erp_cap_active) {
+        const capWarning = document.createElement('div');
+        capWarning.className = 'erp-cap-warning';
+        capWarning.innerHTML = `⚠️ <strong>ERP宏观屏障激活</strong>：宏观评分 ${g.erp_score} ≤ 40，全局仓位上限已压至 <strong>30%</strong>。当前市场环境不利于权益配置。`;
+        zone1?.querySelector('.st-section')?.prepend(capWarning);
+    }
+
+    // --- 智能预警横幅 ---
+    renderSmartAlert(g, risk, resonance);
 
     // --- Zone 5: 共振分析 ---
     const zone5 = document.getElementById('exec-zone5');
@@ -1101,15 +1146,49 @@ function renderExecGauge(value) {
             axisLine: { lineStyle: { width: 14, color: [[1, 'rgba(255,255,255,0.06)']] } },
             axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false },
             detail: { show: false },
-            data: [{ value }]
+            data: [{ value: Math.min(value, 100) }]
         }]
     });
+}
+
+// ====== 智能预警横幅渲染 ======
+function renderSmartAlert(g, risk, resonance) {
+    const el = document.getElementById('exec-smart-alert');
+    if (!el) return;
+
+    let level, icon, title, sub;
+
+    if (g.regime === 'CRASH') {
+        level = 'crash'; icon = '🚨'; title = '危机模式！建议空仓避险';
+        sub = '市场处于极端下跌状态，所有策略信号均暂停。待市场稳定后重新评估。';
+    } else if (g.erp_cap_active) {
+        level = 'danger'; icon = '🛡️'; title = `宏观屏障激活：ERP评分 ${g.erp_score} ≤ 40，仓位上限压至30%`;
+        sub = 'ERP五维评分过低，表明宏观环境不利于权益配置。建议保守操作，等待评分回升至55+。';
+    } else if (g.consistency !== 'high') {
+        level = 'warning'; icon = '⚠️'; title = '策略方向分歧，建议降低仓位或观望';
+        sub = '多个策略对市场方向判断不一致。分歧时建议按单策略仓位上限执行，不叠加。';
+    } else if ((risk.alert_count || 0) >= 3) {
+        level = 'caution'; icon = '⚡'; title = `${risk.alert_count}只标的波动率异常，注意持仓分散`;
+        sub = '30日年化波动率超过25%的标的较多。建议单只仓位不超过总仓的20%，避免集中风险。';
+    } else {
+        level = 'ok'; icon = '✅'; title = '市场环境正常，策略信号可执行';
+        sub = `4策略一致看${g.regime === 'BULL' ? '多' : '稳'}，共振标的 ${resonance.total_overlap || 0} 只。按评分优先级执行即可。`;
+    }
+
+    el.style.display = 'block';
+    el.innerHTML = `<div class="smart-alert smart-alert-${level}">
+        <span class="smart-alert-icon">${icon}</span>
+        <div class="smart-alert-text">
+            <div>${title}</div>
+            <div class="smart-alert-sub">${sub}</div>
+        </div>
+    </div>`;
 }
 
 // ====== Top 行动信号渲染 ======
 function renderTopSignals(strategies, { safelySetHTML }) {
     const allSignals = [];
-    ['mr', 'div', 'mom'].forEach(key => {
+    ['mr', 'div', 'mom', 'erp'].forEach(key => {
         const sigs = strategies[key]?.signals || [];
         sigs.forEach(s => {
             if (s.signal === 'buy' || s.signal === 'sell' || s.signal === 'sell_half' || s.signal === 'sell_weak') {
@@ -1118,7 +1197,7 @@ function renderTopSignals(strategies, { safelySetHTML }) {
         });
     });
 
-    const sourceLabel = { mr: '均值回归', div: '红利趋势', mom: '动量轮动' };
+    const sourceLabel = { mr: '均值回归', div: '红利趋势', mom: '动量轮动', erp: 'ERP择时' };
     const buys = allSignals.filter(s => s.signal === 'buy').sort((a, b) => (b.signal_score || 0) - (a.signal_score || 0)).slice(0, 3);
     const sells = allSignals.filter(s => s.signal !== 'buy').sort((a, b) => (a.signal_score || 100) - (b.signal_score || 100)).slice(0, 3);
 
@@ -1127,18 +1206,20 @@ function renderTopSignals(strategies, { safelySetHTML }) {
         html = '<p style="color:var(--text-muted);font-size:0.85rem;text-align:center;padding:16px 0;">当前无强信号</p>';
     }
     buys.forEach(s => {
+        const srcTag = `<span class="source-tag source-${s.source}">${sourceLabel[s.source]}</span>`;
         html += `<div class="top-signal-card top-signal-buy">
-            <div><strong style="color:#fff;font-size:0.88rem;">${s.name || ''}</strong>
-            <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">${s.ts_code || s.code || ''} · ${sourceLabel[s.source] || ''}</div></div>
+            <div><strong style="color:#fff;font-size:0.88rem;">${s.name || ''}${srcTag}</strong>
+            <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">${s.ts_code || s.code || ''}</div></div>
             <div style="display:flex;align-items:center;gap:8px;">
                 <span class="st-ai-score st-ai-score-buy">${s.signal_score || 0}分</span>
                 <span style="font-size:0.78rem;color:var(--text-muted)">${s.suggested_position || 0}%</span>
             </div></div>`;
     });
     sells.forEach(s => {
+        const srcTag = `<span class="source-tag source-${s.source}">${sourceLabel[s.source]}</span>`;
         html += `<div class="top-signal-card top-signal-sell">
-            <div><strong style="color:#fff;font-size:0.88rem;">${s.name || ''}</strong>
-            <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">${s.ts_code || s.code || ''} · ${sourceLabel[s.source] || ''}</div></div>
+            <div><strong style="color:#fff;font-size:0.88rem;">${s.name || ''}${srcTag}</strong>
+            <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">${s.ts_code || s.code || ''}</div></div>
             <div style="display:flex;align-items:center;gap:8px;">
                 <span class="st-ai-score st-ai-score-sell">${s.signal_score || 0}分</span>
                 <span style="font-size:0.78rem;color:var(--text-muted)">${s.suggested_position || 0}%</span>
@@ -1193,19 +1274,30 @@ function renderHeatmapTable(strategyKey, strategyData) {
         const tagLabel = signal === 'buy' ? '买入' : signal === 'sell_half' ? '减半' : signal.includes('sell') ? '卖出' : '持有';
         const rowClass = signal === 'buy' ? 'st-row-buy' : signal.includes('sell') ? 'st-row-sell' : '';
 
-        // 关键因子紧凑展示
+        // 关键因子紧凑展示 + 阈值着色
         let factors = '';
         if (strategyKey === 'mr') {
-            factors = `<span class="f-key">%B:</span><span class="f-val">${s.pctB !== undefined ? s.pctB.toFixed(2) : '-'}</span> <span class="f-key">RSI:</span><span class="f-val">${s.rsi3 !== undefined ? Math.round(s.rsi3) : '-'}</span> <span class="f-key">BIAS:</span><span class="f-val">${s.bias !== undefined ? s.bias.toFixed(1) + '%' : '-'}</span>`;
+            const pctBcls = s.pctB !== undefined ? (s.pctB < 0.2 ? 'f-val-good' : s.pctB > 0.8 ? 'f-val-danger' : '') : '';
+            const rsicls = s.rsi3 !== undefined ? (s.rsi3 < 20 ? 'f-val-good' : s.rsi3 > 80 ? 'f-val-danger' : '') : '';
+            const biascls = s.bias !== undefined ? (s.bias < -5 ? 'f-val-good' : s.bias > 5 ? 'f-val-danger' : '') : '';
+            factors = `<span class="f-key">%B:</span><span class="f-val ${pctBcls}">${s.pctB !== undefined ? s.pctB.toFixed(2) : '-'}</span> <span class="f-key">RSI:</span><span class="f-val ${rsicls}">${s.rsi3 !== undefined ? Math.round(s.rsi3) : '-'}</span> <span class="f-key">BIAS:</span><span class="f-val ${biascls}">${s.bias !== undefined ? s.bias.toFixed(1) + '%' : '-'}</span>`;
         } else if (strategyKey === 'div') {
-            factors = `<span class="f-key">DIV:</span><span class="f-val">${s.dividend_yield !== undefined ? s.dividend_yield.toFixed(1) + '%' : '-'}</span> <span class="f-key">RSI:</span><span class="f-val">${s.rsi_14 !== undefined ? Math.round(s.rsi_14) : '-'}</span> <span class="f-key">BIAS:</span><span class="f-val">${s.bias !== undefined ? s.bias.toFixed(1) + '%' : '-'}</span>`;
+            const divcls = s.dividend_yield !== undefined ? (s.dividend_yield > 6 ? 'f-val-good' : s.dividend_yield < 3 ? 'f-val-warn' : '') : '';
+            const rsicls = s.rsi_14 !== undefined ? (s.rsi_14 < 30 ? 'f-val-good' : s.rsi_14 > 70 ? 'f-val-danger' : '') : '';
+            factors = `<span class="f-key">DIV:</span><span class="f-val ${divcls}">${s.dividend_yield !== undefined ? s.dividend_yield.toFixed(1) + '%' : '-'}</span> <span class="f-key">RSI:</span><span class="f-val ${rsicls}">${s.rsi_14 !== undefined ? Math.round(s.rsi_14) : '-'}</span> <span class="f-key">BIAS:</span><span class="f-val">${s.bias !== undefined ? s.bias.toFixed(1) + '%' : '-'}</span>`;
+        } else if (strategyKey === 'erp') {
+            const m1cls = s.m1_yoy !== undefined ? (s.m1_yoy > 0 ? 'f-val-good' : 'f-val-danger') : '';
+            factors = `<span class="f-key">ERP:</span><span class="f-val">${s.erp_abs !== undefined ? s.erp_abs.toFixed(2) + '%' : '-'}</span> <span class="f-key">分位:</span><span class="f-val">${s.erp_pct !== undefined ? s.erp_pct.toFixed(0) + '%' : '-'}</span> <span class="f-key">M1:</span><span class="f-val ${m1cls}">${s.m1_yoy !== undefined ? s.m1_yoy.toFixed(1) + '%' : '-'}</span>`;
         } else {
-            factors = `<span class="f-key">MOM:</span><span class="f-val">${s.momentum_20d !== undefined ? s.momentum_20d.toFixed(1) + '%' : '-'}</span> <span class="f-key">VOL:</span><span class="f-val">${s.volume_ratio !== undefined ? s.volume_ratio.toFixed(1) + 'x' : '-'}</span> <span class="f-key">RSI:</span><span class="f-val">${s.rsi_14 !== undefined ? Math.round(s.rsi_14) : '-'}</span>`;
+            const momcls = s.momentum_20d !== undefined ? (s.momentum_20d > 5 ? 'f-val-good' : s.momentum_20d < -3 ? 'f-val-danger' : '') : '';
+            const volcls = s.volume_ratio !== undefined ? (s.volume_ratio > 1.5 ? 'f-val-good' : s.volume_ratio < 0.7 ? 'f-val-warn' : '') : '';
+            factors = `<span class="f-key">MOM:</span><span class="f-val ${momcls}">${s.momentum_20d !== undefined ? s.momentum_20d.toFixed(1) + '%' : '-'}</span> <span class="f-key">VOL:</span><span class="f-val ${volcls}">${s.volume_ratio !== undefined ? s.volume_ratio.toFixed(1) + 'x' : '-'}</span> <span class="f-key">RSI:</span><span class="f-val">${s.rsi_14 !== undefined ? Math.round(s.rsi_14) : '-'}</span>`;
         }
 
         html += `<tr class="${rowClass}">
             <td style="font-weight:600;color:#fff;">${s.name || '-'}</td>
             <td style="font-family:monospace;font-size:0.72rem;color:var(--text-muted);">${s.ts_code || s.code || '-'}</td>
+            ${strategyKey === 'erp' ? `<td>${(() => { const styleMap = {'核心宽基':'erp-style-core','中盘成长':'erp-style-growth','防御红利':'erp-style-yield','港股宽基':'erp-style-hk'}; return `<span class="erp-style-tag ${styleMap[s.style] || 'erp-style-core'}">${s.style || '-'}</span>`; })()}</td>` : ''}
             <td><span class="score-cell score-tier-${tier}">${score}</span></td>
             <td class="factor-compact">${factors}</td>
             <td><span class="st-signal-tag ${tagClass}">${tagLabel}</span></td>
@@ -1217,7 +1309,7 @@ function renderHeatmapTable(strategyKey, strategyData) {
 
 // ====== Tab切换 ======
 function switchExecTab(key) {
-    ['mr', 'div', 'mom'].forEach(k => {
+    ['mr', 'div', 'mom', 'erp'].forEach(k => {
         const table = document.getElementById(`exec-table-${k}`);
         if (table) table.style.display = k === key ? 'block' : 'none';
     });
@@ -1237,13 +1329,17 @@ function renderResonancePanel(resonance, { safelySetHTML }) {
         const typeLabel = type === 'buy' ? '🟢 强共振买入' : type === 'sell' ? '🔴 强共振卖出' : '⚠️ 信号分歧';
         const dotFor = (sig) => sig === 'buy' ? 'dot-buy' : sig?.includes('sell') ? 'dot-sell' : sig === '-' ? 'dot-none' : 'dot-hold';
 
+        const hitCount = Object.values(item.signals || {}).filter(v => v !== '-').length;
+        const hitBadge = hitCount >= 3 ? `<span class="resonance-hit-badge hit-strong">命中 ${hitCount}/4</span>` : `<span class="resonance-hit-badge hit-weak">命中 ${hitCount}/4</span>`;
+
         return `<div class="resonance-card ${typeClass}">
-            <div style="font-weight:700;color:#fff;font-size:0.88rem;margin-bottom:6px;">${item.name}</div>
+            <div style="font-weight:700;color:#fff;font-size:0.88rem;margin-bottom:6px;">${item.name}${hitBadge}</div>
             <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:10px;">${item.code}</div>
             <div style="display:flex;gap:12px;font-size:0.78rem;">
                 <span><span class="resonance-signal-dot ${dotFor(item.signals?.mr)}"></span>MR</span>
                 <span><span class="resonance-signal-dot ${dotFor(item.signals?.div)}"></span>DIV</span>
                 <span><span class="resonance-signal-dot ${dotFor(item.signals?.mom)}"></span>MOM</span>
+                <span><span class="resonance-signal-dot ${dotFor(item.signals?.erp)}"></span>ERP</span>
             </div>
             <div style="margin-top:8px;font-size:0.72rem;font-weight:600;color:${type === 'buy' ? '#10b981' : type === 'sell' ? '#ef4444' : '#f59e0b'};">${typeLabel}</div>
         </div>`;
@@ -1255,7 +1351,7 @@ function renderResonancePanel(resonance, { safelySetHTML }) {
 
     if (!html) {
         html = `<div style="grid-column:1/-1;text-align:center;padding:24px;color:var(--text-muted);font-size:0.85rem;">
-            暂无跨策略重叠标的 — 3个策略标的池独立，无交叉信号
+            暂无跨策略重叠标的 — 4个策略标的池独立，无交叉信号
         </div>`;
     }
 
@@ -2385,8 +2481,755 @@ function renderERPDiagnosis(cards) {
 }
 
 // 窗口resize
+let _usErpChart = null, _jpErpChart = null;
 window.addEventListener('resize', () => {
     if (_erpGaugeChart) _erpGaugeChart.resize();
     if (_erpHistoryChart) _erpHistoryChart.resize();
+    if (_usErpChart) _usErpChart.resize();
+    if (_jpErpChart) _jpErpChart.resize();
+    if (_usGaugeChart) _usGaugeChart.resize();
+    if (_jpGaugeChart) _jpGaugeChart.resize();
 });
 
+// ============================================================
+// 🌐 海外ERP择时 V2.0 — 渲染引擎 (升级版)
+// ============================================================
+let _globalERPData = null;
+let _usGaugeChart = null, _jpGaugeChart = null;
+
+async function loadGlobalERP() {
+    const btn = document.getElementById('global-erp-refresh');
+    if (btn) { btn.disabled = true; btn.innerHTML = '⏳ 加载中...'; }
+    try {
+        const resp = await fetch('/api/v1/strategy/erp-global');
+        const json = await resp.json();
+        if (json.status === 'success') {
+            _globalERPData = json;
+            renderRegionPanel('us', json.us, '#3b82f6');
+            renderRegionPanel('jp', json.jp, '#dc2626');
+            renderGlobalAlerts('us', json.us);
+            renderGlobalAlerts('jp', json.jp);
+            renderGlobalComparison(json.global_comparison);
+            renderGlobalEncyclopedia(json.us, json.jp);
+            if (json.us && json.us.chart) renderRegionChart('us', json.us.chart, '#3b82f6');
+            if (json.jp && json.jp.chart) renderRegionChart('jp', json.jp.chart, '#dc2626');
+            const t = document.getElementById('global-erp-update-time');
+            if (t) t.textContent = '更新: ' + new Date().toLocaleTimeString('zh-CN');
+        } else {
+            console.error('[Global ERP] Error:', json.message);
+        }
+    } catch (e) { console.error('[Global ERP] Fetch failed:', e); }
+    if (btn) { btn.disabled = false; btn.innerHTML = '🔄 刷新全球数据'; }
+}
+
+// ---- 警示横幅 ----
+function renderGlobalAlerts(region, data) {
+    if (!data) return;
+    const alerts = data.alerts || [];
+    const el = document.getElementById('global-alert-' + region);
+    if (!el) return;
+    const danger = alerts.filter(a => a.level === 'danger' || a.level === 'opportunity');
+    if (!danger.length) { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    const flag = region === 'us' ? '🇺🇸' : '🇯🇵';
+    el.innerHTML = danger.map(a => {
+        const bg = a.level === 'danger' ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.08)';
+        const bc = a.level === 'danger' ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)';
+        const pulse = a.pulse ? 'animation:pulse-glow 2s infinite;' : '';
+        return '<div style="padding:7px 14px;border:1px solid '+bc+';background:'+bg+';border-radius:8px;font-size:0.72rem;color:#e2e8f0;'+pulse+'">' +
+            flag + ' ' + a.icon + ' ' + a.text + '</div>';
+    }).join('');
+}
+
+// ---- 信号色带 V2.0 ----
+function renderSignalLevelBar(elId, currentKey) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const levels = [
+        {k:'strong_buy',c:'#10b981',l:'SB'},{k:'buy',c:'#34d399',l:'B'},{k:'hold',c:'#3b82f6',l:'H'},
+        {k:'reduce',c:'#f59e0b',l:'R'},{k:'underweight',c:'#f97316',l:'UW'},{k:'cash',c:'#ef4444',l:'C'}
+    ];
+    el.innerHTML = levels.map(lv => {
+        const active = lv.k === currentKey;
+        return '<div style="width:18px;height:10px;border-radius:3px;background:' + lv.c + (active ? '' : '22') + ';' +
+            (active ? 'box-shadow:0 0 8px '+lv.c+';transform:scaleY(1.4);' : '') + '" title="'+lv.l+'"></div>';
+    }).join('');
+}
+
+// ---- 仪表盘 V2.0 (放大+渐变弧线) ----
+function renderMiniGauge(elId, score, color) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const chart = echarts.init(el);
+    if (elId.startsWith('us')) _usGaugeChart = chart; else _jpGaugeChart = chart;
+    chart.setOption({
+        series: [{
+            type: 'gauge', startAngle: 200, endAngle: -20, min: 0, max: 100,
+            pointer: { show: true, length: '60%', width: 4, itemStyle: { color: color } },
+            axisLine: { lineStyle: { width: 12, color: [[0.25,'#ef4444'],[0.45,'#f59e0b'],[0.65,'#3b82f6'],[0.85,'#34d399'],[1,'#10b981']] } },
+            axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false },
+            detail: { show: true, offsetCenter: [0, '70%'], fontSize: 11, color: '#94a3b8',
+                formatter: v => v.toFixed(0) + '分' },
+            data: [{ value: score }]
+        }]
+    });
+}
+
+// ---- 主面板渲染 V2.0 ----
+function renderRegionPanel(region, data, accentColor) {
+    if (!data) return;
+    const snap = data.current_snapshot || {};
+    const sig = data.signal || {};
+    const dims = data.dimensions || {};
+    const trade = data.trade_rules || {};
+
+    const setT = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    const setC = (id, c) => { const el = document.getElementById(id); if (el) el.style.color = c; };
+
+    // Hero ERP Card
+    const erpVal = (snap.erp_value||0);
+    setT(region+'-val-erp', erpVal.toFixed(2) + '%');
+    setC(region+'-val-erp', erpVal >= 3 ? '#10b981' : erpVal >= 1 ? '#f59e0b' : '#ef4444');
+    // Hero card border glow based on signal
+    const heroCard = document.getElementById(region+'-hero-card');
+    if (heroCard) {
+        heroCard.style.borderColor = (sig.color||accentColor) + '44';
+        heroCard.style.boxShadow = '0 0 24px ' + (sig.color||accentColor) + '15';
+    }
+
+    // Aux metrics
+    setT(region+'-val-pe', (snap.pe_ttm||0).toFixed(1) + 'x');
+    setT(region+'-val-yield', (snap.yield_10y||0).toFixed(2) + '%');
+    setT(region+'-sub-pe', 'E/Y ' + (snap.earnings_yield||0).toFixed(1) + '%');
+
+    if (region === 'us') {
+        const vix = (dims.vix||{}).vix_info || {};
+        const fed = (dims.fed_liquidity||{}).fed_info || {};
+        const crd = (dims.credit_spread||{}).credit_info || {};
+        setT('us-val-vix', (vix.current||0).toFixed(1));
+        setC('us-val-vix', (vix.current||0)>=30?'#ef4444':(vix.current||0)>=20?'#f59e0b':'#10b981');
+        setT('us-sub-vix', vix.regime==='extreme_panic'?'极端恐慌':vix.regime==='high_fear'?'高恐慌':vix.regime==='elevated_high'?'明显偏高':vix.regime==='elevated'?'偏高':vix.regime==='mild_elevated'?'略偏高':vix.regime==='normal'?'正常':vix.regime==='complacent'?'偏低':'--');
+        setT('us-val-rate', (fed.current||0).toFixed(2)+'%');
+        setC('us-val-rate', fed.direction==='easing'?'#10b981':'#f59e0b');
+        setT('us-sub-rate', fed.direction==='easing'?'宽松':'紧缩');
+        setT('us-val-credit', (crd.spread||0).toFixed(1)+'%');
+        setC('us-val-credit', (crd.spread||0)<=3?'#10b981':(crd.spread||0)<=5?'#f59e0b':'#ef4444');
+        setT('us-sub-credit', (crd.raw_bps||0)+'bps '+(crd.trend==='tightening'?'收窄':'走阔'));
+    } else {
+        const yen = (dims.yen_trend||{}).yen_info || {};
+        const vol = (dims.volatility||{}).vol_info || {};
+        const rate = (dims.rate_env||{}).rate_info || {};
+        setT('jp-val-yen', (yen.current||0).toFixed(1));
+        setC('jp-val-yen', (yen.current||0)>155?'#ef4444':(yen.current||0)>145?'#f59e0b':'#10b981');
+        setT('jp-sub-yen', yen.direction==='weakening'?'日元贬值':'日元升值');
+        setT('jp-val-vol', (vol.current||0).toFixed(1)+'%');
+        setC('jp-val-vol', vol.regime==='extreme_panic'?'#ef4444':vol.regime==='high'?'#f59e0b':'#10b981');
+        setT('jp-sub-vol', vol.pct?(vol.pct.toFixed(0)+'%分位'):'--');
+        setT('jp-val-rate', (rate.jgb_now||0).toFixed(3)+'%');
+        setC('jp-val-rate', rate.jgb_direction==='rising'?'#ef4444':'#10b981');
+        setT('jp-sub-rate', rate.jgb_direction==='rising'?'上行(收紧)':rate.jgb_direction==='falling'?'下行(宽松)':'稳定');
+    }
+
+    // Signal Decision Banner V2.0
+    const banner = document.getElementById(region+'-signal-banner');
+    if (banner && sig.color) {
+        banner.style.background = (sig.color||'#94a3b8') + '12';
+        banner.style.borderColor = (sig.color||'#94a3b8') + '44';
+    }
+    setT(region+'-composite-score', sig.score||'--');
+    setC(region+'-composite-score', sig.color||'#94a3b8');
+    const sigLabel = document.getElementById(region+'-signal-label');
+    if (sigLabel) {
+        sigLabel.textContent = (sig.emoji||'')+' '+(sig.label||'');
+        sigLabel.style.color = sig.color||'#94a3b8';
+    }
+    const sigPos = document.getElementById(region+'-signal-pos');
+    if (sigPos) sigPos.textContent = '仓位: '+(sig.position||'--');
+
+    // Signal level bar
+    renderSignalLevelBar(region+'-signal-level-bar', sig.key||'hold');
+
+    // Signal badge
+    const badge = document.getElementById(region+'-signal-badge');
+    if (badge) {
+        badge.textContent = (sig.emoji||'') + ' ' + (sig.label||'');
+        badge.style.background = (sig.color||'#94a3b8') + '22';
+        badge.style.color = sig.color||'#94a3b8';
+        badge.style.border = '1px solid '+(sig.color||'#94a3b8')+'44';
+    }
+
+    // ETF配置
+    const etfEl = document.getElementById(region+'-etf-advice');
+    if (etfEl && trade.etf_advice) {
+        etfEl.innerHTML = trade.etf_advice.map(e =>
+            '<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid rgba(100,116,139,0.1);"><span>'+(e.etf?e.etf.name:'')+'</span><span style="color:#fbbf24;font-weight:600;">'+e.ratio+'</span></div>'
+        ).join('');
+    }
+
+    // 止盈规则
+    const tpEl = document.getElementById(region+'-take-profit');
+    if (tpEl && trade.take_profit) {
+        tpEl.innerHTML = trade.take_profit.map(r => {
+            const triggered = r.triggered;
+            const bg = triggered ? 'background:rgba(16,185,129,0.12);border-left:2px solid #10b981;padding-left:6px;border-radius:3px;' : '';
+            const currentTag = triggered && r.current ? ' <span style="color:#f59e0b;font-size:0.58rem;">[✅'+r.current+']</span>' : '';
+            return '<div style="padding:2px 0;margin-bottom:2px;'+bg+'"><span style="color:#10b981;">▸</span> '+r.trigger+' → <b>'+r.action+'</b>'+currentTag+'</div>';
+        }).join('');
+    }
+
+    // 止损规则
+    const slEl = document.getElementById(region+'-stop-loss');
+    if (slEl && trade.stop_loss) {
+        slEl.innerHTML = trade.stop_loss.map(r => {
+            const triggered = r.triggered;
+            const trigColor = r.color || '#f59e0b';
+            const bg = triggered ? 'background:rgba('+(trigColor==='#10b981'?'16,185,129':'239,68,68')+',0.12);border-left:2px solid '+trigColor+';padding-left:6px;border-radius:3px;' : '';
+            const currentTag = triggered && r.current ? ' <span style="color:#f59e0b;font-size:0.58rem;">[✅'+r.current+']</span>' : '';
+            return '<div style="padding:2px 0;margin-bottom:2px;'+bg+'"><span style="color:'+trigColor+';">▸</span> '+r.trigger+' → <b>'+r.action+'</b>'+currentTag+'</div>';
+        }).join('');
+    }
+
+    // 共振标签
+    const resEl = document.getElementById('global-resonance-'+region);
+    if (resEl && trade.resonance_label) {
+        resEl.textContent = (region==='us'?'🇺🇸':'🇯🇵') + ' ' + trade.resonance_label;
+    }
+
+    // 仪表盘 V2.0 (放大)
+    setTimeout(() => renderMiniGauge(region+'-gauge-chart', sig.score||0, accentColor), 50);
+
+    // 五维评分条 V2.0 (增强版)
+    const barsEl = document.getElementById(region+'-dim-bars');
+    if (barsEl) {
+        barsEl.innerHTML = Object.keys(dims).map(k => {
+            const d = dims[k]; const s = d.score||0;
+            const w = d.weight?(d.weight*100).toFixed(0)+'%':'';
+            const bc = s>=70?'#10b981':s>=40?'#f59e0b':'#ef4444';
+            return '<div class="erp-dim-row">' +
+                '<span class="erp-dim-label">'+(d.label||k)+' <span class="erp-dim-weight">'+w+'</span></span>' +
+                '<div class="erp-dim-track"><div class="erp-dim-fill" style="width:'+s+'%;background:linear-gradient(90deg,'+bc+'cc,'+bc+');"></div></div>' +
+                '<span class="erp-dim-score" style="color:'+bc+';">'+s.toFixed(0)+'</span></div>';
+        }).join('');
+    }
+
+    // 诊断卡片 V2.0 (2列)
+    const diagEl = document.getElementById(region+'-diagnosis');
+    if (diagEl && data.diagnosis) {
+        const typeMap = {
+            success: {bg:'rgba(16,185,129,0.06)',border:'#10b981',icon:'✅'},
+            info: {bg:'rgba(59,130,246,0.06)',border:'#3b82f6',icon:'ℹ️'},
+            warning: {bg:'rgba(245,158,11,0.06)',border:'#f59e0b',icon:'⚠️'},
+            danger: {bg:'rgba(239,68,68,0.06)',border:'#ef4444',icon:'🔴'}
+        };
+        diagEl.innerHTML = data.diagnosis.map(c => {
+            const st = typeMap[c.type]||typeMap.info;
+            return '<div style="background:'+st.bg+';border:1px solid '+st.border+'33;border-left:3px solid '+st.border+';border-radius:8px;padding:10px 12px;">' +
+                '<div style="font-size:0.68rem;font-weight:700;color:'+st.border+';margin-bottom:4px;">'+st.icon+' '+c.title+'</div>' +
+                '<div style="font-size:0.6rem;color:#cbd5e1;line-height:1.5;">'+c.text+'</div></div>';
+        }).join('');
+    }
+}
+
+// ---- 规则百科 ----
+function renderGlobalEncyclopedia(usData, jpData) {
+    const el = document.getElementById('global-encyclopedia-body');
+    if (!el) return;
+    const usEnc = (usData||{}).encyclopedia || {};
+    const jpEnc = (jpData||{}).encyclopedia || {};
+    let html = '<div><h4 style="margin:0 0 8px;font-size:0.8rem;color:#60a5fa;">🇺🇸 美股五维指标</h4>';
+    for (const [k,v] of Object.entries(usEnc)) {
+        html += '<div style="background:rgba(59,130,246,0.04);border:1px solid rgba(59,130,246,0.15);border-radius:6px;padding:8px;margin-bottom:6px;">' +
+            '<div style="font-size:0.72rem;font-weight:600;color:#60a5fa;margin-bottom:3px;">'+v.title+'</div>' +
+            '<div style="font-size:0.62rem;color:#cbd5e1;line-height:1.5;">' +
+            '<b style="color:#94a3b8;">是什么:</b> '+v.what+'<br>' +
+            '<b style="color:#94a3b8;">为什么:</b> '+v.why+'<br>' +
+            '<b style="color:#f59e0b;">⚠️ 警示:</b> <span style="color:#f59e0b;">'+v.alert+'</span>' +
+            (v.history ? '<br><b style="color:#94a3b8;">📊 历史:</b> '+v.history : '') +
+            '</div></div>';
+    }
+    html += '</div><div><h4 style="margin:0 0 8px;font-size:0.8rem;color:#f87171;">🇯🇵 日本五维指标</h4>';
+    for (const [k,v] of Object.entries(jpEnc)) {
+        html += '<div style="background:rgba(220,38,38,0.04);border:1px solid rgba(220,38,38,0.15);border-radius:6px;padding:8px;margin-bottom:6px;">' +
+            '<div style="font-size:0.72rem;font-weight:600;color:#f87171;margin-bottom:3px;">'+v.title+'</div>' +
+            '<div style="font-size:0.62rem;color:#cbd5e1;line-height:1.5;">' +
+            '<b style="color:#94a3b8;">是什么:</b> '+v.what+'<br>' +
+            '<b style="color:#94a3b8;">为什么:</b> '+v.why+'<br>' +
+            '<b style="color:#f59e0b;">⚠️ 警示:</b> <span style="color:#f59e0b;">'+v.alert+'</span>' +
+            '</div></div>';
+    }
+    html += '</div>';
+    el.innerHTML = html;
+}
+
+// ---- 三地对比 V2.0 (含皇冠动画) ----
+function renderGlobalComparison(gc) {
+    if (!gc) return;
+    const setT = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+    const setCS = (id,c) => { const el=document.getElementById(id); if(el) el.style.color=c; };
+    const scores = {};
+    ['cn','us','jp'].forEach(r => {
+        const d = gc[r]||{};
+        scores[r] = d.score||0;
+        setT('global-'+r+'-erp', (d.erp||0).toFixed(2)+'%');
+        setT('global-'+r+'-score', '得分: '+(d.score||0).toFixed(0));
+        const sigEl = document.getElementById('global-'+r+'-signal');
+        if (sigEl) { sigEl.textContent = (d.emoji||'')+' '+(d.label||'--'); sigEl.style.color = d.color||'#94a3b8'; }
+
+        // 决策矩阵表格
+        setT('gm-'+r+'-pe', (d.pe||0).toFixed(1)+'x');
+        setT('gm-'+r+'-yield', (d.yield||0).toFixed(2)+'%');
+        const erpCell = document.getElementById('gm-'+r+'-erp');
+        if (erpCell) { erpCell.textContent = (d.erp||0).toFixed(2)+'%'; erpCell.style.color = (d.erp||0)>=3?'#10b981':(d.erp||0)>=1?'#f59e0b':'#ef4444'; }
+        const scoreCell = document.getElementById('gm-'+r+'-score');
+        if (scoreCell) { scoreCell.textContent = (d.score||0).toFixed(0); scoreCell.style.color = d.color||'#94a3b8'; }
+        const sigCell = document.getElementById('gm-'+r+'-signal');
+        if (sigCell) { sigCell.textContent = (d.emoji||'')+' '+(d.label||'--'); sigCell.style.color = d.color||'#94a3b8'; }
+    });
+
+    // V2.0: 皇冠动画 — 最高分卡片获得皇冠
+    const maxScore = Math.max(scores.cn||0, scores.us||0, scores.jp||0);
+    ['cn','us','jp'].forEach(r => {
+        const card = document.getElementById('global-'+r+'-card');
+        const crown = document.getElementById('global-'+r+'-crown');
+        const d = gc[r]||{};
+        if (card) {
+            if (scores[r] === maxScore && maxScore > 0) {
+                card.classList.add('winner');
+                card.style.borderColor = (d.color||'#fbbf24') + '88';
+                card.style.boxShadow = '0 0 24px '+(d.color||'#fbbf24')+'25';
+                if (crown) { crown.style.display = 'block'; crown.innerHTML = '<span class="erp-crown">👑</span>'; }
+            } else {
+                card.classList.remove('winner');
+                card.style.boxShadow = 'none';
+                if (crown) crown.style.display = 'none';
+            }
+        }
+    });
+
+    const advEl = document.getElementById('global-advice');
+    if (advEl && gc.advice) advEl.textContent = '🌍 ' + gc.advice;
+
+    // 配置比例条
+    const allocBar = document.getElementById('global-allocation-bar');
+    const allocText = document.getElementById('global-allocation-text');
+    if (allocBar && gc.allocation) {
+        const alloc = gc.allocation;
+        const colors = {cn:'#ef4444', us:'#3b82f6', jp:'#dc2626'};
+        const flags = {cn:'🇨🇳', us:'🇺🇸', jp:'🇯🇵'};
+        allocBar.innerHTML = ['cn','us','jp'].map(r => {
+            const pct = alloc[r] || 0;
+            return '<div style="width:'+pct+'%;background:linear-gradient(135deg,'+colors[r]+','+colors[r]+'bb);display:flex;align-items:center;justify-content:center;font-size:0.72rem;color:white;font-weight:700;transition:width 0.6s;">'+flags[r]+' '+pct+'%</div>';
+        }).join('');
+    }
+    if (allocText && gc.allocation_text) {
+        allocText.textContent = gc.allocation_text;
+    }
+}
+
+// ---- ERP走势图 V2.0 (含买卖区间阴影) ----
+function renderRegionChart(region, chart, color) {
+    if (!chart || chart.status !== 'success') return;
+    const el = document.getElementById(region+'-erp-chart');
+    if (!el) return;
+    const instance = echarts.init(el);
+    if (region === 'us') _usErpChart = instance; else _jpErpChart = instance;
+    const stats = chart.stats || {};
+    instance.setOption({
+        backgroundColor: 'transparent',
+        grid: { top: 30, right: 12, bottom: 30, left: 40 },
+        tooltip: { trigger:'axis', backgroundColor:'rgba(15,23,42,0.95)', borderColor:color+'44',
+            textStyle:{color:'#e2e8f0',fontSize:11},
+            formatter: p => { if (!p.length) return ''; let s='<b>'+p[0].axisValue+'</b><br/>'; p.forEach(i=>s+='<span style="color:'+i.color+'">●</span> '+i.seriesName+': <b>'+i.value+'%</b><br/>'); return s; }
+        },
+        xAxis: { type:'category', data:chart.dates, axisLabel:{color:'#64748b',fontSize:9,formatter:v=>v.substring(2,7)}, axisLine:{lineStyle:{color:'#334155'}} },
+        yAxis: { type:'value', axisLabel:{color:'#64748b',fontSize:10,formatter:'{value}%'}, splitLine:{lineStyle:{color:'#1e293b'}} },
+        series: [
+            { name:'ERP', type:'line', data:chart.erp, smooth:true,
+              lineStyle:{color:color,width:2.5},
+              areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:color+'44'},{offset:1,color:color+'05'}]}},
+              itemStyle:{color:color}, symbol:'none' },
+            { name:'超配线', type:'line', data:chart.dates.map(()=>stats.overweight_line),
+              lineStyle:{color:'#10b981',type:'dashed',width:1}, symbol:'none', itemStyle:{color:'#10b981'} },
+            { name:'低配线', type:'line', data:chart.dates.map(()=>stats.underweight_line),
+              lineStyle:{color:'#ef4444',type:'dashed',width:1}, symbol:'none', itemStyle:{color:'#ef4444'} },
+        ]
+    });
+}
+
+// Tab切换钩子
+(function() {
+    document.querySelectorAll('.st-tab').forEach(tab => {
+        tab.addEventListener('click', function() {
+            if (this.dataset.report === 'st-erp-global' && !_globalERPData) {
+                setTimeout(loadGlobalERP, 100);
+            }
+            if (this.dataset.report === 'st-rates-strategy' && !_ratesData) {
+                setTimeout(loadRatesStrategy, 100);
+            }
+        });
+    });
+})();
+
+// 🏦 利率择时引擎 V1.0 — JS渲染
+// ═══════════════════════════════════════════════
+let _ratesData = null;
+let _ratesGaugeChart = null;
+let _ratesMainChart = null;
+
+async function loadRatesStrategy() {
+    const btn = document.getElementById('rates-refresh-btn');
+    if (btn) { btn.disabled = true; btn.innerHTML = '⏳ 加载中...'; }
+    try {
+        const resp = await fetch('/api/v1/strategy/rates');
+        const json = await resp.json();
+        if (json.status === 'success' && json.data) {
+            _ratesData = json.data;
+            renderRatesPanel(json.data);
+            const t = document.getElementById('rates-update-time');
+            if (t) t.textContent = '更新: ' + new Date().toLocaleTimeString('zh-CN');
+        } else {
+            console.error('[Rates] Error:', json.message || json);
+        }
+    } catch (e) { console.error('[Rates] Fetch failed:', e); }
+    if (btn) { btn.disabled = false; btn.innerHTML = '🔄 刷新利率数据'; }
+}
+
+function renderRatesPanel(data) {
+    if (!data) return;
+    const snap = data.current_snapshot || {};
+    const dims = data.dimensions || {};
+    const signal = data.signal || {};
+    const trade = data.trade_rules || {};
+    const trSig = trade.signal || signal;
+
+    const setT = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    const setC = (id, c) => { const el = document.getElementById(id); if (el) el.style.color = c; };
+
+    const rcn = snap.regime_cn || {};
+
+    // === Regime Badge (Hero) ===
+    const regBadge = document.getElementById('rates-regime-badge');
+    if (regBadge && data.buy_sell_zones) {
+        const bsz = data.buy_sell_zones;
+        regBadge.textContent = bsz.regime_label || '';
+        regBadge.style.background = (bsz.conclusion_color||'#94a3b8') + '22';
+        regBadge.style.color = bsz.conclusion_color||'#94a3b8';
+        regBadge.style.border = '1px solid '+(bsz.conclusion_color||'#94a3b8')+'44';
+    }
+
+    // === ZONE 1: 快照卡片 (中文Regime + alert hint) ===
+    setT('rates-val-10y', (snap.yield_10y||0).toFixed(2) + '%');
+    setC('rates-val-10y', (snap.yield_10y||0)>=4.5?'#10b981':(snap.yield_10y||0)>=3.5?'#f59e0b':'#ef4444');
+    const ylInfo = (dims.yield_level||{}).yield_info || {};
+    setT('rates-sub-10y', (rcn.yield_level||'--') + ' | 分位'+(ylInfo.pct||0).toFixed(0)+'%');
+
+    setT('rates-val-2y', (snap.yield_2y||0).toFixed(2) + '%');
+    setC('rates-val-2y', '#e2e8f0');
+    setT('rates-sub-2y', '短端 | Fed映射');
+
+    const spreadBps = snap.spread_bps || 0;
+    setT('rates-val-spread', (spreadBps >= 0 ? '+' : '') + spreadBps.toFixed(0) + 'bps');
+    setC('rates-val-spread', spreadBps < 0 ? '#ef4444' : spreadBps < 50 ? '#f59e0b' : '#10b981');
+    setT('rates-sub-spread', (rcn.curve||'--') + (spreadBps < 0 ? ' ⚠️' : ''));
+
+    setT('rates-val-real', (snap.real_yield||0).toFixed(2) + '%');
+    setC('rates-val-real', (snap.real_yield||0)>=2?'#10b981':(snap.real_yield||0)>=1?'#f59e0b':'#ef4444');
+    setT('rates-sub-real', (rcn.real_yield||'--'));
+
+    const momInfo = (dims.yield_momentum||{}).momentum_info || {};
+    const chg3m = momInfo.chg_3m_bps || 0;
+    setT('rates-val-momentum', (chg3m >= 0 ? '+' : '') + chg3m.toFixed(0) + 'bps');
+    setC('rates-val-momentum', chg3m < -30 ? '#10b981' : chg3m > 30 ? '#ef4444' : '#f59e0b');
+    setT('rates-sub-momentum', (rcn.momentum||'--') + (chg3m < 0 ? ' 📉' : ' 📈'));
+
+    setT('rates-val-bei', (snap.breakeven||0).toFixed(2) + '%');
+    setC('rates-val-bei', (snap.breakeven||0) > 2.5 ? '#ef4444' : '#e2e8f0');
+    setT('rates-sub-bei', '通胀预期');
+
+    // Alert hints
+    const hints = data.alert_hints || {};
+    setT('rates-hint-10y', hints.yield_10y || '');
+    setT('rates-hint-2y', hints.yield_2y || '');
+    setT('rates-hint-spread', hints.spread || '');
+    setT('rates-hint-real', hints.real_yield || '');
+    setT('rates-hint-momentum', hints.momentum || '');
+    setT('rates-hint-bei', hints.bei || '');
+
+    // === ZONE 2: 信号badge ===
+    const badge = document.getElementById('rates-signal-badge');
+    if (badge) {
+        badge.textContent = (trSig.emoji||'') + ' ' + (trSig.label||'');
+        badge.style.background = (trSig.color||'#94a3b8') + '22';
+        badge.style.color = trSig.color||'#94a3b8';
+        badge.style.border = '1px solid '+(trSig.color||'#94a3b8')+'44';
+    }
+
+    // ETF
+    const etfEl = document.getElementById('rates-etf-advice');
+    if (etfEl && trade.etf_advice) {
+        etfEl.innerHTML = trade.etf_advice.map(e =>
+            '<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid rgba(100,116,139,0.1);"><span>'+(e.etf?e.etf.name:'')+'</span><span style="color:#fbbf24;font-weight:600;">'+e.ratio+'</span></div>'
+        ).join('');
+    }
+
+    // 止盈 (动态高亮)
+    const tpEl = document.getElementById('rates-take-profit');
+    if (tpEl && trade.take_profit) {
+        tpEl.innerHTML = trade.take_profit.map(r => {
+            const triggered = r.triggered;
+            const bg = triggered ? 'background:rgba(16,185,129,0.12);border-left:2px solid #10b981;padding-left:6px;border-radius:3px;' : '';
+            const tag = triggered && r.current ? ' <span style="color:#f59e0b;font-size:0.6rem;">[✅'+r.current+']</span>' : '';
+            return '<div style="padding:3px 0;margin-bottom:3px;'+bg+'"><span style="color:#10b981;">▸</span> '+r.trigger+' → <b>'+r.action+'</b>'+tag+'</div>';
+        }).join('');
+    }
+
+    // 止损 (动态高亮)
+    const slEl = document.getElementById('rates-stop-loss');
+    if (slEl && trade.stop_loss) {
+        slEl.innerHTML = trade.stop_loss.map(r => {
+            const triggered = r.triggered;
+            const trigColor = r.color || '#f59e0b';
+            const bg = triggered ? 'background:rgba('+(trigColor==='#10b981'?'16,185,129':'239,68,68')+',0.12);border-left:2px solid '+trigColor+';padding-left:6px;border-radius:3px;' : '';
+            const tag = triggered && r.current ? ' <span style="color:#f59e0b;font-size:0.6rem;">[✅'+r.current+']</span>' : '';
+            return '<div style="padding:3px 0;margin-bottom:3px;'+bg+'"><span style="color:'+trigColor+';">▸</span> '+r.trigger+' → <b>'+r.action+'</b>'+tag+'</div>';
+        }).join('');
+    }
+
+    // === 综合得分 + 信号标签 ===
+    setT('rates-composite-score', trSig.score || '--');
+    setC('rates-composite-score', trSig.color || '#94a3b8');
+    const sigLabel = document.getElementById('rates-signal-label');
+    if (sigLabel) {
+        sigLabel.textContent = (trSig.emoji||'')+' '+(trSig.label||'')+' ('+(trSig.position||'')+')';
+        sigLabel.style.color = trSig.color||'#94a3b8';
+    }
+
+    // 仪表盘
+    setTimeout(() => renderRatesGauge(trSig.score||0), 50);
+
+    // 五维评分条 (新增desc行)
+    const barsEl = document.getElementById('rates-dim-bars');
+    if (barsEl) {
+        barsEl.innerHTML = Object.keys(dims).map(k => {
+            const d = dims[k]; const s = d.score||0;
+            const w = d.weight?(d.weight*100).toFixed(0)+'%':'';
+            const bc = s>=70?'#10b981':s>=40?'#f59e0b':'#ef4444';
+            const desc = d.desc ? '<div style="font-size:0.48rem;color:#64748b;margin-top:1px;line-height:1.2;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">'+d.desc+'</div>' : '';
+            return '<div style="margin-bottom:5px;">' +
+                '<div style="display:flex;align-items:center;gap:5px;">' +
+                '<span style="font-size:0.6rem;color:#94a3b8;width:62px;text-align:right;flex-shrink:0;">'+d.label+'<span style="color:#475569;font-size:0.5rem;"> '+w+'</span></span>' +
+                '<div style="flex:1;height:5px;background:rgba(30,41,59,0.8);border-radius:3px;overflow:hidden;">' +
+                '<div style="width:'+s+'%;height:100%;background:'+bc+';border-radius:3px;transition:width 0.6s;"></div></div>' +
+                '<span style="font-size:0.6rem;color:'+bc+';width:24px;text-align:right;">'+s.toFixed(0)+'</span></div>'+desc+'</div>';
+        }).join('');
+    }
+
+    // === ZONE 4: 配置比例条 ===
+    const allocBar = document.getElementById('rates-allocation-bar');
+    if (allocBar && trSig.stock_pct !== undefined) {
+        const items = [
+            {label:'📈 股票', pct:trSig.stock_pct, color:'#f59e0b'},
+            {label:'🏦 债券', pct:trSig.bond_pct, color:'#c084fc'},
+            {label:'🥇 黄金', pct:trSig.gold_pct, color:'#fbbf24'},
+        ];
+        allocBar.innerHTML = items.map(i =>
+            '<div style="width:'+i.pct+'%;background:'+i.color+';display:flex;align-items:center;justify-content:center;font-size:0.72rem;color:white;font-weight:600;transition:width 0.5s;">'+i.label+' '+i.pct+'%</div>'
+        ).join('');
+        setT('rates-alloc-stock', '📈 股票 '+trSig.stock_pct+'%');
+        setT('rates-alloc-bond', '🏦 债券 '+trSig.bond_pct+'%');
+        setT('rates-alloc-gold', '🥇 黄金 '+trSig.gold_pct+'%');
+        setT('rates-alloc-duration', '久期: '+trSig.duration);
+    }
+
+    // === 决策汇总区 ===
+    if (data.buy_sell_zones) renderRatesDecisionZone(data.buy_sell_zones);
+
+    // === 警示 ===
+    renderRatesAlerts(data.alerts || []);
+
+    // === 诊断 ===
+    renderRatesDiagnosis(data.diagnosis || []);
+
+    // === Tooltips ===
+    if (data.card_tooltips) setupRatesTooltips(data.card_tooltips);
+
+    // === 走势图 ===
+    if (data.chart) renderRatesChart(data.chart);
+}
+
+function renderRatesGauge(score) {
+    const el = document.getElementById('rates-gauge-chart');
+    if (!el) return;
+    if (_ratesGaugeChart) _ratesGaugeChart.dispose();
+    _ratesGaugeChart = echarts.init(el);
+    _ratesGaugeChart.setOption({
+        series: [{
+            type: 'gauge', startAngle: 200, endAngle: -20, min: 0, max: 100,
+            pointer: { show: true, length: '55%', width: 3, itemStyle: { color: '#c084fc' } },
+            axisLine: { lineStyle: { width: 8, color: [[0.2,'#ef4444'],[0.35,'#f97316'],[0.5,'#f59e0b'],[0.65,'#94a3b8'],[0.8,'#3b82f6'],[1,'#10b981']] } },
+            axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false },
+            detail: { show: false }, data: [{ value: score }]
+        }]
+    });
+}
+
+function renderRatesAlerts(alerts) {
+    const el = document.getElementById('rates-alerts');
+    if (!el) return;
+    if (!alerts.length) { el.style.display = 'none'; return; }
+    el.style.display = 'flex';
+    el.innerHTML = alerts.map(a => {
+        const bg = a.level==='danger'?'rgba(239,68,68,0.08)':a.level==='opportunity'?'rgba(16,185,129,0.08)':'rgba(245,158,11,0.08)';
+        const bc = a.level==='danger'?'rgba(239,68,68,0.3)':a.level==='opportunity'?'rgba(16,185,129,0.3)':'rgba(245,158,11,0.3)';
+        const pulse = a.pulse ? 'animation:pulse 2s infinite;' : '';
+        return '<div style="padding:6px 14px;border:1px solid '+bc+';background:'+bg+';border-radius:6px;font-size:0.72rem;color:#e2e8f0;'+pulse+'">🏦 '+a.icon+' '+a.text+'</div>';
+    }).join('');
+}
+
+function renderRatesDiagnosis(diagnosis) {
+    const diagEl = document.getElementById('rates-diagnosis');
+    if (!diagEl || !diagnosis.length) return;
+    const typeMap = {
+        success: {bg:'rgba(16,185,129,0.06)',border:'#10b981',icon:'✅'},
+        info: {bg:'rgba(59,130,246,0.06)',border:'#3b82f6',icon:'ℹ️'},
+        warning: {bg:'rgba(245,158,11,0.06)',border:'#f59e0b',icon:'⚠️'},
+        danger: {bg:'rgba(239,68,68,0.06)',border:'#ef4444',icon:'🔴'}
+    };
+    diagEl.innerHTML = diagnosis.map(c => {
+        const st = typeMap[c.type]||typeMap.info;
+        return '<div style="background:'+st.bg+';border:1px solid '+st.border+'33;border-left:2px solid '+st.border+';border-radius:6px;padding:7px 9px;">' +
+            '<div style="font-size:0.65rem;font-weight:600;color:'+st.border+';margin-bottom:2px;">'+st.icon+' '+c.title+'</div>' +
+            '<div style="font-size:0.58rem;color:#cbd5e1;line-height:1.4;">'+c.text+'</div></div>';
+    }).join('');
+}
+
+function renderRatesEncyclopedia(enc) {
+    // V1.5: 百科已改为tooltip模式，此函数保留但不渲染
+}
+
+// === V1.5: 买卖决策汇总区 ===
+function renderRatesDecisionZone(bsz) {
+    const el = document.getElementById('rates-decision-zone');
+    if (!el || !bsz) return;
+    el.style.display = 'block';
+
+    const renderConds = (items, color) => items.map(c => {
+        const icon = c.met ? '<span style="color:#10b981;">✅</span>' : '<span style="color:#475569;">❌</span>';
+        const valStyle = c.met ? 'color:#fbbf24;font-weight:600;' : 'color:#64748b;';
+        return '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;">' +
+            icon + '<span style="color:#cbd5e1;font-size:0.68rem;">' + c.cond + '</span>' +
+            '<span style="'+valStyle+'font-size:0.65rem;margin-left:auto;">' + c.val + '</span>' +
+            '<span style="font-size:0.55rem;color:#64748b;">' + c.why + '</span></div>';
+    }).join('');
+
+    el.innerHTML = 
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">' +
+        '<span style="font-size:0.82rem;font-weight:700;color:#c084fc;">📊 买卖决策汇总</span>' +
+        '<div style="padding:4px 14px;border-radius:20px;font-size:0.72rem;font-weight:700;background:'+(bsz.conclusion_color||'#94a3b8')+'22;color:'+(bsz.conclusion_color||'#94a3b8')+';border:1px solid '+(bsz.conclusion_color||'#94a3b8')+'44;">'+bsz.conclusion+'</div></div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">' +
+        // 债券买入区
+        '<div style="background:rgba(16,185,129,0.04);border:1px solid rgba(16,185,129,0.15);border-radius:8px;padding:10px;">' +
+        '<div style="font-size:0.7rem;font-weight:600;color:#10b981;margin-bottom:6px;">🟢 债券买入区 <span style="font-size:0.6rem;color:#64748b;">'+bsz.bond_met+'/'+bsz.bond_buy.length+'</span></div>' +
+        renderConds(bsz.bond_buy, '#10b981') + '</div>' +
+        // 股票买入区
+        '<div style="background:rgba(249,115,22,0.04);border:1px solid rgba(249,115,22,0.15);border-radius:8px;padding:10px;">' +
+        '<div style="font-size:0.7rem;font-weight:600;color:#f97316;margin-bottom:6px;">🟠 股票超配区 <span style="font-size:0.6rem;color:#64748b;">'+bsz.stock_met+'/'+bsz.stock_buy.length+'</span></div>' +
+        renderConds(bsz.stock_buy, '#f97316') + '</div>' +
+        // 避险区
+        '<div style="background:rgba(239,68,68,0.04);border:1px solid rgba(239,68,68,0.15);border-radius:8px;padding:10px;">' +
+        '<div style="font-size:0.7rem;font-weight:600;color:#ef4444;margin-bottom:6px;">🔴 避险防御区 <span style="font-size:0.6rem;color:#64748b;">'+bsz.defense_met+'/'+bsz.defense.length+'</span></div>' +
+        renderConds(bsz.defense, '#ef4444') + '</div>' +
+        '</div>';
+}
+
+// === V1.5: 卡片Tooltip ===
+let _ratesActiveTooltips = null;
+function setupRatesTooltips(tips) {
+    _ratesActiveTooltips = tips;
+    const popup = document.getElementById('rates-tooltip-popup');
+    if (!popup) return;
+    document.querySelectorAll('.rates-card-tip').forEach(card => {
+        card.addEventListener('mouseenter', function(e) {
+            const key = this.dataset.tipKey;
+            const tip = _ratesActiveTooltips[key];
+            if (!tip) return;
+            document.getElementById('rates-tip-title').textContent = tip.title || '';
+            document.getElementById('rates-tip-desc').textContent = tip.desc || '';
+            document.getElementById('rates-tip-logic').textContent = '📐 ' + (tip.logic || '');
+            document.getElementById('rates-tip-alert').textContent = tip.alert || '';
+            document.getElementById('rates-tip-history').textContent = tip.history ? '📊 ' + tip.history : '';
+            const rect = this.getBoundingClientRect();
+            popup.style.left = Math.min(rect.left, window.innerWidth - 300) + 'px';
+            popup.style.top = (rect.bottom + 8) + 'px';
+            popup.style.display = 'block';
+        });
+        card.addEventListener('mouseleave', function() {
+            popup.style.display = 'none';
+        });
+    });
+}
+
+function renderRatesChart(chart) {
+    if (!chart || chart.status !== 'success') return;
+    const el = document.getElementById('rates-chart');
+    if (!el) return;
+    if (_ratesMainChart) _ratesMainChart.dispose();
+    _ratesMainChart = echarts.init(el);
+    const lines = chart.lines || {};
+
+    const series = [
+        { name:'10Y Yield', type:'line', data:chart.yields_10y, smooth:true,
+          lineStyle:{color:'#c084fc',width:2},
+          areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'#c084fc33'},{offset:1,color:'#c084fc05'}]}},
+          itemStyle:{color:'#c084fc'}, symbol:'none', yAxisIndex:0 },
+    ];
+
+    // 利差曲线 (第二Y轴)
+    if (chart.spreads) {
+        series.push({
+            name:'10Y-2Y利差', type:'bar', data:chart.spreads,
+            itemStyle:{ color: function(p) { return p.data < 0 ? '#ef444488' : '#10b98144'; } },
+            barWidth: '60%', yAxisIndex:1
+        });
+    }
+
+    // 参考线 (带文字标注)
+    if (lines.high_zone) {
+        series.push({ name:'超配债券区('+lines.high_zone+'%)', type:'line', data:chart.dates.map(()=>lines.high_zone),
+            lineStyle:{color:'#10b981',type:'dashed',width:1}, symbol:'none', itemStyle:{color:'#10b981'}, yAxisIndex:0 });
+    }
+    if (lines.neutral) {
+        series.push({ name:'中性区('+lines.neutral+'%)', type:'line', data:chart.dates.map(()=>lines.neutral),
+            lineStyle:{color:'#94a3b8',type:'dotted',width:1}, symbol:'none', itemStyle:{color:'#94a3b8'}, yAxisIndex:0 });
+    }
+    if (lines.low_zone) {
+        series.push({ name:'全股票区('+lines.low_zone+'%)', type:'line', data:chart.dates.map(()=>lines.low_zone),
+            lineStyle:{color:'#ef4444',type:'dashed',width:1}, symbol:'none', itemStyle:{color:'#ef4444'}, yAxisIndex:0 });
+    }
+
+    const yAxes = [
+        { type:'value', name:'Yield(%)', position:'left', axisLabel:{color:'#64748b',fontSize:9,formatter:'{value}%'}, splitLine:{lineStyle:{color:'#1e293b'}}, nameTextStyle:{color:'#64748b',fontSize:9} }
+    ];
+    if (chart.spreads) {
+        yAxes.push({ type:'value', name:'Spread(%)', position:'right', axisLabel:{color:'#64748b',fontSize:9,formatter:'{value}%'}, splitLine:{show:false}, nameTextStyle:{color:'#64748b',fontSize:9} });
+    }
+
+    _ratesMainChart.setOption({
+        backgroundColor: 'transparent',
+        grid: { top: 32, right: chart.spreads ? 55 : 10, bottom: 28, left: 45 },
+        legend: { top: 0, textStyle:{color:'#94a3b8',fontSize:9}, itemWidth:14, itemHeight:8 },
+        tooltip: { trigger:'axis', backgroundColor:'rgba(15,23,42,0.95)', borderColor:'#c084fc44',
+            textStyle:{color:'#e2e8f0',fontSize:10},
+            formatter: function(p) { if (!p.length) return ''; let s='<b>'+p[0].axisValue+'</b><br/>'; p.forEach(i => { if (i.value !== undefined) s+='<span style="color:'+i.color+'">●</span> '+i.seriesName+': <b>'+i.value+'%</b><br/>'; }); return s; }
+        },
+        xAxis: { type:'category', data:chart.dates, axisLabel:{color:'#64748b',fontSize:8,formatter:v=>v.substring(2,7)}, axisLine:{lineStyle:{color:'#334155'}} },
+        yAxis: yAxes,
+        series: series,
+    });
+}
+
+// 窗口resize
+window.addEventListener('resize', function() {
+    if (_ratesGaugeChart) _ratesGaugeChart.resize();
+    if (_ratesMainChart) _ratesMainChart.resize();
+});

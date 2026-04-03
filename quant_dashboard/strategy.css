@@ -1132,10 +1132,72 @@
 }
 
 /* ================================================
-   策略执行结果 V2.0 · 7-Zone Dashboard
+   策略执行结果 V3.0 · 7-Zone Dashboard Premium
    ================================================ */
 
-/* ── Zone 4 Tab 按钮 ── */
+/* ── Zone 展开 stagger 淡入 ── */
+@keyframes zone-fadeIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+[id^="exec-zone"] > section {
+    animation: zone-fadeIn 0.45s cubic-bezier(0.22,1,0.36,1) both;
+}
+
+/* ── Zone 0 进度条脉冲效果 ── */
+@keyframes prog-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+#exec-progress-bar [id^="prog-seg-"] {
+    transition: background 0.5s cubic-bezier(0.4,0,0.2,1);
+}
+#exec-progress-bar [style*="linear-gradient"] {
+    animation: prog-pulse 1.5s ease-in-out infinite;
+}
+
+/* ── Zone 0 控制台升级 ── */
+.st-run-bar {
+    position: relative;
+    overflow: hidden;
+}
+.st-run-bar::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, #6366f1, #8b5cf6, #f59e0b, #10b981);
+    opacity: 0.6;
+}
+
+/* ── Zone 1 仪表盘放大 ── */
+#exec-gauge-container {
+    width: 200px !important;
+    height: 140px !important;
+}
+#exec-gauge-label {
+    font-size: 2rem !important;
+    letter-spacing: -1px;
+}
+
+/* ── Zone 1 KPI卡片色带 ── */
+.st-ov-card {
+    position: relative;
+    overflow: hidden;
+}
+.st-ov-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, rgba(99,102,241,0.5), rgba(139,92,246,0.3));
+    border-radius: 12px 12px 0 0;
+}
+.st-ov-buy::before { background: linear-gradient(90deg, #10b981, #34d399) !important; }
+.st-ov-sell::before { background: linear-gradient(90deg, #ef4444, #f87171) !important; }
+.st-ov-erp::before { background: linear-gradient(90deg, #f59e0b, #fbbf24) !important; }
+
+/* ── Zone 4 Tab 策略色系 ── */
 .exec-tab {
     padding: 8px 16px;
     background: rgba(255,255,255,0.04);
@@ -1146,33 +1208,77 @@
     font-weight: 600;
     font-family: inherit;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+    position: relative;
+}
+.exec-tab::after {
+    content: '';
+    position: absolute;
+    bottom: -1px; left: 20%; right: 20%;
+    height: 2px;
+    border-radius: 2px;
+    background: transparent;
+    transition: all 0.3s;
 }
 .exec-tab:hover {
     background: rgba(255,255,255,0.08);
     color: #fff;
+    transform: translateY(-1px);
 }
-.exec-tab.active {
-    background: linear-gradient(135deg, rgba(99,102,241,0.2), rgba(139,92,246,0.15));
-    border-color: rgba(139,92,246,0.35);
-    color: #fff;
-    box-shadow: 0 2px 12px rgba(99,102,241,0.2);
+/* MR 蓝 */
+.exec-tab[data-strategy="mr"].active {
+    background: linear-gradient(135deg, rgba(59,130,246,0.18), rgba(96,165,250,0.08));
+    border-color: rgba(96,165,250,0.35);
+    color: #93c5fd;
+    box-shadow: 0 4px 16px rgba(59,130,246,0.15);
 }
+.exec-tab[data-strategy="mr"].active::after { background: #3b82f6; }
+/* DIV 紫 */
+.exec-tab[data-strategy="div"].active {
+    background: linear-gradient(135deg, rgba(139,92,246,0.18), rgba(167,139,250,0.08));
+    border-color: rgba(167,139,250,0.35);
+    color: #c4b5fd;
+    box-shadow: 0 4px 16px rgba(139,92,246,0.15);
+}
+.exec-tab[data-strategy="div"].active::after { background: #8b5cf6; }
+/* MOM 橙 */
+.exec-tab[data-strategy="mom"].active {
+    background: linear-gradient(135deg, rgba(234,88,12,0.18), rgba(251,146,60,0.08));
+    border-color: rgba(251,146,60,0.35);
+    color: #fdba74;
+    box-shadow: 0 4px 16px rgba(234,88,12,0.15);
+}
+.exec-tab[data-strategy="mom"].active::after { background: #ea580c; }
+/* ERP 琥珀 */
+.exec-tab[data-strategy="erp"].active {
+    background: linear-gradient(135deg, rgba(245,158,11,0.2), rgba(252,211,77,0.08));
+    border-color: rgba(245,158,11,0.4);
+    color: #fde68a;
+    box-shadow: 0 4px 16px rgba(245,158,11,0.18);
+}
+.exec-tab[data-strategy="erp"].active::after { background: #f59e0b; }
 
-/* ── 热力表评分色深 ── */
-.exec-heatmap-table tbody td { font-size: 0.8rem; }
+/* ── 热力表评分色 + 行hover ── */
+.exec-heatmap-table tbody td {
+    font-size: 0.8rem;
+    transition: background 0.15s;
+}
+.exec-heatmap-table tbody tr:hover td {
+    background: rgba(255,255,255,0.03) !important;
+}
 .exec-heatmap-table .score-cell {
     font-weight: 800;
-    border-radius: 4px;
-    padding: 4px 8px;
+    border-radius: 6px;
+    padding: 4px 10px;
     text-align: center;
     min-width: 44px;
+    display: inline-block;
 }
-.score-tier-5 { background: rgba(16,185,129,0.25); color: #34d399; }
+.score-tier-5 { background: rgba(16,185,129,0.25); color: #34d399; box-shadow: 0 0 8px rgba(16,185,129,0.15); }
 .score-tier-4 { background: rgba(16,185,129,0.12); color: #6ee7b7; }
 .score-tier-3 { background: rgba(148,163,184,0.08); color: #94a3b8; }
 .score-tier-2 { background: rgba(245,158,11,0.12); color: #fbbf24; }
-.score-tier-1 { background: rgba(239,68,68,0.15); color: #f87171; }
+.score-tier-1 { background: rgba(239,68,68,0.15); color: #f87171; box-shadow: 0 0 8px rgba(239,68,68,0.12); }
 
 /* ── 因子紧凑列 ── */
 .factor-compact {
@@ -1181,69 +1287,139 @@
     color: var(--text-muted);
     white-space: nowrap;
 }
-.factor-compact .f-key { color: #60a5fa; }
-.factor-compact .f-val { color: #e2e8f0; font-weight: 600; }
+.factor-compact .f-key { color: #60a5fa; font-weight: 500; }
+.factor-compact .f-val { color: #e2e8f0; font-weight: 700; }
+
+/* ── ERP 风格标签 ── */
+.erp-style-tag {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 4px;
+    display: inline-block;
+}
+.erp-style-core   { background: rgba(59,130,246,0.12);  color: #93c5fd; }
+.erp-style-growth { background: rgba(139,92,246,0.12); color: #c4b5fd; }
+.erp-style-yield  { background: rgba(245,158,11,0.12); color: #fde68a; }
+.erp-style-hk     { background: rgba(20,184,166,0.12); color: #5eead4; }
 
 /* ── Encyclopedia 折叠面板 ── */
 .exec-encyclopedia-item {
     border: 1px solid rgba(255,255,255,0.06);
     border-radius: 12px;
-    transition: border-color 0.3s;
+    transition: border-color 0.3s, box-shadow 0.3s;
 }
 .exec-encyclopedia-item[open] {
     border-color: rgba(99,102,241,0.3);
+    box-shadow: 0 4px 20px rgba(99,102,241,0.08);
 }
 .exec-encyclopedia-item summary::-webkit-details-marker { display: none; }
 .exec-encyclopedia-item summary::marker { display: none; }
+.exec-encyclopedia-item > div {
+    animation: zone-fadeIn 0.35s ease both;
+}
 
-/* ── 共振卡片 ── */
+/* ── 共振卡片 V2 ── */
 .resonance-card {
-    padding: 16px;
-    border-radius: 12px;
+    padding: 18px;
+    border-radius: 14px;
     border: 1px solid rgba(255,255,255,0.06);
     background: rgba(0,0,0,0.2);
-    transition: all 0.25s;
+    transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
 }
 .resonance-card:hover {
-    transform: translateY(-2px);
+    transform: translateY(-3px);
     border-color: rgba(99,102,241,0.25);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
 }
-.resonance-strong-buy { border-left: 3px solid #10b981; }
-.resonance-strong-sell { border-left: 3px solid #ef4444; }
-.resonance-divergence { border-left: 3px solid #f59e0b; }
-.resonance-signal-dot {
-    display: inline-block;
-    width: 10px; height: 10px;
-    border-radius: 50%;
-    margin-right: 4px;
+.resonance-strong-buy {
+    border-left: 3px solid #10b981;
+    background: linear-gradient(135deg, rgba(16,185,129,0.06), transparent);
 }
-.dot-buy { background: #10b981; }
-.dot-sell { background: #ef4444; }
-.dot-hold { background: #64748b; }
-.dot-none { background: #334155; }
+.resonance-strong-sell {
+    border-left: 3px solid #ef4444;
+    background: linear-gradient(135deg, rgba(239,68,68,0.06), transparent);
+}
+.resonance-divergence {
+    border-left: 3px solid #f59e0b;
+    background: linear-gradient(135deg, rgba(245,158,11,0.04), transparent);
+}
 
-/* ── Top信号卡片 ── */
+/* 共振脉冲 */
+@keyframes resonance-pulse-buy {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); }
+    50% { box-shadow: 0 0 0 4px rgba(16,185,129,0.1); }
+}
+@keyframes resonance-pulse-sell {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
+    50% { box-shadow: 0 0 0 4px rgba(239,68,68,0.1); }
+}
+.resonance-strong-buy { animation: resonance-pulse-buy 3s ease-in-out infinite; }
+.resonance-strong-sell { animation: resonance-pulse-sell 3s ease-in-out infinite; }
+
+/* 信号指示灯升级 */
+.resonance-signal-dot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px; height: 22px;
+    border-radius: 6px;
+    margin-right: 4px;
+    font-size: 0;
+    vertical-align: middle;
+}
+.dot-buy  { background: rgba(16,185,129,0.2);  border: 1.5px solid #10b981; }
+.dot-sell { background: rgba(239,68,68,0.2);   border: 1.5px solid #ef4444; }
+.dot-hold { background: rgba(100,116,139,0.15); border: 1.5px solid #475569; }
+.dot-none { background: rgba(51,65,85,0.2);    border: 1.5px solid #1e293b; }
+
+/* ── Top信号卡片增强 ── */
 .top-signal-card {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 16px;
-    border-radius: 10px;
+    padding: 14px 18px;
+    border-radius: 12px;
     border: 1px solid rgba(255,255,255,0.05);
     background: rgba(0,0,0,0.2);
-    transition: all 0.2s;
+    transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+    position: relative;
+    overflow: hidden;
+}
+.top-signal-card::before {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0; left: 0;
+    width: 3px;
 }
 .top-signal-card:hover {
     background: rgba(0,0,0,0.35);
     border-color: rgba(255,255,255,0.1);
+    transform: translateX(4px);
 }
-.top-signal-buy { border-left: 3px solid #10b981; }
-.top-signal-sell { border-left: 3px solid #ef4444; }
+.top-signal-buy { border-left: none; }
+.top-signal-sell { border-left: none; }
+.top-signal-buy::before  { background: linear-gradient(180deg, #10b981, #059669); }
+.top-signal-sell::before { background: linear-gradient(180deg, #ef4444, #dc2626); }
+
+/* 来源策略小标签 */
+.source-tag {
+    font-size: 0.62rem;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+.source-mr  { background: rgba(59,130,246,0.15);  color: #93c5fd; }
+.source-div { background: rgba(139,92,246,0.15); color: #c4b5fd; }
+.source-mom { background: rgba(234,88,12,0.15);  color: #fdba74; }
+.source-erp { background: rgba(245,158,11,0.15); color: #fde68a; }
 
 /* ── 风险预警条目 ── */
 .risk-alert-item {
-    padding: 10px 14px;
-    border-radius: 8px;
+    padding: 12px 16px;
+    border-radius: 10px;
     background: rgba(239,68,68,0.05);
     border: 1px solid rgba(239,68,68,0.12);
     font-size: 0.82rem;
@@ -1251,8 +1427,153 @@
     align-items: center;
     gap: 10px;
     margin-bottom: 8px;
+    transition: border-color 0.2s;
 }
+.risk-alert-item:hover { border-color: rgba(239,68,68,0.25); }
 .risk-concentration {
     background: rgba(245,158,11,0.05);
     border-color: rgba(245,158,11,0.15);
 }
+.risk-concentration:hover { border-color: rgba(245,158,11,0.3); }
+
+/* ── ERP 仓位屏障告警增强 ── */
+.erp-cap-warning {
+    background: linear-gradient(135deg, rgba(239,68,68,0.08), rgba(239,68,68,0.03));
+    border: 1px solid rgba(239,68,68,0.25);
+    border-radius: 10px;
+    padding: 12px 18px;
+    margin-bottom: 14px;
+    font-size: 0.82rem;
+    color: #f87171;
+    animation: zone-fadeIn 0.5s ease both;
+}
+
+/* ================================================
+   V3.1 — 规则解释 + 预警指标增强
+   ================================================ */
+
+/* ── KPI 微提示行 ── */
+.kpi-tip {
+    display: block;
+    font-size: 0.6rem;
+    color: rgba(148,163,184,0.6);
+    margin-top: 4px;
+    line-height: 1.3;
+    letter-spacing: 0;
+    font-weight: 400;
+    transition: color 0.2s;
+}
+.st-ov-card:hover .kpi-tip {
+    color: rgba(148,163,184,0.9);
+}
+
+/* ── 仪表盘权重可视化条 ── */
+.gauge-weight-bar {
+    display: flex;
+    height: 4px;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 10px;
+    gap: 2px;
+}
+.gw-seg {
+    border-radius: 2px;
+    transition: opacity 0.3s;
+}
+.gw-seg:hover { opacity: 0.7; }
+.gw-mr  { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+.gw-div { background: linear-gradient(90deg, #7c3aed, #a78bfa); }
+.gw-mom { background: linear-gradient(90deg, #ea580c, #fb923c); }
+.gw-erp { background: linear-gradient(90deg, #d97706, #fbbf24); }
+
+/* ── 智能预警横幅 ── */
+.smart-alert {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 20px;
+    border-radius: 12px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    margin-bottom: 12px;
+    animation: zone-fadeIn 0.5s ease both;
+}
+.smart-alert-icon {
+    font-size: 1.2rem;
+    flex-shrink: 0;
+}
+.smart-alert-text {
+    flex: 1;
+}
+.smart-alert-sub {
+    font-weight: 400;
+    font-size: 0.72rem;
+    opacity: 0.7;
+    margin-top: 2px;
+}
+/* 严重级别 */
+.smart-alert-crash {
+    background: linear-gradient(135deg, rgba(239,68,68,0.12), rgba(239,68,68,0.04));
+    border: 1px solid rgba(239,68,68,0.3);
+    color: #f87171;
+    animation: zone-fadeIn 0.5s ease both, resonance-pulse-sell 2s ease infinite;
+}
+.smart-alert-danger {
+    background: linear-gradient(135deg, rgba(239,68,68,0.08), rgba(239,68,68,0.03));
+    border: 1px solid rgba(239,68,68,0.2);
+    color: #f87171;
+}
+.smart-alert-warning {
+    background: linear-gradient(135deg, rgba(245,158,11,0.08), rgba(245,158,11,0.03));
+    border: 1px solid rgba(245,158,11,0.2);
+    color: #fbbf24;
+}
+.smart-alert-caution {
+    background: linear-gradient(135deg, rgba(234,88,12,0.06), rgba(234,88,12,0.02));
+    border: 1px solid rgba(234,88,12,0.15);
+    color: #fb923c;
+}
+.smart-alert-ok {
+    background: linear-gradient(135deg, rgba(16,185,129,0.06), rgba(16,185,129,0.02));
+    border: 1px solid rgba(16,185,129,0.15);
+    color: #34d399;
+}
+
+/* ── 共振阅读指南 ── */
+.resonance-guide {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    padding: 8px 14px;
+    background: rgba(99,102,241,0.04);
+    border: 1px solid rgba(99,102,241,0.1);
+    border-radius: 8px;
+    margin-bottom: 14px;
+    line-height: 1.6;
+}
+
+/* ── 表头 ℹ️ 提示图标样式 ── */
+.exec-heatmap-table thead th[title] {
+    cursor: help;
+    position: relative;
+}
+.exec-heatmap-table thead th[title]:hover {
+    color: #93c5fd;
+}
+
+/* ── 因子阈值着色 ── */
+.f-val-danger { color: #f87171 !important; }
+.f-val-good   { color: #34d399 !important; }
+.f-val-warn   { color: #fbbf24 !important; }
+
+/* ── 共振命中标签 ── */
+.resonance-hit-badge {
+    display: inline-block;
+    font-size: 0.62rem;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-left: 6px;
+}
+.hit-strong { background: rgba(16,185,129,0.12); color: #34d399; }
+.hit-weak   { background: rgba(245,158,11,0.12); color: #fbbf24; }
+

@@ -29,8 +29,10 @@ from factor_analyzer import FactorAnalyzer
 from strategies_backtest import (
     mean_reversion_strategy_vectorized,
     dividend_trend_strategy_vectorized,
-    momentum_rotation_strategy_vectorized
+    momentum_rotation_strategy_vectorized,
+    erp_timing_strategy_vectorized
 )
+from erp_backtest_data import prepare_erp_backtest_data
 from pydantic import BaseModel
 
 class TradeRequest(BaseModel):
@@ -103,10 +105,10 @@ def _warmup_dashboard_cache():
         print(f"[Dashboard Warmup] 预热失败: {e}")
 
 def _schedule_daily_warmup():
-    """计算距下一个 15:30 的秒数, 注册定时器"""
+    """计算距下一个 15:35 的秒数, 注册定时器"""
     now = datetime.now()
-    # 目标: 今天或明天的 15:30
-    target = now.replace(hour=15, minute=30, second=0, microsecond=0)
+    # V5.0: 目标 15:35 (给 Tushare 一些IR后的缓冲)
+    target = now.replace(hour=15, minute=35, second=0, microsecond=0)
     if now >= target:
         target += timedelta(days=1)
     # 跳过周末
@@ -118,21 +120,75 @@ def _schedule_daily_warmup():
     timer.daemon = True
     timer.start()
 
+def _warmup_factor_data():
+    """
+    V5.0: 收盘后自动同步因子数据 (日线 + 财务指标)
+    触发时机: 每日 15:35 (A股收盘后 35 分钟，给 Tushare 数据更新缓冲)
+    """
+    try:
+        from data_manager import FactorDataManager
+        dm = FactorDataManager()
+        stocks = dm.get_all_stocks()
+        # 默认同步 Top 30 様本池 (与因子分析默认配置一致)
+        sample = stocks.head(30)['ts_code'].tolist()
+        result = dm.smart_sync(sample)
+        synced = result.get('synced', False)
+        latest = result.get('freshness', {}).get('daily_latest', '?')
+        print(f"[Factor Sync] {'\u540c\u6b65\u5b8c\u6210' if synced else '\u6570\u636e\u5df2\u662f\u6700\u65b0'} · \u6700\u65b0\u65e5\u7ebf: {latest}")
+    except Exception as e:
+        print(f"[Factor Sync] \u540c\u6b65\u5931\u8d25: {e}")
+
+def _warmup_rates_cache():
+    """V1.5: 后台预热利率择时引擎缓存: 拉取最新 FRED 数据 + 生成报告"""
+    try:
+        from rates_strategy_engine import warmup_rates_cache
+        warmup_rates_cache()
+    except Exception as e:
+        print(f"[RATES Warmup] 预热失败: {e}")
+
+def _schedule_fred_daily_refresh():
+    """注册 FRED 数据每日刷新定时器 (北京18:30 = 美东6:30AM)
+    FRED国债数据在美东6AM更新, 给半小时缓冲"""
+    now = datetime.now()
+    target = now.replace(hour=18, minute=30, second=0, microsecond=0)
+    if now >= target:
+        target += timedelta(days=1)
+    # 周末跳过
+    while target.weekday() >= 5:
+        target += timedelta(days=1)
+    delay = (target - now).total_seconds()
+    print(f"[Scheduler] FRED利率刷新: {target.strftime('%Y-%m-%d %H:%M')} ({delay/3600:.1f}h后)")
+    timer = threading.Timer(delay, _fred_daily_callback)
+    timer.daemon = True
+    timer.start()
+
+def _fred_daily_callback():
+    """每日18:30 刷新FRED数据 + 注册明天的"""
+    print(f"[Scheduler] FRED利率刷新触发 @ {datetime.now().strftime('%H:%M:%S')}")
+    _warmup_rates_cache()
+    _schedule_fred_daily_refresh()
+
 def _daily_warmup_callback():
     """定时回调: 执行全部预热 + 注册下一次"""
     print(f"[Scheduler] ⏰ 收盘预热触发 @ {datetime.now().strftime('%H:%M:%S')}")
     _warmup_erp_cache()
     _warmup_dashboard_cache()
+    _warmup_factor_data()  # V5.0: 因子数据同步
+    _warmup_rates_cache()  # V1.5: 利率数据同步
     _schedule_daily_warmup()  # 注册明天的
 
 @app.on_event("startup")
 async def startup_event():
-    """服务启动: 后台预热 ERP + 注册每日定时任务"""
+    """服务启动: 后台预热 ERP + 利率 + 注册每日定时任务"""
     # 异步预热 (不阻塞启动)
     threading.Thread(target=_warmup_erp_cache, daemon=True).start()
-    # 注册收盘后定时预热
+    threading.Thread(target=_warmup_rates_cache, daemon=True).start()  # V1.5: 利率预热
+    # 注册收盘后定时预热 (15:35 A股)
     _schedule_daily_warmup()
-    print("[Startup] AlphaCore 服务启动完成 · ERP预热已触发 · 每日15:30自动刷新ERP+Dashboard")
+    # 注册 FRED 利率刷新 (18:30 = 美东6:30AM)
+    _schedule_fred_daily_refresh()
+    print("[Startup] AlphaCore 服务启动完成 · ERP+利率预热已触发 · 每日15:35刷新A股 · 每日18:30刷新FRED利率")
+
 
 # --- AlphaCore DMSO Sub-Engines (V3.3 机构级) ---
 
@@ -1138,8 +1194,92 @@ async def get_momentum_strategy():
         return STRATEGY_CACHE["strategy_results"]["mom"]
     return await asyncio.get_event_loop().run_in_executor(executor, run_momentum_strategy)
 
+
 # ─────────────────────────────────────────────
-# 三策略并行执行 + 共振分析 API (V2.0)
+# ERP 宏观择时策略 — 标的池实时信号 API
+# ─────────────────────────────────────────────
+ERP_TARGET_POOL = [
+    {"ts_code": "510300.SH", "name": "沪深300ETF", "style": "核心宽基"},
+    {"ts_code": "510500.SH", "name": "中证500ETF", "style": "中盘成长"},
+    {"ts_code": "510880.SH", "name": "红利ETF",    "style": "防御红利"},
+    {"ts_code": "510900.SH", "name": "H股ETF",     "style": "港股宽基"},
+]
+
+def _run_erp_strategy() -> dict:
+    """ERP策略执行：获取宏观评分 → 对标的池5只ETF生成标准化信号"""
+    from datetime import datetime as _dt
+    try:
+        engine = get_erp_engine()
+        report = engine.compute_signal()
+        if report.get("status") not in ("success", "fallback"):
+            return {"status": "error", "message": report.get("message", "ERP引擎异常")}
+
+        score = report["signal"]["score"]
+        signal_key = report["signal"]["key"]
+        snap = report["current_snapshot"]
+        dims = report["dimensions"]
+
+        # 信号映射 (对齐回测最优阈值: buy>=55, sell<=40)
+        if score >= 55:
+            std_signal = "buy"
+        elif score <= 40:
+            std_signal = "sell"
+        else:
+            std_signal = "hold"
+
+        # 仓位映射
+        pos_map = {"buy": 80, "hold": 50, "sell": 0}
+        base_pos = pos_map.get(std_signal, 50)
+
+        signals = []
+        for etf in ERP_TARGET_POOL:
+            signals.append({
+                "name": etf["name"],
+                "ts_code": etf["ts_code"],
+                "code": etf["ts_code"].split(".")[0],
+                "signal": std_signal,
+                "signal_score": round(score),
+                "suggested_position": base_pos if std_signal == "buy" else 0,
+                "style": etf["style"],
+                # ERP 专属因子
+                "erp_abs": snap.get("erp_value", 0),
+                "erp_pct": snap.get("erp_percentile", 0),
+                "m1_yoy": dims.get("m1_trend", {}).get("m1_info", {}).get("current", 0),
+                "pe_vol": dims.get("volatility", {}).get("vol_info", {}).get("current_vol", 0),
+                "scissor": dims.get("credit", {}).get("credit_info", {}).get("scissor", 0),
+            })
+
+        buy_count = sum(1 for s in signals if s["signal"] == "buy")
+        sell_count = sum(1 for s in signals if s["signal"] == "sell")
+
+        return {
+            "status": "success",
+            "timestamp": _dt.now().isoformat(),
+            "data": {
+                "signals": signals,
+                "market_overview": {
+                    "composite_score": round(score),
+                    "signal_key": std_signal,
+                    "signal_label": report["signal"]["label"],
+                    "buy_count": buy_count,
+                    "sell_count": sell_count,
+                    "total_suggested_pos": sum(s["suggested_position"] for s in signals if s["signal"] == "buy"),
+                },
+            },
+        }
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/v1/erp_strategy")
+async def get_erp_strategy():
+    """ERP宏观择时策略实时信号"""
+    return await asyncio.get_event_loop().run_in_executor(executor, _run_erp_strategy)
+
+
+# ─────────────────────────────────────────────
+# 四策略并行执行 + 共振分析 API (V3.0)
 # ─────────────────────────────────────────────
 def _extract_signals_normalized(strategy_type: str, raw_result) -> list:
     """从各策略原始返回中提取标准化信号列表"""
@@ -1157,12 +1297,18 @@ def _extract_signals_normalized(strategy_type: str, raw_result) -> list:
         if isinstance(raw_result, dict) and "data" in raw_result:
             return raw_result["data"].get("signals", [])
         return []
+    elif strategy_type == "erp":
+        if isinstance(raw_result, dict) and "data" in raw_result:
+            return raw_result["data"].get("signals", [])
+        return []
     return []
 
 
-def _compute_resonance(mr_signals, div_signals, mom_signals):
-    """计算三策略信号共振：找到多策略一致看好/看空的重叠标的"""
-    # 建立 code -> signal 映射
+def _compute_resonance(mr_signals, div_signals, mom_signals, erp_signals=None):
+    """计算四策略信号共振：找到多策略一致看好/看空的重叠标的"""
+    if erp_signals is None:
+        erp_signals = []
+
     def build_map(signals):
         m = {}
         for s in signals:
@@ -1179,8 +1325,9 @@ def _compute_resonance(mr_signals, div_signals, mom_signals):
     mr_map = build_map(mr_signals)
     div_map = build_map(div_signals)
     mom_map = build_map(mom_signals)
+    erp_map = build_map(erp_signals)
 
-    all_codes = set(list(mr_map.keys()) + list(div_map.keys()) + list(mom_map.keys()))
+    all_codes = set(list(mr_map.keys()) + list(div_map.keys()) + list(mom_map.keys()) + list(erp_map.keys()))
 
     consensus_buy = []
     consensus_sell = []
@@ -1190,17 +1337,18 @@ def _compute_resonance(mr_signals, div_signals, mom_signals):
         mr_s = mr_map.get(code, {})
         div_s = div_map.get(code, {})
         mom_s = mom_map.get(code, {})
+        erp_s = erp_map.get(code, {})
 
-        # 至少出现在2个策略中
-        present = sum([1 for s in [mr_s, div_s, mom_s] if s])
+        present = sum([1 for s in [mr_s, div_s, mom_s, erp_s] if s])
         if present < 2:
             continue
 
-        name = mr_s.get("name") or div_s.get("name") or mom_s.get("name", code)
+        name = mr_s.get("name") or div_s.get("name") or mom_s.get("name") or erp_s.get("name", code)
         signals = {
             "mr": mr_s.get("signal", "-"),
             "div": div_s.get("signal", "-"),
             "mom": mom_s.get("signal", "-"),
+            "erp": erp_s.get("signal", "-"),
         }
 
         buy_count = sum(1 for v in signals.values() if v == "buy")
@@ -1214,6 +1362,7 @@ def _compute_resonance(mr_signals, div_signals, mom_signals):
                 "mr": mr_s.get("score", 0),
                 "div": div_s.get("score", 0),
                 "mom": mom_s.get("score", 0),
+                "erp": erp_s.get("score", 0),
             },
         }
 
@@ -1230,7 +1379,6 @@ def _compute_resonance(mr_signals, div_signals, mom_signals):
             entry["label"] = "Signal Divergence"
             divergence.append(entry)
 
-    # 按共振强度排序
     consensus_buy.sort(key=lambda x: sum(x["scores"].values()), reverse=True)
     consensus_sell.sort(key=lambda x: sum(x["scores"].values()))
 
@@ -1281,22 +1429,24 @@ def _compute_risk_overlay(all_signals):
 
 @app.get("/api/v1/strategy/run-all")
 async def run_all_strategies():
-    """V2.0 三策略并行执行 + 共振分析 + 风险覆盖"""
+    """V3.0 四策略并行执行 (MR+DIV+MOM+ERP) + 共振分析 + ERP宏观仓位调节"""
     from datetime import datetime as _dt
     loop = asyncio.get_event_loop()
 
     try:
-        # 并行执行3策略
+        # 并行执行4策略
         mr_task = loop.run_in_executor(executor, run_strategy)
         div_task = loop.run_in_executor(executor, lambda: run_dividend_strategy(regime=None))
         mom_task = loop.run_in_executor(executor, run_momentum_strategy)
+        erp_task = loop.run_in_executor(executor, _run_erp_strategy)
 
-        mr_raw, div_raw, mom_raw = await asyncio.gather(mr_task, div_task, mom_task)
+        mr_raw, div_raw, mom_raw, erp_raw = await asyncio.gather(mr_task, div_task, mom_task, erp_task)
 
-        # 包装 MR 结果
+        # 包装结果
         mr_result = _wrap_mr_results(mr_raw) if isinstance(mr_raw, list) else mr_raw
         div_result = div_raw
         mom_result = mom_raw
+        erp_result = erp_raw
 
         # 缓存
         STRATEGY_CACHE["strategy_results"]["mr"] = mr_result
@@ -1307,9 +1457,10 @@ async def run_all_strategies():
         mr_signals = _extract_signals_normalized("mr", mr_result)
         div_signals = _extract_signals_normalized("div", div_result)
         mom_signals = _extract_signals_normalized("mom", mom_result)
+        erp_signals = _extract_signals_normalized("erp", erp_result)
 
-        # 共振分析
-        resonance = _compute_resonance(mr_signals, div_signals, mom_signals)
+        # 四策略共振分析
+        resonance = _compute_resonance(mr_signals, div_signals, mom_signals, erp_signals)
 
         # 风险覆盖
         all_buy_signals = (
@@ -1323,22 +1474,52 @@ async def run_all_strategies():
         mr_ov = mr_result.get("data", {}).get("market_overview", {}) if isinstance(mr_result, dict) else {}
         div_ov = div_result.get("data", {}).get("market_overview", {}) if isinstance(div_result, dict) else {}
         mom_ov = mom_result.get("data", {}).get("market_overview", {}) if isinstance(mom_result, dict) else {}
+        erp_ov = erp_result.get("data", {}).get("market_overview", {}) if isinstance(erp_result, dict) else {}
 
         mr_regime = mr_signals[0].get("regime", "RANGE") if mr_signals else "RANGE"
-        total_buy = mr_ov.get("signal_count", {}).get("buy", 0) + div_ov.get("buy_count", 0) + mom_ov.get("buy_count", 0)
-        total_sell = mr_ov.get("signal_count", {}).get("sell", 0) + div_ov.get("sell_count", 0) + mom_ov.get("sell_count", 0)
+        total_buy = mr_ov.get("signal_count", {}).get("buy", 0) + div_ov.get("buy_count", 0) + mom_ov.get("buy_count", 0) + erp_ov.get("buy_count", 0)
+        total_sell = mr_ov.get("signal_count", {}).get("sell", 0) + div_ov.get("sell_count", 0) + mom_ov.get("sell_count", 0) + erp_ov.get("sell_count", 0)
 
-        # 三策略建议仓位加权平均
-        mr_pos = mr_ov.get("total_suggested_position", 0)
-        div_pos = div_ov.get("total_suggested_pos", 0)
-        mom_pos = mom_ov.get("total_suggested_pos", 0)
-        avg_pos = round((mr_pos * 0.4 + div_pos * 0.35 + mom_pos * 0.25))
+        # ─── 科学仓位计算 V3.1 ───
+        # 核心逻辑：每策略贡献 = 该策略buy信号的平均仓位(信心度)
+        # 而非所有标的仓位之和(会严重膨胀)
+        def _avg_confidence(signals_list):
+            """计算策略内buy信号的平均仓位(=策略信心度，0~100%)"""
+            buy_sigs = [s for s in signals_list if s.get("signal") == "buy"]
+            if not buy_sigs:
+                return 0.0
+            positions = [s.get("suggested_position", 0) for s in buy_sigs]
+            return sum(positions) / len(positions) if positions else 0.0
+
+        mr_conf = _avg_confidence(mr_signals)
+        div_conf = _avg_confidence(div_signals)
+        mom_conf = _avg_confidence(mom_signals)
+        erp_conf = _avg_confidence(erp_signals)
+
+        # 加权平均信心度 (MR30% + DIV25% + MOM15% + ERP30%)
+        raw_pos = round(mr_conf * 0.30 + div_conf * 0.25 + mom_conf * 0.15 + erp_conf * 0.30)
+
+        # Regime 硬顶 — 不同市场环境下的科学仓位上限
+        regime_cap = {"BULL": 95, "RANGE": 70, "BEAR": 50, "CRASH": 20}
+        cap = regime_cap.get(mr_regime, 70)
+        avg_pos = min(raw_pos, cap)
+
+        # ERP 宏观屏障: ERP score <= 40 → 全局仓位上限压至30%
+        erp_score = erp_ov.get("composite_score", 50)
+        erp_cap_active = False
+        if erp_score <= 40:
+            avg_pos = min(avg_pos, 30)
+            erp_cap_active = True
 
         # 策略一致性评估
         regimes = [mr_regime]
         div_regime = div_result.get("data", {}).get("regime_params", {}).get("regime", "RANGE") if isinstance(div_result, dict) else "RANGE"
         regimes.append(div_regime)
         consistency = "high" if len(set(regimes)) == 1 else "low"
+
+        # 分歧降仓: 一致性低时再打8折
+        if consistency != "high":
+            avg_pos = round(avg_pos * 0.8)
 
         return {
             "status": "success",
@@ -1347,15 +1528,25 @@ async def run_all_strategies():
                 "global": {
                     "regime": mr_regime,
                     "total_position": avg_pos,
+                    "regime_cap": cap,
                     "total_buy": total_buy,
                     "total_sell": total_sell,
                     "consistency": consistency,
-                    "strategy_count": 3,
+                    "strategy_count": 4,
+                    "erp_score": erp_score,
+                    "erp_cap_active": erp_cap_active,
+                    "confidence": {
+                        "mr": round(mr_conf),
+                        "div": round(div_conf),
+                        "mom": round(mom_conf),
+                        "erp": round(erp_conf),
+                    },
                 },
                 "strategies": {
                     "mr": mr_result.get("data", mr_result) if isinstance(mr_result, dict) else {"signals": mr_signals},
                     "div": div_result.get("data", div_result) if isinstance(div_result, dict) else {"signals": div_signals},
                     "mom": mom_result.get("data", mom_result) if isinstance(mom_result, dict) else {"signals": mom_signals},
+                    "erp": erp_result.get("data", erp_result) if isinstance(erp_result, dict) else {"signals": erp_signals},
                 },
                 "resonance": resonance,
                 "risk_overlay": risk_overlay,
@@ -1400,6 +1591,93 @@ async def get_erp_timing():
         return {"status": "success", "data": report}
     except Exception as e:
         print(f"[ERP API] Error: {traceback.format_exc()}")
+        return {"status": "error", "message": str(e)}
+
+
+# ─────────────────────────────────────────────
+# 海外ERP择时引擎 V1.0 API (美股 + 日本 + 中国对比)
+# ─────────────────────────────────────────────
+@app.get("/api/v1/strategy/erp-global")
+async def get_erp_global():
+    """海外ERP择时 — 美股+日本+中国三地对比"""
+    try:
+        from erp_us_engine import get_us_erp_engine
+        from erp_jp_engine import get_jp_erp_engine
+
+        loop = asyncio.get_event_loop()
+        us_engine = get_us_erp_engine()
+        jp_engine = get_jp_erp_engine()
+        cn_engine = get_erp_engine()
+
+        us_future = loop.run_in_executor(executor, us_engine.generate_report)
+        jp_future = loop.run_in_executor(executor, jp_engine.generate_report)
+        cn_future = loop.run_in_executor(executor, cn_engine.compute_signal)
+
+        us_report = await us_future
+        jp_report = await jp_future
+        cn_signal = await cn_future
+
+        cn_snap = cn_signal.get("current_snapshot", {})
+        cn_sig = cn_signal.get("signal", {})
+        global_comparison = {
+            "cn": {"erp": cn_snap.get("erp_value", 0), "score": cn_sig.get("score", 0),
+                   "key": cn_sig.get("key", "hold"), "label": cn_sig.get("label", "--"),
+                   "color": cn_sig.get("color", "#94a3b8"), "emoji": cn_sig.get("emoji", ""),
+                   "pe": cn_snap.get("pe_ttm", 0), "yield": cn_snap.get("yield_10y", 0)},
+            "us": {"erp": us_report.get("current_snapshot", {}).get("erp_value", 0),
+                   "score": us_report.get("signal", {}).get("score", 0),
+                   "key": us_report.get("signal", {}).get("key", "hold"),
+                   "label": us_report.get("signal", {}).get("label", "--"),
+                   "color": us_report.get("signal", {}).get("color", "#94a3b8"),
+                   "emoji": us_report.get("signal", {}).get("emoji", ""),
+                   "pe": us_report.get("current_snapshot", {}).get("pe_ttm", 0),
+                   "yield": us_report.get("current_snapshot", {}).get("yield_10y", 0)},
+            "jp": {"erp": jp_report.get("current_snapshot", {}).get("erp_value", 0),
+                   "score": jp_report.get("signal", {}).get("score", 0),
+                   "key": jp_report.get("signal", {}).get("key", "hold"),
+                   "label": jp_report.get("signal", {}).get("label", "--"),
+                   "color": jp_report.get("signal", {}).get("color", "#94a3b8"),
+                   "emoji": jp_report.get("signal", {}).get("emoji", ""),
+                   "pe": jp_report.get("current_snapshot", {}).get("pe_ttm", 0),
+                   "yield": jp_report.get("current_snapshot", {}).get("yield_10y", 0)},
+        }
+        scores = {"cn": global_comparison["cn"]["score"], "us": global_comparison["us"]["score"], "jp": global_comparison["jp"]["score"]}
+        sorted_r = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        rn = {"cn": "A股", "us": "美股", "jp": "日股"}
+
+        # === A4: 智能配置比例 (归一化得分 + 最低10%底线) ===
+        total_score = max(sum(scores.values()), 1)
+        raw_ratios = {k: max(v / total_score, 0.10) for k, v in scores.items()}
+        ratio_sum = sum(raw_ratios.values())
+        alloc = {k: round(v / ratio_sum * 100) for k, v in raw_ratios.items()}
+        # 修正至100%
+        diff = 100 - sum(alloc.values())
+        alloc[sorted_r[0][0]] += diff
+
+        global_comparison["allocation"] = alloc
+        global_comparison["advice"] = f"超配{rn[sorted_r[0][0]]}({sorted_r[0][1]:.0f}), 低配{rn[sorted_r[-1][0]]}({sorted_r[-1][1]:.0f})"
+        global_comparison["allocation_text"] = f"🇨🇳 A股 {alloc['cn']}% / 🇺🇸 美股 {alloc['us']}% / 🇯🇵 日股 {alloc['jp']}%"
+
+        return {"status": "success", "us": us_report, "jp": jp_report,
+                "global_comparison": global_comparison, "updated_at": datetime.now().isoformat()}
+    except Exception as e:
+        print(f"[Global ERP] Error: {traceback.format_exc()}")
+        return {"status": "error", "message": str(e)}
+
+
+# ─────────────────────────────────────────────
+# 利率择时引擎 V1.0 API
+# ─────────────────────────────────────────────
+@app.get("/api/v1/strategy/rates")
+async def get_rates_strategy():
+    """利率择时 — 基于10Y美债收益率的股债配置策略"""
+    try:
+        from rates_strategy_engine import get_rates_engine
+        engine = get_rates_engine()
+        report = await asyncio.get_event_loop().run_in_executor(executor, engine.generate_report)
+        return {"status": "success", "data": report}
+    except Exception as e:
+        print(f"[Rates API] Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
 
 
@@ -1555,7 +1833,7 @@ async def get_industry_detail(code: str):
 # --- API Routes (Defined BEFORE Static Files to prevent path collision) ---
 
 class BacktestRequest(BaseModel):
-    strategy: str  # 'mr', 'div', 'mom'
+    strategy: str  # 'mr', 'div', 'mom', 'erp'
     ts_code: str
     start_date: str
     end_date: str
@@ -1611,6 +1889,17 @@ async def run_backtest_api(req: BacktestRequest):
             valid_keys = ['lookback_s', 'lookback_m', 'momentum_threshold', 'stop_loss']
             filtered_p = {k: v for k, v in p.items() if k in valid_keys}
             signals = momentum_rotation_strategy_vectorized(df, **filtered_p)
+        elif req.strategy == 'erp':
+            # ERP宏观择时: 需要额外加载宏观日频宽表
+            valid_keys = ['buy_threshold', 'sell_threshold', 'erp_window', 'vol_window',
+                          'w_erp_abs', 'w_erp_pct', 'w_m1', 'w_vol', 'w_credit', 'stop_loss']
+            filtered_p = {k: v for k, v in p.items() if k in valid_keys}
+            # 提前1年拉数据作为ERP分位回溯期
+            macro_start = (datetime.strptime(req.start_date, '%Y%m%d') - timedelta(days=400)).strftime('%Y%m%d')
+            macro_df = await asyncio.get_event_loop().run_in_executor(
+                executor, prepare_erp_backtest_data, macro_start, req.end_date
+            )
+            signals = erp_timing_strategy_vectorized(df, macro_df=macro_df, **filtered_p)
         else:
             return {"status": "error", "message": "无效的策略类型"}
             
@@ -1643,8 +1932,8 @@ async def run_batch_backtest(req: BatchBacktestRequest):
 # --- Factor Analysis API ---
 
 class FactorAnalysisRequest(BaseModel):
-    factor_name: str = "roe"
-    stock_pool: str = "top30" # 或者 'all'
+    factor_name: str = "roe"  # V5.0: roe/eps/netprofit_margin/bps/debt_to_assets/momentum_20d/volatility_20d/turnover_rate
+    stock_pool: str = "top30" # 或者 'top100'
     start_date: str = "20200101"
     end_date: str = "20231231"
 
@@ -1664,9 +1953,17 @@ async def run_factor_analysis(req: FactorAnalysisRequest):
         else:
             sample_codes = all_stocks.head(100)["ts_code"].tolist()
             
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] Factor Analysis V2.0: {req.factor_name} on {len(sample_codes)} stocks")
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Factor Analysis V5.0: {req.factor_name} on {len(sample_codes)} stocks")
         
         def run_analysis():
+            # V5.0: 按需检查数据新鲜度, 过期则自动同步
+            freshness = dm.check_data_freshness(sample_codes)
+            sync_result = None
+            if freshness['is_stale']:
+                print(f"[Factor] 数据过期 {freshness['stale_days']} 天, 触发智能同步...")
+                sync_result = dm.smart_sync(sample_codes)
+                freshness = sync_result.get('freshness', freshness)
+
             analysis_data = fa.prepare_analysis_data(sample_codes, req.factor_name)
             if analysis_data.empty:
                 return {"error": "未找到有效数据，请检查数据同步情况"}
@@ -1696,6 +1993,7 @@ async def run_factor_analysis(req: FactorAnalysisRequest):
                 "advice": metrics["advice"],
                 "ic_distribution": metrics.get("ic_distribution", {}),
                 "health_status": metrics.get("health_status", []),
+                "ic_rolling": metrics.get("ic_rolling", {}),
                 "ic_series": {
                     "dates": ic_series.index.strftime("%Y-%m-%d").tolist(),
                     "values": [float(x) if not np.isnan(x) else 0 for x in ic_series.values]
@@ -1718,10 +2016,14 @@ async def run_factor_analysis(req: FactorAnalysisRequest):
         
         if "error" in results:
             return {"status": "error", "message": results["error"]}
+        
+        # V5.0: 返回数据新鲜度信息
+        freshness_info = dm.check_data_freshness(sample_codes)
             
         return {
             "status": "success",
-            "data": results
+            "data": results,
+            "data_freshness": freshness_info
         }
     except Exception as e:
         print(f"Factor Analysis Error: {traceback.format_exc()}")

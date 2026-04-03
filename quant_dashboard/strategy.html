@@ -36,6 +36,10 @@
                 <span>量化回测</span>
                 <span class="badge-beta">Beta</span>
             </a>
+            <a href="./treasury.html" class="nav-item">
+                <span class="icon">🌐</span>
+                <span>海外策略</span>
+            </a>
 
             <div class="nav-group-title">账 户 管 理</div>
             <a href="./portfolio.html" class="nav-item">
@@ -2649,8 +2653,8 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                 <section class="st-section">
                     <div class="st-run-bar glass-panel">
                         <div class="st-run-info">
-                            <h3 style="margin:0;font-size:1.1rem;color:#fff;">📊 量化三策略 · 实时执行引擎 <span style="font-size:0.7rem;background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:2px 8px;border-radius:6px;margin-left:8px;">V2.0</span></h3>
-                            <p style="margin:4px 0 0;font-size:0.82rem;color:var(--text-muted);">均值回归 35只 / 红利趋势 8只 / 动量轮动 20只 | 并行执行 · 共振分析 · 风险覆盖</p>
+                            <h3 style="margin:0;font-size:1.1rem;color:#fff;">📊 量化四策略 · 实时执行引擎 <span style="font-size:0.7rem;background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:2px 8px;border-radius:6px;margin-left:8px;">V3.0</span></h3>
+                            <p style="margin:4px 0 0;font-size:0.82rem;color:var(--text-muted);">均值回归 35只 / 红利趋势 8只 / 动量轮动 20只 / 宏观ERP 4只 | 并行执行 · 四策略共振 · ERP仓位调节</p>
                         </div>
                         <div class="st-run-actions">
                             <select id="st-strategy-select" class="st-select" style="background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:8px 12px; margin-right:12px; outline:none; font-family:inherit;">
@@ -2677,22 +2681,64 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
 
                 <!-- ====== Zone 1: 市场环境 · 全局定位 ====== -->
                 <div id="exec-zone1" style="display:none;">
+                    <!-- 智能预警横幅（JS动态填充） -->
+                    <div id="exec-smart-alert" style="display:none;"></div>
                     <section class="st-section">
-                        <div style="display:grid; grid-template-columns: 200px 1fr; gap:24px; align-items:start;">
-                            <!-- 仪表盘 -->
+                        <div style="display:grid; grid-template-columns: 220px 1fr; gap:24px; align-items:start;">
+                            <!-- 仪表盘 + 权重条 -->
                             <div class="glass-panel" style="padding:20px; text-align:center;">
-                                <div id="exec-gauge-container" style="width:160px; height:120px; margin:0 auto;"></div>
-                                <div id="exec-gauge-label" style="font-size:1.6rem; font-weight:800; color:#fff; margin-top:-10px;">—%</div>
+                                <div id="exec-gauge-container" style="width:180px; height:130px; margin:0 auto;"></div>
+                                <div id="exec-gauge-label" style="font-size:1.8rem; font-weight:800; color:#fff; margin-top:-8px;">—%</div>
                                 <div style="font-size:0.72rem; color:var(--text-muted); margin-top:4px;">加权建议仓位</div>
+                                <div id="exec-gauge-regime-cap" style="font-size:0.6rem; color:#f59e0b; margin-top:2px; opacity:0.8;">—</div>
+                                <!-- 权重可视化条 -->
+                                <div class="gauge-weight-bar">
+                                    <span class="gw-seg gw-mr" style="flex:0.30;" title="均值回归 30%"></span>
+                                    <span class="gw-seg gw-div" style="flex:0.25;" title="红利趋势 25%"></span>
+                                    <span class="gw-seg gw-mom" style="flex:0.15;" title="动量轮动 15%"></span>
+                                    <span class="gw-seg gw-erp" style="flex:0.30;" title="ERP择时 30%"></span>
+                                </div>
+                                <div style="display:flex; justify-content:center; gap:6px; margin-top:6px; font-size:0.58rem; color:var(--text-muted);">
+                                    <span class="gw-conf-label" style="color:#60a5fa;">MR —%</span>
+                                    <span class="gw-conf-label" style="color:#a78bfa;">DIV —%</span>
+                                    <span class="gw-conf-label" style="color:#fb923c;">MOM —%</span>
+                                    <span class="gw-conf-label" style="color:#fbbf24;">ERP —%</span>
+                                </div>
                             </div>
-                            <!-- 6 KPI 卡片 -->
-                            <div class="st-overview-grid" style="grid-template-columns:repeat(6, 1fr);">
-                                <div class="st-ov-card glass-panel"><span class="st-ov-label">市场状态</span><span class="st-ov-value st-ov-sm" id="exec-regime">—</span></div>
-                                <div class="st-ov-card glass-panel st-ov-buy"><span class="st-ov-label">买入机会</span><span class="st-ov-value" id="exec-buy-total">—</span></div>
-                                <div class="st-ov-card glass-panel st-ov-sell"><span class="st-ov-label">风险预警</span><span class="st-ov-value" id="exec-sell-total">—</span></div>
-                                <div class="st-ov-card glass-panel"><span class="st-ov-label">策略一致性</span><span class="st-ov-value st-ov-sm" id="exec-consistency">—</span></div>
-                                <div class="st-ov-card glass-panel"><span class="st-ov-label">共振标的</span><span class="st-ov-value" id="exec-resonance-count">—</span></div>
-                                <div class="st-ov-card glass-panel"><span class="st-ov-label">波动预警</span><span class="st-ov-value" id="exec-vol-alerts">—</span></div>
+                            <!-- 8 KPI 卡片 + 微提示 -->
+                            <div class="st-overview-grid" style="grid-template-columns:repeat(4, 1fr);">
+                                <div class="st-ov-card glass-panel st-ov-buy">
+                                    <span class="st-ov-label">买入机会</span><span class="st-ov-value" id="exec-buy-total">—</span>
+                                    <span class="kpi-tip">4策略合计买入信号标的</span>
+                                </div>
+                                <div class="st-ov-card glass-panel st-ov-sell">
+                                    <span class="st-ov-label">风险预警</span><span class="st-ov-value" id="exec-sell-total">—</span>
+                                    <span class="kpi-tip">含卖出 · 减仓 · 弱势标的</span>
+                                </div>
+                                <div class="st-ov-card glass-panel st-ov-erp">
+                                    <span class="st-ov-label">ERP宏观评分</span><span class="st-ov-value" id="exec-erp-score">—</span>
+                                    <span class="kpi-tip">≥55看多 · 40~55中性 · ≤40触发仓位Cap</span>
+                                </div>
+                                <div class="st-ov-card glass-panel">
+                                    <span class="st-ov-label">市场状态</span><span class="st-ov-value st-ov-sm" id="exec-regime">—</span>
+                                    <span class="kpi-tip">沪深300 MA20/MA60趋势判定</span>
+                                </div>
+                                <div class="st-ov-card glass-panel">
+                                    <span class="st-ov-label">策略一致性</span><span class="st-ov-value st-ov-sm" id="exec-consistency">—</span>
+                                    <span class="kpi-tip">分歧时建议降低仓位观望</span>
+                                </div>
+                                <div class="st-ov-card glass-panel">
+                                    <span class="st-ov-label">共振标的</span><span class="st-ov-value" id="exec-resonance-count">—</span>
+                                    <span class="kpi-tip">≥2策略同方向信号的重叠数</span>
+                                </div>
+                                <div class="st-ov-card glass-panel">
+                                    <span class="st-ov-label">波动预警</span><span class="st-ov-value" id="exec-vol-alerts">—</span>
+                                    <span class="kpi-tip">30日年化波动率 &gt; 25% 标的</span>
+                                </div>
+                                <div class="st-ov-card glass-panel">
+                                    <span class="st-ov-label">覆盖标的</span><span class="st-ov-value" id="exec-coverage">—</span>
+                                    <span class="kpi-tip">MR+DIV+MOM+ERP 全池监控</span>
+                                </div>
                             </div>
                         </div>
                     </section>
@@ -2729,27 +2775,39 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                                 <button class="exec-tab active" data-strategy="mr" onclick="switchExecTab('mr')">📐 均值回归 <span id="exec-mr-count" style="font-size:0.7rem;opacity:0.6;">35</span></button>
                                 <button class="exec-tab" data-strategy="div" onclick="switchExecTab('div')">💰 红利趋势 <span id="exec-div-count" style="font-size:0.7rem;opacity:0.6;">8</span></button>
                                 <button class="exec-tab" data-strategy="mom" onclick="switchExecTab('mom')">🚀 动量轮动 <span id="exec-mom-count" style="font-size:0.7rem;opacity:0.6;">20</span></button>
+                                <button class="exec-tab" data-strategy="erp" onclick="switchExecTab('erp')" style="border-color:rgba(245,158,11,0.3);">🌐 ERP择时 <span id="exec-erp-count" style="font-size:0.7rem;opacity:0.6;">4</span></button>
                             </div>
                         </div>
                         <!-- MR 热力表 -->
                         <div id="exec-table-mr" class="glass-panel" style="padding:12px; overflow-x:auto;">
                             <table class="st-table st-full-table exec-heatmap-table">
-                                <thead><tr><th>标的</th><th>代码</th><th>评分</th><th>关键因子</th><th>信号</th><th>仓位</th></tr></thead>
+                                <thead><tr><th>标的</th><th>代码</th><th title="综合评分(0~100): ≥85极强 ≥70强 ≥50中 <50弱">评分 ℹ️</th><th title="%B: <0.2超卖 >0.8超买 | RSI(3): <20极端超卖 >80超买 | BIAS乖离率: <-5%回归机会 >+5%止盈">关键因子 ℹ️</th><th>信号</th><th title="建议占总仓位的百分比">仓位</th></tr></thead>
                                 <tbody id="exec-tbody-mr"></tbody>
                             </table>
                         </div>
                         <!-- DIV 热力表 -->
                         <div id="exec-table-div" class="glass-panel" style="padding:12px; overflow-x:auto; display:none;">
                             <table class="st-table st-full-table exec-heatmap-table">
-                                <thead><tr><th>标的</th><th>代码</th><th>评分</th><th>关键因子</th><th>信号</th><th>仓位</th></tr></thead>
+                                <thead><tr><th>标的</th><th>代码</th><th title="综合评分(0~100)">评分 ℹ️</th><th title="DIV股息率: >6%强买区 <3%估值偏高 | RSI(14): <30超卖 >70超买 | BIAS: 均线偏离度">关键因子 ℹ️</th><th>信号</th><th>仓位</th></tr></thead>
                                 <tbody id="exec-tbody-div"></tbody>
                             </table>
                         </div>
                         <!-- MOM 热力表 -->
                         <div id="exec-table-mom" class="glass-panel" style="padding:12px; overflow-x:auto; display:none;">
                             <table class="st-table st-full-table exec-heatmap-table">
-                                <thead><tr><th>标的</th><th>代码</th><th>评分</th><th>关键因子</th><th>信号</th><th>仓位</th></tr></thead>
+                                <thead><tr><th>标的</th><th>代码</th><th title="综合评分(0~100)">评分 ℹ️</th><th title="MOM 20日动量: >5%强势 <-3%弱势 | VOL量比: >1.5放量确认 <0.7缩量警惕 | RSI(14)">关键因子 ℹ️</th><th>信号</th><th>仓位</th></tr></thead>
                                 <tbody id="exec-tbody-mom"></tbody>
+                            </table>
+                        </div>
+                        <!-- ERP 热力表 -->
+                        <div id="exec-table-erp" class="glass-panel" style="padding:12px; overflow-x:auto; display:none; border:1px solid rgba(245,158,11,0.15);">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                                <span style="font-size:0.78rem;color:#f59e0b;font-weight:700;">🌐 宏观ERP五维评分 · 统一信号（所有标的共享同一宏观判断）</span>
+                                <span id="erp-macro-score-badge" style="font-size:0.72rem;padding:2px 8px;border-radius:6px;background:rgba(245,158,11,0.12);color:#f59e0b;">综合分: --</span>
+                            </div>
+                            <table class="st-table st-full-table exec-heatmap-table">
+                                <thead><tr><th>标的</th><th>代码</th><th title="ETF的投资风格分类">风格</th><th title="ERP五维加权评分: ≥55买入 40~55观望 ≤40卖出">ERP评分 ℹ️</th><th title="ERP绝对值: >5%极度低估 <2%偏高 | 分位: 10年历史窗口百分位 | M1同比: >0流动性宽松 <0紧缩">关键因子 ℹ️</th><th>信号</th><th>仓位</th></tr></thead>
+                                <tbody id="exec-tbody-erp"></tbody>
                             </table>
                         </div>
                     </section>
@@ -2758,7 +2816,10 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                 <!-- ====== Zone 5: 信号共振分析 ====== -->
                 <div id="exec-zone5" style="display:none;">
                     <section class="st-section">
-                        <h3>🔗 三策略信号共振</h3>
+                        <h3>🔗 四策略信号共振 <span style="font-size:0.7rem;color:var(--text-muted);font-weight:400;">MR × DIV × MOM × ERP</span></h3>
+                        <div class="resonance-guide">
+                            💡 共振 = ≥2个策略同方向信号 &nbsp;|&nbsp; <span style="color:#10b981">🟢 强买 = 2+策略看涨</span> &nbsp;|&nbsp; <span style="color:#ef4444">🔴 强卖 = 2+策略看跌</span> &nbsp;|&nbsp; <span style="color:#f59e0b">⚠️ 分歧 = 同时有买+卖信号</span>
+                        </div>
                         <div id="exec-resonance-panel" style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px;">
                             <!-- JS 动态填充 -->
                         </div>
@@ -2850,6 +2911,34 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                                         </ul>
                                         <h5 style="color:#f59e0b;margin:12px 0 8px;font-size:0.82rem;">⚠️ 历史失效警示</h5>
                                         <p style="color:var(--text-muted);font-size:0.78rem;margin:0;line-height:1.6;">动量策略在震荡市(RANGE)表现较差，频繁追高杀低。RANGE市场建议降低动量仓位上限至20%。</p>
+                                    </div>
+                                </div>
+                            </details>
+                            <!-- ERP宏观择时 -->
+                            <details class="exec-encyclopedia-item glass-panel">
+                                <summary style="padding:14px 20px; cursor:pointer; font-weight:600; color:#fff; font-size:0.9rem; list-style:none; display:flex; align-items:center; justify-content:space-between;">
+                                    <span>🌐 宏观ERP择时 V1.0</span>
+                                    <span style="font-size:0.75rem; color:var(--text-muted);">五维宏观 · 逆向加仓 ▸</span>
+                                </summary>
+                                <div style="padding:0 20px 20px; display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                                    <div>
+                                        <h5 style="color:#f59e0b;margin:0 0 8px;font-size:0.82rem;">🚦 信号规则 (回测最优参数)</h5>
+                                        <ul style="color:var(--text-muted);padding-left:16px;font-size:0.78rem;line-height:1.9;margin:0;">
+                                            <li><strong style="color:#10b981">🟢 买入</strong>：综合评分 ≥ 55 (ERP分位窗口1008天)</li>
+                                            <li><strong style="color:#3b82f6">🔵 持有</strong>：评分 ∈ (40, 55)</li>
+                                            <li><strong style="color:#ef4444">🔴 卖出</strong>：评分 ≤ 40</li>
+                                            <li><strong style="color:#f59e0b">🛡️ 无固定止损</strong>：宏观低频策略，依赖评分阈值切换</li>
+                                        </ul>
+                                    </div>
+                                    <div>
+                                        <h5 style="color:#a78bfa;margin:0 0 8px;font-size:0.82rem;">⚙️ 五维权重 (回测优化)</h5>
+                                        <ul style="color:var(--text-muted);padding-left:16px;font-size:0.78rem;line-height:1.9;margin:0;">
+                                            <li>D1 ERP绝对值(20%) · D2 ERP分位(30%)</li>
+                                            <li>D3 M1流动性(35%) ← 最关键因子</li>
+                                            <li>D4 波动率(8%) · D5 信用环境(7%)</li>
+                                        </ul>
+                                        <h5 style="color:#f59e0b;margin:12px 0 8px;font-size:0.82rem;">⚠️ 适用范围</h5>
+                                        <p style="color:var(--text-muted);font-size:0.78rem;margin:0;line-height:1.6;">仅适用于与中国宏观高度相关的宽基ETF(300/500/红利/H股)。不适用于科技主题ETF或海外市场。</p>
                                     </div>
                                 </div>
                             </details>
@@ -3121,8 +3210,12 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
 
             </div><!-- /st-erp-timing -->
 
+            <!-- 海外策略已迁移至 treasury.html -->
+
+
+
             <footer class="st-footer">
-                <p>⚙️ AlphaCore 量化策略引擎 · 四策略版本（均值回归35只 + 红利趋势8只 + 动量轮动20只 + 宏观ERP择时）</p>
+                <p>⚙️ AlphaCore 量化策略引擎 · A股四策略版本（均值回归35只 + 红利趋势8只 + 动量轮动20只 + 宏观ERP择时）| 海外策略 → 🌐 海外策略终端</p>
             </footer>
         </div>
     </main>

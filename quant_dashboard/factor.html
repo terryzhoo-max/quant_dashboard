@@ -3,684 +3,58 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AlphaCore | 因子研究终端 V4.0</title>
-    <link rel="stylesheet" href="./styles.css?v=4">
+    <title>AlphaCore | 因子研究终端 V5.0</title>
+    <meta name="description" content="AlphaCore V5.0 因子研究终端 — 8维因子池、Alpha Score引擎、IC分布诊断、雷达叠加对比、三档止盈止损">
+    <link rel="stylesheet" href="./styles.css?v=5">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
     <script src="./echarts.min.js"></script>
     <style>
-        :root { --terminal-sidebar-width: 280px; }
+        /* ═══════════════════════════════════════════════════════════════
+           AlphaCore Factor Terminal V5.0 — Premium Design System
+           Aligned with Backtest V5.0 visual language
+           ═══════════════════════════════════════════════════════════════ */
 
-        /* === 全局容器 === */
-        .factor-terminal {
-            padding: 16px 20px;
-        }
-
-        /* === 因子快选导航条 === */
-        .factor-nav-strip {
-            padding: 10px 0;
-            overflow-x: auto;
-            white-space: nowrap;
-            scrollbar-width: thin;
-            scrollbar-color: rgba(255,255,255,0.08) transparent;
-            margin-bottom: 16px;
-        }
-        .factor-nav-strip::-webkit-scrollbar { height: 4px; }
-        .factor-nav-strip::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
-        .factor-nav-container { display: flex; gap: 8px; }
-        .factor-tile {
-            position: relative;
-            min-width: 160px;
-            padding: 12px 16px;
-            border-radius: 10px;
-            background: linear-gradient(145deg, rgba(30,41,59,0.6), rgba(15,23,42,0.8));
-            border: 1px solid rgba(255,255,255,0.06);
-            cursor: pointer;
-            transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-            flex-shrink: 0;
-            overflow: hidden;
-        }
-        .factor-tile::before {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0;
-            height: 3px;
-            background: var(--tile-color, #64748b);
-            opacity: 0.5;
-            transition: opacity 0.3s;
-        }
-        .factor-tile:hover {
-            transform: translateY(-2px);
-            border-color: rgba(255,255,255,0.15);
-            box-shadow: 0 6px 20px rgba(0,0,0,0.25);
-        }
-        .factor-tile:hover::before { opacity: 1; }
-        .factor-tile.active {
-            border-color: var(--tile-color, rgba(59,130,246,0.6));
-            background: linear-gradient(145deg, rgba(30,41,59,0.9), rgba(15,23,42,0.95));
-            box-shadow: 0 0 20px color-mix(in srgb, var(--tile-color) 20%, transparent);
-        }
-        .factor-tile.active::before { opacity: 1; height: 4px; }
-        .ft-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-        .ft-name { font-size: 0.82rem; font-weight: 600; color: #e2e8f0; }
-        .ft-grade {
-            font-size: 0.6rem; font-weight: 800; font-family: 'Outfit', sans-serif;
-            width: 20px; height: 20px; border-radius: 5px;
-            display: flex; align-items: center; justify-content: center;
-            line-height: 1;
-        }
-        .ft-grade.grade-S { background: rgba(16,185,129,0.35); color: #10b981; box-shadow: 0 0 8px rgba(16,185,129,0.3); }
-        .ft-grade.grade-A { background: rgba(52,211,153,0.25); color: #34d399; }
-        .ft-grade.grade-B { background: rgba(59,130,246,0.3); color: #60a5fa; }
-        .ft-grade.grade-C { background: rgba(251,191,36,0.2); color: #fbbf24; }
-        .ft-grade.grade-D { background: rgba(249,115,22,0.2); color: #f97316; }
-        .ft-grade.grade-F { background: rgba(239,68,68,0.2); color: #f87171; }
-        .ft-stats { display: flex; gap: 10px; font-size: 0.7rem; color: #64748b; }
-        .ft-stats span { font-family: 'Outfit', sans-serif; }
-        .ft-ic { font-weight: 700; }
-        .ft-score { font-weight: 800; font-size: 0.75rem; }
-
-        /* === 因子百科卡 (V4.0 新增, 默认折叠) === */
-        .wiki-card {
-            margin-bottom: 16px;
-            border-radius: 10px;
-            background: linear-gradient(145deg, rgba(30,41,59,0.3), rgba(15,23,42,0.5));
-            border: 1px solid rgba(59,130,246,0.12);
-            overflow: hidden;
-            transition: all 0.35s;
-        }
-        .wiki-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 10px 16px;
-            cursor: pointer;
-            user-select: none;
-        }
-        .wiki-header:hover { background: rgba(59,130,246,0.04); }
-        .wiki-header-left {
-            display: flex; align-items: center; gap: 8px;
-            font-size: 0.78rem; font-weight: 600; color: #94a3b8;
-        }
-        .wiki-toggle {
-            font-size: 0.7rem; color: #475569;
-            transition: transform 0.3s;
-            cursor: pointer;
-        }
-        .wiki-card.open .wiki-toggle { transform: rotate(180deg); }
-        .wiki-body {
-            max-height: 0;
-            overflow: hidden;
-            transition: max-height 0.4s ease, padding 0.3s;
-            padding: 0 16px;
-        }
-        .wiki-card.open .wiki-body {
-            max-height: 300px;
-            padding: 0 16px 14px;
-        }
-        .wiki-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 12px;
-        }
-        .wiki-item {
-            padding: 10px;
-            border-radius: 8px;
-            background: rgba(255,255,255,0.02);
-            border: 1px solid rgba(255,255,255,0.04);
-        }
-        .wiki-item-title {
-            font-size: 0.65rem;
-            font-weight: 700;
-            color: #3b82f6;
-            margin-bottom: 4px;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-        .wiki-item-text {
-            font-size: 0.72rem;
-            color: #94a3b8;
-            line-height: 1.5;
-        }
-        .wiki-item-text.wiki-warn { color: #f59e0b; }
-
-        /* === 核心指标行 (Alpha Score + 7卡) === */
-        .metrics-row {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 16px;
-            align-items: stretch;
-            flex-shrink: 0;
+        /* ===== §1 Design Tokens ===== */
+        :root {
+            --ft-gap: 14px;
+            --ft-radius: 12px;
+            --ft-glass: rgba(255, 255, 255, 0.03);
+            --ft-border: rgba(255, 255, 255, 0.06);
+            --ft-green: #10b981;
+            --ft-red: #ef4444;
+            --ft-amber: #f59e0b;
+            --ft-blue: #3b82f6;
+            --ft-purple: #8b5cf6;
+            --ft-cyan: #06b6d4;
         }
 
-        /* Alpha Score 大卡 */
-        .alpha-score-card {
-            min-width: 160px;
-            padding: 10px;
-            border-radius: 12px;
-            background: linear-gradient(145deg, rgba(30,41,59,0.6), rgba(15,23,42,0.8));
-            border: 1px solid rgba(255,255,255,0.06);
+        /* ===== §2 Terminal Layout ===== */
+        .ft-terminal {
             display: flex;
             flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            position: relative;
-            overflow: hidden;
-            transition: border-color 0.4s;
-        }
-        .alpha-score-card .asc-label {
-            font-size: 0.65rem;
-            color: #64748b;
-            font-weight: 600;
-            letter-spacing: 0.08em;
-            margin-bottom: 4px;
-        }
-        .alpha-score-card .asc-grade {
-            font-size: 0.6rem;
-            font-weight: 700;
-            margin-top: 2px;
-        }
-
-        /* 指标卡网格 */
-        .metrics-grid {
-            display: grid;
-            grid-template-columns: repeat(7, 1fr);
-            gap: 8px;
-            flex: 1;
-        }
-        @media (max-width: 1400px) {
-            .metrics-row { flex-direction: column; }
-            .metrics-grid { grid-template-columns: repeat(4, 1fr); }
-        }
-        .metric-card {
-            padding: 10px 8px 8px;
-            text-align: center;
-            border-radius: 10px;
-            background: linear-gradient(145deg, rgba(30,41,59,0.5), rgba(15,23,42,0.7));
-            border: 1px solid rgba(255,255,255,0.05);
-            transition: border-color 0.3s, box-shadow 0.3s;
-            position: relative;
-            cursor: default;
-        }
-        .metric-card:hover {
-            border-color: rgba(255,255,255,0.15);
-            box-shadow: 0 4px 16px rgba(0,0,0,0.2);
-        }
-        .metric-card .mc-label {
-            font-size: 0.6rem;
-            color: #64748b;
-            margin-bottom: 4px;
-            font-weight: 500;
-            letter-spacing: 0.03em;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 4px;
-        }
-        .metric-card .mc-help {
-            font-size: 0.55rem;
-            width: 13px; height: 13px;
-            border-radius: 50%;
-            background: rgba(255,255,255,0.06);
-            color: #475569;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            cursor: help;
-            transition: all 0.2s;
-            flex-shrink: 0;
-        }
-        .metric-card:hover .mc-help {
-            background: rgba(59,130,246,0.2);
-            color: #60a5fa;
-        }
-        .metric-card .mc-value {
-            font-size: 1.05rem;
-            font-weight: 700;
-            font-family: 'Outfit', sans-serif;
-            color: #e2e8f0;
-        }
-        .metric-card .mc-hint {
-            font-size: 0.52rem;
-            color: #475569;
-            margin-top: 2px;
-        }
-        /* 微型阈值条 V4.0 */
-        .mc-threshold-bar {
-            margin-top: 5px;
-            height: 3px;
-            border-radius: 2px;
-            background: rgba(255,255,255,0.06);
-            overflow: hidden;
-            position: relative;
-        }
-        .mc-threshold-fill {
-            height: 100%;
-            border-radius: 2px;
-            transition: width 0.6s ease, background 0.4s;
-            width: 0%;
-        }
-        .metric-card.mc-good { border-color: rgba(16,185,129,0.3); }
-        .metric-card.mc-good .mc-value { color: #34d399; }
-        .metric-card.mc-good .mc-threshold-fill { background: linear-gradient(90deg, #10b981, #34d399); }
-        .metric-card.mc-warn { border-color: rgba(245,158,11,0.3); }
-        .metric-card.mc-warn .mc-value { color: #fbbf24; }
-        .metric-card.mc-warn .mc-threshold-fill { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
-        .metric-card.mc-bad { border-color: rgba(239,68,68,0.3); }
-        .metric-card.mc-bad .mc-value { color: #f87171; }
-        .metric-card.mc-bad .mc-threshold-fill { background: linear-gradient(90deg, #ef4444, #f87171); }
-
-        /* Tooltip 浮层 */
-        .mc-tooltip {
-            display: none;
-            position: absolute;
-            bottom: calc(100% + 8px);
-            left: 50%;
-            transform: translateX(-50%);
-            width: 220px;
-            padding: 12px;
-            border-radius: 8px;
-            background: rgba(15,23,42,0.97);
-            border: 1px solid rgba(59,130,246,0.2);
-            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-            z-index: 50;
-            text-align: left;
-            backdrop-filter: blur(10px);
-        }
-        .metric-card:hover .mc-tooltip { display: block; }
-        .mc-tooltip-title {
-            font-size: 0.7rem;
-            font-weight: 700;
-            color: #60a5fa;
-            margin-bottom: 6px;
-        }
-        .mc-tooltip-text {
-            font-size: 0.65rem;
-            color: #94a3b8;
-            line-height: 1.6;
-        }
-        .mc-tooltip-text b { color: #e2e8f0; }
-        .mc-tooltip-text .tt-warn { color: #f59e0b; }
-
-        /* === 交易建议区 V4.0 === */
-        .advice-section {
-            display: block !important;
-            margin-bottom: 16px !important;
-            border-radius: 12px;
-            background: linear-gradient(145deg, rgba(30,41,59,0.4), rgba(15,23,42,0.6));
-            border: 1px solid rgba(255,255,255,0.05);
-            overflow: visible !important;
-            min-height: 160px !important;
-            height: auto !important;
-            max-height: none !important;
-            visibility: visible !important;
-            opacity: 1 !important;
-            flex-shrink: 0 !important;
-        }
-        .advice-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 12px 18px;
-            border-bottom: 1px solid rgba(255,255,255,0.04);
-        }
-        .advice-header-title {
-            font-size: 0.82rem;
-            font-weight: 600;
-            color: #94a3b8;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-        .advice-confidence {
-            font-size: 0.72rem;
-            font-weight: 600;
-            color: #64748b;
-            font-family: 'Outfit', sans-serif;
-        }
-        .advice-cards {
-            display: grid;
-            grid-template-columns: repeat(6, 1fr);
-            gap: 0;
-        }
-        .advice-card {
-            padding: 14px 10px;
-            text-align: center;
-            border-right: 1px solid rgba(255,255,255,0.04);
-            transition: background 0.2s;
-        }
-        .advice-card:last-child { border-right: none; }
-        .advice-card:hover { background: rgba(255,255,255,0.02); }
-        .advice-card .ac-icon { font-size: 1.2rem; margin-bottom: 5px; }
-        .advice-card .ac-value {
-            font-size: 0.95rem;
-            font-weight: 700;
-            font-family: 'Outfit', sans-serif;
-            margin-bottom: 2px;
-        }
-        .advice-card .ac-label {
-            font-size: 0.58rem;
-            color: #64748b;
-            font-weight: 500;
-        }
-        .advice-card .ac-sublabel {
-            font-size: 0.5rem;
-            color: #475569;
-            margin-top: 2px;
-            font-style: italic;
-        }
-        /* 信号卡特殊样式 */
-        .advice-card.signal-card .ac-value {
-            font-size: 0.85rem;
-            font-weight: 800;
-            letter-spacing: 0.02em;
-        }
-        /* 三档止盈 V4.0 */
-        .target-tiers {
-            display: flex;
-            gap: 4px;
-            justify-content: center;
-            margin-top: 4px;
-        }
-        .tier-badge {
-            font-size: 0.5rem;
-            padding: 1px 5px;
-            border-radius: 3px;
-            font-family: 'Outfit', sans-serif;
-            font-weight: 600;
-        }
-        .tier-t1 { background: rgba(16,185,129,0.15); color: #34d399; }
-        .tier-t2 { background: rgba(59,130,246,0.2); color: #60a5fa; }
-        .tier-t3 { background: rgba(245,158,11,0.15); color: #fbbf24; }
-
-        /* 推理链 V4.0 */
-        .reasoning-strip {
-            padding: 0 18px;
-            border-top: 1px solid rgba(255,255,255,0.03);
-            overflow: hidden;
-            max-height: 0;
-            transition: max-height 0.4s ease, padding 0.3s;
-        }
-        .reasoning-strip.open {
-            max-height: 120px;
-            padding: 10px 18px;
-        }
-        .reasoning-toggle {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 8px 18px;
-            cursor: pointer;
-            font-size: 0.68rem;
-            color: #475569;
-            border-top: 1px solid rgba(255,255,255,0.03);
-            user-select: none;
-            transition: color 0.2s;
-        }
-        .reasoning-toggle:hover { color: #94a3b8; }
-        .reasoning-toggle .toggle-arrow {
-            transition: transform 0.3s;
-            font-size: 0.6rem;
-        }
-        .reasoning-strip.open + .reasoning-toggle .toggle-arrow,
-        .reasoning-toggle.open .toggle-arrow { transform: rotate(180deg); }
-        .reasoning-text {
-            font-size: 0.7rem;
-            color: #94a3b8;
-            line-height: 1.7;
-        }
-
-        /* 健康灯 + 风险提示合并条 V4.0 */
-        .health-risk-strip {
-            display: flex;
-            align-items: stretch;
-            border-top: 1px solid rgba(255,255,255,0.04);
-            font-size: 0.68rem;
-        }
-        .health-lamps {
-            display: flex;
-            gap: 8px;
-            padding: 8px 14px;
-            border-right: 1px solid rgba(255,255,255,0.04);
-            align-items: center;
-            flex-shrink: 0;
-        }
-        .health-lamp {
-            display: flex;
-            align-items: center;
-            gap: 3px;
-            font-size: 0.6rem;
-            color: #64748b;
-        }
-        .lamp-dot {
-            width: 7px; height: 7px;
-            border-radius: 50%;
-            flex-shrink: 0;
-        }
-        .lamp-dot.ok { background: #10b981; box-shadow: 0 0 4px rgba(16,185,129,0.4); }
-        .lamp-dot.warn { background: #f59e0b; box-shadow: 0 0 4px rgba(245,158,11,0.4); }
-        .lamp-dot.danger { background: #ef4444; box-shadow: 0 0 4px rgba(239,68,68,0.4); animation: pulse-danger 2s infinite; }
-        @keyframes pulse-danger { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-        .risk-message {
-            flex: 1;
-            padding: 8px 14px;
-            color: #94a3b8;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-        .risk-message.risk-warn { color: #fbbf24; background: rgba(251,191,36,0.03); }
-        .risk-message.risk-danger { color: #f87171; background: rgba(239,68,68,0.03); }
-        .risk-message.risk-ok { color: #34d399; background: rgba(16,185,129,0.02); }
-
-        /* 免责声明 */
-        .disclaimer-bar {
-            padding: 8px 18px;
-            border-top: 1px solid rgba(255,255,255,0.03);
-            font-size: 0.55rem;
-            color: #334155;
-            text-align: center;
-            font-style: italic;
-            user-select: none;
-        }
-
-        /* === 图表矩阵 === */
-        .charts-matrix {
-            display: grid;
-            grid-template-columns: 280px 1fr;
-            gap: 16px;
-            margin-bottom: 16px;
-            flex-shrink: 0;
-        }
-        .chart-panel {
-            padding: 20px;
-            border-radius: 12px;
-            background: linear-gradient(145deg, rgba(30,41,59,0.4), rgba(15,23,42,0.6));
-            border: 1px solid rgba(255,255,255,0.05);
-        }
-        .chart-panel-title {
-            font-size: 0.8rem;
-            font-weight: 600;
-            color: #94a3b8;
-            margin-bottom: 12px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-        .chart-panel-title span { font-size: 0.9rem; }
-
-        /* 全宽图表行 */
-        .chart-full-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 16px;
-            margin-bottom: 16px;
-            flex-shrink: 0;
-        }
-
-        /* === 加载进度 === */
-        .loading-overlay {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(7, 9, 14, 0.85);
-            backdrop-filter: blur(10px);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-            flex-direction: column;
-            gap: 16px;
-        }
-        .loading-progress {
-            width: 320px;
-            height: 4px;
-            background: rgba(255,255,255,0.06);
-            border-radius: 4px;
-            overflow: hidden;
-        }
-        .loading-progress-fill {
-            height: 100%;
-            width: 0%;
-            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
-            border-radius: 4px;
-            transition: width 0.5s ease;
-        }
-        .loading-step {
-            font-size: 0.82rem;
-            color: #94a3b8;
-            font-weight: 500;
-        }
-        .spinner {
-            width: 40px; height: 40px;
-            border: 3px solid rgba(59, 130, 246, 0.1);
-            border-top: 3px solid #3b82f6;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-        @keyframes spin { 100% { transform: rotate(360deg); } }
-
-        /* === 配置面板 (右侧弹出抽屉) === */
-        .config-drawer-overlay {
-            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.4);
-            z-index: 900;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.3s;
-        }
-        .config-drawer-overlay.open { opacity: 1; pointer-events: auto; }
-        .config-drawer {
-            position: fixed; top: 0; right: -400px; bottom: 0;
-            width: 360px;
-            background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
-            border-left: 1px solid rgba(255,255,255,0.08);
-            z-index: 910;
-            padding: 28px 24px;
+            gap: var(--ft-gap);
+            padding: var(--ft-gap) 24px;
             overflow-y: auto;
-            transition: right 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            height: calc(100vh - 10px);
         }
-        .config-drawer.open { right: 0; }
-        .config-drawer h3 {
-            font-size: 1.1rem;
-            font-weight: 700;
-            color: #e2e8f0;
-            margin-bottom: 24px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        .config-drawer .close-btn {
-            background: none; border: none; color: #64748b;
-            font-size: 1.4rem; cursor: pointer; line-height: 1;
-            transition: color 0.2s;
-        }
-        .config-drawer .close-btn:hover { color: #e2e8f0; }
-        .config-group { margin-bottom: 24px; }
-        .config-group-title {
-            font-size: 0.75rem;
-            font-weight: 700;
-            color: #3b82f6;
-            margin-bottom: 12px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        .input-item { margin-bottom: 14px; }
-        .input-item label {
-            display: block;
-            font-size: 0.75rem;
-            color: #94a3b8;
-            margin-bottom: 6px;
-            font-weight: 500;
-        }
-        .input-item select, .input-item input {
-            width: 100%;
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 10px 12px;
-            border-radius: 8px;
-            color: #fff;
-            font-family: inherit;
-            font-size: 0.85rem;
-            transition: border-color 0.2s;
-        }
-        .input-item select:focus, .input-item input:focus {
-            outline: none;
-            border-color: rgba(59,130,246,0.5);
-        }
-        .btn-run {
-            width: 100%;
-            padding: 12px;
-            background: linear-gradient(135deg, #3b82f6, #6366f1);
-            border: none;
-            border-radius: 8px;
-            color: #fff;
-            font-weight: 700;
-            font-size: 0.9rem;
-            cursor: pointer;
-            transition: opacity 0.2s, transform 0.2s;
-        }
-        .btn-run:hover { opacity: 0.9; transform: translateY(-1px); }
 
-        /* 方法论面板 V4.0 */
-        .methodology-panel {
-            margin-top: 24px;
-            padding: 16px;
-            border-radius: 10px;
-            background: rgba(59,130,246,0.05);
-            border: 1px solid rgba(59,130,246,0.1);
-            font-size: 0.72rem;
-            color: #64748b;
-            line-height: 1.6;
-        }
-        .methodology-panel h4 {
-            color: #3b82f6;
-            margin-bottom: 8px;
-            font-size: 0.8rem;
-        }
-        .methodology-panel b { color: #94a3b8; }
-
-        /* === fadeIn 动画 === */
-        @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(12px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        .fade-in { animation: fadeInUp 0.5s ease forwards; }
-
-        /* === 顶部工具栏 === */
-        .factor-topbar {
+        /* ===== §3 Top Bar ===== */
+        .ft-topbar {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 12px;
+            padding: 12px 0;
+            flex-shrink: 0;
         }
-        .factor-topbar h2 {
-            font-size: 1.4rem;
+        .ft-topbar h2 {
+            font-size: 1.3rem;
             font-weight: 700;
             display: flex;
             align-items: center;
             gap: 10px;
         }
-        .version-badge {
-            font-size: 0.65rem;
+        .ft-version {
+            font-size: 0.62rem;
             font-weight: 700;
             padding: 3px 8px;
             border-radius: 4px;
@@ -688,25 +62,527 @@
             color: #34d399;
             font-family: 'Outfit', sans-serif;
         }
-        .topbar-actions { display: flex; gap: 10px; }
-        .topbar-actions button {
-            padding: 8px 16px;
+        .ft-topbar-actions { display: flex; gap: 10px; }
+        .ft-topbar-actions button {
+            padding: 8px 18px;
             border-radius: 8px;
-            font-size: 0.82rem;
+            font-size: 0.8rem;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s;
-            border: 1px solid rgba(255,255,255,0.08);
-            background: rgba(255,255,255,0.04);
+            transition: all 0.25s;
+            border: 1px solid var(--ft-border);
+            background: var(--ft-glass);
+            color: #94a3b8;
+            font-family: inherit;
+        }
+        .ft-topbar-actions button:hover { border-color: rgba(255,255,255,0.2); color: #e2e8f0; }
+        .ft-btn-run {
+            background: linear-gradient(135deg, var(--ft-blue), #2563eb) !important;
+            border: none !important;
+            color: #fff !important;
+            box-shadow: 0 4px 16px rgba(59,130,246,0.3);
+        }
+        .ft-btn-run:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(59,130,246,0.5); }
+
+        /* Data freshness badge */
+        .ft-data-badge {
+            display: flex; align-items: center; gap: 6px;
+            padding: 6px 14px; border-radius: 8px;
+            font-size: 0.7rem; font-weight: 600; font-family: 'Outfit', sans-serif;
+            background: rgba(255,255,255,0.03); border: 1px solid var(--ft-border);
+            color: #64748b; transition: all 0.3s;
+        }
+        .ft-data-badge .badge-dot {
+            width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+        }
+        .ft-data-badge.fresh .badge-dot { background: #10b981; box-shadow: 0 0 6px rgba(16,185,129,0.5); }
+        .ft-data-badge.fresh { border-color: rgba(16,185,129,0.2); color: #34d399; }
+        .ft-data-badge.stale .badge-dot { background: #f59e0b; box-shadow: 0 0 6px rgba(245,158,11,0.5); animation: ft-pulse-danger 2s infinite; }
+        .ft-data-badge.stale { border-color: rgba(245,158,11,0.2); color: #fbbf24; }
+
+        /* ===== §4 Factor Navigation Strip ===== */
+        .ft-nav-strip {
+            overflow-x: auto;
+            white-space: nowrap;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255,255,255,0.08) transparent;
+            flex-shrink: 0;
+        }
+        .ft-nav-strip::-webkit-scrollbar { height: 3px; }
+        .ft-nav-strip::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+        .ft-nav-container {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .ft-nav-divider {
+            width: 1px;
+            height: 36px;
+            background: rgba(255,255,255,0.08);
+            margin: 0 4px;
+            flex-shrink: 0;
+        }
+        .ft-nav-group-label {
+            font-size: 0.55rem;
+            font-weight: 700;
+            color: rgba(148,163,184,0.5);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            writing-mode: vertical-rl;
+            flex-shrink: 0;
+        }
+        .ft-tile {
+            position: relative;
+            min-width: 148px;
+            padding: 10px 14px;
+            border-radius: 10px;
+            background: var(--ft-glass);
+            border: 1px solid var(--ft-border);
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+            flex-shrink: 0;
+            overflow: hidden;
+        }
+        .ft-tile::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            background: var(--tile-color, #64748b);
+            opacity: 0.4;
+            transition: opacity 0.3s, height 0.3s;
+        }
+        .ft-tile:hover {
+            transform: translateY(-2px);
+            border-color: rgba(255,255,255,0.15);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+        }
+        .ft-tile:hover::before { opacity: 1; }
+        .ft-tile.active {
+            border-color: var(--tile-color, rgba(59,130,246,0.6));
+            background: linear-gradient(145deg, rgba(30,41,59,0.9), rgba(15,23,42,0.95));
+            box-shadow: 0 0 20px color-mix(in srgb, var(--tile-color) 20%, transparent);
+        }
+        .ft-tile.active::before { opacity: 1; height: 4px; }
+        .ft-tile-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+        .ft-tile-name { font-size: 0.78rem; font-weight: 600; color: #e2e8f0; }
+        .ft-tile-grade {
+            font-size: 0.58rem; font-weight: 800; font-family: 'Outfit', sans-serif;
+            width: 20px; height: 20px; border-radius: 5px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .ft-tile-grade.grade-S { background: rgba(16,185,129,0.35); color: #10b981; box-shadow: 0 0 8px rgba(16,185,129,0.3); }
+        .ft-tile-grade.grade-A { background: rgba(52,211,153,0.25); color: #34d399; }
+        .ft-tile-grade.grade-B { background: rgba(59,130,246,0.3); color: #60a5fa; }
+        .ft-tile-grade.grade-C { background: rgba(251,191,36,0.2); color: #fbbf24; }
+        .ft-tile-grade.grade-D { background: rgba(249,115,22,0.2); color: #f97316; }
+        .ft-tile-grade.grade-F { background: rgba(239,68,68,0.2); color: #f87171; }
+        .ft-tile-stats { display: flex; gap: 8px; font-size: 0.65rem; color: #64748b; }
+        .ft-tile-stats span { font-family: 'Outfit', sans-serif; }
+        .ft-tile-score { font-weight: 800; font-size: 0.72rem; }
+
+        /* ===== §5 Wiki Card (Collapsible) ===== */
+        .ft-wiki {
+            border-radius: var(--ft-radius);
+            background: var(--ft-glass);
+            border: 1px solid rgba(59,130,246,0.1);
+            overflow: hidden;
+            transition: all 0.35s;
+            flex-shrink: 0;
+        }
+        .ft-wiki-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 16px;
+            cursor: pointer;
+            user-select: none;
+            font-size: 0.76rem;
+            font-weight: 600;
             color: #94a3b8;
         }
-        .topbar-actions button:hover { border-color: rgba(255,255,255,0.2); color: #e2e8f0; }
-        .topbar-actions .btn-primary-sm {
-            background: linear-gradient(135deg, #3b82f6, #6366f1);
-            border: none;
-            color: #fff;
+        .ft-wiki-header:hover { background: rgba(59,130,246,0.04); }
+        .ft-wiki-toggle { font-size: 0.65rem; color: #475569; transition: transform 0.3s; }
+        .ft-wiki.open .ft-wiki-toggle { transform: rotate(180deg); }
+        .ft-wiki-body {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.4s ease, padding 0.3s;
+            padding: 0 16px;
         }
-        .topbar-actions .btn-primary-sm:hover { opacity: 0.9; }
+        .ft-wiki.open .ft-wiki-body { max-height: 300px; padding: 0 16px 14px; }
+        .ft-wiki-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+        .ft-wiki-item {
+            padding: 10px;
+            border-radius: 8px;
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.04);
+        }
+        .ft-wiki-item-title {
+            font-size: 0.6rem; font-weight: 700; color: var(--ft-blue);
+            margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        .ft-wiki-item-text { font-size: 0.7rem; color: #94a3b8; line-height: 1.5; }
+        .ft-wiki-item-text.warn { color: #f59e0b; }
+
+        /* ===== §6 Alpha Score + Metrics Row ===== */
+        .ft-score-row {
+            display: flex;
+            gap: var(--ft-gap);
+            align-items: stretch;
+            flex-shrink: 0;
+        }
+        .ft-alpha-card {
+            min-width: 170px;
+            width: 170px;
+            padding: 12px;
+            border-radius: var(--ft-radius);
+            background: var(--ft-glass);
+            border: 1px solid var(--ft-border);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+        /* V5.0: Breathing orbit glow */
+        .ft-alpha-card::before {
+            content: '';
+            position: absolute;
+            top: -50%; left: -50%;
+            width: 200%; height: 200%;
+            background: conic-gradient(from 0deg, transparent 0deg, transparent 270deg, var(--alpha-glow, rgba(59,130,246,0.1)) 310deg, transparent 360deg);
+            animation: ft-orbit 8s linear infinite;
+            pointer-events: none;
+        }
+        @keyframes ft-orbit { 100% { transform: rotate(360deg); } }
+        .ft-alpha-label {
+            font-size: 0.62rem; color: #64748b; font-weight: 600;
+            letter-spacing: 0.08em; margin-bottom: 2px; position: relative; z-index: 1;
+        }
+        .ft-alpha-grade {
+            font-size: 0.58rem; font-weight: 700; margin-top: 2px;
+            position: relative; z-index: 1;
+        }
+        #alpha-gauge { width: 130px; height: 130px; position: relative; z-index: 1; }
+
+        /* Metrics Grid */
+        .ft-metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 8px;
+            flex: 1;
+        }
+        @media (max-width: 1400px) {
+            .ft-score-row { flex-direction: column; }
+            .ft-metrics-grid { grid-template-columns: repeat(4, 1fr); }
+        }
+        .ft-metric {
+            padding: 10px 8px 8px;
+            text-align: center;
+            border-radius: 10px;
+            background: var(--ft-glass);
+            border: 1px solid var(--ft-border);
+            transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+            position: relative;
+            cursor: default;
+            overflow: hidden;
+        }
+        .ft-metric:hover {
+            transform: translateY(-2px);
+            border-color: rgba(255,255,255,0.15);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+        }
+        .ft-metric:hover .ft-m-bar { height: 5px; }
+        .ft-metric .ft-m-label {
+            font-size: 0.6rem; color: #64748b; margin-bottom: 4px;
+            font-weight: 500; display: flex; align-items: center;
+            justify-content: center; gap: 4px;
+        }
+        .ft-metric .ft-m-help {
+            font-size: 0.5rem; width: 13px; height: 13px; border-radius: 50%;
+            background: rgba(255,255,255,0.06); color: #475569;
+            display: inline-flex; align-items: center; justify-content: center;
+            cursor: help; transition: all 0.2s; flex-shrink: 0;
+        }
+        .ft-metric:hover .ft-m-help { background: rgba(59,130,246,0.2); color: #60a5fa; }
+        .ft-metric .ft-m-value {
+            font-size: 1.05rem; font-weight: 700; font-family: 'Outfit', sans-serif; color: #e2e8f0;
+        }
+        .ft-metric .ft-m-hint { font-size: 0.5rem; color: #475569; margin-top: 2px; }
+        /* Bottom bar */
+        .ft-m-bar {
+            position: absolute; bottom: 0; left: 0; right: 0;
+            height: 3px; transition: height 0.3s ease;
+            border-radius: 0 0 10px 10px;
+        }
+        .ft-metric.mc-good .ft-m-value { color: #34d399; }
+        .ft-metric.mc-good .ft-m-bar { background: linear-gradient(90deg, #10b981, rgba(16,185,129,0.3)); }
+        .ft-metric.mc-warn .ft-m-value { color: #fbbf24; }
+        .ft-metric.mc-warn .ft-m-bar { background: linear-gradient(90deg, #f59e0b, rgba(245,158,11,0.3)); }
+        .ft-metric.mc-bad .ft-m-value { color: #f87171; }
+        .ft-metric.mc-bad .ft-m-bar { background: linear-gradient(90deg, #ef4444, rgba(239,68,68,0.3)); }
+        /* Tooltip */
+        .ft-tooltip {
+            display: none; position: absolute; bottom: calc(100% + 8px);
+            left: 50%; transform: translateX(-50%); width: 220px;
+            padding: 12px; border-radius: 8px;
+            background: rgba(15,23,42,0.97); border: 1px solid rgba(59,130,246,0.2);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 50;
+            text-align: left; backdrop-filter: blur(10px);
+        }
+        .ft-metric:hover .ft-tooltip { display: block; }
+        .ft-tooltip-title { font-size: 0.7rem; font-weight: 700; color: #60a5fa; margin-bottom: 6px; }
+        .ft-tooltip-text { font-size: 0.65rem; color: #94a3b8; line-height: 1.6; }
+        .ft-tooltip-text b { color: #e2e8f0; }
+        .ft-tooltip-text .tt-warn { color: #f59e0b; }
+
+        /* ===== §7 Advice Section ===== */
+        .ft-advice {
+            border-radius: var(--ft-radius);
+            background: var(--ft-glass);
+            border: 1px solid var(--ft-border);
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        .ft-advice-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 18px;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+        }
+        .ft-advice-title {
+            font-size: 0.8rem; font-weight: 600; color: #94a3b8;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .ft-advice-conf { font-size: 0.7rem; font-weight: 600; color: #64748b; font-family: 'Outfit', sans-serif; }
+        .ft-advice-cards { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0; }
+        .ft-advice-card {
+            padding: 12px 8px; text-align: center;
+            border-right: 1px solid rgba(255,255,255,0.04);
+            transition: background 0.2s;
+        }
+        .ft-advice-card:last-child { border-right: none; }
+        .ft-advice-card:hover { background: rgba(255,255,255,0.02); }
+        .ft-advice-card .ac-icon { font-size: 1.1rem; margin-bottom: 4px; }
+        .ft-advice-card .ac-value {
+            font-size: 0.92rem; font-weight: 700; font-family: 'Outfit', sans-serif; margin-bottom: 2px;
+        }
+        .ft-advice-card .ac-label { font-size: 0.56rem; color: #64748b; font-weight: 500; }
+        .ft-advice-card .ac-sub { font-size: 0.48rem; color: #475569; margin-top: 1px; font-style: italic; }
+        /* Signal pulse animation */
+        .ft-advice-card.signal-card .ac-value.signal-strong {
+            animation: ft-signal-pulse 2s ease-in-out infinite;
+        }
+        @keyframes ft-signal-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; text-shadow: 0 0 12px currentColor; }
+        }
+        /* Tier badges */
+        .ft-tiers { display: flex; gap: 4px; justify-content: center; margin-top: 4px; }
+        .ft-tier {
+            font-size: 0.48rem; padding: 1px 5px; border-radius: 3px;
+            font-family: 'Outfit', sans-serif; font-weight: 600;
+        }
+        .ft-tier-t1 { background: rgba(16,185,129,0.15); color: #34d399; }
+        .ft-tier-t2 { background: rgba(59,130,246,0.2); color: #60a5fa; }
+        .ft-tier-t3 { background: rgba(245,158,11,0.15); color: #fbbf24; }
+
+        /* Reasoning strip */
+        .ft-reasoning {
+            overflow: hidden; max-height: 0;
+            transition: max-height 0.4s ease, padding 0.3s;
+            padding: 0 18px; border-top: 1px solid rgba(255,255,255,0.03);
+        }
+        .ft-reasoning.open { max-height: 120px; padding: 10px 18px; }
+        .ft-reasoning-text { font-size: 0.68rem; color: #94a3b8; line-height: 1.7; }
+        .ft-reasoning-toggle {
+            display: flex; align-items: center; gap: 6px;
+            padding: 7px 18px; cursor: pointer;
+            font-size: 0.65rem; color: #475569;
+            border-top: 1px solid rgba(255,255,255,0.03);
+            user-select: none; transition: color 0.2s;
+        }
+        .ft-reasoning-toggle:hover { color: #94a3b8; }
+        .ft-reasoning-toggle .arrow { transition: transform 0.3s; font-size: 0.55rem; }
+        .ft-reasoning-toggle.open .arrow { transform: rotate(180deg); }
+
+        /* Health + Risk strip */
+        .ft-health-strip {
+            display: flex; align-items: stretch;
+            border-top: 1px solid rgba(255,255,255,0.04);
+            font-size: 0.65rem;
+        }
+        .ft-health-lamps {
+            display: flex; gap: 8px; padding: 7px 14px;
+            border-right: 1px solid rgba(255,255,255,0.04);
+            align-items: center; flex-shrink: 0;
+        }
+        .ft-lamp { display: flex; align-items: center; gap: 3px; font-size: 0.58rem; color: #64748b; }
+        .ft-lamp-dot {
+            width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+        }
+        .ft-lamp-dot.ok { background: #10b981; box-shadow: 0 0 4px rgba(16,185,129,0.4); }
+        .ft-lamp-dot.warn { background: #f59e0b; box-shadow: 0 0 4px rgba(245,158,11,0.4); }
+        .ft-lamp-dot.danger { background: #ef4444; box-shadow: 0 0 4px rgba(239,68,68,0.4); animation: ft-pulse-danger 2s infinite; }
+        @keyframes ft-pulse-danger { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .ft-risk-msg {
+            flex: 1; padding: 7px 14px; color: #94a3b8;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .ft-risk-msg.risk-warn { color: #fbbf24; background: rgba(251,191,36,0.03); }
+        .ft-risk-msg.risk-danger { color: #f87171; background: rgba(239,68,68,0.03); }
+        .ft-risk-msg.risk-ok { color: #34d399; background: rgba(16,185,129,0.02); }
+        .ft-disclaimer {
+            padding: 6px 18px; border-top: 1px solid rgba(255,255,255,0.03);
+            font-size: 0.52rem; color: #334155; text-align: center; font-style: italic;
+        }
+
+        /* ===== §8 Charts Grid (V5.0: 3x2 matrix) ===== */
+        .ft-charts-row {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: var(--ft-gap);
+            flex-shrink: 0;
+        }
+        .ft-charts-full {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: var(--ft-gap);
+            flex-shrink: 0;
+        }
+        .ft-chart-panel {
+            padding: 18px;
+            border-radius: var(--ft-radius);
+            background: var(--ft-glass);
+            border: 1px solid var(--ft-border);
+            position: relative;
+        }
+        /* V5.0: Left accent line */
+        .ft-chart-panel::before {
+            content: '';
+            position: absolute;
+            top: 14px; left: 0;
+            width: 3px; height: 22px;
+            border-radius: 0 3px 3px 0;
+            background: linear-gradient(180deg, var(--ft-blue), var(--ft-purple));
+        }
+        .ft-chart-panel h4 {
+            font-size: 0.8rem; font-weight: 600; color: #94a3b8;
+            margin-bottom: 10px; padding-left: 8px;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .ft-chart-panel h4 span { font-size: 0.85rem; }
+        /* IC distribution panel accent */
+        .ft-chart-panel.accent-green::before {
+            background: linear-gradient(180deg, var(--ft-green), var(--ft-cyan));
+        }
+        .ft-chart-panel.accent-amber::before {
+            background: linear-gradient(180deg, var(--ft-amber), var(--ft-red));
+        }
+
+        /* ===== §9 Config Drawer ===== */
+        .ft-drawer-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5); z-index: 900;
+            display: none; backdrop-filter: blur(4px);
+        }
+        .ft-drawer-overlay.open { display: block; }
+        .ft-drawer {
+            position: fixed; top: 0; right: -420px; bottom: 0;
+            width: 380px;
+            background: #0f1219;
+            border-left: 1px solid var(--ft-border);
+            z-index: 910; padding: 28px 24px;
+            overflow-y: auto;
+            transition: right 0.35s cubic-bezier(0.16,1,0.3,1);
+        }
+        .ft-drawer.open { right: 0; }
+        .ft-drawer h3 {
+            font-size: 1rem; font-weight: 700; color: var(--ft-blue);
+            margin-bottom: 20px; text-transform: uppercase; letter-spacing: 1px;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .ft-drawer .close-btn {
+            background: none; border: none; color: #64748b;
+            font-size: 1.4rem; cursor: pointer; line-height: 1;
+            transition: color 0.2s;
+        }
+        .ft-drawer .close-btn:hover { color: #e2e8f0; }
+        .ft-drawer .config-group { margin-bottom: 24px; }
+        .ft-drawer .config-group-title {
+            font-size: 0.72rem; font-weight: 700; color: var(--ft-blue);
+            margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;
+        }
+        .ft-drawer .input-item { margin-bottom: 14px; }
+        .ft-drawer .input-item label {
+            display: block; font-size: 0.72rem; color: #94a3b8;
+            margin-bottom: 5px; font-weight: 500;
+        }
+        .ft-drawer .input-item select,
+        .ft-drawer .input-item input {
+            width: 100%;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.1);
+            padding: 9px 12px; border-radius: 8px;
+            color: #fff; font-family: inherit; font-size: 0.82rem;
+            transition: border-color 0.2s;
+        }
+        .ft-drawer .input-item select:focus,
+        .ft-drawer .input-item input:focus {
+            outline: none; border-color: rgba(59,130,246,0.5);
+        }
+        .ft-drawer .btn-run-drawer {
+            width: 100%; padding: 12px;
+            background: linear-gradient(135deg, var(--ft-blue), #6366f1);
+            border: none; border-radius: 8px;
+            color: #fff; font-weight: 700; font-size: 0.88rem;
+            cursor: pointer; transition: opacity 0.2s, transform 0.2s;
+        }
+        .ft-drawer .btn-run-drawer:hover { opacity: 0.9; transform: translateY(-1px); }
+
+        /* Methodology panel */
+        .ft-methodology {
+            margin-top: 24px; padding: 14px; border-radius: 10px;
+            background: rgba(59,130,246,0.05); border: 1px solid rgba(59,130,246,0.1);
+            font-size: 0.68rem; color: #64748b; line-height: 1.6;
+        }
+        .ft-methodology h4 { color: var(--ft-blue); margin-bottom: 8px; font-size: 0.78rem; }
+        .ft-methodology b { color: #94a3b8; }
+
+        /* ===== §10 Loading Overlay ===== */
+        .ft-loading {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(7,9,14,0.88); backdrop-filter: blur(12px);
+            display: none; justify-content: center; align-items: center;
+            z-index: 1000; flex-direction: column; gap: 20px;
+        }
+        .ft-loading.show { display: flex; }
+        .ft-spinner {
+            width: 44px; height: 44px;
+            border: 3px solid rgba(59,130,246,0.1);
+            border-top: 3px solid var(--ft-blue);
+            border-radius: 50%;
+            animation: ft-spin 0.8s linear infinite;
+        }
+        @keyframes ft-spin { 100% { transform: rotate(360deg); } }
+        .ft-loading-step { font-size: 0.82rem; color: #94a3b8; font-weight: 500; }
+        .ft-progress-track {
+            width: 320px; height: 4px;
+            background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden;
+        }
+        .ft-progress-fill {
+            height: 100%; width: 0%;
+            background: linear-gradient(90deg, var(--ft-blue), var(--ft-purple));
+            border-radius: 2px; transition: width 0.5s ease;
+        }
+
+        /* ===== §11 Stagger Entrance ===== */
+        .ft-fade-in {
+            opacity: 0; transform: translateY(14px);
+            animation: ft-stagger-in 0.5s cubic-bezier(0.16,1,0.3,1) forwards;
+        }
+        @keyframes ft-stagger-in { to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
 <body>
@@ -738,6 +614,10 @@
                 <span class="icon">🧪</span>
                 <span>量化回测</span>
             </a>
+            <a href="./treasury.html" class="nav-item">
+                <span class="icon">🌐</span>
+                <span>海外策略</span>
+            </a>
             <div class="nav-group-title">账 户 管 理</div>
             <a href="./portfolio.html" class="nav-item">
                 <span class="icon">💼</span>
@@ -747,132 +627,146 @@
     </aside>
 
     <main class="dashboard">
-        <!-- 顶部工具栏 -->
-        <div class="factor-topbar">
-            <h2>📈 因子研究终端 <span class="version-badge">V4.0</span></h2>
-            <div class="topbar-actions">
-                <button id="config-btn">⚙️ 配置</button>
-                <button class="btn-primary-sm" id="run-btn">▶ 运行分析</button>
-            </div>
-        </div>
-
-        <div class="factor-terminal">
-            <!-- 因子快选导航条 -->
-            <div class="factor-nav-strip">
-                <div class="factor-nav-container" id="factor-nav"></div>
-            </div>
-
-            <!-- 因子百科卡 V4.0 (默认折叠) -->
-            <div class="wiki-card" id="wiki-card">
-                <div class="wiki-header" id="wiki-toggle-btn">
-                    <div class="wiki-header-left"><span>📖</span> <span id="wiki-title">因子百科</span></div>
-                    <span class="wiki-toggle">▼</span>
-                </div>
-                <div class="wiki-body">
-                    <div class="wiki-grid" id="wiki-content"></div>
+        <div class="ft-terminal">
+            <!-- Top Bar -->
+            <div class="ft-topbar">
+                <h2>📈 因子研究终端 <span class="ft-version">V5.0</span></h2>
+                <div class="ft-topbar-actions">
+                    <div class="ft-data-badge" id="data-freshness-badge" title="数据新鲜度">
+                        <span class="badge-dot"></span>
+                        <span id="freshness-text">数据日期: 检查中...</span>
+                    </div>
+                    <button id="config-btn">⚙️ 配置</button>
+                    <button class="ft-btn-run" id="run-btn">▶ 运行分析</button>
                 </div>
             </div>
 
-            <!-- Alpha Score + 指标卡行 -->
-            <div class="metrics-row" id="metrics-row">
-                <div class="alpha-score-card" id="alpha-score-card">
-                    <div class="asc-label">ALPHA SCORE</div>
-                    <div id="alpha-gauge" style="width: 130px; height: 130px;"></div>
-                    <div class="asc-grade" id="asc-grade">等待分析</div>
+            <!-- Factor Navigation Strip -->
+            <div class="ft-nav-strip">
+                <div class="ft-nav-container" id="factor-nav"></div>
+            </div>
+
+            <!-- Wiki Card -->
+            <div class="ft-wiki" id="wiki-card">
+                <div class="ft-wiki-header" id="wiki-toggle-btn">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span>📖</span> <span id="wiki-title">因子百科</span>
+                    </div>
+                    <span class="ft-wiki-toggle">▼</span>
                 </div>
-                <div class="metrics-grid" id="metrics-grid">
-                    <div class="metric-card" data-metric="ic_mean">
-                        <div class="mc-label">IC 均值 <span class="mc-help">?</span></div>
-                        <div class="mc-value" id="m-ic-mean">—</div>
-                        <div class="mc-hint">>0.03 可用</div>
-                        <div class="mc-threshold-bar"><div class="mc-threshold-fill" id="bar-ic"></div></div>
-                        <div class="mc-tooltip">
-                            <div class="mc-tooltip-title">📐 IC 均值 (Information Coefficient)</div>
-                            <div class="mc-tooltip-text">
+                <div class="ft-wiki-body">
+                    <div class="ft-wiki-grid" id="wiki-content"></div>
+                </div>
+            </div>
+
+            <!-- Alpha Score + Metrics -->
+            <div class="ft-score-row" id="metrics-row">
+                <div class="ft-alpha-card" id="alpha-score-card">
+                    <div class="ft-alpha-label">ALPHA SCORE</div>
+                    <div id="alpha-gauge" style="width:130px;height:130px;"></div>
+                    <div class="ft-alpha-grade" id="asc-grade">等待分析</div>
+                </div>
+                <div class="ft-metrics-grid" id="metrics-grid">
+                    <!-- IC Mean -->
+                    <div class="ft-metric" data-metric="ic_mean">
+                        <div class="ft-m-label">IC 均值 <span class="ft-m-help">?</span></div>
+                        <div class="ft-m-value" id="m-ic-mean">—</div>
+                        <div class="ft-m-hint">>0.03 可用</div>
+                        <div class="ft-m-bar"></div>
+                        <div class="ft-tooltip">
+                            <div class="ft-tooltip-title">📐 IC 均值 (Information Coefficient)</div>
+                            <div class="ft-tooltip-text">
                                 <b>含义:</b> 因子值排名与未来5日收益排名的Spearman相关系数均值。<br>
                                 <b>解读:</b> >0.03 有预测力, >0.05 优秀, >0.08 顶级。<br>
                                 <span class="tt-warn">⚠️ <0.01 等于随机猜测</span>
                             </div>
                         </div>
                     </div>
-                    <div class="metric-card" data-metric="ir">
-                        <div class="mc-label">信息比率 IR <span class="mc-help">?</span></div>
-                        <div class="mc-value" id="m-ir">—</div>
-                        <div class="mc-hint">>0.3 可用</div>
-                        <div class="mc-threshold-bar"><div class="mc-threshold-fill" id="bar-ir"></div></div>
-                        <div class="mc-tooltip">
-                            <div class="mc-tooltip-title">📊 IR (Information Ratio)</div>
-                            <div class="mc-tooltip-text">
+                    <!-- IR -->
+                    <div class="ft-metric" data-metric="ir">
+                        <div class="ft-m-label">信息比率 IR <span class="ft-m-help">?</span></div>
+                        <div class="ft-m-value" id="m-ir">—</div>
+                        <div class="ft-m-hint">>0.3 可用</div>
+                        <div class="ft-m-bar"></div>
+                        <div class="ft-tooltip">
+                            <div class="ft-tooltip-title">📊 IR (Information Ratio)</div>
+                            <div class="ft-tooltip-text">
                                 <b>含义:</b> IC均值÷IC标准差，衡量IC的稳定性。<br>
-                                <b>解读:</b> >0.5 非常优秀, 0.2-0.5 可用。相当于IC的"夏普比率"。<br>
+                                <b>解读:</b> >0.5 非常优秀, 0.2-0.5 可用。<br>
                                 <span class="tt-warn">⚠️ <0.1 说明IC波动极大，不可信</span>
                             </div>
                         </div>
                     </div>
-                    <div class="metric-card" data-metric="win_rate">
-                        <div class="mc-label">IC 胜率 <span class="mc-help">?</span></div>
-                        <div class="mc-value" id="m-win-rate">—</div>
-                        <div class="mc-hint">>55% 稳定</div>
-                        <div class="mc-threshold-bar"><div class="mc-threshold-fill" id="bar-win"></div></div>
-                        <div class="mc-tooltip">
-                            <div class="mc-tooltip-title">🎯 IC 胜率 (Win Rate)</div>
-                            <div class="mc-tooltip-text">
-                                <b>含义:</b> IC值为正的交易日占总天数的比例。<br>
+                    <!-- Win Rate -->
+                    <div class="ft-metric" data-metric="win_rate">
+                        <div class="ft-m-label">IC 胜率 <span class="ft-m-help">?</span></div>
+                        <div class="ft-m-value" id="m-win-rate">—</div>
+                        <div class="ft-m-hint">>55% 稳定</div>
+                        <div class="ft-m-bar"></div>
+                        <div class="ft-tooltip">
+                            <div class="ft-tooltip-title">🎯 IC 胜率</div>
+                            <div class="ft-tooltip-text">
+                                <b>含义:</b> IC值为正的交易日占比。<br>
                                 <b>解读:</b> >55% 方向稳定, >65% 非常可靠。<br>
-                                <span class="tt-warn">⚠️ <50% 说明因子方向随机翻转，不可用</span>
+                                <span class="tt-warn">⚠️ <50% 说明因子方向随机翻转</span>
                             </div>
                         </div>
                     </div>
-                    <div class="metric-card" data-metric="mono">
-                        <div class="mc-label">单调性 <span class="mc-help">?</span></div>
-                        <div class="mc-value" id="m-mono">—</div>
-                        <div class="mc-hint">>0.8 优</div>
-                        <div class="mc-threshold-bar"><div class="mc-threshold-fill" id="bar-mono"></div></div>
-                        <div class="mc-tooltip">
-                            <div class="mc-tooltip-title">📶 单调性 (Monotonicity)</div>
-                            <div class="mc-tooltip-text">
-                                <b>含义:</b> 分组收益是否按因子排序呈单调递增/递减。<br>
-                                <b>解读:</b> >0.8 完美阶梯, 0.5-0.8 一般, <0.5 乱序。<br>
+                    <!-- Monotonicity -->
+                    <div class="ft-metric" data-metric="mono">
+                        <div class="ft-m-label">单调性 <span class="ft-m-help">?</span></div>
+                        <div class="ft-m-value" id="m-mono">—</div>
+                        <div class="ft-m-hint">>0.8 优</div>
+                        <div class="ft-m-bar"></div>
+                        <div class="ft-tooltip">
+                            <div class="ft-tooltip-title">📶 单调性 (Monotonicity)</div>
+                            <div class="ft-tooltip-text">
+                                <b>含义:</b> 分组收益是否呈单调递增/递减。<br>
+                                <b>解读:</b> >0.8 完美阶梯, <0.5 乱序。<br>
                                 <span class="tt-warn">⚠️ 低单调性意味着因子只在极端分组有效</span>
                             </div>
                         </div>
                     </div>
-                    <div class="metric-card" data-metric="stability">
-                        <div class="mc-label">IC 稳定性 <span class="mc-help">?</span></div>
-                        <div class="mc-value" id="m-stability">—</div>
-                        <div class="mc-hint">0.8-1.2 稳</div>
-                        <div class="mc-threshold-bar"><div class="mc-threshold-fill" id="bar-stab"></div></div>
-                        <div class="mc-tooltip">
-                            <div class="mc-tooltip-title">⏳ IC 稳定性 (Decay Ratio)</div>
-                            <div class="mc-tooltip-text">
-                                <b>含义:</b> 近期IC ÷ 早期IC，衡量因子是否在衰减。<br>
-                                <b>解读:</b> 0.8-1.2 稳定, >1.5 过热(警惕异常), <0.5 衰减(可能失效)。<br>
-                                <span class="tt-warn">⚠️ 衰减中的因子可能已不适合交易</span>
+                    <!-- Stability -->
+                    <div class="ft-metric" data-metric="stability">
+                        <div class="ft-m-label">IC 稳定性 <span class="ft-m-help">?</span></div>
+                        <div class="ft-m-value" id="m-stability">—</div>
+                        <div class="ft-m-hint">0.8-1.2 稳</div>
+                        <div class="ft-m-bar"></div>
+                        <div class="ft-tooltip">
+                            <div class="ft-tooltip-title">⏳ IC 稳定性 (Decay Ratio)</div>
+                            <div class="ft-tooltip-text">
+                                <b>含义:</b> 近期IC ÷ 早期IC，衡量因子衰减。<br>
+                                <b>解读:</b> 0.8-1.2 稳定, <0.5 衰减。<br>
+                                <span class="tt-warn">⚠️ 衰减中的因子可能已失效</span>
                             </div>
                         </div>
                     </div>
-                    <div class="metric-card" data-metric="ls">
-                        <div class="mc-label">多空价差 <span class="mc-help">?</span></div>
-                        <div class="mc-value" id="m-ls-spread">—</div>
-                        <div class="mc-hint">>0 有效</div>
-                        <div class="mc-threshold-bar"><div class="mc-threshold-fill" id="bar-ls"></div></div>
-                        <div class="mc-tooltip">
-                            <div class="mc-tooltip-title">⚖️ 多空价差 (Long-Short Spread)</div>
-                            <div class="mc-tooltip-text">
-                                <b>含义:</b> Q5(最优组) - Q1(最差组) 的日均收益差。<br>
-                                <b>解读:</b> >0 做多有正收益, 越大因子区分力越强。<br>
-                                <span class="tt-warn">⚠️ 负值意味着做多高分组反而亏损！</span>
+                    <!-- LS Spread -->
+                    <div class="ft-metric" data-metric="ls">
+                        <div class="ft-m-label">多空价差 <span class="ft-m-help">?</span></div>
+                        <div class="ft-m-value" id="m-ls-spread">—</div>
+                        <div class="ft-m-hint">>0 有效</div>
+                        <div class="ft-m-bar"></div>
+                        <div class="ft-tooltip">
+                            <div class="ft-tooltip-title">⚖️ 多空价差 (Long-Short)</div>
+                            <div class="ft-tooltip-text">
+                                <b>含义:</b> Q5(最优) - Q1(最差) 日均收益差。<br>
+                                <b>解读:</b> >0 做多有正收益，越大区分力越强。<br>
+                                <span class="tt-warn">⚠️ 负值意味着做多高分组反而亏损</span>
                             </div>
                         </div>
                     </div>
-                    <div class="metric-card" data-metric="grade">
-                        <div class="mc-label">因子评级 <span class="mc-help">?</span></div>
-                        <div class="mc-value" id="m-grade">—</div>
-                        <div class="mc-hint">S/A/B/C/D/F</div>
-                        <div class="mc-tooltip">
-                            <div class="mc-tooltip-title">🏆 因子评级 (Factor Grade)</div>
-                            <div class="mc-tooltip-text">
-                                <b>S ≥80:</b> 顶级因子 (A股 <5%)<br>
+                    <!-- Grade -->
+                    <div class="ft-metric" data-metric="grade">
+                        <div class="ft-m-label">因子评级 <span class="ft-m-help">?</span></div>
+                        <div class="ft-m-value" id="m-grade">—</div>
+                        <div class="ft-m-hint">S/A/B/C/D/F</div>
+                        <div class="ft-m-bar"></div>
+                        <div class="ft-tooltip">
+                            <div class="ft-tooltip-title">🏆 因子评级</div>
+                            <div class="ft-tooltip-text">
+                                <b>S ≥80:</b> 顶级因子 (<5%)<br>
                                 <b>A ≥60:</b> 优质因子<br>
                                 <b>B ≥45:</b> 可用因子<br>
                                 <b>C ≥30:</b> 边缘因子<br>
@@ -884,100 +778,110 @@
                 </div>
             </div>
 
-            <!-- 交易建议区 V4.0 -->
-            <div class="advice-section" id="advice-section">
-                <div class="advice-header">
-                    <div class="advice-header-title"><span>💡</span> 交易建议 (基于因子统计推断)</div>
-                    <div class="advice-confidence" id="advice-confidence">置信度: —</div>
+            <!-- Advice Section -->
+            <div class="ft-advice" id="advice-section">
+                <div class="ft-advice-header">
+                    <div class="ft-advice-title"><span>💡</span> 交易建议 (基于因子统计推断)</div>
+                    <div class="ft-advice-conf" id="advice-confidence">置信度: —</div>
                 </div>
-                <div class="advice-cards" id="advice-cards">
-                    <div class="advice-card signal-card">
+                <div class="ft-advice-cards" id="advice-cards">
+                    <div class="ft-advice-card signal-card">
                         <div class="ac-icon">📡</div>
-                        <div class="ac-value" id="adv-signal" style="color: #64748b;">等待分析</div>
+                        <div class="ac-value" id="adv-signal" style="color:#64748b;">等待分析</div>
                         <div class="ac-label">信号强度</div>
                     </div>
-                    <div class="advice-card">
+                    <div class="ft-advice-card">
                         <div class="ac-icon">⏱️</div>
-                        <div class="ac-value" id="adv-hold" style="color: #e2e8f0;">—</div>
+                        <div class="ac-value" id="adv-hold" style="color:#e2e8f0;">—</div>
                         <div class="ac-label">建议持有期</div>
-                        <div class="ac-sublabel" id="adv-hold-note"></div>
+                        <div class="ac-sub" id="adv-hold-note"></div>
                     </div>
-                    <div class="advice-card">
+                    <div class="ft-advice-card">
                         <div class="ac-icon">🎯</div>
-                        <div class="ac-value" id="adv-target-t2" style="color: #60a5fa;">—</div>
+                        <div class="ac-value" id="adv-target-t2" style="color:#60a5fa;">—</div>
                         <div class="ac-label">止盈目标 (T2 中性)</div>
-                        <div class="target-tiers" id="target-tiers">
-                            <span class="tier-badge tier-t1" id="adv-t1">T1 —</span>
-                            <span class="tier-badge tier-t2" id="adv-t2-badge">T2 —</span>
-                            <span class="tier-badge tier-t3" id="adv-t3">T3 —</span>
+                        <div class="ft-tiers" id="target-tiers">
+                            <span class="ft-tier ft-tier-t1" id="adv-t1">T1 —</span>
+                            <span class="ft-tier ft-tier-t2" id="adv-t2-badge">T2 —</span>
+                            <span class="ft-tier ft-tier-t3" id="adv-t3">T3 —</span>
                         </div>
                     </div>
-                    <div class="advice-card">
+                    <div class="ft-advice-card">
                         <div class="ac-icon">🛡️</div>
-                        <div class="ac-value" id="adv-stop" style="color: #f87171;">—</div>
+                        <div class="ac-value" id="adv-stop" style="color:#f87171;">—</div>
                         <div class="ac-label">动态止损</div>
-                        <div class="ac-sublabel">基于Q5波动率</div>
+                        <div class="ac-sub">基于Q5波动率</div>
                     </div>
-                    <div class="advice-card">
+                    <div class="ft-advice-card">
                         <div class="ac-icon">📊</div>
-                        <div class="ac-value" id="adv-position" style="color: #60a5fa;">—</div>
+                        <div class="ac-value" id="adv-position" style="color:#60a5fa;">—</div>
                         <div class="ac-label">建议仓位</div>
-                        <div class="ac-sublabel">Half-Kelly</div>
+                        <div class="ac-sub">Half-Kelly</div>
                     </div>
-                    <div class="advice-card">
+                    <div class="ft-advice-card">
                         <div class="ac-icon">🔬</div>
-                        <div class="ac-value" id="adv-confidence-val" style="color: #94a3b8;">—</div>
+                        <div class="ac-value" id="adv-confidence-val" style="color:#94a3b8;">—</div>
                         <div class="ac-label">统计置信度</div>
                     </div>
                 </div>
-                <!-- 推理链 V4.0 -->
-                <div class="reasoning-strip" id="reasoning-strip">
-                    <div class="reasoning-text" id="reasoning-text"></div>
+                <div class="ft-reasoning" id="reasoning-strip">
+                    <div class="ft-reasoning-text" id="reasoning-text"></div>
                 </div>
-                <div class="reasoning-toggle" id="reasoning-toggle">
-                    <span class="toggle-arrow">▼</span>
+                <div class="ft-reasoning-toggle" id="reasoning-toggle">
+                    <span class="arrow">▼</span>
                     <span>📝 查看决策推理链</span>
                 </div>
-                <!-- 健康灯 + 风险合并行 V4.0 -->
-                <div class="health-risk-strip">
-                    <div class="health-lamps" id="health-lamps"></div>
-                    <div class="risk-message risk-ok" id="risk-message">
+                <div class="ft-health-strip">
+                    <div class="ft-health-lamps" id="health-lamps"></div>
+                    <div class="ft-risk-msg risk-ok" id="risk-message">
                         <span id="risk-icon">ℹ️</span>
                         <span id="risk-text">运行分析后将显示风险提示</span>
                     </div>
                 </div>
-                <div class="disclaimer-bar">⚠️ 以上建议基于历史统计推断，不构成投资建议。过去表现不代表未来收益。用户须自行承担交易风险。</div>
+                <div class="ft-disclaimer">⚠️ 以上建议基于历史统计推断，不构成投资建议。过去表现不代表未来收益。</div>
             </div>
 
-            <!-- 雷达图 + IC序列 -->
-            <div class="charts-matrix">
-                <div class="chart-panel">
-                    <div class="chart-panel-title"><span>🎯</span> 因子质量雷达</div>
-                    <div id="radar-chart" style="height: 230px;"></div>
+            <!-- Charts Row 1: Radar + IC Series -->
+            <div class="ft-charts-row">
+                <div class="ft-chart-panel">
+                    <h4><span>🎯</span> 因子质量雷达</h4>
+                    <div id="radar-chart" style="height:230px;"></div>
                 </div>
-                <div class="chart-panel">
-                    <div class="chart-panel-title"><span>📈</span> IC 时间序列</div>
-                    <div id="ic-series-chart" style="height: 230px;"></div>
+                <div class="ft-chart-panel">
+                    <h4><span>📈</span> IC 时间序列</h4>
+                    <div id="ic-series-chart" style="height:230px;"></div>
                 </div>
             </div>
 
-            <!-- 分组柱状图 + 累计曲线 -->
-            <div class="chart-full-row">
-                <div class="chart-panel">
-                    <div class="chart-panel-title"><span>📊</span> 分组收益单调性</div>
-                    <div id="quantile-avg-chart" style="height: 280px;"></div>
+            <!-- Charts Row 2: Quantile Bar + Cumulative -->
+            <div class="ft-charts-full">
+                <div class="ft-chart-panel">
+                    <h4><span>📊</span> 分组收益单调性</h4>
+                    <div id="quantile-avg-chart" style="height:270px;"></div>
                 </div>
-                <div class="chart-panel">
-                    <div class="chart-panel-title"><span>🌊</span> 分组累计收益曲线</div>
-                    <div id="quantile-cum-chart" style="height: 280px;"></div>
+                <div class="ft-chart-panel">
+                    <h4><span>🌊</span> 分组累计收益曲线</h4>
+                    <div id="quantile-cum-chart" style="height:270px;"></div>
+                </div>
+            </div>
+
+            <!-- Charts Row 3: V5.0 新增 — IC分布直方图 + IC衰减趋势 -->
+            <div class="ft-charts-full">
+                <div class="ft-chart-panel accent-green">
+                    <h4><span>📐</span> IC 分布直方图</h4>
+                    <div id="ic-histogram-chart" style="height:270px;"></div>
+                </div>
+                <div class="ft-chart-panel accent-amber">
+                    <h4><span>⏳</span> IC 衰减趋势 (滚动20日)</h4>
+                    <div id="ic-decay-chart" style="height:270px;"></div>
                 </div>
             </div>
         </div>
     </main>
 
-    <!-- 配置抽屉 -->
-    <div class="config-drawer-overlay" id="config-overlay"></div>
-    <div class="config-drawer" id="config-drawer">
+    <!-- Config Drawer -->
+    <div class="ft-drawer-overlay" id="config-overlay"></div>
+    <div class="ft-drawer" id="config-drawer">
         <h3>
             ⚙️ 测评配置
             <button class="close-btn" id="config-close">×</button>
@@ -987,11 +891,18 @@
             <div class="input-item">
                 <label>选择分析因子</label>
                 <select id="factor-select">
-                    <option value="roe">ROE (净资产收益率)</option>
-                    <option value="netprofit_margin">销售净利率</option>
-                    <option value="debt_to_assets">资产负债率</option>
-                    <option value="bps">每股净资产</option>
-                    <option value="eps">每股收益 (EPS)</option>
+                    <optgroup label="📊 基本面因子">
+                        <option value="roe">ROE (净资产收益率)</option>
+                        <option value="eps">EPS (每股收益)</option>
+                        <option value="netprofit_margin">销售净利率</option>
+                        <option value="bps">每股净资产 (BPS)</option>
+                        <option value="debt_to_assets">资产负债率</option>
+                    </optgroup>
+                    <optgroup label="📈 技术因子">
+                        <option value="momentum_20d">20日动量</option>
+                        <option value="volatility_20d">20日波动率</option>
+                        <option value="turnover_rate">换手率比</option>
+                    </optgroup>
                 </select>
             </div>
             <div class="input-item">
@@ -1003,41 +914,35 @@
             </div>
             <div class="input-item">
                 <label>回看开始日期</label>
-                <input type="text" id="start-date" value="20200101">
+                <input type="text" id="start-date" value="20200101" placeholder="YYYYMMDD">
             </div>
             <div class="input-item">
                 <label>回看结束日期</label>
-                <input type="text" id="end-date" value="20231231">
+                <input type="text" id="end-date" value="20231231" placeholder="YYYYMMDD">
             </div>
-            <button class="btn-run" id="drawer-run-btn">▶ 运行因子分析</button>
+            <button class="btn-run-drawer" id="drawer-run-btn">▶ 运行因子分析</button>
         </div>
 
-        <div class="methodology-panel">
-            <h4>📚 测评方法论 V4.0</h4>
+        <div class="ft-methodology">
+            <h4>📚 测评方法论 V5.0</h4>
             <p>• <b>Alpha Score</b>: 综合评分(0-100)，6维加权(A股实证校准): IC强度(25%)+IR稳定(20%)+胜率(20%)+单调性(15%)+时效(10%)+多空盈利(10%)。</p>
             <p>• <b>Rank IC</b>: 因子排名与未来5日收益排名的 Spearman 秩相关。</p>
+            <p>• <b>技术因子</b>: 20日动量/波动率/换手率比 — 从日线数据实时计算。</p>
             <p>• <b>三档止盈</b>: T1保守(0.7×期望), T2中性(Q5均值×5日), T3激进(+1σ)。</p>
             <p>• <b>动态止损</b>: 基于最优分组波动率 2σ × 窗口，范围 1.5%-5%。</p>
             <p>• <b>仓位管理</b>: Half-Kelly公式，单因子上限25%。</p>
-            <p>• <b>评级标准</b>:<br>
-               S: ≥80 (顶级因子, <5%)<br>
-               A: ≥60 (优质因子)<br>
-               B: ≥45 (可用因子)<br>
-               C: ≥30 (边缘因子)<br>
-               D: ≥15 (噪音因子)<br>
-               F: <15 (无效因子)</p>
         </div>
     </div>
 
-    <!-- 加载遮罩 -->
-    <div class="loading-overlay" id="loading-overlay">
-        <div class="spinner"></div>
-        <div class="loading-step" id="loading-step">正在初始化因子矩阵...</div>
-        <div class="loading-progress">
-            <div class="loading-progress-fill" id="loading-fill"></div>
+    <!-- Loading Overlay -->
+    <div class="ft-loading" id="loading-overlay">
+        <div class="ft-spinner"></div>
+        <div class="ft-loading-step" id="loading-step">正在初始化因子矩阵...</div>
+        <div class="ft-progress-track">
+            <div class="ft-progress-fill" id="loading-fill"></div>
         </div>
     </div>
 
-    <script src="./factor.js?v=4"></script>
+    <script src="./factor.js?v=5"></script>
 </body>
 </html>

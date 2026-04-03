@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlphaCore · 海外策略终端</title>
+    <meta name="description" content="AlphaCore 海外策略终端 - 美债利率择时 · 全球ERP跨市场配置决策">
+    <link rel="stylesheet" href="./styles.css">
+    <link rel="stylesheet" href="./strategy.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="logo"><div class="logo-icon"></div><h1>AlphaCore</h1></div>
+        <nav class="nav-menu">
+            <div class="nav-group-title">情 报 中 心</div>
+            <a href="./index.html" class="nav-item">
+                <span class="icon">📊</span>
+                <span>量化总览</span>
+            </a>
+            <a href="./factor.html" class="nav-item">
+                <span class="icon">📈</span>
+                <span>因子分析</span>
+            </a>
+            <a href="./industry.html" class="nav-item">
+                <span class="icon">🏭</span>
+                <span>产业追踪</span>
+            </a>
+
+            <div class="nav-group-title">策 略 实 验 室</div>
+            <a href="./strategy.html" class="nav-item">
+                <span class="icon">⚙️</span>
+                <span>策略中心</span>
+            </a>
+            <a href="./backtest.html" class="nav-item">
+                <span class="icon">🧪</span>
+                <span>量化回测</span>
+                <span class="badge-beta">Beta</span>
+            </a>
+            <a href="./treasury.html" class="nav-item active">
+                <span class="icon">🌐</span>
+                <span>海外策略</span>
+            </a>
+
+            <div class="nav-group-title">账 户 管 理</div>
+            <a href="./portfolio.html" class="nav-item">
+                <span class="icon">💼</span>
+                <span>投资组合</span>
+            </a>
+        </nav>
+        <div class="user-profile">
+            <img src="https://i.pravatar.cc/150?img=11" alt="User Avatar">
+            <div class="user-info"><span class="name">基金经理 Pro</span><span class="role">顶级投研权限</span></div>
+        </div>
+    </aside>
+
+    <main class="dashboard">
+        <header class="topbar">
+            <div class="search-bar"><input type="text" placeholder="搜索利率指标、FRED数据及海外标的..."></div>
+            <div class="actions">
+                <span class="st-hero-badge" style="animation:none">🌐 海外策略终端</span>
+                <span class="pf-timestamp" id="st-time"></span>
+            </div>
+        </header>
+
+        <div class="content pf-content">
+
+            <!-- 标签切换 — 仅海外策略 -->
+            <div class="st-tab-bar">
+                <button class="st-tab active" data-report="st-erp-global">🌐 海外ERP择时 V2.0</button>
+                <button class="st-tab" data-report="st-rates-strategy">🏦 利率择时 V1.5</button>
+            </div>
+
+            <!-- ==================== 海外ERP择时 V2.0 ==================== -->
+            <div class="st-report active" id="st-erp-global">
+
+            <!-- V2.0 骨架屏CSS -->
+            <style>
+                @keyframes erp-shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+                .erp-skeleton { background:linear-gradient(90deg,rgba(30,41,59,0.5) 25%,rgba(51,65,85,0.4) 50%,rgba(30,41,59,0.5) 75%); background-size:200% 100%; animation:erp-shimmer 1.8s infinite; border-radius:6px; }
+                .erp-hero-card { position:relative; background:linear-gradient(135deg,rgba(15,23,42,0.9),rgba(30,41,59,0.7)); border-radius:12px; padding:20px; text-align:center; border:1px solid rgba(100,116,139,0.2); transition:all 0.4s; }
+                .erp-hero-card.us-active { border-color:rgba(59,130,246,0.4); box-shadow:0 0 24px rgba(59,130,246,0.12); }
+                .erp-hero-card.jp-active { border-color:rgba(220,38,38,0.4); box-shadow:0 0 24px rgba(220,38,38,0.12); }
+                .erp-hero-value { font-size:2.4rem; font-weight:900; letter-spacing:-1px; line-height:1; }
+                .erp-hero-label { font-size:0.65rem; color:#64748b; margin-top:4px; }
+                .erp-signal-banner { border-radius:10px; padding:10px 16px; display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; border:1px solid; transition:all 0.4s; }
+                .erp-signal-banner .signal-main { display:flex; align-items:center; gap:10px; }
+                .erp-signal-banner .signal-score { font-size:1.8rem; font-weight:900; }
+                .erp-signal-banner .signal-text { font-size:0.82rem; font-weight:700; }
+                .erp-signal-banner .signal-pos { font-size:0.68rem; opacity:0.8; }
+                .erp-aux-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; margin-bottom:12px; }
+                .erp-aux-card { background:rgba(15,23,42,0.5); border-radius:8px; padding:8px 6px; text-align:center; border:1px solid rgba(100,116,139,0.1); }
+                .erp-aux-card .label { font-size:0.58rem; color:#64748b; margin-bottom:3px; }
+                .erp-aux-card .value { font-size:1rem; font-weight:800; color:#e2e8f0; }
+                .erp-aux-card .sub { font-size:0.52rem; color:#475569; margin-top:2px; }
+                .erp-dim-row { display:flex; align-items:center; gap:6px; margin-bottom:5px; }
+                .erp-dim-label { font-size:0.62rem; color:#94a3b8; width:68px; text-align:right; flex-shrink:0; }
+                .erp-dim-weight { font-size:0.48rem; color:#475569; }
+                .erp-dim-track { flex:1; height:8px; background:rgba(30,41,59,0.8); border-radius:4px; overflow:hidden; }
+                .erp-dim-fill { height:100%; border-radius:4px; transition:width 0.8s cubic-bezier(.4,0,.2,1); }
+                .erp-dim-score { font-size:0.65rem; font-weight:700; width:28px; text-align:right; }
+                .erp-crown { display:inline-block; font-size:1.2rem; animation:crown-bounce 1s ease-in-out infinite alternate; }
+                @keyframes crown-bounce { 0%{transform:translateY(0)} 100%{transform:translateY(-3px)} }
+                @keyframes pulse-glow { 0%,100%{opacity:1} 50%{opacity:0.6} }
+                .erp-trade-section { background:rgba(15,23,42,0.6); border-radius:8px; padding:10px; }
+                .erp-trade-title { font-size:0.65rem; margin-bottom:6px; font-weight:600; }
+                .erp-comparison-card { border-radius:12px; padding:16px; text-align:center; transition:all 0.4s; position:relative; }
+                .erp-comparison-card.winner { box-shadow:0 0 20px rgba(251,191,36,0.2); }
+            </style>
+
+            <!-- ZONE 0 · 策略身份 V2.0 -->
+            <div class="st-identity-bar" style="background:linear-gradient(135deg,#0c1929 0%,#1a2744 50%,#0f2840 100%);border-left:4px solid #d97706;position:relative;overflow:hidden;">
+                <div style="position:absolute;inset:0;background:url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2240%22 height=%2240%22><rect width=%2240%22 height=%2240%22 fill=%22none%22/><path d=%22M0 20h40M20 0v40%22 stroke=%22rgba(217,119,6,0.04)%22 stroke-width=%221%22/></svg>');opacity:0.5;"></div>
+                <div style="display:flex;align-items:center;gap:12px;position:relative;z-index:1;">
+                    <span style="font-size:2rem;filter:drop-shadow(0 0 8px rgba(217,119,6,0.3));">🌐</span>
+                    <div>
+                        <h2 style="margin:0;font-size:1.15rem;color:#f8fafc;">海外ERP择时引擎 <span style="color:#d97706;font-size:0.7rem;border:1px solid #d97706;padding:2px 8px;border-radius:4px;margin-left:6px;background:rgba(217,119,6,0.1);">V2.0</span></h2>
+                        <p style="margin:2px 0 0;font-size:0.7rem;color:#94a3b8;">🇺🇸 S&P500 × 🇯🇵 TOPIX | 五维信号 · FRED API · 三地对比决策矩阵</p>
+                    </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;position:relative;z-index:1;">
+                    <button id="global-erp-refresh" onclick="loadGlobalERP()"
+                        style="background:rgba(217,119,6,0.12);color:#d97706;border:1px solid rgba(217,119,6,0.3);
+                               border-radius:8px;padding:6px 16px;cursor:pointer;font-size:0.78rem;font-family:inherit;
+                               transition:all 0.25s;display:flex;align-items:center;gap:5px;">
+                        🔄 刷新全球数据
+                    </button>
+                    <span id="global-erp-update-time" style="font-size:0.62rem;color:#475569;"></span>
+                    <div id="global-resonance-us" style="font-size:0.65rem;color:#94a3b8;padding:3px 10px;border-radius:12px;background:rgba(100,116,139,0.15);"></div>
+                    <div id="global-resonance-jp" style="font-size:0.65rem;color:#94a3b8;padding:3px 10px;border-radius:12px;background:rgba(100,116,139,0.15);"></div>
+                </div>
+            </div>
+
+            <!-- ZONE 0.5 · 警示横幅 -->
+            <div id="global-alert-us" style="display:none;margin-top:8px;"></div>
+            <div id="global-alert-jp" style="display:none;margin-top:4px;"></div>
+
+            <!-- 双列面板: 美股 + 日本 V2.0 -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px;">
+
+                <!-- ═══════ 🇺🇸 美股面板 V2.0 ═══════ -->
+                <div class="glass-panel" style="padding:16px;border:1px solid rgba(59,130,246,0.2);">
+                    <h3 style="margin:0 0 10px;font-size:0.88rem;color:#60a5fa;display:flex;align-items:center;gap:8px;">
+                        <span>🇺🇸 美股 S&P 500</span>
+                        <span id="us-signal-badge" style="font-size:0.7rem;padding:2px 10px;border-radius:12px;"></span>
+                    </h3>
+
+                    <!-- Hero ERP Card -->
+                    <div class="erp-hero-card us-active" id="us-hero-card">
+                        <div class="erp-hero-label">Equity Risk Premium (1/PE − 10Y UST)</div>
+                        <div class="erp-hero-value" id="us-val-erp" style="color:#3b82f6;">--</div>
+                        <div id="us-sub-pe" style="font-size:0.62rem;color:#64748b;margin-top:4px;">--</div>
+                    </div>
+
+                    <!-- Aux Metrics Row -->
+                    <div class="erp-aux-grid" style="margin-top:10px;">
+                        <div class="erp-aux-card"><div class="label">SPY PE</div><div class="value" id="us-val-pe">--</div></div>
+                        <div class="erp-aux-card"><div class="label">10Y UST</div><div class="value" id="us-val-yield">--</div><div class="sub">无风险利率</div></div>
+                        <div class="erp-aux-card"><div class="label">VIX 恐慌</div><div class="value" id="us-val-vix">--</div><div class="sub" id="us-sub-vix">--</div></div>
+                        <div class="erp-aux-card"><div class="label">3M T-Bill</div><div class="value" id="us-val-rate">--</div><div class="sub" id="us-sub-rate">Fed利率</div></div>
+                        <div class="erp-aux-card"><div class="label">信用利差</div><div class="value" id="us-val-credit">--</div><div class="sub" id="us-sub-credit">HY OAS</div></div>
+                    </div>
+
+                    <!-- Signal Decision Banner -->
+                    <div class="erp-signal-banner" id="us-signal-banner" style="background:rgba(100,116,139,0.08);border-color:rgba(100,116,139,0.2);">
+                        <div class="signal-main">
+                            <div class="signal-score" id="us-composite-score" style="color:#94a3b8;">--</div>
+                            <div>
+                                <div class="signal-text" id="us-signal-label" style="color:#94a3b8;">加载中...</div>
+                                <div class="signal-pos" id="us-signal-pos"></div>
+                            </div>
+                        </div>
+                        <div id="us-signal-level-bar" style="display:flex;gap:3px;"></div>
+                    </div>
+
+                    <!-- Gauge + 五维评分 -->
+                    <div style="display:grid;grid-template-columns:1fr 160px;gap:10px;margin-bottom:12px;">
+                        <div style="background:rgba(15,23,42,0.5);border-radius:10px;padding:12px;">
+                            <div style="font-size:0.7rem;color:#94a3b8;margin-bottom:8px;">📊 五维评分</div>
+                            <div id="us-dim-bars"></div>
+                        </div>
+                        <div style="background:rgba(15,23,42,0.5);border-radius:10px;padding:8px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+                            <div id="us-gauge-chart" style="width:140px;height:105px;"></div>
+                        </div>
+                    </div>
+
+                    <!-- 买卖信号中枢 -->
+                    <div style="background:rgba(15,23,42,0.5);border-radius:10px;padding:12px;margin-bottom:12px;border:1px solid rgba(59,130,246,0.12);">
+                        <div style="font-size:0.72rem;color:#60a5fa;font-weight:600;margin-bottom:8px;">🎯 买卖信号中枢</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+                            <div class="erp-trade-section"><div class="erp-trade-title" style="color:#94a3b8;">📦 ETF配置</div><div id="us-etf-advice" style="font-size:0.68rem;color:#cbd5e1;line-height:1.7;"></div></div>
+                            <div class="erp-trade-section"><div class="erp-trade-title" style="color:#10b981;">📈 止盈规则</div><div id="us-take-profit" style="font-size:0.68rem;color:#cbd5e1;line-height:1.7;"></div></div>
+                            <div class="erp-trade-section"><div class="erp-trade-title" style="color:#f59e0b;">🛡️ 逆向止损</div><div id="us-stop-loss" style="font-size:0.68rem;color:#cbd5e1;line-height:1.7;"></div></div>
+                        </div>
+                    </div>
+
+                    <!-- ERP走势图 -->
+                    <div id="us-erp-chart" style="width:100%;height:220px;"></div>
+                </div>
+
+                <!-- ═══════ 🇯🇵 日本面板 V2.0 ═══════ -->
+                <div class="glass-panel" style="padding:16px;border:1px solid rgba(220,38,38,0.2);">
+                    <h3 style="margin:0 0 10px;font-size:0.88rem;color:#f87171;display:flex;align-items:center;gap:8px;">
+                        <span>🇯🇵 日本 TOPIX/日経225</span>
+                        <span id="jp-signal-badge" style="font-size:0.7rem;padding:2px 10px;border-radius:12px;"></span>
+                    </h3>
+
+                    <!-- Hero ERP Card -->
+                    <div class="erp-hero-card jp-active" id="jp-hero-card">
+                        <div class="erp-hero-label">Equity Risk Premium (1/PE − 10Y JGB)</div>
+                        <div class="erp-hero-value" id="jp-val-erp" style="color:#dc2626;">--</div>
+                        <div id="jp-sub-pe" style="font-size:0.62rem;color:#64748b;margin-top:4px;">--</div>
+                    </div>
+
+                    <!-- Aux Metrics Row -->
+                    <div class="erp-aux-grid" style="margin-top:10px;">
+                        <div class="erp-aux-card"><div class="label">TOPIX PE</div><div class="value" id="jp-val-pe">--</div></div>
+                        <div class="erp-aux-card"><div class="label">10Y JGB</div><div class="value" id="jp-val-yield">--</div><div class="sub">日本国債</div></div>
+                        <div class="erp-aux-card"><div class="label">USD/JPY</div><div class="value" id="jp-val-yen">--</div><div class="sub" id="jp-sub-yen">--</div></div>
+                        <div class="erp-aux-card"><div class="label">日経波動率</div><div class="value" id="jp-val-vol">--</div><div class="sub" id="jp-sub-vol">--</div></div>
+                        <div class="erp-aux-card"><div class="label">利率環境</div><div class="value" id="jp-val-rate">--</div><div class="sub" id="jp-sub-rate">JGB方向</div></div>
+                    </div>
+
+                    <!-- Signal Decision Banner -->
+                    <div class="erp-signal-banner" id="jp-signal-banner" style="background:rgba(100,116,139,0.08);border-color:rgba(100,116,139,0.2);">
+                        <div class="signal-main">
+                            <div class="signal-score" id="jp-composite-score" style="color:#94a3b8;">--</div>
+                            <div>
+                                <div class="signal-text" id="jp-signal-label" style="color:#94a3b8;">加載中...</div>
+                                <div class="signal-pos" id="jp-signal-pos"></div>
+                            </div>
+                        </div>
+                        <div id="jp-signal-level-bar" style="display:flex;gap:3px;"></div>
+                    </div>
+
+                    <!-- Gauge + 五维评分 -->
+                    <div style="display:grid;grid-template-columns:1fr 160px;gap:10px;margin-bottom:12px;">
+                        <div style="background:rgba(15,23,42,0.5);border-radius:10px;padding:12px;">
+                            <div style="font-size:0.7rem;color:#94a3b8;margin-bottom:8px;">📊 五維評分</div>
+                            <div id="jp-dim-bars"></div>
+                        </div>
+                        <div style="background:rgba(15,23,42,0.5);border-radius:10px;padding:8px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+                            <div id="jp-gauge-chart" style="width:140px;height:105px;"></div>
+                        </div>
+                    </div>
+
+                    <!-- 买卖信号中枢 -->
+                    <div style="background:rgba(15,23,42,0.5);border-radius:10px;padding:12px;margin-bottom:12px;border:1px solid rgba(220,38,38,0.12);">
+                        <div style="font-size:0.72rem;color:#f87171;font-weight:600;margin-bottom:8px;">🎯 買賣信号中枢</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+                            <div class="erp-trade-section"><div class="erp-trade-title" style="color:#94a3b8;">📦 ETF配置</div><div id="jp-etf-advice" style="font-size:0.68rem;color:#cbd5e1;line-height:1.7;"></div></div>
+                            <div class="erp-trade-section"><div class="erp-trade-title" style="color:#10b981;">📈 止盈規則</div><div id="jp-take-profit" style="font-size:0.68rem;color:#cbd5e1;line-height:1.7;"></div></div>
+                            <div class="erp-trade-section"><div class="erp-trade-title" style="color:#f59e0b;">🛡️ 逆向止損</div><div id="jp-stop-loss" style="font-size:0.68rem;color:#cbd5e1;line-height:1.7;"></div></div>
+                        </div>
+                    </div>
+
+                    <!-- ERP走势図 -->
+                    <div id="jp-erp-chart" style="width:100%;height:220px;"></div>
+                </div>
+
+            </div><!-- /双列 -->
+
+            <!-- 诊断卡片 V2.0 (全宽2列) -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px;">
+                <div class="glass-panel" style="padding:14px;border:1px solid rgba(59,130,246,0.15);">
+                    <h4 style="margin:0 0 10px;font-size:0.78rem;color:#60a5fa;">🇺🇸 美股诊断</h4>
+                    <div id="us-diagnosis" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
+                </div>
+                <div class="glass-panel" style="padding:14px;border:1px solid rgba(220,38,38,0.15);">
+                    <h4 style="margin:0 0 10px;font-size:0.78rem;color:#f87171;">🇯🇵 日股诊断</h4>
+                    <div id="jp-diagnosis" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
+                </div>
+            </div>
+
+            <!-- 规则百科 (可折叠) -->
+            <div class="glass-panel" style="padding:14px;margin-top:14px;">
+                <h3 style="margin:0 0 8px;font-size:0.85rem;color:#94a3b8;cursor:pointer;" onclick="document.getElementById('global-encyclopedia-body').style.display=document.getElementById('global-encyclopedia-body').style.display==='none'?'grid':'none'">
+                    📖 指标百科 · 美股/日本 五维规则解读 <span style="font-size:0.65rem;color:#64748b;">▼ 点击展开</span>
+                </h3>
+                <div id="global-encyclopedia-body" style="display:none;grid-template-columns:1fr 1fr;gap:10px;"></div>
+            </div>
+
+            <!-- 三地对比面板 V2.0 -->
+            <div class="glass-panel" style="padding:20px;margin-top:14px;border:1px solid rgba(217,119,6,0.25);background:linear-gradient(135deg,rgba(15,23,42,0.85),rgba(30,41,59,0.95));">
+                <h3 style="margin:0 0 16px;font-size:1rem;color:#fbbf24;display:flex;align-items:center;gap:8px;">
+                    <span>🌍 全球ERP对比 · 跨市场配置决策矩阵</span>
+                </h3>
+                <!-- 三卡片 -->
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
+                    <div id="global-cn-card" class="erp-comparison-card" style="background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);">
+                        <div id="global-cn-crown" style="position:absolute;top:8px;right:10px;display:none;"></div>
+                        <div style="font-size:0.7rem;color:#94a3b8;margin-bottom:4px;">🇨🇳 China A-Shares</div>
+                        <div id="global-cn-erp" style="font-size:2rem;font-weight:900;color:#ef4444;">--</div>
+                        <div style="font-size:0.6rem;color:#475569;">ERP</div>
+                        <div id="global-cn-score" style="font-size:0.78rem;color:#94a3b8;margin-top:8px;">得分: --</div>
+                        <div id="global-cn-signal" style="font-size:0.88rem;font-weight:700;margin-top:4px;">--</div>
+                    </div>
+                    <div id="global-us-card" class="erp-comparison-card" style="background:rgba(59,130,246,0.06);border:1px solid rgba(59,130,246,0.2);">
+                        <div id="global-us-crown" style="position:absolute;top:8px;right:10px;display:none;"></div>
+                        <div style="font-size:0.7rem;color:#94a3b8;margin-bottom:4px;">🇺🇸 US S&P 500</div>
+                        <div id="global-us-erp" style="font-size:2rem;font-weight:900;color:#3b82f6;">--</div>
+                        <div style="font-size:0.6rem;color:#475569;">ERP</div>
+                        <div id="global-us-score" style="font-size:0.78rem;color:#94a3b8;margin-top:8px;">得分: --</div>
+                        <div id="global-us-signal" style="font-size:0.88rem;font-weight:700;margin-top:4px;">--</div>
+                    </div>
+                    <div id="global-jp-card" class="erp-comparison-card" style="background:rgba(220,38,38,0.06);border:1px solid rgba(220,38,38,0.2);">
+                        <div id="global-jp-crown" style="position:absolute;top:8px;right:10px;display:none;"></div>
+                        <div style="font-size:0.7rem;color:#94a3b8;margin-bottom:4px;">🇯🇵 Japan TOPIX</div>
+                        <div id="global-jp-erp" style="font-size:2rem;font-weight:900;color:#dc2626;">--</div>
+                        <div style="font-size:0.6rem;color:#475569;">ERP</div>
+                        <div id="global-jp-score" style="font-size:0.78rem;color:#94a3b8;margin-top:8px;">得分: --</div>
+                        <div id="global-jp-signal" style="font-size:0.88rem;font-weight:700;margin-top:4px;">--</div>
+                    </div>
+                </div>
+                <!-- 决策矩阵表格 -->
+                <div style="margin-top:16px;overflow-x:auto;">
+                    <table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
+                        <thead><tr style="border-bottom:1px solid rgba(100,116,139,0.3);">
+                            <th style="text-align:left;padding:8px 12px;color:#94a3b8;font-weight:600;"> </th>
+                            <th style="text-align:center;padding:8px 12px;color:#ef4444;font-weight:600;">🇨🇳 A股</th>
+                            <th style="text-align:center;padding:8px 12px;color:#3b82f6;font-weight:600;">🇺🇸 美股</th>
+                            <th style="text-align:center;padding:8px 12px;color:#dc2626;font-weight:600;">🇯🇵 日股</th>
+                        </tr></thead>
+                        <tbody id="global-matrix-body">
+                            <tr style="border-bottom:1px solid rgba(100,116,139,0.1);"><td style="padding:6px 12px;color:#94a3b8;">PE</td><td id="gm-cn-pe" style="text-align:center;color:#e2e8f0;">--</td><td id="gm-us-pe" style="text-align:center;color:#e2e8f0;">--</td><td id="gm-jp-pe" style="text-align:center;color:#e2e8f0;">--</td></tr>
+                            <tr style="border-bottom:1px solid rgba(100,116,139,0.1);"><td style="padding:6px 12px;color:#94a3b8;">无风险利率</td><td id="gm-cn-yield" style="text-align:center;color:#e2e8f0;">--</td><td id="gm-us-yield" style="text-align:center;color:#e2e8f0;">--</td><td id="gm-jp-yield" style="text-align:center;color:#e2e8f0;">--</td></tr>
+                            <tr style="border-bottom:1px solid rgba(100,116,139,0.1);"><td style="padding:6px 12px;color:#94a3b8;">ERP</td><td id="gm-cn-erp" style="text-align:center;font-weight:700;">--</td><td id="gm-us-erp" style="text-align:center;font-weight:700;">--</td><td id="gm-jp-erp" style="text-align:center;font-weight:700;">--</td></tr>
+                            <tr style="border-bottom:1px solid rgba(100,116,139,0.1);"><td style="padding:6px 12px;color:#94a3b8;">得分</td><td id="gm-cn-score" style="text-align:center;font-weight:700;">--</td><td id="gm-us-score" style="text-align:center;font-weight:700;">--</td><td id="gm-jp-score" style="text-align:center;font-weight:700;">--</td></tr>
+                            <tr><td style="padding:6px 12px;color:#94a3b8;">信号</td><td id="gm-cn-signal" style="text-align:center;font-weight:700;">--</td><td id="gm-us-signal" style="text-align:center;font-weight:700;">--</td><td id="gm-jp-signal" style="text-align:center;font-weight:700;">--</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div id="global-advice" style="text-align:center;margin-top:14px;padding:10px 18px;background:rgba(217,119,6,0.1);border-radius:10px;font-size:0.85rem;color:#fbbf24;font-weight:600;"></div>
+                <!-- 配置比例条 -->
+                <div id="global-allocation-bar" style="margin-top:12px;display:flex;height:32px;border-radius:10px;overflow:hidden;border:1px solid rgba(100,116,139,0.2);"></div>
+                <div id="global-allocation-text" style="text-align:center;margin-top:8px;font-size:0.75rem;color:#94a3b8;"></div>
+            </div>
+
+            <!-- 声明 -->
+            <div style="margin-top:12px;padding:8px 14px;background:rgba(15,23,42,0.5);border-radius:8px;font-size:0.65rem;color:#475569;">
+                ⚠️ 数据源: FRED (Federal Reserve Economic Data)。美股PE基于S&P500指数近似。日本JGB月频按日填充。信号仅供参考，不构成投资建议。
+            </div>
+
+            </div><!-- /st-erp-global -->
+
+
+            <!-- ==================== 利率择时 V1.5 ==================== -->
+            <div class="st-report" id="st-rates-strategy">
+
+            <!-- ZONE 0: 策略身份 -->
+            <div class="glass-panel" style="padding:16px 20px;margin-bottom:14px;display:flex;align-items:center;gap:14px;border-color:rgba(168,85,247,0.25);">
+                <div style="font-size:1.8rem;">🏦</div>
+                <div style="flex:1;">
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <h2 style="margin:0;font-size:1.1rem;color:#e2e8f0;">利率择时引擎 <span style="font-size:0.65rem;background:rgba(168,85,247,0.15);color:#c084fc;padding:2px 8px;border-radius:4px;margin-left:6px;">V1.5</span></h2>
+                        <div id="rates-regime-badge" style="padding:3px 12px;border-radius:12px;font-size:0.68rem;font-weight:700;"></div>
+                    </div>
+                    <div style="font-size:0.72rem;color:#94a3b8;margin-top:3px;">US 10Y Treasury · 五维利率信号 · FRED API · 股债金三分配置 · 悬浮卡片查看指标解读</div>
+                </div>
+                <div style="display:flex;gap:10px;align-items:center;">
+                    <button onclick="loadRatesStrategy()" id="rates-refresh-btn" style="background:rgba(168,85,247,0.12);color:#c084fc;border:1px solid rgba(168,85,247,0.3);border-radius:8px;padding:6px 14px;cursor:pointer;font-size:0.78rem;font-family:inherit;">🔄 刷新利率数据</button>
+                    <span id="rates-update-time" style="font-size:0.68rem;color:#475569;"></span>
+                </div>
+            </div>
+
+            <!-- 警示横幅 -->
+            <div id="rates-alerts" style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px;"></div>
+
+            <!-- ZONE ★: 买卖决策汇总区 -->
+            <div id="rates-decision-zone" class="glass-panel" style="padding:16px;margin-bottom:14px;border-color:rgba(168,85,247,0.25);display:none;"></div>
+
+            <!-- ZONE 1: 核心快照 6卡片 (带tooltip) -->
+            <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px;">
+                <div class="glass-panel rates-card-tip" data-tip-key="yield_10y" style="padding:12px;text-align:center;border-color:rgba(168,85,247,0.2);cursor:help;position:relative;">
+                    <div style="font-size:0.62rem;color:#94a3b8;">10Y UST</div>
+                    <div id="rates-val-10y" style="font-size:1.3rem;font-weight:900;color:#c084fc;">--</div>
+                    <div id="rates-sub-10y" style="font-size:0.6rem;color:#64748b;"></div>
+                    <div id="rates-hint-10y" style="font-size:0.5rem;color:#475569;margin-top:3px;"></div>
+                </div>
+                <div class="glass-panel rates-card-tip" data-tip-key="yield_2y" style="padding:12px;text-align:center;cursor:help;position:relative;">
+                    <div style="font-size:0.62rem;color:#94a3b8;">2Y UST</div>
+                    <div id="rates-val-2y" style="font-size:1.3rem;font-weight:900;color:#e2e8f0;">--</div>
+                    <div id="rates-sub-2y" style="font-size:0.6rem;color:#64748b;"></div>
+                    <div id="rates-hint-2y" style="font-size:0.5rem;color:#475569;margin-top:3px;"></div>
+                </div>
+                <div class="glass-panel rates-card-tip" data-tip-key="spread" style="padding:12px;text-align:center;cursor:help;position:relative;">
+                    <div style="font-size:0.62rem;color:#94a3b8;">10Y-2Y 利差</div>
+                    <div id="rates-val-spread" style="font-size:1.3rem;font-weight:900;color:#e2e8f0;">--</div>
+                    <div id="rates-sub-spread" style="font-size:0.6rem;color:#64748b;"></div>
+                    <div id="rates-hint-spread" style="font-size:0.5rem;color:#475569;margin-top:3px;"></div>
+                </div>
+                <div class="glass-panel rates-card-tip" data-tip-key="real_yield" style="padding:12px;text-align:center;cursor:help;position:relative;">
+                    <div style="font-size:0.62rem;color:#94a3b8;">TIPS 实际利率</div>
+                    <div id="rates-val-real" style="font-size:1.3rem;font-weight:900;color:#e2e8f0;">--</div>
+                    <div id="rates-sub-real" style="font-size:0.6rem;color:#64748b;"></div>
+                    <div id="rates-hint-real" style="font-size:0.5rem;color:#475569;margin-top:3px;"></div>
+                </div>
+                <div class="glass-panel rates-card-tip" data-tip-key="momentum" style="padding:12px;text-align:center;cursor:help;position:relative;">
+                    <div style="font-size:0.62rem;color:#94a3b8;">3M动量</div>
+                    <div id="rates-val-momentum" style="font-size:1.3rem;font-weight:900;color:#e2e8f0;">--</div>
+                    <div id="rates-sub-momentum" style="font-size:0.6rem;color:#64748b;"></div>
+                    <div id="rates-hint-momentum" style="font-size:0.5rem;color:#475569;margin-top:3px;"></div>
+                </div>
+                <div class="glass-panel rates-card-tip" data-tip-key="bei" style="padding:12px;text-align:center;cursor:help;position:relative;">
+                    <div style="font-size:0.62rem;color:#94a3b8;">BEI 通胀预期</div>
+                    <div id="rates-val-bei" style="font-size:1.3rem;font-weight:900;color:#e2e8f0;">--</div>
+                    <div id="rates-sub-bei" style="font-size:0.6rem;color:#64748b;"></div>
+                    <div id="rates-hint-bei" style="font-size:0.5rem;color:#475569;margin-top:3px;"></div>
+                </div>
+            </div>
+
+            <!-- ZONE 2-3: 信号中枢 + 仪表盘 -->
+            <div style="display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px;">
+                <!-- 左: 信号中枢 -->
+                <div class="glass-panel" style="padding:14px;border-color:rgba(168,85,247,0.15);">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                        <span style="font-size:0.78rem;color:#c084fc;font-weight:600;">🎯 股债配置信号中枢</span>
+                        <div id="rates-signal-badge" style="padding:3px 10px;border-radius:12px;font-size:0.72rem;font-weight:700;"></div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+                        <div style="background:rgba(15,23,42,0.6);border-radius:6px;padding:10px;">
+                            <div style="font-size:0.65rem;color:#94a3b8;margin-bottom:6px;">📦 ETF配置</div>
+                            <div id="rates-etf-advice" style="font-size:0.72rem;color:#cbd5e1;line-height:1.8;"></div>
+                        </div>
+                        <div style="background:rgba(15,23,42,0.6);border-radius:6px;padding:10px;">
+                            <div style="font-size:0.65rem;color:#10b981;margin-bottom:6px;">📈 止盈规则</div>
+                            <div id="rates-take-profit" style="font-size:0.72rem;color:#cbd5e1;line-height:1.8;"></div>
+                        </div>
+                        <div style="background:rgba(15,23,42,0.6);border-radius:6px;padding:10px;">
+                            <div style="font-size:0.65rem;color:#f59e0b;margin-bottom:6px;">🛡️ 逆向/止损</div>
+                            <div id="rates-stop-loss" style="font-size:0.72rem;color:#cbd5e1;line-height:1.8;"></div>
+                        </div>
+                    </div>
+                </div>
+                <!-- 右: 仪表盘 + 五维评分 -->
+                <div class="glass-panel" style="padding:14px;">
+                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+                        <div id="rates-gauge-chart" style="width:100px;height:80px;flex-shrink:0;"></div>
+                        <div>
+                            <div id="rates-composite-score" style="font-size:2rem;font-weight:900;">--</div>
+                            <div id="rates-signal-label" style="font-size:0.72rem;"></div>
+                        </div>
+                    </div>
+                    <div id="rates-dim-bars" style="margin-top:4px;"></div>
+                </div>
+            </div>
+
+            <!-- ZONE 4: 配置比例条 -->
+            <div class="glass-panel" style="padding:14px;margin-bottom:14px;border-color:rgba(168,85,247,0.15);">
+                <div style="font-size:0.75rem;color:#c084fc;font-weight:600;margin-bottom:8px;">📊 股债金配置比例</div>
+                <div id="rates-allocation-bar" style="display:flex;height:36px;border-radius:8px;overflow:hidden;border:1px solid rgba(100,116,139,0.2);"></div>
+                <div style="display:flex;justify-content:space-around;margin-top:6px;">
+                    <span id="rates-alloc-stock" style="font-size:0.72rem;color:#f59e0b;"></span>
+                    <span id="rates-alloc-bond" style="font-size:0.72rem;color:#c084fc;"></span>
+                    <span id="rates-alloc-gold" style="font-size:0.72rem;color:#fbbf24;"></span>
+                    <span id="rates-alloc-duration" style="font-size:0.72rem;color:#94a3b8;"></span>
+                </div>
+            </div>
+
+            <!-- ZONE 5: 走势图 -->
+            <div class="glass-panel" style="padding:14px;margin-bottom:14px;">
+                <div style="font-size:0.75rem;color:#94a3b8;font-weight:600;margin-bottom:8px;">📊 US 10Y Treasury 走势 (含曲线利差)</div>
+                <div id="rates-chart" style="width:100%;height:280px;"></div>
+            </div>
+
+            <!-- ZONE 6: 诊断卡片 -->
+            <div class="glass-panel" style="padding:14px;margin-bottom:14px;border-color:rgba(168,85,247,0.15);">
+                <div style="font-size:0.75rem;color:#c084fc;font-weight:600;margin-bottom:8px;">🩺 利率环境诊断</div>
+                <div id="rates-diagnosis" style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;"></div>
+            </div>
+
+            <!-- ZONE 7: Tooltip浮层(共用，JS动态定位) -->
+            <div id="rates-tooltip-popup" style="display:none;position:fixed;z-index:9999;width:280px;padding:12px;background:rgba(15,23,42,0.97);border:1px solid rgba(168,85,247,0.35);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,0.5);pointer-events:none;">
+                <div id="rates-tip-title" style="font-size:0.78rem;font-weight:700;color:#c084fc;margin-bottom:6px;"></div>
+                <div id="rates-tip-desc" style="font-size:0.62rem;color:#cbd5e1;margin-bottom:4px;"></div>
+                <div id="rates-tip-logic" style="font-size:0.6rem;color:#94a3b8;margin-bottom:4px;"></div>
+                <div id="rates-tip-alert" style="font-size:0.6rem;color:#f59e0b;margin-bottom:4px;"></div>
+                <div id="rates-tip-history" style="font-size:0.55rem;color:#64748b;"></div>
+            </div>
+
+            <!-- 声明 -->
+            <div style="margin-top:12px;padding:8px 14px;background:rgba(15,23,42,0.5);border-radius:8px;font-size:0.65rem;color:#475569;">
+                ⚠️ 数据源: FRED (Federal Reserve Economic Data)。DGS10/DGS2/DFII10/T10YIE/DTB3。信号仅供参考，不构成投资建议。
+            </div>
+
+            </div><!-- /st-rates-strategy -->
+
+            <footer class="st-footer">
+                <p>🌐 AlphaCore 海外策略终端 · 海外ERP择时（🇺🇸美股 + 🇯🇵日股）+ 🏦 利率择时 V1.5（US Treasury 五维信号）</p>
+            </footer>
+        </div>
+    </main>
+
+    <script src="./echarts.min.js"></script>
+    <script src="./strategy.js"></script>
+
+    <script>
+    // V2.0: 页面打开自动加载海外ERP数据
+    document.addEventListener('DOMContentLoaded', function() {
+        const activeTab = document.querySelector('.st-tab.active');
+        if (activeTab && activeTab.dataset.report === 'st-erp-global') {
+            setTimeout(loadGlobalERP, 300);
+        }
+    });
+    </script>
+
+</body>
+</html>
