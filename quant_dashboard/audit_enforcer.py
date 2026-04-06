@@ -97,7 +97,7 @@ def _load_audit_config():
         from config import AUDIT_CONFIG
         return dict(AUDIT_CONFIG)
     except ImportError:
-        return {"stop_loss_stock": -12.0, "stop_loss_etf": -8.0, "stale_data_block_days": 5}
+        return {"stop_loss_stock": -10.0, "stop_loss_etf": -8.0, "stale_data_block_days": 5}
 
 
 # ═══════════════════════════════════════════════════════
@@ -180,7 +180,7 @@ def is_trade_blocked():
 # ═══════════════════════════════════════════════════════
 #  止损强制卖出
 # ═══════════════════════════════════════════════════════
-def enforce_stop_loss(pos_list, stop_loss_stock=-12.0, stop_loss_etf=-8.0):
+def enforce_stop_loss(pos_list, stop_loss_stock=-10.0, stop_loss_etf=-8.0):
     """
     遍历持仓，将突破止损线的标的全量卖出。
     V5.1: 个股/ETF 差异化止损 (个股-12%, ETF-8%)
@@ -343,7 +343,7 @@ def run_post_audit_enforcement(audit_report):
 
     # ── 1. 止损强制卖出 ──
     if enforcer_cfg.get("auto_stop_loss", True):
-        sl_stock = audit_cfg.get("stop_loss_stock", audit_cfg.get("stop_loss_line", -12.0))
+        sl_stock = audit_cfg.get("stop_loss_stock", audit_cfg.get("stop_loss_line", -10.0))
         sl_etf = audit_cfg.get("stop_loss_etf", -8.0)
 
         # 获取持仓列表 (从风控模块的原始数据)

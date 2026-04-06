@@ -41,7 +41,7 @@ def _load_audit_cfg():
         return dict(AUDIT_CONFIG)
     except ImportError:
         return {
-            "stop_loss_stock": -12.0, "stop_loss_etf": -8.0,
+            "stop_loss_stock": -10.0, "stop_loss_etf": -8.0,
             "single_position_limit": 20.0,
             "sector_limit": 40.0, "total_position_cap": 90.0,
             "min_holdings": 5, "daily_stale_warn_days": 3,
@@ -568,7 +568,7 @@ def audit_risk_control():
         })
 
         # ── 检查 2: 止损合规 V2.1 (个股/ETF 差异化止损) ──
-        SL_STOCK = AUDIT_CFG.get("stop_loss_stock", AUDIT_CFG.get("stop_loss_line", -12.0))
+        SL_STOCK = AUDIT_CFG.get("stop_loss_stock", AUDIT_CFG.get("stop_loss_line", -10.0))
         SL_ETF = AUDIT_CFG.get("stop_loss_etf", -8.0)
         breach_list = []
         worst_loss = 0
