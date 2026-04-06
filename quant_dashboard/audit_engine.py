@@ -41,8 +41,9 @@ def _load_audit_cfg():
         return dict(AUDIT_CONFIG)
     except ImportError:
         return {
-            "stop_loss_line": -8.0, "single_position_limit": 20.0,
-            "sector_limit": 40.0, "total_position_cap": 85.0,
+            "stop_loss_stock": -12.0, "stop_loss_etf": -8.0,
+            "single_position_limit": 20.0,
+            "sector_limit": 40.0, "total_position_cap": 90.0,
             "min_holdings": 5, "daily_stale_warn_days": 3,
             "daily_stale_fail_days": 5, "fina_fresh_days": 90,
             "erp_stale_warn_days": 3, "erp_stale_fail_days": 7,
@@ -405,14 +406,31 @@ def audit_strategy_health():
 
 
 # ═══════════════════════════════════════════════════════
-#  模块 3: 风控审计 V2.0 — 实时估值 + 真实止损检测
+#  ETF 识别工具 (V5.1)
 # ═══════════════════════════════════════════════════════
-#  V2.0 修复:
-#    1. 使用 portfolio_engine 实时估值替代成本估算
-#    2. 修复止损检测 (pnl_pct 不再硬编码为0)
-#    3. 单票阈值统一为 20% (与 POSITION_LIMIT 一致), 基数=总资产
-#    4. 新增行业集中度审计
-#    5. 新增持仓分散度审计
+def _is_etf(ts_code: str) -> bool:
+    """
+    判断标的是否为 ETF。
+    A股 ETF 代码规则:
+      - 上交所: 51xxxx.SH, 56xxxx.SH, 58xxxx.SH, 588xxx.SH
+      - 深交所: 159xxx.SZ, 160xxx.SZ, 16xxxx.SZ
+    """
+    if not ts_code:
+        return False
+    code = ts_code.split(".")[0]
+    etf_prefixes = ("51", "56", "58", "159", "160", "16")
+    return code.startswith(etf_prefixes)
+
+
+# ═══════════════════════════════════════════════════════
+#  模块 3: 风控审计 V2.1 — 个股/ETF 差异化止损
+# ═══════════════════════════════════════════════════════
+#  V2.1 升级:
+#    1. 止损差异化: 个股 -12% / ETF -8%
+#    2. 总仓位上限从 85% 放宽至 90%
+#    3. 使用 portfolio_engine 实时估值
+#    4. 单票阈值统一为 20% (与 POSITION_LIMIT 一致)
+#    5. 行业集中度 + 持仓分散度审计
 # ═══════════════════════════════════════════════════════
 def _get_live_portfolio():
     """
@@ -510,13 +528,13 @@ def audit_risk_control():
         })
         scores.append(100)
         checks.append({
-            "name": "止损合规 (-8%)",
+            "name": "止损合规 (个股-12%/ETF-8%)",
             "status": "pass",
             "detail": "无持仓, 无需止损检查",
             "score": 100,
-            "explanation": "-8%止损线是系统性纪律。每只最多亏8%是保护组合存活率的底线。",
+            "explanation": "差异化止损线: 个股-12%, ETF-8%。个股波动大容忍度更高, ETF波动小纪律更严。",
             "threshold": "🟢 0只违规 | 🟡 1只: 警告 | 🔴 ≥2只: 纪律崩溃",
-            "action": "立即执行止损指令，卖出突破-8%的持仓",
+            "action": "按差异化止损标准执行",
         })
     else:
         # ── 检查 1: 单票集中度 (基数=总资产, 阈值从PAUDIT_CFG) ──
@@ -549,17 +567,22 @@ def audit_risk_control():
             "action": f"将超标持仓分批卖出，确保单只不超过总资产的{int(SINGLE_LIMIT)}%",
         })
 
-        # ── 检查 2: 止损合规 (真实盈亏, 阈值从AUDIT_CFG) ──
-        STOP_LOSS_LINE = AUDIT_CFG.get("stop_loss_line", -8.0)
+        # ── 检查 2: 止损合规 V2.1 (个股/ETF 差异化止损) ──
+        SL_STOCK = AUDIT_CFG.get("stop_loss_stock", AUDIT_CFG.get("stop_loss_line", -12.0))
+        SL_ETF = AUDIT_CFG.get("stop_loss_etf", -8.0)
         breach_list = []
         worst_loss = 0
         worst_name = ""
 
         for p in pos_list:
             pnl_pct = p.get("pnl_pct", 0)
-            name = p.get("name", p.get("ts_code", "?"))
-            if pnl_pct < STOP_LOSS_LINE:
-                breach_list.append(f"{name} ({pnl_pct:.1f}%)")
+            ts_code = p.get("ts_code", "")
+            name = p.get("name", ts_code or "?")
+            is_etf = _is_etf(ts_code)
+            sl_line = SL_ETF if is_etf else SL_STOCK
+            tag = "ETF" if is_etf else "个股"
+            if pnl_pct < sl_line:
+                breach_list.append(f"{name}[{tag}] ({pnl_pct:.1f}% < {sl_line}%)")
             if pnl_pct < worst_loss:
                 worst_loss = pnl_pct
                 worst_name = name
@@ -576,14 +599,14 @@ def audit_risk_control():
             detail = "全部盈利或持平"
 
         checks.append({
-            "name": "止损合规 (-8%)",
+            "name": f"止损合规 (个股{SL_STOCK}%/ETF{SL_ETF}%)",
             "status": "pass" if breach_count == 0 else "fail",
             "detail": detail,
-            "meta": f"数据源: {data_source}" + (f" · 最大浮亏: {worst_loss:.1f}%" if worst_loss < 0 else ""),
+            "meta": f"个股止损线: {SL_STOCK}% · ETF止损线: {SL_ETF}% · [{data_source}]" + (f" · 最大浮亏: {worst_loss:.1f}%" if worst_loss < 0 else ""),
             "score": s,
-            "explanation": "-8%止损线是量化系统的铁律。统计显示，突破-8%后继续下跌至-20%的概率超过60%。及时止损可以保护组合存活率。每只最多亏8%意味着持有12只时单笔亏损对组合影响<0.7%。",
+            "explanation": f"差异化止损: 个股波动大允许更宽容忍({SL_STOCK}%), ETF组合型产品波动小执行更严格纪律({SL_ETF}%)。统计显示突破止损线后继续下跌至-20%的概率超过60%。及时止损保护组合存活率。",
             "threshold": "🟢 0只违规: 纪律严格 | 🟡 1只: 立即处理 | 🔴 ≥2只: 止损纪律崩溃",
-            "action": "立即卖出突破-8%的持仓，不等反弹" if breach_count > 0 else "继续保持止损纪律",
+            "action": f"立即卖出突破止损线的持仓 (个股>{abs(SL_STOCK)}% / ETF>{abs(SL_ETF)}%)" if breach_count > 0 else "继续保持差异化止损纪律",
         })
 
         # ── 检查 3: 行业集中度 (阈值从AUDIT_CFG) ──
@@ -656,9 +679,9 @@ def audit_risk_control():
             "detail": f"当前仓位: {pos_pct:.1f}%",
             "meta": f"上限 {int(POS_CAP)}% (Regime自适应) · [{data_source}]",
             "score": s,
-            "explanation": "总仓位上限85%是为了防止追保风险，并留足调仓空间。满仓意味着无法逢低吸纳新机会，且遇到系统性下跌时无现金缓冲。",
-            "threshold": "🟢 ≤85%: 合规 | 🟡 86-95%: 偏重，调仓空间不足 | 🔴 >95%: 必须立即减仓",
-            "action": "卖出部分持仓降低总仓位至85%以下，优先卖出非核心持仓",
+            "explanation": f"总仓位上限{int(POS_CAP)}%是为了防止追保风险，并留足调仓空间。满仓意味着无法逢低吸纳新机会，且遇到系统性下跌时无现金缓冲。",
+            "threshold": f"🟢 ≤{int(POS_CAP)}%: 合规 | 🟡 {int(POS_CAP)+1}-95%: 偏重，调仓空间不足 | 🔴 >95%: 必须立即减仓",
+            "action": f"卖出部分持仓降低总仓位至{int(POS_CAP)}%以下，优先卖出非核心持仓",
         })
 
     # ── 检查 6: 历史最大回撤 ──

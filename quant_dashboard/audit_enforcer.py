@@ -2,7 +2,7 @@
 AlphaCore 审计执行器 V4.0 — "带枪保安"
 ========================================
 职责:
-  1. enforce_stop_loss()     — 突破 -8% 止损线的持仓 → 自动全量卖出
+  1. enforce_stop_loss()     — 突破止损线的持仓 → 自动全量卖出 (个股-12%/ETF-8% 差异化)
   2. enforce_trade_block()   — 数据过期 → 写入交易阻断标志文件
   3. get_enforcer_status()   — 查询执行器当前状态
   4. run_post_audit_enforcement() — 审计报告出炉后的统一执行入口
@@ -97,7 +97,7 @@ def _load_audit_config():
         from config import AUDIT_CONFIG
         return dict(AUDIT_CONFIG)
     except ImportError:
-        return {"stop_loss_line": -8.0, "stale_data_block_days": 5}
+        return {"stop_loss_stock": -12.0, "stop_loss_etf": -8.0, "stale_data_block_days": 5}
 
 
 # ═══════════════════════════════════════════════════════
@@ -180,12 +180,22 @@ def is_trade_blocked():
 # ═══════════════════════════════════════════════════════
 #  止损强制卖出
 # ═══════════════════════════════════════════════════════
-def enforce_stop_loss(pos_list, stop_loss_line=-8.0):
+def enforce_stop_loss(pos_list, stop_loss_stock=-12.0, stop_loss_etf=-8.0):
     """
     遍历持仓，将突破止损线的标的全量卖出。
+    V5.1: 个股/ETF 差异化止损 (个股-12%, ETF-8%)
     返回: 执行动作列表 [{"ts_code", "name", "pnl_pct", "amount", "price", "result"}]
     """
     actions = []
+
+    # 导入 ETF 识别工具
+    try:
+        from audit_engine import _is_etf
+    except ImportError:
+        def _is_etf(code):
+            if not code: return False
+            c = code.split(".")[0]
+            return c.startswith(("51", "56", "58", "159", "160", "16"))
 
     try:
         from portfolio_engine import get_portfolio_engine
@@ -200,13 +210,17 @@ def enforce_stop_loss(pos_list, stop_loss_line=-8.0):
 
     for p in pos_list:
         pnl_pct = p.get("pnl_pct", 0)
-        if pnl_pct >= stop_loss_line:
+        ts_code = p.get("ts_code", "")
+        is_etf = _is_etf(ts_code)
+        sl_line = stop_loss_etf if is_etf else stop_loss_stock
+
+        if pnl_pct >= sl_line:
             continue  # 未触及止损线
 
-        ts_code = p.get("ts_code", "")
         name = p.get("name", ts_code)
         amount = p.get("amount", 0)
         price = p.get("price", p.get("cost", 0))
+        tag = "ETF" if is_etf else "个股"
 
         if amount <= 0 or price <= 0:
             continue
@@ -218,7 +232,9 @@ def enforce_stop_loss(pos_list, stop_loss_line=-8.0):
                 "action": "forced_stop_loss",
                 "ts_code": ts_code,
                 "name": name,
+                "type": tag,
                 "pnl_pct": round(pnl_pct, 2),
+                "sl_line": sl_line,
                 "amount": amount,
                 "price": round(price, 3),
                 "result": "success" if success else "failed",
@@ -230,7 +246,9 @@ def enforce_stop_loss(pos_list, stop_loss_line=-8.0):
                 "action": "forced_stop_loss",
                 "ts_code": ts_code,
                 "name": name,
+                "type": tag,
                 "pnl_pct": round(pnl_pct, 2),
+                "sl_line": sl_line,
                 "amount": amount,
                 "price": round(price, 3),
                 "result": "error",
@@ -325,7 +343,8 @@ def run_post_audit_enforcement(audit_report):
 
     # ── 1. 止损强制卖出 ──
     if enforcer_cfg.get("auto_stop_loss", True):
-        stop_loss_line = audit_cfg.get("stop_loss_line", -8.0)
+        sl_stock = audit_cfg.get("stop_loss_stock", audit_cfg.get("stop_loss_line", -12.0))
+        sl_etf = audit_cfg.get("stop_loss_etf", -8.0)
 
         # 获取持仓列表 (从风控模块的原始数据)
         rc = audit_report.get("modules", {}).get("risk_control", {})
@@ -339,7 +358,7 @@ def run_post_audit_enforcement(audit_report):
             pass
 
         if pos_list:
-            stop_actions = enforce_stop_loss(pos_list, stop_loss_line)
+            stop_actions = enforce_stop_loss(pos_list, sl_stock, sl_etf)
             result["actions"].extend(stop_actions)
 
     # ── 2. 数据过期 → 交易阻断 ──
