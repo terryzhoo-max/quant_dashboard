@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -18,6 +18,7 @@ import copy
 from datetime import datetime, timedelta
 from mean_reversion_engine import run_strategy, detect_regime, get_all_regime_params, load_regime_params, needs_reoptimize
 from dividend_trend_engine import run_dividend_strategy
+from audit_engine import run_full_audit
 from momentum_rotation_engine import run_momentum_strategy
 from momentum_backtest_engine import run_momentum_backtest, run_momentum_optimize
 from erp_timing_engine import get_erp_engine
@@ -2711,12 +2712,14 @@ async def sync_industry_data():
         print(f"Sync Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
 
-# --- Portfolio Management API ---
+# --- Portfolio Management API V2.0 (Singleton + Validation) ---
+
+from portfolio_engine import get_portfolio_engine
 
 @app.get("/api/v1/portfolio/valuation")
 async def get_portfolio_valuation():
     try:
-        engine = PortfolioEngine()
+        engine = get_portfolio_engine()
         return {"status": "success", "data": engine.get_valuation()}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -2724,25 +2727,74 @@ async def get_portfolio_valuation():
 @app.get("/api/v1/portfolio/risk")
 async def get_portfolio_risk():
     try:
-        engine = PortfolioEngine()
+        engine = get_portfolio_engine()
         return {"status": "success", "data": engine.calculate_risk_metrics()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/v1/portfolio/history")
+async def get_portfolio_history():
+    try:
+        engine = get_portfolio_engine()
+        return {"status": "success", "data": engine.get_trade_history(30)}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/v1/portfolio/nav")
+async def get_portfolio_nav():
+    try:
+        engine = get_portfolio_engine()
+        return {"status": "success", "data": engine.get_nav_history(120)}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 @app.post("/api/v1/portfolio/trade")
 async def execute_trade(req: TradeRequest):
     try:
-        engine = PortfolioEngine()
+        # 输入校验
+        if req.price <= 0:
+            return {"status": "error", "message": "价格必须大于 0"}
+        if req.amount <= 0:
+            return {"status": "error", "message": "数量必须大于 0"}
+        if req.action not in ("buy", "sell"):
+            return {"status": "error", "message": "操作类型必须为 buy 或 sell"}
+        if not req.ts_code or len(req.ts_code.strip()) < 3:
+            return {"status": "error", "message": "请输入有效的证券代码"}
+
+        engine = get_portfolio_engine()
         if req.action == "buy":
-            success, msg = engine.add_position(req.ts_code, req.amount, req.price, req.name)
+            success, msg = engine.add_position(req.ts_code.strip(), req.amount, req.price, req.name.strip())
         else:
-            success, msg = engine.reduce_position(req.ts_code, req.amount, req.price)
-        
+            success, msg = engine.reduce_position(req.ts_code.strip(), req.amount, req.price)
+
         if success:
             return {"status": "success", "message": msg}
         else:
             return {"status": "error", "message": msg}
     except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.post("/api/v1/portfolio/import")
+async def import_portfolio(file: UploadFile = File(...)):
+    """接收券商导出的 资金股份查询.txt，解析并覆盖当前持仓"""
+    try:
+        content = await file.read()
+        # 券商导出通常是 GBK 编码，依次尝试 GBK → UTF-8
+        text = None
+        for enc in ['gbk', 'gb18030', 'utf-8']:
+            try:
+                text = content.decode(enc)
+                break
+            except (UnicodeDecodeError, LookupError):
+                continue
+        if text is None:
+            text = content.decode('gbk', errors='replace')
+
+        engine = get_portfolio_engine()
+        result = engine.import_from_txt(text)
+        return {"status": "success" if result["success"] else "error", "data": result}
+    except Exception as e:
+        traceback.print_exc()
         return {"status": "error", "message": str(e)}
 
 # === 均值回归 V4.0 三态参数 API ===
@@ -2790,6 +2842,75 @@ async def get_current_regime_params():
             "needs_reoptimize": info.get("needs_reoptimize", False),
             "all_regimes": get_all_regime_params(),
         }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+# ═══════════════════════════════════════════════════════
+#  深度审计 API V4.0 — 带枪保安架构
+# ═══════════════════════════════════════════════════════
+@app.get("/api/v1/audit")
+async def api_audit():
+    """V4.0 五维系统审计 + Enforcer 执行 + 静音/降级"""
+    try:
+        report = await asyncio.get_event_loop().run_in_executor(
+            executor, run_full_audit
+        )
+        return {"status": "ok", **report}
+    except Exception as e:
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/v1/audit/enforcer/status")
+async def get_audit_enforcer_status():
+    """获取执行器完整状态快照"""
+    try:
+        from audit_enforcer import get_enforcer_status
+        return {"status": "ok", **get_enforcer_status()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/v1/audit/enforcer/toggle")
+async def toggle_audit_enforcer(enabled: bool = True):
+    """开关执行器总开关"""
+    try:
+        from audit_enforcer import toggle_enforcer
+        result = toggle_enforcer(enabled)
+        return {"status": "ok", "enforcer_enabled": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/v1/audit/mute")
+async def set_audit_mute(minutes: int = 30, degraded: bool = False):
+    """设置静音 (minutes=静音N分钟, degraded=降级模式)"""
+    try:
+        from audit_enforcer import set_mute
+        result = set_mute(minutes=minutes, degraded=degraded)
+        return {"status": "ok", "mute": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.delete("/api/v1/audit/mute")
+async def clear_audit_mute():
+    """解除所有静音"""
+    try:
+        from audit_enforcer import clear_mute
+        result = clear_mute()
+        return {"status": "ok", "mute": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/v1/audit/enforcer/log")
+async def get_audit_enforcer_log(limit: int = 20):
+    """获取执行器日志"""
+    try:
+        from audit_enforcer import get_enforcement_log
+        logs = get_enforcement_log(limit)
+        return {"status": "ok", "logs": logs}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

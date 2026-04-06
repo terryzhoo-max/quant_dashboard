@@ -1,0 +1,57 @@
+[
+    {
+        "timestamp": "2026-04-05 00:01:24",
+        "action": "sell",
+        "ts_code": "600519.SH",
+        "name": "Moutai",
+        "amount": 100,
+        "price": 1566.0,
+        "total": 156600.0,
+        "success": true,
+        "message": "卖出成功"
+    },
+    {
+        "timestamp": "2026-04-05 00:01:36",
+        "action": "sell",
+        "ts_code": "600519.SH",
+        "name": "Moutai",
+        "amount": 100,
+        "price": 1566.0,
+        "total": 156600.0,
+        "success": true,
+        "message": "卖出成功"
+    },
+    {
+        "timestamp": "2026-04-05 01:04:05",
+        "action": "sell",
+        "ts_code": "600519.SH",
+        "name": "Moutai",
+        "amount": 100,
+        "price": 1566.0,
+        "total": 156600.0,
+        "success": true,
+        "message": "卖出成功"
+    },
+    {
+        "timestamp": "2026-04-05 08:06:59",
+        "action": "buy",
+        "ts_code": "300059",
+        "name": "东方财富",
+        "amount": 1800,
+        "price": 18.48,
+        "total": 33264.0,
+        "success": true,
+        "message": "买入成功"
+    },
+    {
+        "timestamp": "2026-04-05 17:55:04",
+        "action": "import",
+        "ts_code": "SYSTEM",
+        "name": "TXT导入 18 只持仓",
+        "amount": 18,
+        "price": 0,
+        "total": 0.0,
+        "success": true,
+        "message": "从券商TXT文件覆盖导入 18 只持仓，可用资金 ¥30,117.63"
+    }
+]

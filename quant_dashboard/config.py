@@ -59,3 +59,43 @@ MR_PARAMS_FILE = "mr_per_regime_params.json"
 
 # ── 自动重优化周期（天）──
 MR_REOPTIMIZE_DAYS = 60
+
+# ═══════════════════════════════════════════════════════
+#  审计引擎 V4.0 · 带枪保安架构
+# ═══════════════════════════════════════════════════════
+
+# ── 审计阈值 (统一管理，消灭硬编码) ──
+AUDIT_CONFIG = {
+    # 风控红线
+    "stop_loss_line": -8.0,             # 止损红线 (%)
+    "single_position_limit": 20.0,      # 单票集中度上限 (%) ← 与 PortfolioEngine.POSITION_LIMIT 同步
+    "sector_limit": 40.0,               # 行业集中度上限 (%)
+    "total_position_cap": 85.0,         # 总仓位上限 (%)
+    "min_holdings": 5,                  # 最少持仓数
+
+    # 数据新鲜度阈值
+    "daily_stale_warn_days": 3,         # 日线过期 ≤N天 = 警告
+    "daily_stale_fail_days": 5,         # 日线过期 >N天 = 失败
+    "fina_fresh_days": 90,              # 财务数据新鲜期 (季度更新)
+    "erp_stale_warn_days": 3,
+    "erp_stale_fail_days": 7,
+
+    # 策略参数新鲜期
+    "strategy_fresh_days": 30,          # ≤30天 = 新鲜
+    "strategy_stale_days": 60,          # >60天 = 过期
+}
+
+# ── 执行器配置 (带枪保安核心) ──
+AUDIT_ENFORCER = {
+    "enabled": True,                     # 总开关
+    "auto_stop_loss": True,              # 止损强制卖出
+    "block_trade_on_stale_data": True,   # 数据过期阻止买入
+    "stale_data_block_days": 5,          # 阻断阈值 (天)
+}
+
+# ── 静音/降级配置 ──
+AUDIT_MUTE = {
+    "muted_checks": [],                  # 被静音的检查项名称列表
+    "degraded_mode": False,              # 降级模式: fail → warn (不触发 enforcer)
+    "mute_until": None,                  # 静音到期时间 (ISO格式, 过期自动解除)
+}

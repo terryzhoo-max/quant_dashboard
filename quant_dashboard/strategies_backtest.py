@@ -262,3 +262,177 @@ def momentum_rotation_strategy_vectorized(
         signals = _apply_stop_loss(df, signals, stop_loss / 100.0)
     
     return signals
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  宏观ERP择时策略 V1.0 (与 erp_timing_engine.py V2.0 评分公式对齐)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _score_d1_erp_abs_vec(erp_series: pd.Series) -> pd.Series:
+    """D1: ERP绝对值 → 0-100 (向量化, 对齐 erp_timing_engine._score_d1)"""
+    score = pd.Series(0.0, index=erp_series.index)
+    score = np.where(erp_series >= 6.0, 100,
+            np.where(erp_series >= 5.0, 70 + (erp_series - 5.0) * 30,
+            np.where(erp_series >= 4.0, 50 + (erp_series - 4.0) * 20,
+            np.where(erp_series >= 3.0, 25 + (erp_series - 3.0) * 25,
+            np.where(erp_series >= 2.0, (erp_series - 2.0) * 25, 0)))))
+    return pd.Series(np.clip(score, 0, 100), index=erp_series.index)
+
+
+def _score_d2_erp_pct_vec(erp_series: pd.Series, window: int = 1260) -> pd.Series:
+    """D2: ERP历史分位 → 0-100 (滚动窗口, 对齐 erp_timing_engine._score_d2)"""
+    def rolling_pct(arr):
+        if len(arr) < 20:
+            return 50.0
+        current = arr[-1]
+        return (arr[:-1] < current).mean() * 100
+
+    return erp_series.rolling(window, min_periods=60).apply(rolling_pct, raw=True).fillna(50.0)
+
+
+def _score_d3_m1_vec(m1_yoy: pd.Series) -> pd.Series:
+    """D3: M1同比趋势 → 0-100 (向量化, 对齐 erp_timing_engine._score_d3)"""
+    # 计算趋势: 当前 vs 3个月前 (约63个交易日)
+    m1_3m_ago = m1_yoy.shift(63).fillna(m1_yoy)
+    m1_1m_ago = m1_yoy.shift(21).fillna(m1_yoy)
+
+    is_positive = m1_yoy > 0
+    is_rising = m1_yoy > m1_1m_ago
+    is_3m_rising = m1_yoy > m1_3m_ago
+
+    score = pd.Series(50.0, index=m1_yoy.index)
+
+    # 正增长 + 3月趋势上行 → 80-100
+    cond1 = is_positive & is_3m_rising
+    score = np.where(cond1, np.clip(80 + m1_yoy * 2, 80, 100), score)
+
+    # 正增长 + 环比回升 → 60-80
+    cond2 = is_positive & is_rising & ~is_3m_rising
+    score = np.where(cond2, np.clip(60 + m1_yoy * 2, 60, 80), score)
+
+    # 正增长但趋势下 → 40-60
+    cond3 = is_positive & ~is_rising
+    score = np.where(cond3, np.clip(40 + m1_yoy * 2, 40, 60), score)
+
+    # 负增长但拐头 → 30
+    cond4 = ~is_positive & is_rising
+    score = np.where(cond4, 30, score)
+
+    # 负增长且下行 → 0-20
+    cond5 = ~is_positive & ~is_rising
+    score = np.where(cond5, np.clip(20 + m1_yoy * 2, 0, 20), score)
+
+    return pd.Series(np.clip(score, 0, 100), index=m1_yoy.index)
+
+
+def _score_d4_vol_vec(pe_vol: pd.Series) -> pd.Series:
+    """D4: PE波动率 → 0-100 (逆向: 高波低分, 对齐 erp_timing_engine._score_d4)"""
+    # 滚动分位
+    def rolling_vol_pct(arr):
+        if len(arr) < 20:
+            return 50.0
+        current = arr[-1]
+        return (arr[:-1] < current).mean() * 100
+
+    vol_pct = pe_vol.rolling(500, min_periods=60).apply(rolling_vol_pct, raw=True).fillna(50.0)
+
+    score = pd.Series(70.0, index=pe_vol.index)
+    score = np.where(vol_pct >= 90, 15,      # 极度恐慌 (逆向机会)
+            np.where(vol_pct >= 70, 35,      # 高波
+            np.where(vol_pct >= 30, 70,      # 正常
+            90)))                              # 平静
+    return pd.Series(np.clip(score, 0, 100), index=pe_vol.index)
+
+
+def _score_d5_credit_vec(scissor: pd.Series, m1_yoy: pd.Series) -> pd.Series:
+    """D5: 信用环境(M1-M2剪刀差) → 0-100 (对齐 erp_timing_engine._score_d5)"""
+    score = pd.Series(50.0, index=scissor.index)
+    score = np.where(scissor >= 0, np.clip(85 + scissor * 3, 85, 100),
+            np.where(scissor >= -3, 55 + (scissor + 3) * 10,
+            np.where(scissor >= -6, 25 + (scissor + 6) * 10,
+            np.clip(10 + scissor, 0, 25))))
+
+    # 趋势修正: M1 3月趋势上行且剪刀差为负 → +10
+    m1_3m_ago = m1_yoy.shift(63).fillna(m1_yoy)
+    is_improving = (m1_yoy > m1_3m_ago) & (scissor < 0)
+    score = np.where(is_improving, score + 10, score)
+
+    return pd.Series(np.clip(score, 0, 100), index=scissor.index)
+
+
+def erp_timing_strategy_vectorized(
+    df: pd.DataFrame,
+    macro_df: pd.DataFrame = None,
+    buy_threshold: float = 65.0,
+    sell_threshold: float = 40.0,
+    erp_window: int = 1260,
+    vol_window: int = 60,
+    w_erp_abs: float = 0.25,
+    w_erp_pct: float = 0.25,
+    w_m1: float = 0.30,
+    w_vol: float = 0.10,
+    w_credit: float = 0.10,
+    stop_loss: float = 10.0,
+) -> pd.Series:
+    """
+    宏观ERP择时策略 V1.0 — 与 erp_timing_engine.py V2.0 五维评分完全对齐
+
+    核心逻辑:
+      1. 五维宏观评分 (D1-D5) 加权合成 composite_score
+      2. composite >= buy_threshold  → 买入信号 (1)
+      3. composite <= sell_threshold → 卖出信号 (-1)
+      4. 其他 → 保持 (0)
+      5. 内嵌止损
+
+    参数:
+      df:             ETF 价格 DataFrame (需含 close 列, DatetimeIndex)
+      macro_df:       宏观数据 DataFrame (由 erp_backtest_data.prepare_erp_backtest_data 生成)
+                      需含: trade_date, erp, m1_yoy, m2_yoy, scissor, pe_vol
+      buy_threshold:  买入阈值 (综合得分)
+      sell_threshold: 卖出阈值 (综合得分)
+      erp_window:     ERP分位回溯窗口 (交易日数)
+      vol_window:     (预留, 当前由 macro_df.pe_vol 自带60日)
+      w_*:            五维权重 (须总和=1.0)
+      stop_loss:      止损幅度 % (0=不止损)
+
+    返回: pd.Series, 索引与 df 一致, 值为 {1, 0, -1}
+    """
+    if macro_df is None:
+        raise ValueError("ERP策略需要 macro_df 参数 (宏观日频宽表)")
+
+    # 对齐日期: 以ETF价格数据的日期为准
+    close = df['close']
+    dates = df.index
+
+    # 将 macro_df 索引化
+    m = macro_df.copy()
+    if 'trade_date' in m.columns:
+        m['trade_date'] = pd.to_datetime(m['trade_date'])
+        m = m.set_index('trade_date')
+    m = m.sort_index()
+
+    # 按日期对齐 (前向填充宏观数据到ETF交易日)
+    aligned = m.reindex(dates, method='ffill')
+    aligned = aligned.ffill().bfill()
+
+    # 五维评分
+    d1 = _score_d1_erp_abs_vec(aligned['erp'])
+    d2 = _score_d2_erp_pct_vec(aligned['erp'], window=erp_window)
+    d3 = _score_d3_m1_vec(aligned['m1_yoy'])
+    d4 = _score_d4_vol_vec(aligned['pe_vol'])
+    d5 = _score_d5_credit_vec(aligned['scissor'], aligned['m1_yoy'])
+
+    # 加权合成
+    composite = (d1 * w_erp_abs + d2 * w_erp_pct + d3 * w_m1 +
+                 d4 * w_vol + d5 * w_credit)
+
+    # 信号生成
+    signals = pd.Series(0, index=dates)
+    signals[composite >= buy_threshold] = 1
+    signals[composite <= sell_threshold] = -1
+
+    # 内嵌止损
+    if stop_loss > 0:
+        signals = _apply_stop_loss(df, signals, stop_loss / 100.0)
+
+    return signals

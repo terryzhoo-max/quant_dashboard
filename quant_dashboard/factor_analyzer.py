@@ -1,12 +1,18 @@
 """
-AlphaCore Factor Analyzer V2.0
-科学因子评估引擎：IC分布 + 分组收益 + 质量评级
+AlphaCore Factor Analyzer V5.0
+科学因子评估引擎：IC分布 + 分组收益 + 质量评级 + 技术因子 + IC直方图
 """
 import pandas as pd
 import numpy as np
 import os
 from scipy.stats import spearmanr
 from data_manager import FactorDataManager
+
+# V5.0: 技术因子列表 (从日线数据计算，无需财务报表)
+TECHNICAL_FACTORS = {'momentum_20d', 'volatility_20d', 'turnover_rate'}
+
+def is_technical_factor(factor_name: str) -> bool:
+    return factor_name in TECHNICAL_FACTORS
 
 
 class FactorAnalyzer:
@@ -37,6 +43,14 @@ class FactorAnalyzer:
 
     def prepare_analysis_data(self, ts_codes: list, factor_name: str):
         """
+        V5.0: 统一入口 — 自动分派基本面因子 vs 技术因子
+        """
+        if is_technical_factor(factor_name):
+            return self._prepare_technical_data(ts_codes, factor_name)
+        return self._prepare_fundamental_data(ts_codes, factor_name)
+
+    def _prepare_fundamental_data(self, ts_codes: list, factor_name: str):
+        """
         准备横截面分析数据 (对齐因子与未来收益)
         采用 Point-in-Time 方法，避免前视偏差
         """
@@ -65,6 +79,44 @@ class FactorAnalyzer:
 
         full_df = pd.concat(all_data)
         full_df = full_df.dropna(subset=[factor_name, 'next_5d_ret'])
+        return full_df
+
+    def _prepare_technical_data(self, ts_codes: list, factor_name: str):
+        """
+        V5.0: 从日线数据动态计算技术因子
+        momentum_20d:   20日价格动量 (close / close_20d_ago - 1)
+        volatility_20d: 20日收益波动率 (日收益率的20日滚动标准差)
+        turnover_rate:   换手率 (vol / 流通股本的代理: 20日均vol比)
+        """
+        all_data = []
+        for code in ts_codes:
+            p_df = self.dm.get_price_payload(code)
+            if p_df.empty or len(p_df) < 25:
+                continue
+
+            df = p_df.sort_values('trade_date').copy()
+            df['daily_ret'] = df['close'].pct_change()
+
+            if factor_name == 'momentum_20d':
+                df[factor_name] = df['close'] / df['close'].shift(20) - 1
+            elif factor_name == 'volatility_20d':
+                df[factor_name] = df['daily_ret'].rolling(20).std() * np.sqrt(252)
+            elif factor_name == 'turnover_rate':
+                if 'vol' in df.columns:
+                    df[factor_name] = df['vol'] / df['vol'].rolling(20).mean()
+                elif 'amount' in df.columns:
+                    df[factor_name] = df['amount'] / df['amount'].rolling(20).mean()
+                else:
+                    continue
+
+            df = df.dropna(subset=[factor_name, 'next_5d_ret'])
+            if not df.empty:
+                all_data.append(df)
+
+        if not all_data:
+            return pd.DataFrame()
+
+        full_df = pd.concat(all_data)
         return full_df
 
     def calculate_metrics(self, data: pd.DataFrame, factor_name: str):
@@ -157,7 +209,7 @@ class FactorAnalyzer:
         # === 8. 因子质量评级 (6-tier: S/A/B/C/D/F) ===
         grade = self._score_to_grade(alpha_score)
 
-        # === 9. IC 分布诊断 (V4.0 新增) ===
+        # === 9. IC 分布诊断 (V5.0 增强: 含直方图) ===
         ic_distribution = self._calculate_ic_distribution(ic_clean)
 
         # === 10. 交易建议生成 (V4.0 增强) ===
@@ -171,6 +223,9 @@ class FactorAnalyzer:
             ic_mean, ir, ic_win_rate, monotonicity,
             ic_stability, ls_spread, ic_distribution
         )
+
+        # === 12. V5.0 IC 滚动窗口数据 (衰减趋势图) ===
+        ic_rolling = self._calculate_ic_rolling(ic_clean)
 
         return {
             "ic_mean": ic_mean,
@@ -188,6 +243,7 @@ class FactorAnalyzer:
             "advice": advice,
             "ic_distribution": ic_distribution,
             "health_status": health_status,
+            "ic_rolling": ic_rolling,
         }
 
     # ================================================================
@@ -274,25 +330,37 @@ class FactorAnalyzer:
 
     def _calculate_ic_distribution(self, ic_clean):
         """
-        V4.0: IC 分布健康度诊断 (偏度 + 峰度)
-        用于生成数据质量警告
+        V5.0: IC 分布健康度诊断 + 直方图分箱数据
         """
         from scipy.stats import skew, kurtosis
         try:
-            ic_skew = float(skew(ic_clean.values))
-            ic_kurt = float(kurtosis(ic_clean.values))
-            # 健康判定
+            ic_vals = ic_clean.values
+            ic_skew = float(skew(ic_vals))
+            ic_kurt = float(kurtosis(ic_vals))
             skew_ok = abs(ic_skew) < 1.0
             kurt_ok = ic_kurt < 5.0
+
+            # V5.0: 直方图分箱 (前端渲染用)
+            n_bins = min(30, max(10, len(ic_vals) // 10))
+            counts, bin_edges = np.histogram(ic_vals, bins=n_bins)
+            bin_centers = [(bin_edges[i] + bin_edges[i+1]) / 2 for i in range(len(counts))]
+
             return {
                 'skewness': round(ic_skew, 2),
                 'kurtosis': round(ic_kurt, 2),
                 'skew_status': 'normal' if skew_ok else 'warning',
                 'kurt_status': 'normal' if kurt_ok else 'warning',
+                'histogram': {
+                    'bins': [round(x, 4) for x in bin_centers],
+                    'counts': [int(x) for x in counts],
+                    'mean': round(float(np.mean(ic_vals)), 4),
+                    'std': round(float(np.std(ic_vals)), 4),
+                }
             }
         except Exception:
             return {'skewness': 0, 'kurtosis': 0,
-                    'skew_status': 'normal', 'kurt_status': 'normal'}
+                    'skew_status': 'normal', 'kurt_status': 'normal',
+                    'histogram': {'bins': [], 'counts': [], 'mean': 0, 'std': 0}}
 
     @staticmethod
     def _score_to_grade(score):
@@ -549,6 +617,28 @@ class FactorAnalyzer:
             })
 
         return items
+
+    def _calculate_ic_rolling(self, ic_clean, window=20):
+        """
+        V5.0: 滚动IC均值/胜率 (前端衰减趋势图用)
+        返回: dates, rolling_mean, rolling_win_rate
+        """
+        if len(ic_clean) < window:
+            return {'dates': [], 'rolling_mean': [], 'rolling_win_rate': []}
+        try:
+            rolling_mean = ic_clean.rolling(window).mean().dropna()
+            rolling_wr = ic_clean.rolling(window).apply(
+                lambda x: (x > 0).mean(), raw=True
+            ).dropna()
+            # align indices
+            common_idx = rolling_mean.index.intersection(rolling_wr.index)
+            return {
+                'dates': [d.strftime('%Y-%m-%d') if hasattr(d, 'strftime') else str(d) for d in common_idx],
+                'rolling_mean': [round(float(rolling_mean.loc[d]), 5) for d in common_idx],
+                'rolling_win_rate': [round(float(rolling_wr.loc[d]), 3) for d in common_idx],
+            }
+        except Exception:
+            return {'dates': [], 'rolling_mean': [], 'rolling_win_rate': []}
 
 
 if __name__ == "__main__":

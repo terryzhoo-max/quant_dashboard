@@ -36,41 +36,50 @@ class FactorDataManager:
         df.to_parquet(cache_path)
         return df
 
-    def sync_financial_indicators(self, ts_codes: List[str], start_year: int = 2018):
+    def sync_financial_indicators(self, ts_codes: List[str], start_year: int = 2018, force: bool = False):
         """
-        同步财务指标 (PIT 数据)
-        由于 Tushare 单次调用限制，需按年度或季度分批拉取
+        V5.0: 同步财务指标 (PIT 数据) — 支持增量更新
+        force=True 时强制全量刷新, 否则增量拉取最近1年数据
         """
         current_year = datetime.now().year
         
         for code in ts_codes:
             file_path = os.path.join(FINA_INDICATOR_DIR, f"{code}.parquet")
+            existing_df = None
             
-            # 如果本地已有，检查是否需要增量更新（此处简化为存在即跳过，实际生产建议按 ann_date 增量）
-            if os.path.exists(file_path):
-                print(f"[DataManager] 跳过已存在数据: {code}")
-                continue
+            if os.path.exists(file_path) and not force:
+                existing_df = pd.read_parquet(file_path)
+                if not existing_df.empty and 'ann_date' in existing_df.columns:
+                    last_ann = str(existing_df['ann_date'].max())
+                    last_year = int(last_ann[:4]) if len(last_ann) >= 4 else start_year
+                    # 增量: 只拉取最后公告年份至今的数据
+                    start_year = max(start_year, last_year)
 
-            print(f"[DataManager] 正在拉取 {code} 的 PIT 财务数据...")
+            print(f"[DataManager] 正在{'增量' if existing_df is not None else '全量'}拉取 {code} 的 PIT 财务数据 ({start_year}-{current_year})...")
             all_indicators = []
             
-            # 循环拉取各年数据
             for year in range(start_year, current_year + 1):
                 try:
-                    # 获取该年度的核心财务指标 (包含 ann_date 关键日期)
-                    # 字段说明：ann_date 公告日期, end_date 报告期, roe, netprofit_margin 等
                     df = pro.fina_indicator(ts_code=code, start_date=f"{year}0101", end_date=f"{year}1231")
                     if df is not None and not df.empty:
                         all_indicators.append(df)
-                    time.sleep(0.5) # 控制频率 (120次/分钟)
+                    time.sleep(0.5)
                 except Exception as e:
                     print(f"  [ERROR] {code} {year}年获取失败: {e}")
                     break
             
             if all_indicators:
-                full_df = pd.concat(all_indicators).drop_duplicates().sort_values("ann_date")
+                new_df = pd.concat(all_indicators)
+                if existing_df is not None:
+                    full_df = pd.concat([existing_df, new_df]).drop_duplicates(
+                        subset=['ts_code', 'ann_date', 'end_date']
+                    ).sort_values('ann_date')
+                else:
+                    full_df = new_df.drop_duplicates().sort_values('ann_date')
                 full_df.to_parquet(file_path)
                 print(f"  [SUCCESS] {code} 同步完成 ({len(full_df)} 条记录)")
+            elif existing_df is not None:
+                print(f"  [INFO] {code} 无新增财务数据")
 
     def get_factor_payload(self, ts_code: str, factor_names: List[str]) -> pd.DataFrame:
         """
@@ -156,6 +165,74 @@ class FactorDataManager:
         if 'vol' in df.columns:
             cols.append('vol')
         return df[[c for c in cols if c in df.columns]]
+
+    def check_data_freshness(self, ts_codes: List[str]) -> dict:
+        """
+        V5.0: 检查因子数据新鲜度
+        返回: {daily_latest: str, fina_latest: str, is_stale: bool, stale_days: int}
+        """
+        today = datetime.now().strftime("%Y%m%d")
+        daily_dates = []
+        fina_dates = []
+
+        for code in ts_codes[:5]:  # 只检查前5只，提速
+            # 日线数据
+            dp = os.path.join(DAILY_PRICE_DIR, f"{code}.parquet")
+            if os.path.exists(dp):
+                df = pd.read_parquet(dp)
+                if not df.empty:
+                    daily_dates.append(str(df['trade_date'].max()))
+            # 财务数据
+            fp = os.path.join(FINA_INDICATOR_DIR, f"{code}.parquet")
+            if os.path.exists(fp):
+                df = pd.read_parquet(fp)
+                if not df.empty and 'ann_date' in df.columns:
+                    fina_dates.append(str(df['ann_date'].max()))
+
+        daily_latest = max(daily_dates) if daily_dates else 'N/A'
+        fina_latest = max(fina_dates) if fina_dates else 'N/A'
+
+        # 判断是否过期: 日线数据超过1个自然日(周末+3)
+        stale_days = 0
+        is_stale = True
+        if daily_latest != 'N/A':
+            try:
+                last_dt = datetime.strptime(str(daily_latest)[:8], "%Y%m%d")
+                delta = (datetime.now() - last_dt).days
+                stale_days = delta
+                # 考虑周末: 周五收盘后到周一算3天, 不算过期
+                is_stale = delta > 3 if datetime.now().weekday() == 0 else delta > 1
+            except:
+                pass
+
+        return {
+            'daily_latest': daily_latest,
+            'fina_latest': fina_latest,
+            'is_stale': is_stale,
+            'stale_days': stale_days,
+            'checked_at': datetime.now().strftime("%Y-%m-%d %H:%M")
+        }
+
+    def smart_sync(self, ts_codes: List[str], force: bool = False):
+        """
+        V5.0: 智能同步 — 仅当数据过期时拉取
+        返回: sync_result dict
+        """
+        freshness = self.check_data_freshness(ts_codes)
+        if not freshness['is_stale'] and not force:
+            print(f"[SmartSync] 数据新鲜 (最新日线: {freshness['daily_latest']}), 跳过同步")
+            return {'synced': False, 'freshness': freshness}
+
+        print(f"[SmartSync] 数据过期 {freshness['stale_days']} 天, 开始同步...")
+        # 同步日线行情
+        self.sync_daily_prices(ts_codes)
+        # 同步财务指标 (增量)
+        self.sync_financial_indicators(ts_codes)
+        # 重新检查
+        new_freshness = self.check_data_freshness(ts_codes)
+        print(f"[SmartSync] 同步完成, 最新日线: {new_freshness['daily_latest']}")
+        return {'synced': True, 'freshness': new_freshness}
+
 
 if __name__ == "__main__":
     manager = FactorDataManager()

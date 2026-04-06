@@ -142,6 +142,62 @@ body {
     font-weight: 700;
 }
 
+/* ===== 子导航: 个股深研可折叠分组 ===== */
+.nav-parent {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 18px;
+    color: var(--text-muted);
+    text-decoration: none;
+    border-radius: 12px;
+    font-weight: 500;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 1px solid transparent;
+    cursor: pointer;
+    user-select: none;
+}
+.nav-parent:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-main);
+    transform: translateX(4px);
+}
+.nav-parent .nav-arrow {
+    margin-left: auto;
+    font-size: 0.6rem;
+    color: rgba(148,163,184,0.5);
+    transition: transform 0.3s ease;
+}
+.nav-parent.open .nav-arrow {
+    transform: rotate(90deg);
+}
+.nav-sub-group {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    margin-left: 18px;
+    border-left: 2px solid rgba(59,130,246,0.12);
+    padding-left: 0;
+}
+.nav-sub-group.open {
+    max-height: 200px;
+}
+.nav-sub-group .nav-item {
+    padding: 9px 14px 9px 16px;
+    font-size: 0.88rem;
+    gap: 10px;
+    border-radius: 0 10px 10px 0;
+    margin: 2px 0;
+}
+.nav-sub-group .nav-item:hover {
+    transform: translateX(3px);
+}
+.nav-sub-group .nav-item.active {
+    border-left: none;
+    background: linear-gradient(90deg, rgba(59, 130, 246, 0.15), transparent);
+    box-shadow: none;
+}
+
 .user-profile {
     display: flex;
     align-items: center;

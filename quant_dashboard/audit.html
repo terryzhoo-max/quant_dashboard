@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlphaCore · 深度审计报告 V6.0</title>
+    <meta name="description" content="AlphaCore 系统深度审计 V6.0 — 诊断终端架构：五维可信度评估 + 止损执行器 + 交易阻断 + 一键静音">
+    <link rel="stylesheet" href="./styles.css">
+    <link rel="stylesheet" href="./audit.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <script src="./echarts.min.js"></script>
+
+</head>
+<body>
+    <!-- Ambient Orbs -->
+    <div class="audit-orb audit-orb-1"></div>
+    <div class="audit-orb audit-orb-2"></div>
+
+    <aside class="sidebar">
+        <div class="logo"><div class="logo-icon"></div><h1>AlphaCore</h1></div>
+        <nav class="nav-menu">
+            <div class="nav-group-title">情 报 中 心</div>
+            <a href="./index.html" class="nav-item"><span class="icon">📊</span><span>量化总览</span></a>
+            <a href="./factor.html" class="nav-item"><span class="icon">📈</span><span>因子分析</span></a>
+            <a href="./industry.html" class="nav-item"><span class="icon">🏭</span><span>产业追踪</span></a>
+            <div class="nav-group-title">策 略 实 验 室</div>
+            <a href="./strategy.html" class="nav-item"><span class="icon">⚙️</span><span>策略中心</span></a>
+            <a href="./backtest.html" class="nav-item"><span class="icon">🧪</span><span>量化回测</span><span class="badge-beta">Beta</span></a>
+            <a href="./treasury.html" class="nav-item"><span class="icon">🌐</span><span>海外策略</span></a>
+
+            <div class="nav-group-title">研 究 审 计</div>
+            <a href="./audit.html" class="nav-item active"><span class="icon">🔍</span><span>深度审计</span></a>
+            <div class="nav-parent" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')"><span class="icon">📑</span><span>个股深研</span><span class="nav-arrow">▶</span></div>
+            <div class="nav-sub-group">
+                <a href="./smic_audit.html" class="nav-item"><span class="icon">🔬</span><span>中芯国际</span><span class="badge-beta" style="background:rgba(239,68,68,0.15);color:#f87171;border-color:rgba(239,68,68,0.3);">DEEP</span></a>
+            </div>
+            <div class="nav-group-title">账 户 管 理</div>
+            <a href="./portfolio.html" class="nav-item"><span class="icon">💼</span><span>投资组合</span></a>
+        </nav>
+        <div class="user-profile">
+            <img src="https://i.pravatar.cc/150?img=11" alt="User Avatar">
+            <div class="user-info"><span class="name">基金经理 Pro</span><span class="role">顶级投研权限</span></div>
+        </div>
+    </aside>
+
+    <main class="dashboard">
+        <header class="topbar">
+            <div class="search-bar"><input type="text" placeholder="搜索审计项、数据源及风控规则..."></div>
+            <div class="actions">
+                <div class="mute-controls">
+                    <button class="mute-btn" id="mute-btn" onclick="toggleMute()" title="一键静音">🔇 静音</button>
+                    <span class="mute-countdown" id="mute-countdown"></span>
+                </div>
+                <span style="font-size:0.82rem;color:#a78bfa;background:rgba(139,92,246,0.1);padding:4px 16px;border-radius:8px;border:1px solid rgba(139,92,246,0.2);font-weight:600;">🔬 诊断终端 V6.0</span>
+                <span id="audit-time" style="font-size:0.72rem;color:#64748b;margin-left:8px;"></span>
+            </div>
+        </header>
+
+        <div class="audit-layout" id="audit-layout">
+
+            <!-- Loading -->
+            <div id="audit-loading">
+                <div class="audit-skeleton skel-hero" style="margin-bottom:14px;"></div>
+                <div class="audit-skeleton skel-kpi"></div>
+                <div class="audit-skeleton skel-overview"></div>
+                <div class="loading-progress-bar"><div class="loading-progress-fill"></div></div>
+                <div class="loading-status">🔬 正在执行五维深度诊断… 数据质量 · 策略健康 · 风控合规 · 因子衰减 · 系统状态</div>
+            </div>
+
+            <!-- Alert Banner (V6.0: flow layout, not sticky) -->
+            <div class="alert-banner" id="alert-banner">
+                <span class="alert-icon" id="alert-icon"></span>
+                <span class="alert-text" id="alert-text"></span>
+                <button class="alert-action" id="alert-action" onclick="scrollToFirstIssue()">定位问题 →</button>
+            </div>
+
+            <!-- Trust Score Hero V7.0: 三栏诊断报告头 -->
+            <div class="trust-hero glass-panel" id="trust-hero" style="display:none;">
+                <div class="trust-gauge">
+                    <div class="trust-gauge-chart" id="trust-gauge-chart"></div>
+                </div>
+                <div class="trust-info">
+                    <div class="trust-score-hero">
+                        <span class="trust-big-score" id="trust-big-score">--</span>
+                        <span class="trust-grade-badge" id="trust-grade-badge">--</span>
+                    </div>
+                    <div class="trust-title">系统可信度评估</div>
+                    <div class="trust-sub" id="trust-verdict">正在执行五维深度诊断...</div>
+                    <div class="trust-stats" id="trust-stats">
+                        <span class="trust-stat pass" id="stat-pass">✅ -- 通过</span>
+                        <span class="trust-stat warn" id="stat-warn">⚠️ -- 警告</span>
+                        <span class="trust-stat fail" id="stat-fail">❌ -- 失败</span>
+                    </div>
+                    <div class="trust-meta" id="trust-meta"></div>
+                </div>
+                <div class="trust-equalizer" id="trust-equalizer"></div>
+            </div>
+
+            <!-- KPI Warning Dashboard -->
+            <div class="warning-dashboard" id="warning-dashboard"></div>
+
+            <!-- Radar + Module Cards -->
+            <div class="audit-overview" id="audit-overview" style="display:none;">
+                <div class="radar-panel glass-panel">
+                    <div style="font-size:0.88rem;font-weight:700;color:#e2e8f0;margin-bottom:8px;">五维审计雷达</div>
+                    <div class="radar-chart" id="radar-chart"></div>
+                    <div class="radar-legend" id="radar-legend"></div>
+                </div>
+                <div class="module-cards" id="module-cards"></div>
+            </div>
+
+            <!-- Detail Section -->
+            <div class="detail-section" id="detail-section">
+                <div class="detail-header">
+                    <span class="detail-title" id="detail-title">--</span>
+                    <button class="detail-close" onclick="closeDetail()">✕</button>
+                </div>
+                <div class="detail-body" id="detail-body"></div>
+            </div>
+
+            <!-- V6.0: Enforcer Panel -->
+            <div class="enforcer-panel" id="enforcer-panel">
+                <div class="enforcer-header">
+                    <span class="enforcer-title">🔫 审计执行器 (Enforcer)</span>
+                    <button class="enforcer-toggle" id="enforcer-toggle" onclick="toggleEnforcer()" title="执行器总开关"></button>
+                </div>
+                <div class="enforcer-status-row" id="enforcer-status-row"></div>
+                <div class="enforcer-actions" id="enforcer-actions"></div>
+            </div>
+
+            <!-- Audit Timeline -->
+            <div class="audit-timeline glass-panel" id="audit-timeline" style="display:none;">
+                <div class="timeline-header">
+                    <span>📊 审计趋势</span>
+                    <span class="timeline-trend stable" id="timeline-trend">— 首次审计</span>
+                </div>
+                <div class="timeline-chart" id="timeline-chart"></div>
+            </div>
+
+            <!-- Footer -->
+            <div class="audit-footer">
+                <div class="footer-summary">
+                    <span>🔬 AlphaCore 深度审计诊断终端 V6.0</span>
+                    <span style="margin-left:8px;" id="footer-time">· 等待审计</span>
+                    <span class="footer-urgent" id="footer-urgent"></span>
+                </div>
+                <button class="audit-btn" id="audit-refresh-btn" onclick="runAudit()">
+                    <span class="spinner" id="audit-spinner"></span>
+                    🔄 重新审计
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <script src="./audit.js?v=60"></script>
+
+    <!-- V6.0: Enforcer Confirm Modal -->
+    <div class="confirm-modal-overlay" id="confirm-modal-overlay">
+        <div class="confirm-modal">
+            <div class="confirm-modal-title">🔫 <span id="confirm-modal-title-text">止损强平确认</span></div>
+            <div class="confirm-modal-body" id="confirm-modal-body"></div>
+            <div class="confirm-modal-actions">
+                <button class="confirm-modal-btn cancel" onclick="closeConfirmModal()">取消</button>
+                <button class="confirm-modal-btn danger" id="confirm-modal-execute" onclick="executeConfirmedAction()">确认执行</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -4,40 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AlphaCore | 投资组合管理</title>
-    <link rel="stylesheet" href="./styles.css?v=2">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+    <meta name="description" content="AlphaCore 机构级投资组合管理终端 — 实时估值、MCTR风险归因、净值曲线、交易执行">
+    <link rel="stylesheet" href="./styles.css?v=3">
+    <link rel="stylesheet" href="./portfolio.css?v=20">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
     <script src="./echarts.min.js"></script>
-    <style>
-        .portfolio-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            grid-template-rows: auto auto auto;
-            gap: 20px; padding: 20px;
-            height: calc(100vh - 100px);
-            overflow-y: auto;
-        }
-        .summary-info { grid-column: 1 / -1; }
-        .table-section { grid-column: 1 / -1; min-height: 300px; }
-        .metric-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
-        .metric-item { text-align: center; padding: 10px; }
-        .metric-item .label { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 5px; }
-        .metric-item .value { font-size: 1.5rem; font-weight: 700; color: var(--accent); font-family: 'Outfit'; }
-        
-        .data-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        .data-table th { background: rgba(255,255,255,0.03); color: var(--text-muted); font-weight: 500; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; }
-        .data-table th, .data-table td { padding: 15px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.05); }
-        .data-table tr:hover { background: rgba(255,255,255,0.02); }
-        
-        .modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(5px); display: none; justify-content: center; align-items: center; z-index: 1001; }
-        .modal-content { width: 450px; padding: 40px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
-        .glass-input { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; padding: 12px; border-radius: 8px; width: 100%; margin-top: 8px; font-family: 'Inter'; }
-        .glass-input:focus { border-color: var(--accent); outline: none; background: rgba(255,255,255,0.08); }
-        .form-group { margin-bottom: 20px; }
-        .form-group label { font-size: 0.8rem; color: var(--text-muted); font-weight: 500; }
-        
-        .tab-btn { background: none; border: none; color: var(--text-muted); padding: 10px 20px; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.3s; }
-        .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
-    </style>
 </head>
 <body>
     <aside class="sidebar">
@@ -47,146 +18,239 @@
         </div>
         <nav class="nav-menu">
             <div class="nav-group-title">情 报 中 心</div>
-            <a href="./index.html" class="nav-item">
-                <span class="icon">📊</span>
-                <span>量化总览</span>
-            </a>
-            <a href="./factor.html" class="nav-item">
-                <span class="icon">📈</span>
-                <span>因子分析</span>
-            </a>
-            <a href="./industry.html" class="nav-item">
-                <span class="icon">🏭</span>
-                <span>产业追踪</span>
-            </a>
+            <a href="./index.html" class="nav-item"><span class="icon">📊</span><span>量化总览</span></a>
+            <a href="./factor.html" class="nav-item"><span class="icon">📈</span><span>因子分析</span></a>
+            <a href="./industry.html" class="nav-item"><span class="icon">🏭</span><span>产业追踪</span></a>
             <div class="nav-group-title">策 略 实 验 室</div>
-            <a href="./strategy.html" class="nav-item">
-                <span class="icon">⚙️</span>
-                <span>策略中心</span>
-            </a>
-            <a href="./backtest.html" class="nav-item">
-                <span class="icon">🧪</span>
-                <span>量化回测</span>
-            </a>
-            <a href="./treasury.html" class="nav-item">
-                <span class="icon">🌐</span>
-                <span>海外策略</span>
-            </a>
+            <a href="./strategy.html" class="nav-item"><span class="icon">⚙️</span><span>策略中心</span></a>
+            <a href="./backtest.html" class="nav-item"><span class="icon">🧪</span><span>量化回测</span></a>
+            <a href="./treasury.html" class="nav-item"><span class="icon">🌐</span><span>海外策略</span></a>
+
+            <div class="nav-group-title">研 究 审 计</div>
+            <a href="./audit.html" class="nav-item"><span class="icon">🔍</span><span>深度审计</span></a>
+            <div class="nav-parent" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')"><span class="icon">📑</span><span>个股深研</span><span class="nav-arrow">▶</span></div>
+            <div class="nav-sub-group">
+                <a href="./smic_audit.html" class="nav-item"><span class="icon">🔬</span><span>中芯国际</span><span class="badge-beta" style="background:rgba(239,68,68,0.15);color:#f87171;border-color:rgba(239,68,68,0.3);">DEEP</span></a>
+            </div>
             <div class="nav-group-title">账 户 管 理</div>
-            <a href="./portfolio.html" class="nav-item active">
-                <span class="icon">💼</span>
-                <span>投资组合</span>
-            </a>
+            <a href="./portfolio.html" class="nav-item active"><span class="icon">💼</span><span>投资组合</span></a>
         </nav>
     </aside>
 
-    <main class="dashboard">
-        <header class="topbar">
+    <main class="dashboard" id="dashboard-main">
+        <!-- ═══ Topbar ═══ -->
+        <header class="topbar" style="margin-bottom: 20px;">
             <div class="welcome-box" style="margin:0">
-                <h2 style="font-size: 1.5rem">组合管理中心 <span style="font-size: 0.8rem; font-weight: 300; opacity: 0.6">/ Portfolio Management</span></h2>
+                <h2 style="font-size: 1.5rem">组合管理中心 <span style="font-size: 0.8rem; font-weight: 300; opacity: 0.6; font-family: 'Outfit'">/ Portfolio Management</span></h2>
             </div>
-            <div class="actions">
-                <div class="status-pill status-up" id="nav-val">总资产: --</div>
-                <button class="btn btn-primary" id="open-trade-btn" style="margin-left: 15px">➕ 新增仓位</button>
+            <div class="actions" style="display: flex; gap: 12px; align-items: center;">
+                <span class="pf-live-badge" id="pf-live-badge">● LIVE</span>
+                <button class="btn btn-import" id="import-btn">📥 导入持仓 / Import</button>
+                <input type="file" id="import-file-input" accept=".txt,.csv,.xls" style="display:none;">
+                <button class="btn btn-primary" id="open-trade-btn" style="box-shadow: 0 0 20px rgba(59,130,246,0.3);">➕ 新增仓位 / Trade</button>
             </div>
         </header>
 
-        <div class="portfolio-grid">
-            <!-- 资产简报 -->
-            <div class="glass-panel summary-info">
-                <div class="metric-row">
-                    <div class="metric-item">
-                        <div class="label">可用现金 (Cash)</div>
-                        <div class="value" id="port-cash">--</div>
+        <div class="pf-content">
+            <!-- ═══ ZONE 1: Hero — 核心数据 ═══ -->
+            <div class="pf-hero glass-panel" id="pf-hero-zone">
+                <div class="pf-hero-main">
+                    <div class="pf-hero-left">
+                        <div class="pf-hero-label">TOTAL NET ASSET VALUE</div>
+                        <div class="pf-hero-nav" id="nav-val">--</div>
+                        <div class="pf-hero-sub" id="pf-hero-sub">组合持仓 <span id="pos-count">0</span> 只 · 现金占比 <span id="cash-weight">--</span>%</div>
                     </div>
-                    <div class="metric-item">
-                        <div class="label">持仓市值 (Market Value)</div>
-                        <div class="value" id="port-mv">--</div>
+                    <div class="pf-hero-right">
+                        <div class="pf-sparkline-container" id="pf-sparkline" style="height: 60px; width: 200px;"></div>
                     </div>
-                    <div class="metric-item">
-                        <div class="label">账户收益率 (Total ROI)</div>
-                        <div class="value" id="port-roi">--</div>
+                </div>
+                <div class="pf-hero-cards">
+                    <div class="pf-kpi-card">
+                        <span class="pf-kpi-label">可用现金 CASH</span>
+                        <span class="pf-kpi-value pf-gold" id="port-cash">--</span>
                     </div>
-                    <div class="metric-item">
-                        <div class="label">年化波动率 (Volatility)</div>
-                        <div class="value" id="port-vol">--</div>
+                    <div class="pf-kpi-card">
+                        <span class="pf-kpi-label">持仓市值 MKT VALUE</span>
+                        <span class="pf-kpi-value" id="port-mv">--</span>
+                    </div>
+                    <div class="pf-kpi-card">
+                        <span class="pf-kpi-label">账户收益率 ROI</span>
+                        <span class="pf-kpi-value" id="port-roi">--</span>
+                    </div>
+                    <div class="pf-kpi-card">
+                        <span class="pf-kpi-label">年化波动率 VOL</span>
+                        <span class="pf-kpi-value" id="port-vol">--</span>
+                    </div>
+                    <div class="pf-kpi-card">
+                        <span class="pf-kpi-label">夏普比率 SHARPE</span>
+                        <span class="pf-kpi-value" id="port-sharpe">--</span>
+                    </div>
+                    <div class="pf-kpi-card">
+                        <span class="pf-kpi-label">最大回撤 MAX DD</span>
+                        <span class="pf-kpi-value pf-danger" id="port-maxdd">--</span>
                     </div>
                 </div>
             </div>
 
-            <!-- 持仓详情 -->
-            <div class="glass-panel table-section">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <h3 style="font-size: 1rem;">📋 实盘头寸监控 (Position Monitoring)</h3>
+            <!-- ═══ ZONE 2: 持仓监控表 ═══ -->
+            <div class="glass-panel pf-positions-panel">
+                <div class="pf-panel-header">
+                    <h3>📋 分项底仓池 <span class="pf-panel-sub">Position Monitoring</span></h3>
+                    <div class="pf-table-controls">
+                        <span class="pf-pos-count" id="pf-total-positions">0 只持仓</span>
+                    </div>
                 </div>
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>股票代码</th>
-                            <th>名称</th>
-                            <th>持股数</th>
-                            <th>成本价</th>
-                            <th>当前价</th>
-                            <th>持仓市值</th>
-                            <th>浮动盈亏</th>
-                            <th>盈亏率</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody id="positions-body">
-                        <!-- 动态渲染 -->
-                    </tbody>
-                </table>
+                <div class="pf-table-wrap">
+                    <table class="pf-table" id="pf-positions-table">
+                        <thead>
+                            <tr>
+                                <th>证券代码</th>
+                                <th>名称 / 行业</th>
+                                <th>数量</th>
+                                <th>成本价</th>
+                                <th>现价</th>
+                                <th>市值</th>
+                                <th>仓位占比</th>
+                                <th>浮动盈亏</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="positions-body">
+                            <tr><td colspan="9" class="pf-table-empty">数据加载中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
-            <!-- 风险归因图表 -->
-            <div class="glass-panel chart-panel">
-                <h3 style="font-size: 1rem; margin-bottom: 20px;">📐 风险贡献分析 (Risk Attribution / MCTR)</h3>
-                <div id="mctr-chart" style="height: 350px;"></div>
+            <!-- ═══ ZONE 3: 双图表行 — 行业敞口 + MCTR ═══ -->
+            <div class="pf-charts-row">
+                <div class="glass-panel pf-chart-box">
+                    <h4>🛡️ 行业风向敞口 <span class="pf-chart-sub">Sector Exposure</span></h4>
+                    <div id="sector-pie-chart" style="height: 340px;"></div>
+                </div>
+                <div class="glass-panel pf-chart-box">
+                    <h4>📐 边缘风险贡献 <span class="pf-chart-sub">MCTR Attribution</span></h4>
+                    <div id="mctr-chart" style="height: 340px;"></div>
+                </div>
             </div>
 
-            <div class="glass-panel chart-panel">
-                <h3 style="font-size: 1rem; margin-bottom: 20px;">🛡️ 行业敞口分布 (Sector Exposure)</h3>
-                <div id="sector-pie-chart" style="height: 350px;"></div>
+            <!-- ═══ ZONE 4: 净值走势 + 风险仪表盘 ═══ -->
+            <div class="pf-charts-row">
+                <div class="glass-panel pf-chart-box pf-chart-wide">
+                    <h4>📈 净值走势 <span class="pf-chart-sub">NAV Curve vs 沪深300</span></h4>
+                    <div id="nav-chart" style="height: 340px;"></div>
+                </div>
+                <div class="glass-panel pf-chart-box pf-chart-narrow">
+                    <h4>🎯 风控仪表 <span class="pf-chart-sub">Risk Gauges</span></h4>
+                    <div class="pf-gauge-grid">
+                        <div id="gauge-sharpe" style="height: 150px;"></div>
+                        <div id="gauge-maxdd" style="height: 150px;"></div>
+                        <div id="gauge-vol" style="height: 150px;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ ZONE 5: 交易记录 ═══ -->
+            <div class="glass-panel pf-history-panel">
+                <div class="pf-panel-header">
+                    <h3>📜 交易记录 <span class="pf-panel-sub">Trade History Console</span></h3>
+                </div>
+                <div class="pf-history-list" id="trade-history-list">
+                    <div class="pf-history-empty">暂无交易记录</div>
+                </div>
             </div>
         </div>
     </main>
 
-    <!-- 交易模态框 -->
-    <div class="modal" id="trade-modal">
-        <div class="modal-content glass-panel">
-            <h3 style="font-family: 'Outfit'; font-size: 1.4rem;">执行模拟交易 <span style="font-size: 0.7rem; color: var(--text-muted); display: block;">Simulated Order Placement</span></h3>
-            
-            <div class="form-group" style="margin-top: 25px;">
-                <label>证券代码</label>
-                <input type="text" id="trade-code" placeholder="e.g. 600519.SH" class="glass-input">
-            </div>
-            
-            <div class="form-group">
-                <label>证券名称</label>
-                <input type="text" id="trade-name" placeholder="请输入名称" class="glass-input">
+    <!-- ═══ Toast 通知容器 ═══ -->
+    <div class="pf-toast-container" id="toast-container"></div>
+
+    <!-- ═══ 交易弹窗 ═══ -->
+    <div class="pf-modal-overlay" id="trade-modal">
+        <div class="pf-modal">
+            <div class="pf-modal-header">
+                <h3 class="pf-modal-title">执行交易指令</h3>
+                <span class="pf-modal-badge">SIMULATION</span>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                <div class="form-group">
-                    <label>成交价格</label>
-                    <input type="number" id="trade-price" step="0.01" class="glass-input">
+            <div class="pf-form-group">
+                <label>证券代码 TICKER</label>
+                <input type="text" id="trade-code" placeholder="e.g. 600519.SH" class="pf-input">
+            </div>
+            <div class="pf-form-group">
+                <label>证券名称 SYMBOL NAME</label>
+                <input type="text" id="trade-name" placeholder="请输入名称" class="pf-input">
+            </div>
+            <div class="pf-form-row">
+                <div class="pf-form-group">
+                    <label>成交均价 PRICE</label>
+                    <input type="number" id="trade-price" step="0.01" class="pf-input">
                 </div>
-                <div class="form-group">
-                    <label>交易数量</label>
-                    <input type="number" id="trade-amount" step="100" class="glass-input">
+                <div class="pf-form-group">
+                    <label>申报数量 AMOUNT</label>
+                    <input type="number" id="trade-amount" step="100" class="pf-input">
                 </div>
             </div>
 
-            <div style="display: flex; gap: 15px; margin-top: 20px;">
-                <button class="btn btn-primary" id="buy-btn" style="flex: 1; background: #10b981; border: none; font-weight: 600;">买入 / Buy</button>
-                <button class="btn btn-primary" id="sell-btn" style="flex: 1; background: #ef4444; border: none; font-weight: 600;">卖出 / Sell</button>
+            <div class="pf-form-info" id="trade-preview">
+                <span>预估交易额: </span><strong id="trade-est">¥ 0.00</strong>
+                <span class="pf-limit-hint">单票仓位上限: 20%</span>
             </div>
-            
-            <button class="btn btn-outline" id="close-modal" style="width: 100%; margin-top: 15px;">取消并返回</button>
+
+            <div class="pf-modal-actions">
+                <button class="pf-btn-buy" id="buy-btn">买入 BUY</button>
+                <button class="pf-btn-sell" id="sell-btn">卖出 SELL</button>
+            </div>
+            <button class="pf-btn-cancel" id="close-modal">取消并返回 CANCEL</button>
         </div>
     </div>
 
-    <script src="./portfolio_manager.js"></script>
+    <!-- ═══ 导入持仓弹窗 ═══ -->
+    <div class="pf-modal-overlay" id="import-modal">
+        <div class="pf-modal" style="width: 640px;">
+            <div class="pf-modal-header">
+                <h3 class="pf-modal-title">📥 导入持仓数据</h3>
+                <span class="pf-modal-badge">TXT → SYSTEM</span>
+            </div>
+
+            <!-- 文件拖放区 -->
+            <div class="pf-import-dropzone" id="import-dropzone">
+                <div class="pf-dropzone-icon">📄</div>
+                <div class="pf-dropzone-text">拖拽 <strong>资金股份查询.txt</strong> 到此处</div>
+                <div class="pf-dropzone-hint">或点击选择文件 · 支持通达信/同花顺/东方财富导出格式</div>
+            </div>
+
+            <!-- 预览区域（选文件后显示） -->
+            <div class="pf-import-preview" id="import-preview" style="display:none;">
+                <div class="pf-import-summary" id="import-summary"></div>
+                <div class="pf-import-table-wrap">
+                    <table class="pf-table" id="import-preview-table">
+                        <thead>
+                            <tr>
+                                <th>代码</th>
+                                <th>名称</th>
+                                <th>数量</th>
+                                <th>成本价</th>
+                                <th>现价</th>
+                            </tr>
+                        </thead>
+                        <tbody id="import-preview-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 警告提示 -->
+            <div class="pf-import-warning" id="import-warning" style="display:none;">
+                ⚠️ 确认导入将<strong>覆盖</strong>当前所有持仓数据，此操作不可撤销
+            </div>
+
+            <div class="pf-modal-actions">
+                <button class="pf-btn-buy" id="import-confirm-btn" style="display:none;">✅ 确认导入</button>
+            </div>
+            <button class="pf-btn-cancel" id="import-close-btn">取消并返回 CANCEL</button>
+        </div>
+    </div>
+
+    <script src="./portfolio_manager.js?v=21"></script>
 </body>
 </html>

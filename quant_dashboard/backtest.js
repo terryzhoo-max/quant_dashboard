@@ -98,6 +98,26 @@ document.addEventListener('DOMContentLoaded', function() {
                 RANGE: { lookback_s: 20, lookback_m: 60, momentum_threshold: 2, stop_loss: 7 },
                 BULL:  { lookback_s: 20, lookback_m: 60, momentum_threshold: 0, stop_loss: 8 }
             }
+        },
+        erp: {
+            label: '宏观ERP择时 V1.0',
+            icon: '🌐',
+            desc: '五维宏观评分 (ERP绝对值+分位+M1趋势+波动率+信用) 驱动ETF仓位切换 · 最优参数已内置',
+            defaultTicker: '510300.SH',
+            params: [
+                { key: 'buy_threshold',  label: '买入阈值',       min: 40, max: 80, step: 5,  default: 55 },
+                { key: 'sell_threshold', label: '卖出阈值',       min: 20, max: 60, step: 5,  default: 40 },
+                { key: 'erp_window',     label: 'ERP分位窗口',    min: 504,max: 1512,step: 252,default: 1008 },
+                { key: 'w_erp_abs',      label: 'D1:ERP绝对值权重',min: 10,max: 40,step: 5,  default: 20 },
+                { key: 'w_erp_pct',      label: 'D2:ERP分位权重',  min: 10,max: 40,step: 5,  default: 30 },
+                { key: 'w_m1',           label: 'D3:M1趋势权重',   min: 15,max: 45,step: 5,  default: 35 },
+                { key: 'stop_loss',      label: '止损线 %',        min: 0, max: 15, step: 1,  default: 0 }
+            ],
+            presets: {
+                BEAR:  { buy_threshold: 70, sell_threshold: 45, erp_window: 1008, w_erp_abs: 20, w_erp_pct: 30, w_m1: 35, stop_loss: 8 },
+                RANGE: { buy_threshold: 55, sell_threshold: 40, erp_window: 1008, w_erp_abs: 20, w_erp_pct: 30, w_m1: 35, stop_loss: 0 },
+                BULL:  { buy_threshold: 45, sell_threshold: 35, erp_window: 756,  w_erp_abs: 25, w_erp_pct: 25, w_m1: 30, stop_loss: 0 }
+            }
         }
     };
 
@@ -184,9 +204,19 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function collectParams() {
         const params = {};
+        const strategy = strategySelect.value;
         document.querySelectorAll('#strategy-params-panel input[type="range"]').forEach(el => {
             params[el.dataset.key] = parseFloat(el.value);
         });
+        // ERP策略: 权重从百分比转小数, 自动补算 w_vol + w_credit
+        if (strategy === 'erp') {
+            const wKeys = ['w_erp_abs', 'w_erp_pct', 'w_m1'];
+            wKeys.forEach(k => { if (params[k]) params[k] = params[k] / 100; });
+            const usedW = (params.w_erp_abs || 0) + (params.w_erp_pct || 0) + (params.w_m1 || 0);
+            const remaining = Math.max(0, 1.0 - usedW);
+            params.w_vol = Math.round(remaining * 0.5 * 100) / 100;
+            params.w_credit = Math.round((remaining - params.w_vol) * 100) / 100;
+        }
         return params;
     }
 
