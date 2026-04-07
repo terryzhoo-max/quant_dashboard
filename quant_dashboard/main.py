@@ -1899,6 +1899,7 @@ async def get_stock_name(ts_code: str):
         return {"ts_code": ts_code, "name": _NAME_CACHE[ts_code], "type": "cached"}
 
     def do_lookup():
+        pro = ts.pro_api("5334333c2cb73c9b9987fb6e89da29a3cbd0f442622fbcbfd7bd40b6")
         # 判断后缀决定查询策略
         suffix = ts_code.split(".")[-1] if "." in ts_code else ""
         code_num = ts_code.split(".")[0] if "." in ts_code else ts_code
