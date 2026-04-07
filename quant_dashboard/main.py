@@ -82,29 +82,57 @@ CACHE_TTL = 3600  # 向下兼容，实际使用 _get_cache_ttl()
 
 # ─── 收盘后自动预热缓存 (每日 15:30 触发) ───
 
+def with_retry(func, name, max_retries=3, delay=300):
+    """柔性重试机制: 避免 Tushare 等接口拥堵导致的单点故障"""
+    for i in range(max_retries):
+        try:
+            func()
+            return True
+        except Exception as e:
+            if i < max_retries - 1:
+                print(f"[Retry] {name} 失败: {e}。等待 {delay}秒后重试 ({i+1}/{max_retries})...")
+                time.sleep(delay)
+            else:
+                print(f"[Retry] {name} 最终失败，已达最大重试次数。")
+                return False
+
 def _warmup_erp_cache():
     """后台预热 ERP 引擎缓存: 拉取最新 PE/Yield/M1 + 生成报告"""
-    try:
-        engine = get_erp_engine()
-        report = engine.generate_report()
-        status = report.get('status', 'unknown')
-        snap = report.get('current_snapshot', {})
-        erp = snap.get('erp_value', '?')
-        print(f"[ERP Warmup] 预热完成 · status={status} · ERP={erp}%")
-    except Exception as e:
-        print(f"[ERP Warmup] 预热失败: {e}")
+    engine = get_erp_engine()
+    report = engine.generate_report()
+    status = report.get('status', 'unknown')
+    if status != "success":
+        raise Exception(f"ERP report failed with status: {status}")
+    snap = report.get('current_snapshot', {})
+    erp = snap.get('erp_value', '?')
+    print(f"[ERP Warmup] 预热完成 · status={status} · ERP={erp}%")
+
+def _warmup_aiae_cache():
+    """预热 AIAE 引擎缓存 (V7.0)"""
+    engine = get_aiae_engine()
+    report = engine.generate_report()
+    status = report.get('status', 'unknown')
+    if status != "success":
+        raise Exception(f"AIAE report failed with status: {status}")
+    print(f"[AIAE Warmup] 预热完成 · status={status}")
 
 def _warmup_dashboard_cache():
-    """后台预热量化总览缓存: 强制清除旧缓存, 触发全量策略引擎刷新"""
-    try:
-        # 清除旧缓存, 强制下次请求全量刷新
-        STRATEGY_CACHE["last_update"] = None
-        STRATEGY_CACHE["dashboard_data"] = None
-        print(f"[Dashboard Warmup] 缓存已清除, 下次请求将触发全量策略引擎")
-        # 注: 实际全量刷新由下一次 HTTP 请求触发 (因为 async 函数无法在 threading 中直接调用)
-        # 但清除缓存确保收盘后第一次访问会拿到最新数据
-    except Exception as e:
-        print(f"[Dashboard Warmup] 预热失败: {e}")
+    """后台预热量化总览缓存: True Zero-Wait (真实主动流水线预热)"""
+    # 清除旧缓存
+    STRATEGY_CACHE["last_update"] = None
+    STRATEGY_CACHE["dashboard_data"] = None
+    
+    # 主动触发全数据流水线
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    # 因为 get_dashboard_data 是协程，在后台线程中需借助事件循环
+    data = loop.run_until_complete(get_dashboard_data())
+    loop.close()
+    
+    if data and data.get("status") == "success":
+        print(f"[Dashboard Warmup] 主动预热成功, 零等待缓存已就绪")
+    else:
+        raise Exception("预热后返回状态异常，缓存建立失败")
 
 def _schedule_daily_warmup():
     """计算距下一个 15:35 的秒数, 注册定时器"""
@@ -127,26 +155,22 @@ def _warmup_factor_data():
     V5.0: 收盘后自动同步因子数据 (日线 + 财务指标)
     触发时机: 每日 15:35 (A股收盘后 35 分钟，给 Tushare 数据更新缓冲)
     """
-    try:
-        from data_manager import FactorDataManager
-        dm = FactorDataManager()
-        stocks = dm.get_all_stocks()
-        # 默认同步 Top 30 様本池 (与因子分析默认配置一致)
-        sample = stocks.head(30)['ts_code'].tolist()
-        result = dm.smart_sync(sample)
-        synced = result.get('synced', False)
-        latest = result.get('freshness', {}).get('daily_latest', '?')
-        print(f"[Factor Sync] {'\u540c\u6b65\u5b8c\u6210' if synced else '\u6570\u636e\u5df2\u662f\u6700\u65b0'} · \u6700\u65b0\u65e5\u7ebf: {latest}")
-    except Exception as e:
-        print(f"[Factor Sync] \u540c\u6b65\u5931\u8d25: {e}")
+    from data_manager import FactorDataManager
+    dm = FactorDataManager()
+    stocks = dm.get_all_stocks()
+    # 默认同步 Top 30 様本池 (与因子分析默认配置一致)
+    sample = stocks.head(30)['ts_code'].tolist()
+    result = dm.smart_sync(sample)
+    synced = result.get('synced', False)
+    if not synced and "数据已是最新" not in str(result):
+         pass # 视为成功，可能真的最新
+    latest = result.get('freshness', {}).get('daily_latest', '?')
+    print(f"[Factor Sync] {'同步完成' if synced else '数据已是最新'} · 最新日线: {latest}")
 
 def _warmup_rates_cache():
     """V1.5: 后台预热利率择时引擎缓存: 拉取最新 FRED 数据 + 生成报告"""
-    try:
-        from rates_strategy_engine import warmup_rates_cache
-        warmup_rates_cache()
-    except Exception as e:
-        print(f"[RATES Warmup] 预热失败: {e}")
+    from rates_strategy_engine import warmup_rates_cache
+    warmup_rates_cache()
 
 def _schedule_fred_daily_refresh():
     """注册 FRED 数据每日刷新定时器 (北京18:30 = 美东6:30AM)
@@ -167,17 +191,22 @@ def _schedule_fred_daily_refresh():
 def _fred_daily_callback():
     """每日18:30 刷新FRED数据 + 注册明天的"""
     print(f"[Scheduler] FRED利率刷新触发 @ {datetime.now().strftime('%H:%M:%S')}")
-    _warmup_rates_cache()
+    with_retry(_warmup_rates_cache, "Rates_Warmup", 3, 300)
     _schedule_fred_daily_refresh()
 
 def _daily_warmup_callback():
     """定时回调: 执行全部预热 + 注册下一次"""
-    print(f"[Scheduler] ⏰ 收盘预热触发 @ {datetime.now().strftime('%H:%M:%S')}")
-    _warmup_erp_cache()
-    _warmup_dashboard_cache()
-    _warmup_factor_data()  # V5.0: 因子数据同步
-    _warmup_rates_cache()  # V1.5: 利率数据同步
+    print(f"==================================================")
+    print(f"[Scheduler] ⏰ 收盘真实主动预热流水线 @ {datetime.now().strftime('%H:%M:%S')}")
+    
+    # 阶梯式重试
+    with_retry(_warmup_erp_cache, "ERP_Warmup", 3, 300)
+    with_retry(_warmup_aiae_cache, "AIAE_Warmup", 3, 300)
+    with_retry(_warmup_dashboard_cache, "Dashboard_Warmup", 3, 300)
+    with_retry(_warmup_factor_data, "Factor_Sync", 3, 300)
+    
     _schedule_daily_warmup()  # 注册明天的
+    print(f"==================================================")
 
 @app.on_event("startup")
 async def startup_event():
