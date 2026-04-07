@@ -108,8 +108,9 @@ def _warmup_erp_cache():
     print(f"[ERP Warmup] 预热完成 · status={status} · ERP={erp}%")
 
 def _warmup_aiae_cache():
-    """预热 AIAE 引擎缓存 (V7.0)"""
+    """预热 AIAE 引擎缓存 (V7.0/V8.1)"""
     engine = get_aiae_engine()
+    engine.refresh() # V8.1: 强制劈开 L1 缓存锁
     report = engine.generate_report()
     status = report.get('status', 'unknown')
     if status != "success":
@@ -149,6 +150,31 @@ def _schedule_daily_warmup():
     timer = threading.Timer(delay, _daily_warmup_callback)
     timer.daemon = True
     timer.start()
+
+def _schedule_morning_warmup():
+    """早间 08:30 数据刷新定时器 (专解决融资融券等延迟发布数据的抓取)"""
+    now = datetime.now()
+    target = now.replace(hour=8, minute=30, second=0, microsecond=0)
+    if now >= target:
+        target += timedelta(days=1)
+    while target.weekday() >= 5:
+        target += timedelta(days=1)
+    delay = (target - now).total_seconds()
+    print(f"[Scheduler] 早间预热: {target.strftime('%Y-%m-%d %H:%M')} ({delay/3600:.1f}h后)")
+    timer = threading.Timer(delay, _morning_warmup_callback)
+    timer.daemon = True
+    timer.start()
+
+def _morning_warmup_callback():
+    """盘前数据补偿拉取"""
+    print(f"==================================================")
+    print(f"[Scheduler] 🌅 早间数据补偿流水线 @ {datetime.now().strftime('%H:%M:%S')}")
+    # 强制破防 L1 缓存以拉取最新融资数据
+    with_retry(_warmup_aiae_cache, "AIAE_Morning_Warmup", 3, 300)
+    # 更新数据后再同步更新大总览 Dashboard
+    with_retry(_warmup_dashboard_cache, "Dashboard_Morning_Warmup", 3, 300)
+    _schedule_morning_warmup()
+    print(f"==================================================")
 
 def _warmup_factor_data():
     """
@@ -210,16 +236,20 @@ def _daily_warmup_callback():
 
 @app.on_event("startup")
 async def startup_event():
-    """服务启动: 后台预热 ERP + 利率 + 注册每日定时任务"""
+    """服务启动: 后台预热 ERP + 利率 + AIAE + 注册每日定时任务"""
     # 异步预热 (不阻塞启动)
     threading.Thread(target=_warmup_erp_cache, daemon=True).start()
     threading.Thread(target=_warmup_rates_cache, daemon=True).start()  # V1.5: 利率预热
     threading.Thread(target=lambda: get_aiae_engine().generate_report(), daemon=True).start()  # AIAE预热
+    
     # 注册收盘后定时预热 (15:35 A股)
     _schedule_daily_warmup()
+    # 注册开盘前补偿预热 (08:30 A股)
+    _schedule_morning_warmup()
     # 注册 FRED 利率刷新 (18:30 = 美东6:30AM)
     _schedule_fred_daily_refresh()
-    print("[Startup] AlphaCore 服务启动完成 · ERP+利率+AIAE预热已触发 · 每日15:35刷新A股 · 每日18:30刷新FRED利率")
+    
+    print("[Startup] AlphaCore 服务启动完成 · 引擎常驻预热就绪 · 调度器(08:30/15:35/18:30)已激活")
 
 
 # --- AlphaCore DMSO Sub-Engines (V3.3 机构级) ---

@@ -241,7 +241,7 @@ class AIAEEngine:
                 "fetched_at": datetime.now().isoformat(), "is_fallback": True
             }
 
-        return _cached("aiae_total_mv", 5 * 60, _fetch)  # 5分钟TTL
+        return _cached("aiae_total_mv", 86400, _fetch)  # V8.1: 更新为24h，由强制 refresh 主导
 
     def _fetch_m2(self) -> Dict:
         """获取最新M2数据 (cn_m)"""
@@ -279,13 +279,15 @@ class AIAEEngine:
                 "is_fallback": True
             }
 
-        return _cached("aiae_m2", 6 * 3600, _fetch)  # 6小时TTL
+        return _cached("aiae_m2", 7 * 86400, _fetch)  # V8.1: M2是月频数据，缓存调至7天
 
     def _fetch_margin_data(self) -> Dict:
         """获取融资融券数据 (margin)"""
         def _fetch():
             cache_file = os.path.join(CACHE_DIR, "aiae_margin.json")
-            for offset in range(6):
+            # V8.1: 智能时差补偿。融资数据晚间22点甚至次日才发布，如果时间早于22点，直接从昨天开始探测
+            start_offset = 0 if datetime.now().hour >= 22 else 1
+            for offset in range(start_offset, start_offset + 6):
                 try_date = (datetime.now() - timedelta(days=offset)).strftime("%Y%m%d")
                 try:
                     df = pro.margin(trade_date=try_date)
@@ -317,7 +319,7 @@ class AIAEEngine:
                 "fetched_at": datetime.now().isoformat(), "is_fallback": True
             }
 
-        return _cached("aiae_margin", 2 * 60, _fetch)  # 2分钟TTL
+        return _cached("aiae_margin", 86400, _fetch)  # V8.1: 更新为24h TTL
 
     # ========== 核心计算层 ==========
 
