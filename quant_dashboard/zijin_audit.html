@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AlphaCore · 中芯国际(SMIC) 深度审计报告</title>
-    <meta name="description" content="AlphaCore 深度审计报告 — 中芯国际(688981.SH / 0981.HK) 五维穿透式审计：财务健康·技术护城河·地缘风险·估值合理性·成长动能">
+    <title>AlphaCore · 紫金矿业(601899) 深度穿透审计报告</title>
+    <meta name="description" content="AlphaCore 深度审计报告 — 紫金矿业(601899.SH / 2899.HK) 五维穿透式审计：财务健康·资源禀赋·全球化风险·估值合理性·成长动能">
     <link rel="stylesheet" href="./styles.css">
     <link rel="stylesheet" href="./audit.css">
-    <link rel="stylesheet" href="./smic_audit.css">
+    <link rel="stylesheet" href="./zijin_audit.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
     <script src="./echarts.min.js"></script>
 </head>
@@ -15,7 +15,8 @@
     <!-- Ambient Orbs -->
     <div class="audit-orb audit-orb-1"></div>
     <div class="audit-orb audit-orb-2"></div>
-    <div class="smic-orb smic-orb-3"></div>
+    <div class="zijin-orb zijin-orb-3"></div>
+    <div class="zijin-orb zijin-orb-4"></div>
 
     <aside class="sidebar">
         <div class="logo"><div class="logo-icon"></div><h1>AlphaCore</h1></div>
@@ -33,8 +34,8 @@
             <a href="./audit.html" class="nav-item"><span class="icon">🔍</span><span>深度审计</span></a>
             <div class="nav-parent" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')"><span class="icon">📑</span><span>个股深研</span><span class="nav-arrow">▶</span></div>
             <div class="nav-sub-group open">
-                <a href="./smic_audit.html" class="nav-item active"><span class="icon">🔬</span><span>中芯国际</span><span class="badge-beta" style="background:rgba(239,68,68,0.15);color:#f87171;border-color:rgba(239,68,68,0.3);">DEEP</span></a>
-                <a href="./zijin_audit.html" class="nav-item"><span class="icon">⛏️</span><span>紫金矿业</span><span class="badge-beta" style="background:rgba(245,158,11,0.15);color:#fbbf24;border-color:rgba(245,158,11,0.3);">DEEP</span></a>
+                <a href="./smic_audit.html" class="nav-item"><span class="icon">🔬</span><span>中芯国际</span><span class="badge-beta" style="background:rgba(239,68,68,0.15);color:#f87171;border-color:rgba(239,68,68,0.3);">DEEP</span></a>
+                <a href="./zijin_audit.html" class="nav-item active"><span class="icon">⛏️</span><span>紫金矿业</span><span class="badge-beta" style="background:rgba(245,158,11,0.15);color:#fbbf24;border-color:rgba(245,158,11,0.3);">DEEP</span></a>
                 <a href="./byd_audit.html" class="nav-item"><span class="icon">🚗</span><span>比亚迪</span><span class="badge-beta" style="background:rgba(16,185,129,0.15);color:#34d399;border-color:rgba(16,185,129,0.3);">DEEP</span></a>
                 <a href="./eastmoney_audit.html" class="nav-item"><span class="icon">💹</span><span>东方财富</span><span class="badge-beta" style="background:rgba(37,99,235,0.15);color:#60a5fa;border-color:rgba(37,99,235,0.3);">DEEP</span></a>
                 <a href="./fii_audit.html" class="nav-item"><span class="icon">🤖</span><span>工业富联</span><span class="badge-beta" style="background:rgba(14,165,233,0.15);color:#38bdf8;border-color:rgba(14,165,233,0.3);">DEEP</span></a>
@@ -53,8 +54,8 @@
         <header class="topbar">
             <div class="search-bar"><input type="text" placeholder="搜索审计维度、财务指标及风险因子..."></div>
             <div class="actions">
-                <span class="smic-topbar-badge">🏭 中芯国际 688981.SH</span>
-                <span style="font-size:0.78rem;color:#a78bfa;background:rgba(139,92,246,0.08);padding:4px 14px;border-radius:8px;border:1px solid rgba(139,92,246,0.15);font-weight:600;">🔬 穿透审计 V3.0</span>
+                <span class="zijin-topbar-badge">⛏️ 紫金矿业 601899.SH</span>
+                <span style="font-size:0.78rem;color:#fbbf24;background:rgba(245,158,11,0.08);padding:4px 14px;border-radius:8px;border:1px solid rgba(245,158,11,0.15);font-weight:600;">⛏️ 穿透审计 V3.0</span>
                 <span id="audit-time" style="font-size:0.7rem;color:#64748b;margin-left:6px;"></span>
             </div>
         </header>
@@ -67,42 +68,43 @@
                 <div class="audit-skeleton skel-kpi"></div>
                 <div class="audit-skeleton skel-overview"></div>
                 <div class="loading-progress-bar"><div class="loading-progress-fill"></div></div>
-                <div class="loading-status">🔬 正在执行中芯国际五维穿透审计… 财务健康 · 技术护城河 · 地缘风险 · 估值合理性 · 成长动能</div>
+                <div class="loading-status">⛏️ 正在执行紫金矿业五维穿透审计… 财务健康 · 资源禀赋 · 全球化风险 · 估值合理性 · 成长动能</div>
             </div>
 
             <!-- Company Identity Banner -->
-            <div class="smic-identity-banner smic-animate-in" id="smic-identity" style="display:none;">
-                <div class="smic-id-left">
-                    <div class="smic-logo-ring">
-                        <span class="smic-logo-text">SMIC</span>
+            <div class="zijin-identity-banner zijin-animate-in" id="zijin-identity" style="display:none;">
+                <div class="zijin-id-left">
+                    <div class="zijin-logo-ring">
+                        <span class="zijin-logo-text">ZIJIN</span>
                     </div>
-                    <div class="smic-id-info">
-                        <h2 class="smic-company-name">中芯国际集成电路制造有限公司</h2>
-                        <div class="smic-company-en">Semiconductor Manufacturing International Corp.</div>
-                        <div class="smic-tickers">
-                            <span class="smic-ticker a-share">688981.SH</span>
-                            <span class="smic-ticker h-share">0981.HK</span>
-                            <span class="smic-sector-tag">半导体制造</span>
-                            <span class="smic-sector-tag">国产替代</span>
+                    <div class="zijin-id-info">
+                        <h2 class="zijin-company-name">紫金矿业集团股份有限公司</h2>
+                        <div class="zijin-company-en">Zijin Mining Group Co., Ltd.</div>
+                        <div class="zijin-tickers">
+                            <span class="zijin-ticker a-share">601899.SH</span>
+                            <span class="zijin-ticker h-share">2899.HK</span>
+                            <span class="zijin-sector-tag">金铜锌矿</span>
+                            <span class="zijin-sector-tag">全球化矿企</span>
+                            <span class="zijin-sector-tag">黄金龙头</span>
                         </div>
                     </div>
                 </div>
-                <div class="smic-id-right">
-                    <div class="smic-quick-stat">
-                        <span class="smic-qs-label">市值(A)</span>
-                        <span class="smic-qs-value" id="qs-mcap">--</span>
+                <div class="zijin-id-right">
+                    <div class="zijin-quick-stat">
+                        <span class="zijin-qs-label">市值(A)</span>
+                        <span class="zijin-qs-value" id="qs-mcap">--</span>
                     </div>
-                    <div class="smic-quick-stat">
-                        <span class="smic-qs-label">股价</span>
-                        <span class="smic-qs-value" id="qs-price">--</span>
+                    <div class="zijin-quick-stat">
+                        <span class="zijin-qs-label">股价</span>
+                        <span class="zijin-qs-value" id="qs-price">--</span>
                     </div>
-                    <div class="smic-quick-stat">
-                        <span class="smic-qs-label">PE(TTM)</span>
-                        <span class="smic-qs-value" id="qs-pe">--</span>
+                    <div class="zijin-quick-stat">
+                        <span class="zijin-qs-label">PE(TTM)</span>
+                        <span class="zijin-qs-value" id="qs-pe">--</span>
                     </div>
-                    <div class="smic-quick-stat">
-                        <span class="smic-qs-label">PB</span>
-                        <span class="smic-qs-value" id="qs-pb">--</span>
+                    <div class="zijin-quick-stat">
+                        <span class="zijin-qs-label">PB</span>
+                        <span class="zijin-qs-value" id="qs-pb">--</span>
                     </div>
                 </div>
             </div>
@@ -115,7 +117,7 @@
             </div>
 
             <!-- Trust Score Hero -->
-            <div class="trust-hero glass-panel smic-animate-in" id="trust-hero" style="display:none;">
+            <div class="trust-hero glass-panel zijin-animate-in" id="trust-hero" style="display:none;">
                 <div class="trust-gauge">
                     <div class="trust-gauge-chart" id="trust-gauge-chart"></div>
                 </div>
@@ -137,10 +139,10 @@
             </div>
 
             <!-- KPI Dashboard -->
-            <div class="smic-kpi-dashboard" id="smic-kpi-dashboard"></div>
+            <div class="zijin-kpi-dashboard" id="zijin-kpi-dashboard"></div>
 
             <!-- Section: 五维穿透 -->
-            <div class="smic-section-divider"></div>
+            <div class="zijin-section-divider"></div>
 
             <!-- Radar + Module Cards -->
             <div class="audit-overview" id="audit-overview" style="display:none;">
@@ -162,46 +164,46 @@
             </div>
 
             <!-- Section: 财务深研 -->
-            <div class="smic-section-divider"></div>
+            <div class="zijin-section-divider"></div>
 
             <!-- Financial Deep-Dive Charts -->
-            <div class="smic-charts-grid" id="smic-charts-grid" style="display:none;">
-                <div class="smic-chart-panel glass-panel">
-                    <div class="smic-chart-title">📊 营收与利润趋势 (2019-2025)</div>
-                    <div class="smic-chart-canvas" id="chart-revenue"></div>
+            <div class="zijin-charts-grid" id="zijin-charts-grid" style="display:none;">
+                <div class="zijin-chart-panel glass-panel">
+                    <div class="zijin-chart-title">📊 营收与利润趋势 (2019-2025E)</div>
+                    <div class="zijin-chart-canvas" id="chart-revenue"></div>
                 </div>
-                <div class="smic-chart-panel glass-panel">
-                    <div class="smic-chart-title">📈 毛利率与产能利用率</div>
-                    <div class="smic-chart-canvas" id="chart-margins"></div>
+                <div class="zijin-chart-panel glass-panel">
+                    <div class="zijin-chart-title">📈 毛利率与ROE趋势</div>
+                    <div class="zijin-chart-canvas" id="chart-margins"></div>
                 </div>
-                <div class="smic-chart-panel glass-panel">
-                    <div class="smic-chart-title">🔬 研发投入 vs 资本开支</div>
-                    <div class="smic-chart-canvas" id="chart-rdcapex"></div>
+                <div class="zijin-chart-panel glass-panel">
+                    <div class="zijin-chart-title">⛏️ 矿产金/铜/锌产量趋势</div>
+                    <div class="zijin-chart-canvas" id="chart-production"></div>
                 </div>
-                <div class="smic-chart-panel glass-panel">
-                    <div class="smic-chart-title">🏭 产品结构 (按制程节点)</div>
-                    <div class="smic-chart-canvas" id="chart-nodes"></div>
+                <div class="zijin-chart-panel glass-panel">
+                    <div class="zijin-chart-title">🌍 营收结构 (按矿种)</div>
+                    <div class="zijin-chart-canvas" id="chart-segments"></div>
                 </div>
             </div>
 
             <!-- Section: 风险与研判 -->
-            <div class="smic-section-divider"></div>
+            <div class="zijin-section-divider"></div>
 
             <!-- Risk Matrix -->
-            <div class="smic-risk-matrix glass-panel smic-animate-in" id="smic-risk-matrix" style="display:none;">
-                <div class="smic-rm-header">
+            <div class="zijin-risk-matrix glass-panel zijin-animate-in" id="zijin-risk-matrix" style="display:none;">
+                <div class="zijin-rm-header">
                     <span>⚡ 核心风险矩阵</span>
-                    <span class="smic-rm-badge" id="rm-badge">--</span>
+                    <span class="zijin-rm-badge" id="rm-badge">--</span>
                 </div>
-                <div class="smic-rm-body" id="smic-rm-body"></div>
+                <div class="zijin-rm-body" id="zijin-rm-body"></div>
             </div>
 
             <!-- Investment Verdict -->
-            <div class="smic-verdict-panel glass-panel smic-animate-in" id="smic-verdict" style="display:none;">
-                <div class="smic-verdict-header">
+            <div class="zijin-verdict-panel glass-panel zijin-animate-in" id="zijin-verdict" style="display:none;">
+                <div class="zijin-verdict-header">
                     <span>🎯 投资研判结论</span>
                 </div>
-                <div class="smic-verdict-body" id="smic-verdict-body"></div>
+                <div class="zijin-verdict-body" id="zijin-verdict-body"></div>
             </div>
 
             <!-- Audit Timeline -->
@@ -216,11 +218,11 @@
             <!-- Footer -->
             <div class="audit-footer">
                 <div class="footer-summary">
-                    <span>🔬 AlphaCore 个股穿透审计终端 V3.0</span>
+                    <span>⛏️ AlphaCore 个股穿透审计终端 V3.0</span>
                     <span style="margin-left:8px;" id="footer-time">· 等待审计</span>
                     <span class="footer-urgent" id="footer-urgent"></span>
                 </div>
-                <button class="audit-btn" id="audit-refresh-btn" onclick="runSMICAudit()">
+                <button class="audit-btn" id="audit-refresh-btn" onclick="runZijinAudit()">
                     <span class="spinner" id="audit-spinner"></span>
                     🔄 重新审计
                 </button>
@@ -228,6 +230,6 @@
         </div>
     </main>
 
-    <script src="./smic_audit.js"></script>
+    <script src="./zijin_audit.js"></script>
 </body>
 </html>

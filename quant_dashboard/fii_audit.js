@@ -1,73 +1,73 @@
 /**
- * AlphaCore · SMIC 个股穿透审计终端 V3.0
- * 五维穿透审计：财务健康 · 技术护城河 · 地缘风险 · 估值合理性 · 成长动能
+ * AlphaCore · 工业富联 个股穿透审计终端 V3.0
+ * 五维穿透审计：财务健康 · AI算力护城河 · 供应链韧性 · 估值合理性 · 成长动能
  * Self-contained — Real-time data sync + Enhanced UI
  */
 
 // ═══════════════════════════════════════════════════════
-//  SMIC 五维审计数据模型
+//  工业富联 五维审计数据模型
 // ═══════════════════════════════════════════════════════
-const SMIC_MODULES = {
-    financial:  { icon: '💰', color: '#10b981', label: '财务健康', weight: 25 },
-    tech_moat:  { icon: '🔬', color: '#6366f1', label: '技术护城河', weight: 20 },
-    geopolitics:{ icon: '🌍', color: '#f59e0b', label: '地缘风险', weight: 25 },
-    valuation:  { icon: '📊', color: '#3b82f6', label: '估值合理性', weight: 15 },
-    growth:     { icon: '🚀', color: '#8b5cf6', label: '成长动能', weight: 15 },
+const FII_MODULES = {
+    financial:    { icon: '💰', color: '#10b981', label: '财务健康', weight: 25 },
+    ai_moat:      { icon: '🤖', color: '#0ea5e9', label: 'AI算力护城河', weight: 20 },
+    supply_chain: { icon: '🔗', color: '#f59e0b', label: '供应链韧性', weight: 20 },
+    valuation:    { icon: '📊', color: '#3b82f6', label: '估值合理性', weight: 15 },
+    growth:       { icon: '🚀', color: '#8b5cf6', label: '成长动能', weight: 20 },
 };
 
 const GRADE_COLORS = { A:'#34d399', B:'#60a5fa', C:'#fbbf24', D:'#f87171' };
 
-function buildSMICData() {
+function buildFIIData() {
     const modules = {
         financial: {
-            score: 70, grade: 'B',
+            score: 75, grade: 'B',
             checks: [
-                { name:'营收增长', score:80, status:'pass', detail:'2025年营收约660亿元(~$93.3亿)，YoY +27%，受益于AI需求+国产替代爆发', explanation:'晶圆代工行业平均增速12%，SMIC增速显著领先同业', threshold:'🟢 >15% | 🟡 5-15% | 🔴 <5%' },
-                { name:'毛利率', score:62, status:'warn', detail:'综合毛利率约22.0%，较2024(18.6%)回升但仍低于台积电(55%)和联电(32%)', explanation:'产能利用率回升推动毛利率修复，但折旧压力持续', threshold:'🟢 >30% | 🟡 15-30% | 🔴 <15%' },
-                { name:'净利润', score:50, status:'warn', detail:'净利润约49亿元(~$6.85亿)，净利率~7.4%，YoY +39%但绝对规模仍低', explanation:'折旧高峰期(2025折旧增长约30%)吞噬大量利润空间' },
-                { name:'自由现金流', score:38, status:'fail', detail:'FCF持续为负(约-300亿元)，资本开支/营收比超55%', explanation:'半导体制造属重资产行业，4座新厂同步建设期FCF必然为负', action:'关注产能利用率回升节点，FCF拐点预计2027-2028年' },
-                { name:'资产负债率', score:72, status:'pass', detail:'资产负债率54%，有息负债率40%，整体可控', explanation:'对比行业平均55%，SMIC杠杆水平合理' },
-                { name:'研发投入', score:85, status:'pass', detail:'研发费用率约10.5%，研发投入约69亿元', explanation:'持续高研发投入是突破先进制程的必要条件' },
+                { name:'营收增长', score:92, status:'pass', detail:'2025年营收9028.87亿元，YoY +48.22%，AI算力需求驱动爆发式增长', explanation:'全球AI基础设施资本开支高增长，公司作为核心供应商深度受益', threshold:'🟢 >20% | 🟡 10-20% | 🔴 <10%' },
+                { name:'净利润增速', score:88, status:'pass', detail:'归母净利润352.86亿元，YoY +51.99%，利润增速高于营收增速', explanation:'产品结构升级(高毛利AI服务器占比提升)带动盈利质量改善', threshold:'🟢 >30% | 🟡 15-30% | 🔴 <15%' },
+                { name:'毛利率', score:48, status:'warn', detail:'综合毛利率约7.5%，制造业属性决定毛利水平偏低', explanation:'代工制造业固有特征，但AI产品占比提升正推动毛利率边际改善(2024: 7.1%→2025: 7.5%)', threshold:'🟢 >12% | 🟡 6-12% | 🔴 <6%' },
+                { name:'经营性现金流', score:55, status:'warn', detail:'全年经营性现金流净额+52.38亿元，转正但远低于净利润(352亿)', explanation:'订单高峰期备货导致存货大幅增加，应收账款规模扩大，现金转化率偏低', action:'关注Q1/Q2现金回流节奏，若OCF/NI持续<30%需提升预警' },
+                { name:'资产负债率', score:62, status:'warn', detail:'资产负债率约65%，有息资产负债率23.19%，短期借款显著增加', explanation:'快速扩产期杠杆率上升，但有息负债率可控，需关注资金周转效率' },
+                { name:'分红回报', score:82, status:'pass', detail:'全年累计现金分红194.51亿元，现金分红率55.12%，EPS 1.78元', explanation:'分红率超50%，在成长股中属于高分红水平，彰显盈利质量信心' },
             ]
         },
-        tech_moat: {
-            score: 68, grade: 'C',
+        ai_moat: {
+            score: 88, grade: 'A',
             checks: [
-                { name:'制程节点', score:60, status:'warn', detail:'量产最先进制程：14nm FinFET(N+1/N+2)，与台积电(2nm)差距约5代', explanation:'受EUV光刻机禁运限制，7nm以下制程推进受阻' },
-                { name:'产能规模', score:82, status:'pass', detail:'月产能已突破100万片8寸当量(2025年底)，全球第三大纯晶圆代工厂', explanation:'规模效应显著，成熟制程产能利用率93.5%' },
-                { name:'技术自主率', score:55, status:'warn', detail:'关键设备自主率约18-22%，国产替代进程加速中', explanation:'光刻机、刻蚀机等核心设备仍依赖进口存量' },
-                { name:'客户集中度', score:70, status:'pass', detail:'前五大客户营收占比约52%，客户结构持续优化', explanation:'消费电子/汽车芯片/AI边缘芯片占比持续提升' },
-                { name:'专利壁垒', score:70, status:'pass', detail:'累计专利超13,500项，年新增专利约1,600项', explanation:'专利布局集中在成熟制程工艺和先进封装技术' },
+                { name:'AI服务器全球份额', score:95, status:'pass', detail:'全球AI服务器市场份额超40%，稳居行业第一', explanation:'深度绑定NVIDIA、AMD等算力芯片巨头，JDM联合研发模式构建壁垒' },
+                { name:'核心客户绑定', score:92, status:'pass', detail:'深度服务微软、谷歌、亚马逊、Meta等全球Top CSP，订单能见度至2027年', explanation:'从OEM代工升级为JDM(联合研发)合作伙伴，客户粘性极高' },
+                { name:'AI服务器营收爆发', score:93, status:'pass', detail:'云服务商AI服务器营收YoY增长超3倍(>300%)，云计算板块营收6027亿元(+88.7%)', explanation:'GB200/B200等新一代GPU服务器量产交付，驱动营收爆发式增长' },
+                { name:'算力全栈覆盖', score:85, status:'pass', detail:'从GPU模组、基板、服务器整机到液冷系统、高速交换机全产业链覆盖', explanation:'系统级整合能力构成深厚竞争壁垒，800G以上高速交换机营收YoY增长13倍' },
+                { name:'下一代产品储备', score:78, status:'pass', detail:'GB300/Rubin架构等下一代算力产品研发跟进中，量产计划明确', explanation:'技术迭代响应速度是保持龙头地位的关键，目前节奏领先同业' },
             ]
         },
-        geopolitics: {
-            score: 42, grade: 'D',
+        supply_chain: {
+            score: 62, grade: 'C',
             checks: [
-                { name:'制裁风险', score:28, status:'fail', detail:'已被列入美国实体清单，EUV及部分DUV设备禁运持续', explanation:'2022年10月BIS新规后，先进制程设备获取受限，2025年管控进一步趋严', action:'持续跟踪美国商务部出口管制政策及荷兰/日本跟进措施' },
-                { name:'供应链韧性', score:40, status:'fail', detail:'核心设备(ASML/LAM/AMAT)断供风险高，备件库存约16个月', explanation:'设备禁运→产能扩张受限→长期竞争力天花板' },
-                { name:'政策支持', score:82, status:'pass', detail:'大基金一期/二期/三期持续投资，地方政策补贴力度加大', explanation:'国家半导体战略核心标的，政策扶持确定性极高' },
-                { name:'国际竞争格局', score:45, status:'warn', detail:'与GlobalFoundries、联电、华虹竞争成熟制程市场', explanation:'成熟制程价格战加剧，28nm及以上制程竞争白热化' },
-                { name:'合规风险', score:32, status:'fail', detail:'美国"最终用户"审查趋严，部分客户订单受限', explanation:'地缘政治不确定性为最大系统性风险因子，2026年美国大选增加政策不确定性' },
+                { name:'客户集中度', score:42, status:'fail', detail:'前五大客户营收占比约65-70%，高度依赖少数核心CSP', explanation:'若核心客户资本开支收缩或份额调整，将直接冲击业绩表现', action:'持续监控微软/谷歌/Meta等头部客户CapEx指引' },
+                { name:'地缘政治风险', score:48, status:'warn', detail:'全球贸易环境不确定性加剧，出口管制政策可能影响跨境供应链', explanation:'虽非直接制裁标的，但中美科技脱钩趋势可能间接影响全球产能布局' },
+                { name:'上游供应依赖', score:55, status:'warn', detail:'核心GPU芯片(NVIDIA/AMD)供应受制于上游，产能分配权不在手中', explanation:'GPU供应紧张时，分配优先级由NVIDIA决定，被动受制于上游格局' },
+                { name:'产能全球布局', score:78, status:'pass', detail:'全球制造基地覆盖中国、越南、墨西哥、印度等地，产能弹性强', explanation:'多元化产能布局可对冲单一地区地缘风险，灯塔工厂模式提升制造效率' },
+                { name:'库存管理', score:58, status:'warn', detail:'2025年存货规模大幅增加(备货AI服务器组件)，库存周转天数上升', explanation:'AI订单高峰期备货属合理行为，但需警惕需求放缓后的库存减值风险' },
             ]
         },
         valuation: {
-            score: 38, grade: 'D',
+            score: 65, grade: 'C',
             checks: [
-                { name:'PE估值', score:18, status:'fail', detail:'PE(TTM) ~145.7X，显著高于台积电(24X)和联电(9X)，为全球主要晶圆代工厂最高', explanation:'市场price-in极强国产替代溢价，当前估值透支未来3-5年盈利增长', threshold:'🟢 <20X | 🟡 20-40X | 🔴 >40X' },
-                { name:'PB估值', score:68, status:'pass', detail:'PB ~1.94X，对比历史中位数2.0X处于合理区间', explanation:'重资产行业PB估值更具参考价值，当前PB位于52周低位(1.94-2.62)', threshold:'🟢 <1.5X | 🟡 1.5-2.5X | 🔴 >2.5X' },
-                { name:'EV/EBITDA', score:45, status:'warn', detail:'EV/EBITDA ~18X，高于行业平均8X，溢价程度偏高', explanation:'高CAPEX导致EBITDA虚高，自由现金流收益率为负' },
-                { name:'DCF内在价值', score:42, status:'warn', detail:'乐观/中性/悲观情景估值：105/72/50 元(当前¥91.78)', explanation:'中性情景隐含21%下行空间，当前价格接近乐观情景', action:'若股价突破¥105，需重新评估安全边际' },
-                { name:'股息率', score:60, status:'warn', detail:'股息率约0.5%，分红率约12%', explanation:'半导体扩产期分红率极低，EPS仅¥0.63' },
+                { name:'PE估值', score:70, status:'pass', detail:'PE(TTM) ~29.4X，对比全球电子制造服务(EMS)行业均值15-20X偏高，但AI算力赛道溢价合理', explanation:'市场给予AI算力龙头结构性溢价，若按2026E净利润450亿元计，前瞻PE ~23X', threshold:'🟢 <25X | 🟡 25-35X | 🔴 >35X' },
+                { name:'PB估值', score:42, status:'warn', detail:'PB ~6.21X，显著高于传统EMS行业均值2-3X', explanation:'高PB反映市场对AI转型溢价认可，但估值回归风险存在', threshold:'🟢 <3X | 🟡 3-6X | 🔴 >6X' },
+                { name:'EV/EBITDA', score:55, status:'warn', detail:'EV/EBITDA ~18X，高于行业均值10X，但低于纯AI概念股', explanation:'相对于纯软件/芯片AI标的(30-50X)，制造型AI龙头估值仍具性价比' },
+                { name:'DCF内在价值', score:72, status:'pass', detail:'乐观/中性/悲观情景估值：68/52/38 元(当前¥52.18)', explanation:'中性情景锚定当前价格，若AI CapEx周期延续至2028年，上行空间约30%', action:'关注2026Q1业绩是否超预期验证估值支撑' },
+                { name:'股息率', score:78, status:'pass', detail:'股息率约3.7%，分红率55.12%', explanation:'在万亿市值科技股中，3.7%股息率极具吸引力，提供估值安全边际' },
             ]
         },
         growth: {
-            score: 78, grade: 'B',
+            score: 85, grade: 'A',
             checks: [
-                { name:'营收增速', score:85, status:'pass', detail:'2024-2026E CAGR约22-28%，增速大幅超越全球同业', explanation:'AI算力需求+国产替代+消费电子复苏三轮驱动' },
-                { name:'产能扩张', score:80, status:'pass', detail:'4座12寸晶圆厂(深圳/上海/北京/天津)同步推进，月产能已突破100万片', explanation:'2025年底实现百万片里程碑，2027年目标120万片' },
-                { name:'下游需求', score:75, status:'pass', detail:'AI边缘推理芯片/汽车芯片/IoT需求爆发式增长', explanation:'成熟制程需求结构性增长，28nm仍是主力节点' },
-                { name:'国产替代市占率', score:82, status:'pass', detail:'国内晶圆代工市占率约38%，国产替代渗透率加速提升', explanation:'政策驱动+供应链安全诉求→份额确定性提升' },
-                { name:'技术演进', score:52, status:'warn', detail:'N+1/N+2制程良率提升缓慢，7nm量产时间表仍不明确', explanation:'无EUV约束下的先进制程突破存在根本性不确定性' },
+                { name:'AI CapEx超级周期', score:92, status:'pass', detail:'全球AI基础设施资本开支2025-2027年CAGR预计超40%，公司处于核心受益位', explanation:'微软/谷歌/Meta/Amazon年度CapEx合计超3000亿美元，持续加码AI算力建设' },
+                { name:'营收增速', score:90, status:'pass', detail:'2024-2026E CAGR约35-40%，远超传统EMS行业5-8%增速', explanation:'AI服务器+高速交换机双引擎驱动，结构性增长远超行业均值' },
+                { name:'产品升级路径', score:82, status:'pass', detail:'从通用服务器→AI推理服务器→AI训练服务器，ASP(平均售价)持续提升', explanation:'GPU服务器ASP是传统服务器的5-10倍，产品结构升级直接拉升营收天花板' },
+                { name:'AI需求可持续性', score:68, status:'warn', detail:'AI CapEx周期预计持续至2028年，但需警惕2027年后增速放缓的可能', explanation:'当前属于AI基础设施建设爆发期，长期可持续性取决于AI应用落地进度', action:'密切关注全球CSP季度CapEx指引变化' },
+                { name:'智能制造输出', score:72, status:'pass', detail:'灯塔工厂技术对外输出，工业互联网平台收入稳步增长', explanation:'制造能力IP化输出构建第二增长曲线，但体量暂小' },
             ]
         }
     };
@@ -75,7 +75,7 @@ function buildSMICData() {
     // Calculate trust score
     let weightedSum = 0, totalWeight = 0;
     for (const [k, mod] of Object.entries(modules)) {
-        const w = SMIC_MODULES[k].weight;
+        const w = FII_MODULES[k].weight;
         weightedSum += mod.score * w;
         totalWeight += w;
     }
@@ -93,39 +93,39 @@ function buildSMICData() {
     }
 
     return {
-        company: '中芯国际', ticker_a: '688981.SH', ticker_h: '0981.HK',
-        market_cap: '4,524亿', price: '91.78', pe: '145.7', pb: '1.94',
-        eps: '0.63', week52_high: '153.00', week52_low: '77.80',
+        company: '工业富联', ticker: '601138.SH',
+        market_cap: '1.04万亿', price: '52.18', pe: '29.4', pb: '6.21',
+        eps: '1.78', week52_high: '83.88', week52_low: '14.58',
         trust_score: trustScore, trust_grade: trustGrade,
         pass_count: pass, warn_count: warn, fail_count: fail, total_checks: total,
         modules,
         audit_time: new Date().toLocaleString('zh-CN', { hour12: false }),
         risks: [
-            { name:'EUV设备禁运', level:'critical', desc:'美国BIS限制ASML向中国出口EUV光刻机，直接制约7nm及以下制程量产能力', probability:'极高', impact:'致命', mitigation:'DUV多重曝光替代方案' },
-            { name:'制裁升级风险', level:'critical', desc:'若美方将DUV光刻机纳入禁运清单，现有产能扩张计划将面临根本性威胁', probability:'中等', impact:'致命', mitigation:'加速国产设备导入验证' },
-            { name:'估值泡沫化风险', level:'critical', desc:'PE(TTM) 145X严重偏离基本面，一旦政策预期落空，股价可能面临40%+回撤', probability:'高', impact:'致命', mitigation:'严格仓位控制+动态止损' },
-            { name:'产能过剩周期', level:'high', desc:'全球成熟制程产能集中释放(2025-2027)，价格战压力加大', probability:'高', impact:'重大', mitigation:'差异化工艺+长期合约锁定' },
-            { name:'折旧海啸', level:'high', desc:'2025-2027年折旧增长30%+，新产能投产后利润率可能持续承压', probability:'极高', impact:'重大', mitigation:'提升高毛利产品组合占比' },
-            { name:'技术追赶瓶颈', level:'medium', desc:'无EUV条件下先进制程推进速度慢于预期', probability:'高', impact:'中等', mitigation:'聚焦成熟制程差异化竞争' },
-            { name:'客户流失风险', level:'medium', desc:'地缘政治不确定性导致部分国际客户转单', probability:'中等', impact:'中等', mitigation:'拓展国内客户+多元化客户结构' },
+            { name:'客户集中度风险', level:'critical', desc:'营收高度依赖少数核心CSP(微软/谷歌/Meta/Amazon)，若主要客户CapEx收缩或供应商切换，将直接冲击业绩', probability:'中等', impact:'致命', mitigation:'多元化客户拓展+长期合约锁定' },
+            { name:'AI CapEx放缓风险', level:'critical', desc:'若全球AI投资回报不及预期，大厂可能收缩CapEx，导致AI服务器订单断崖式下跌', probability:'中低', impact:'致命', mitigation:'关注季度CapEx指引+提前调整产能' },
+            { name:'地缘政治/出口管制', level:'high', desc:'中美科技脱钩升级、芯片出口管制趋严可能影响全球供应链布局和产能分配', probability:'中等', impact:'重大', mitigation:'全球多元化产能布局(越南/墨西哥/印度)' },
+            { name:'毛利率天花板', level:'high', desc:'代工制造业固有的低毛利率(7-8%)限制盈利空间上限，产品升级带来的毛利率改善可能低于预期', probability:'高', impact:'中等', mitigation:'提升JDM占比+高附加值产品结构优化' },
+            { name:'上游GPU供应风险', level:'high', desc:'核心GPU芯片供应受制于NVIDIA产能分配，公司无法自主控制上游供应节奏', probability:'中等', impact:'重大', mitigation:'深化NVIDIA战略合作+拓展AMD/自研ASIC方案' },
+            { name:'PB估值回归风险', level:'medium', desc:'PB 6.21X显著高于EMS行业均值(2-3X)，若AI叙事降温，估值可能面临压缩', probability:'中等', impact:'中等', mitigation:'高分红率(55%)提供安全边际+业绩增长消化估值' },
+            { name:'存货减值风险', level:'medium', desc:'AI订单备货期存货大幅膨胀，若需求不及预期，可能面临存货减值损失', probability:'中低', impact:'中等', mitigation:'动态订单管理+JIT供应链优化' },
         ],
         verdict: {
-            bull: ['国产替代逻辑确定性极高，大基金三期持续注资', '成熟制程需求结构性爆发(AI边缘/汽车/IoT)', '产能百万片里程碑达成，规模效应加速显现', '2025营收增速27%大幅领先全球同业'],
-            bear: ['PE 145X严重透支，估值泡沫化风险极高', '地缘政治风险为不可控系统性因子', '先进制程突破受限，技术天花板明确', 'FCF持续为负，EPS仅¥0.63，盈利质量差'],
-            catalysts: ['DUV多重曝光7nm量产突破', '国产光刻机导入验证成功', '全球晶圆代工涨价周期启动', '大基金三期投资落地'],
-            positioning: '⚠️ 高风险标的。当前PE 145X严重偏高，建议仓位严格控制在3-5%以内。核心逻辑为国产替代情绪Beta，非基本面Alpha。务必设置地缘政治事件+估值回归双重止损线。',
-            rating: 'hold', rating_text: '⚖️ 谨慎持有 / 等待回调',
-            summary: '中芯国际是A股半导体制造板块的核心Beta标的，国产替代叙事提供长期支撑(2025营收+27%)，但PE 145X已严重脱离基本面。地缘政治风险(制裁升级)构成系统性不确定性，折旧海啸将持续压制利润率至2027年。建议已持仓者控制仓位谨慎持有，未建仓者等待估值回调至PE 60X以下(约¥38)或技术突破催化剂出现后再行介入。'
+            bull: ['全球AI服务器绝对龙头，市占率超40%，JDM模式构建深厚壁垒', '2025年营收9029亿元(+48%)、净利润353亿元(+52%)，增长质量极高', 'AI CapEx超级周期2025-2028年确定性强，订单能见度至2027年', '高分红率55.12%(股息率3.7%)在成长股中罕见，兼具成长+价值属性'],
+            bear: ['毛利率仅7.5%，代工制造业属性限制盈利上限', '客户集中度极高(前五大占比~70%)，大客户波动风险不可忽视', 'PB 6.21X严重偏高于EMS行业均值，估值隐含较多乐观预期', '经营性现金流(52亿)远低于净利润(353亿)，现金转化率偏低'],
+            catalysts: ['GB300/Rubin架构量产交付推动营收再上台阶', '2026Q1业绩超预期验证增长持续性', '全球CSP CapEx指引上调', 'NVIDIA新一代GPU平台(Blackwell Ultra/Rubin)大规模部署'],
+            positioning: '🟢 AI算力核心Beta标的。建议仓位8-12%，定位为组合中的AI基础设施核心持仓。当前PE 29X在AI CapEx超级周期背景下具有合理性，但需严格跟踪全球CSP CapEx季度指引，若出现连续下调信号应果断减仓。',
+            rating: 'buy', rating_text: '📈 积极买入 / AI算力核心配置',
+            summary: '工业富联是全球AI算力基础设施的绝对龙头，2025年营收突破9000亿元大关(+48%)，净利润352.86亿元(+52%)，增长质量极高。公司已从传统EMS代工成功转型为AI算力全栈解决方案供应商，JDM模式深度绑定全球头部CSP，订单能见度延伸至2027年。PE 29X在AI CapEx超级周期背景下估值合理，叠加55%分红率(股息率3.7%)提供安全边际。核心风险在于客户集中度和毛利率天花板。建议作为AI主题核心持仓，仓位8-12%，动态跟踪全球CSP CapEx变化。'
         },
         financials: {
             years: ['2019','2020','2021','2022','2023','2024','2025'],
-            revenue: [220.2, 274.7, 356.3, 495.2, 452.5, 519.3, 660.0],
-            net_income: [17.9, 43.3, 107.3, 121.3, 48.2, 35.3, 49.0],
-            gross_margin: [20.8, 23.8, 28.7, 38.3, 19.3, 18.6, 22.0],
-            caputil: [97.8, 95.2, 100.4, 92.1, 75.8, 85.6, 93.5],
-            rd_expense: [47.4, 46.7, 41.2, 49.5, 55.3, 62.1, 69.0],
-            capex: [67.2, 57.0, 105.0, 255.0, 310.0, 288.0, 350.0],
-            node_split: { '28nm+': 27.5, '40nm': 13.8, '55nm': 19.2, '0.15-0.18µm': 28.5, '其他': 11.0 }
+            revenue: [4086.9, 4317.9, 4396.1, 5118.5, 4763.4, 6091.4, 9028.9],
+            net_income: [186.1, 174.3, 200.1, 200.7, 210.2, 232.2, 352.9],
+            gross_margin: [8.4, 8.3, 8.3, 7.3, 7.6, 7.1, 7.5],
+            net_margin: [4.6, 4.0, 4.6, 3.9, 4.4, 3.8, 3.9],
+            cloud_revenue: [1629, 1804, 1776, 2124, 2005, 3194, 6027],
+            ai_server_pct: [5, 8, 12, 18, 25, 40, 66.7],
+            biz_split: { '云计算': 66.7, '通信及移动网络': 33.0, '其他': 0.3 }
         }
     };
 }
@@ -133,18 +133,18 @@ function buildSMICData() {
 // ═══════════════════════════════════════════════════════
 //  初始化
 // ═══════════════════════════════════════════════════════
-document.addEventListener('DOMContentLoaded', () => { runSMICAudit(); });
+document.addEventListener('DOMContentLoaded', () => { runFIIAudit(); });
 
-const SMIC_SECTIONS = ['smic-identity','trust-hero','smic-kpi-dashboard','audit-overview','smic-charts-grid','smic-risk-matrix','smic-verdict','audit-timeline'];
+const FII_SECTIONS = ['fii-identity','trust-hero','fii-kpi-dashboard','audit-overview','fii-charts-grid','fii-risk-matrix','fii-verdict','audit-timeline'];
 
-function runSMICAudit() {
+function runFIIAudit() {
     const btn = document.getElementById('audit-refresh-btn');
     const spinner = document.getElementById('audit-spinner');
     if(btn) btn.disabled = true;
     if(spinner) spinner.style.display = 'inline-block';
 
     document.getElementById('audit-loading').style.display = 'block';
-    SMIC_SECTIONS.forEach(id => {
+    FII_SECTIONS.forEach(id => {
         const el = document.getElementById(id);
         if(el) { el.style.display = 'none'; el.style.opacity = '0'; }
     });
@@ -152,11 +152,11 @@ function runSMICAudit() {
     // Enhanced loading: show module names during audit
     const loadingStatus = document.querySelector('.loading-status');
     const moduleSteps = [
-        { t: 300,  text: '🔬 正在审计 [1/5] 财务健康… 营收·利润率·现金流·杠杆率' },
-        { t: 600,  text: '🔬 正在审计 [2/5] 技术护城河… 制程节点·产能规模·专利壁垒' },
-        { t: 900,  text: '🌍 正在审计 [3/5] 地缘风险… 制裁清单·供应链·政策支持' },
-        { t: 1200, text: '📊 正在审计 [4/5] 估值合理性… PE·PB·DCF·EV/EBITDA' },
-        { t: 1500, text: '🚀 正在审计 [5/5] 成长动能… 产能扩张·下游需求·市占率' },
+        { t: 300,  text: '💰 正在审计 [1/5] 财务健康… 营收·利润率·现金流·分红' },
+        { t: 600,  text: '🤖 正在审计 [2/5] AI算力护城河… 市占率·客户绑定·全栈覆盖' },
+        { t: 900,  text: '🔗 正在审计 [3/5] 供应链韧性… 客户集中度·地缘风险·产能布局' },
+        { t: 1200, text: '📊 正在审计 [4/5] 估值合理性… PE·PB·DCF·股息率' },
+        { t: 1500, text: '🚀 正在审计 [5/5] 成长动能… AI CapEx周期·产品升级·营收增速' },
         { t: 1800, text: '✅ 五维穿透审计完成，正在生成报告…' },
     ];
     moduleSteps.forEach(step => {
@@ -164,7 +164,7 @@ function runSMICAudit() {
     });
 
     setTimeout(() => {
-        const data = buildSMICData();
+        const data = buildFIIData();
         renderAll(data);
         if(btn) btn.disabled = false;
         if(spinner) spinner.style.display = 'none';
@@ -177,9 +177,8 @@ function runSMICAudit() {
 function renderAll(data) {
     document.getElementById('audit-loading').style.display = 'none';
 
-    // Display map for grid vs block
-    const displayMap = { 'trust-hero':'grid', 'audit-overview':'grid', 'smic-charts-grid':'grid', 'smic-kpi-dashboard':'grid' };
-    SMIC_SECTIONS.forEach(id => {
+    const displayMap = { 'trust-hero':'grid', 'audit-overview':'grid', 'fii-charts-grid':'grid', 'fii-kpi-dashboard':'grid' };
+    FII_SECTIONS.forEach(id => {
         const el = document.getElementById(id);
         if(el) el.style.display = displayMap[id] || 'block';
     });
@@ -199,7 +198,7 @@ function renderAll(data) {
     document.getElementById('footer-time').textContent = `· 审计于 ${data.audit_time}`;
 
     // Staggered entrance animations
-    SMIC_SECTIONS.forEach((id, i) => {
+    FII_SECTIONS.forEach((id, i) => {
         const el = document.getElementById(id);
         if(!el) return;
         setTimeout(() => {
@@ -215,8 +214,6 @@ function renderAll(data) {
     layout.classList.remove('scan-complete');
     void layout.offsetWidth;
     layout.classList.add('scan-complete');
-
-    // Detail panel no longer auto-expands — users click to view
 }
 
 // ═══════════════════════════════════════════════════════
@@ -241,7 +238,6 @@ function renderIdentity(d) {
     document.getElementById('qs-mcap').textContent = d.market_cap;
     const priceEl = document.getElementById('qs-price');
     priceEl.textContent = '¥'+d.price;
-    // Color code PE by severity
     const peEl = document.getElementById('qs-pe');
     peEl.textContent = d.pe+'X';
     const peVal = parseFloat(d.pe);
@@ -272,13 +268,13 @@ function renderTrustHero(d) {
     document.getElementById('trust-meta').textContent = `共 ${d.total_checks} 项检查 · 加权评分 ${d.trust_score}/100 · ${d.audit_time}`;
 
     // Equalizer
-    const keys = Object.keys(SMIC_MODULES);
-    const shortLabels = { financial:'财务', tech_moat:'技术', geopolitics:'地缘', valuation:'估值', growth:'成长' };
+    const keys = Object.keys(FII_MODULES);
+    const shortLabels = { financial:'财务', ai_moat:'AI算力', supply_chain:'供应链', valuation:'估值', growth:'成长' };
     document.getElementById('trust-equalizer').innerHTML = keys.map((k,i) => {
         const s = d.modules[k].score;
         const c = s>=85?'#10b981':s>=70?'#3b82f6':s>=55?'#f59e0b':'#ef4444';
         const h = Math.max(s*1.4, 8);
-        return `<div class="eq-bar-group" title="${SMIC_MODULES[k].label}: ${s}/100"><span class="eq-score" style="color:${c}">${s}</span><div class="eq-track"><div class="eq-fill" style="--bar-h:${h}px;height:${h}px;background:${c};animation-delay:${0.1+i*0.12}s"></div></div><span class="eq-label">${shortLabels[k]}</span></div>`;
+        return `<div class="eq-bar-group" title="${FII_MODULES[k].label}: ${s}/100"><span class="eq-score" style="color:${c}">${s}</span><div class="eq-track"><div class="eq-fill" style="--bar-h:${h}px;height:${h}px;background:${c};animation-delay:${0.1+i*0.12}s"></div></div><span class="eq-label">${shortLabels[k]}</span></div>`;
     }).join('');
 
     // Gauge
@@ -317,19 +313,19 @@ function renderAlertBanner(d) {
 //  4. Radar
 // ═══════════════════════════════════════════════════════
 function renderRadar(d) {
-    const keys = Object.keys(SMIC_MODULES);
+    const keys = Object.keys(FII_MODULES);
     const chart = echarts.init(document.getElementById('radar-chart'));
     chart.setOption({
-        radar:{ indicator:keys.map(k=>({name:SMIC_MODULES[k].label,max:100})), shape:'polygon', radius:'72%',
+        radar:{ indicator:keys.map(k=>({name:FII_MODULES[k].label,max:100})), shape:'polygon', radius:'72%',
             axisName:{color:'#94a3b8',fontSize:11,fontWeight:600},
-            splitLine:{lineStyle:{color:'rgba(255,255,255,0.06)'}}, splitArea:{areaStyle:{color:['rgba(99,102,241,0.02)','rgba(99,102,241,0.04)']}},
+            splitLine:{lineStyle:{color:'rgba(255,255,255,0.06)'}}, splitArea:{areaStyle:{color:['rgba(14,165,233,0.02)','rgba(14,165,233,0.04)']}},
             axisLine:{lineStyle:{color:'rgba(255,255,255,0.08)'}} },
-        series:[{ type:'radar', data:[{ value:keys.map(k=>d.modules[k].score), name:'SMIC审计',
-            areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(99,102,241,0.35)'},{offset:1,color:'rgba(59,130,246,0.08)'}]}},
-            lineStyle:{color:'#6366f1',width:2}, itemStyle:{color:'#818cf8'}, symbol:'circle', symbolSize:7 }] }]
+        series:[{ type:'radar', data:[{ value:keys.map(k=>d.modules[k].score), name:'工业富联审计',
+            areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(14,165,233,0.35)'},{offset:1,color:'rgba(6,182,212,0.08)'}]}},
+            lineStyle:{color:'#0ea5e9',width:2}, itemStyle:{color:'#38bdf8'}, symbol:'circle', symbolSize:7 }] }]
     });
     document.getElementById('radar-legend').innerHTML = keys.map(k => {
-        const m = SMIC_MODULES[k]; const s = d.modules[k].score;
+        const m = FII_MODULES[k]; const s = d.modules[k].score;
         return `<span class="radar-legend-item"><span class="radar-legend-dot" style="background:${m.color}"></span>${m.label} ${s}</span>`;
     }).join('');
 }
@@ -337,12 +333,12 @@ function renderRadar(d) {
 // ═══════════════════════════════════════════════════════
 //  5. Module Cards
 // ═══════════════════════════════════════════════════════
-let smicData = null, activeModule = null;
+let fiiData = null, activeModule = null;
 
 function renderModuleCards(d) {
-    smicData = d;
+    fiiData = d;
     const container = document.getElementById('module-cards');
-    container.innerHTML = Object.entries(SMIC_MODULES).map(([key, meta]) => {
+    container.innerHTML = Object.entries(FII_MODULES).map(([key, meta]) => {
         const mod = d.modules[key]; if(!mod) return '';
         const {score, grade, checks} = mod;
         const gc = GRADE_COLORS[grade]||'#94a3b8';
@@ -372,7 +368,7 @@ function toggleDetail(key, noScroll=false) {
     activeModule = key;
     const card = document.getElementById(`card-${key}`);
     if(card) card.classList.add('expanded');
-    const meta = SMIC_MODULES[key], mod = smicData.modules[key];
+    const meta = FII_MODULES[key], mod = fiiData.modules[key];
     if(!mod) return;
     document.getElementById('detail-title').textContent = `${meta.icon} ${meta.label} · ${mod.score}/100 (${mod.grade}级)`;
 
@@ -421,20 +417,10 @@ function toggleRule(e, rid) {
 function closeDetail() { document.getElementById('detail-section').classList.remove('visible'); document.querySelectorAll('.module-card').forEach(c=>c.classList.remove('expanded')); activeModule=null; }
 
 function scrollToFirstIssue() {
-    if(!smicData) return;
-    for(const key of Object.keys(SMIC_MODULES)) {
-        if(smicData.modules[key]?.checks?.some(c=>c.status==='fail'||c.status==='warn')) { toggleDetail(key); return; }
+    if(!fiiData) return;
+    for(const key of Object.keys(FII_MODULES)) {
+        if(fiiData.modules[key]?.checks?.some(c=>c.status==='fail'||c.status==='warn')) { toggleDetail(key); return; }
     }
-}
-
-function autoExpandWorst(d) {
-    let wk=null, ws=101;
-    for(const k of Object.keys(SMIC_MODULES)) {
-        const mod=d.modules[k]; if(!mod) continue;
-        const ef = mod.checks?.some(c=>c.status==='fail') ? mod.score-100 : mod.score;
-        if(ef<ws){ ws=ef; wk=k; }
-    }
-    if(wk && ws<100) toggleDetail(wk, true);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -447,7 +433,7 @@ function renderCharts(d) {
     const tooltipStyle = {
         trigger:'axis',
         backgroundColor:'rgba(15,23,42,0.92)',
-        borderColor:'rgba(99,102,241,0.2)',
+        borderColor:'rgba(14,165,233,0.2)',
         textStyle:{color:'#e2e8f0',fontSize:12,fontFamily:'Inter'},
         padding:[10,14]
     };
@@ -460,8 +446,8 @@ function renderCharts(d) {
         yAxis:{type:'value',name:'亿元',nameTextStyle:{color:'#64748b',fontSize:10},...axisStyle},
         series:[
             {name:'营收',type:'bar',data:f.revenue,barWidth:'38%',
-                itemStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'#818cf8'},{offset:1,color:'#6366f1'}]},borderRadius:[4,4,0,0]},
-                emphasis:{itemStyle:{shadowBlur:12,shadowColor:'rgba(99,102,241,0.3)'}}},
+                itemStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'#38bdf8'},{offset:1,color:'#0ea5e9'}]},borderRadius:[4,4,0,0]},
+                emphasis:{itemStyle:{shadowBlur:12,shadowColor:'rgba(14,165,233,0.3)'}}},
             {name:'净利润',type:'line',data:f.net_income,smooth:true,
                 lineStyle:{color:'#10b981',width:2.5},itemStyle:{color:'#34d399',borderColor:'#10b981',borderWidth:2},
                 symbol:'circle',symbolSize:7,
@@ -469,45 +455,50 @@ function renderCharts(d) {
         ]
     });
 
-    // Margins & Utilization
+    // Margins
     echarts.init(document.getElementById('chart-margins')).setOption({
         grid:darkGrid, tooltip:tooltipStyle, legend:legendStyle,
         xAxis:{type:'category',data:f.years,...axisStyle},
-        yAxis:{type:'value',name:'%',nameTextStyle:{color:'#64748b',fontSize:10},...axisStyle,max:110},
+        yAxis:{type:'value',name:'%',nameTextStyle:{color:'#64748b',fontSize:10},...axisStyle,max:12},
         series:[
             {name:'毛利率',type:'line',data:f.gross_margin,smooth:true,
                 lineStyle:{color:'#f59e0b',width:2.5},itemStyle:{color:'#fbbf24',borderColor:'#f59e0b',borderWidth:2},symbol:'circle',symbolSize:7,
                 areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(245,158,11,0.15)'},{offset:1,color:'transparent'}]}},
-                markLine:{silent:true,data:[{yAxis:30,label:{show:true,formatter:'健康线 30%',color:'#4ade80',fontSize:9,position:'insideEndTop'},lineStyle:{color:'rgba(74,222,128,0.3)',type:'dashed',width:1}}]}},
-            {name:'产能利用率',type:'line',data:f.caputil,smooth:true,
+                markLine:{silent:true,data:[{yAxis:8,label:{show:true,formatter:'行业均值 8%',color:'#4ade80',fontSize:9,position:'insideEndTop'},lineStyle:{color:'rgba(74,222,128,0.3)',type:'dashed',width:1}}]}},
+            {name:'净利率',type:'line',data:f.net_margin,smooth:true,
                 lineStyle:{color:'#06b6d4',width:2,type:'dashed'},itemStyle:{color:'#22d3ee',borderColor:'#06b6d4',borderWidth:2},symbol:'circle',symbolSize:6}
         ]
     });
 
-    // R&D vs CAPEX
-    echarts.init(document.getElementById('chart-rdcapex')).setOption({
+    // Cloud Revenue & AI Server %
+    echarts.init(document.getElementById('chart-cloud')).setOption({
         grid:darkGrid, tooltip:tooltipStyle, legend:legendStyle,
         xAxis:{type:'category',data:f.years,...axisStyle},
-        yAxis:{type:'value',name:'亿元',nameTextStyle:{color:'#64748b',fontSize:10},...axisStyle},
+        yAxis:[
+            {type:'value',name:'亿元',nameTextStyle:{color:'#64748b',fontSize:10},...axisStyle},
+            {type:'value',name:'%',nameTextStyle:{color:'#64748b',fontSize:10},position:'right',max:100,...axisStyle,splitLine:{show:false}}
+        ],
         series:[
-            {name:'研发投入',type:'bar',data:f.rd_expense,barWidth:'28%',
-                itemStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'#a78bfa'},{offset:1,color:'#8b5cf6'}]},borderRadius:[3,3,0,0]}},
-            {name:'资本开支',type:'bar',data:f.capex,barWidth:'28%',
-                itemStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'#fb7185'},{offset:1,color:'#ef4444'}]},borderRadius:[3,3,0,0]}}
+            {name:'云计算营收',type:'bar',data:f.cloud_revenue,barWidth:'38%',
+                itemStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'#a78bfa'},{offset:1,color:'#8b5cf6'}]},borderRadius:[4,4,0,0]}},
+            {name:'AI服务器占比',type:'line',yAxisIndex:1,data:f.ai_server_pct,smooth:true,
+                lineStyle:{color:'#f43f5e',width:2.5},itemStyle:{color:'#fb7185',borderColor:'#f43f5e',borderWidth:2},
+                symbol:'circle',symbolSize:7,
+                areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(244,63,94,0.12)'},{offset:1,color:'transparent'}]}}}
         ]
     });
 
-    // Node Split (Pie)
-    const ns = d.financials.node_split;
-    echarts.init(document.getElementById('chart-nodes')).setOption({
-        tooltip:{trigger:'item',formatter:'{b}: {c}%',backgroundColor:'rgba(15,23,42,0.92)',borderColor:'rgba(99,102,241,0.2)',textStyle:{color:'#e2e8f0',fontSize:12}},
+    // Business Split (Pie)
+    const bs = d.financials.biz_split;
+    echarts.init(document.getElementById('chart-segments')).setOption({
+        tooltip:{trigger:'item',formatter:'{b}: {c}%',backgroundColor:'rgba(15,23,42,0.92)',borderColor:'rgba(14,165,233,0.2)',textStyle:{color:'#e2e8f0',fontSize:12}},
         legend:{bottom:4,textStyle:{color:'#94a3b8',fontSize:9},itemWidth:10,itemHeight:8},
         series:[{type:'pie',radius:['38%','68%'],center:['50%','46%'],
-            data:Object.entries(ns).map(([k,v])=>({name:k,value:v})),
+            data:Object.entries(bs).map(([k,v])=>({name:k,value:v})),
             label:{show:false},
-            emphasis:{label:{show:true,color:'#e2e8f0',fontSize:11,fontWeight:700},itemStyle:{shadowBlur:16,shadowColor:'rgba(99,102,241,0.3)'}},
+            emphasis:{label:{show:true,color:'#e2e8f0',fontSize:11,fontWeight:700},itemStyle:{shadowBlur:16,shadowColor:'rgba(14,165,233,0.3)'}},
             itemStyle:{borderColor:'rgba(15,23,42,0.9)',borderWidth:3},
-            color:['#6366f1','#8b5cf6','#a78bfa','#06b6d4','#475569']
+            color:['#0ea5e9','#8b5cf6','#475569']
         }]
     });
 }
@@ -519,18 +510,18 @@ function renderRiskMatrix(d) {
     const badge = document.getElementById('rm-badge');
     const critCount = d.risks.filter(r=>r.level==='critical').length;
     badge.textContent = critCount>0 ? `${critCount} 项致命风险` : '风险可控';
-    badge.className = `smic-rm-badge ${critCount>0?'high':'medium'}`;
+    badge.className = `fii-rm-badge ${critCount>0?'high':'medium'}`;
 
-    document.getElementById('smic-rm-body').innerHTML = d.risks.map(r => {
+    document.getElementById('fii-rm-body').innerHTML = d.risks.map(r => {
         const cls = r.level==='critical'?'risk-critical':r.level==='high'?'risk-high':r.level==='medium'?'risk-medium':'risk-low';
         const icon = r.level==='critical'?'🔴':r.level==='high'?'🟠':r.level==='medium'?'🟡':'🟢';
-        return `<div class="smic-risk-item ${cls}">
-            <div class="smic-risk-name">${icon} ${r.name}</div>
-            <div class="smic-risk-desc">${r.desc}</div>
-            <div class="smic-risk-tags">
-                <span class="smic-risk-tag probability">概率: ${r.probability}</span>
-                <span class="smic-risk-tag impact">影响: ${r.impact}</span>
-                <span class="smic-risk-tag mitigation">对冲: ${r.mitigation}</span>
+        return `<div class="fii-risk-item ${cls}">
+            <div class="fii-risk-name">${icon} ${r.name}</div>
+            <div class="fii-risk-desc">${r.desc}</div>
+            <div class="fii-risk-tags">
+                <span class="fii-risk-tag probability">概率: ${r.probability}</span>
+                <span class="fii-risk-tag impact">影响: ${r.impact}</span>
+                <span class="fii-risk-tag mitigation">对冲: ${r.mitigation}</span>
             </div>
         </div>`;
     }).join('');
@@ -541,15 +532,15 @@ function renderRiskMatrix(d) {
 // ═══════════════════════════════════════════════════════
 function renderVerdict(d) {
     const v = d.verdict;
-    document.getElementById('smic-verdict-body').innerHTML = `
-        <div class="smic-verdict-card bull"><div class="smic-verdict-card-title">📈 看多逻辑</div><ul class="smic-verdict-list">${v.bull.map(x=>`<li>${x}</li>`).join('')}</ul></div>
-        <div class="smic-verdict-card bear"><div class="smic-verdict-card-title">📉 看空逻辑</div><ul class="smic-verdict-list">${v.bear.map(x=>`<li>${x}</li>`).join('')}</ul></div>
-        <div class="smic-verdict-card catalyst"><div class="smic-verdict-card-title">⚡ 关键催化剂</div><ul class="smic-verdict-list">${v.catalysts.map(x=>`<li>${x}</li>`).join('')}</ul></div>
-        <div class="smic-verdict-card position"><div class="smic-verdict-card-title">🎯 仓位建议</div><ul class="smic-verdict-list"><li>${v.positioning}</li></ul></div>
-        <div class="smic-conclusion-box">
-            <div class="smic-conclusion-title">🏛️ 投资研判总结</div>
-            <div class="smic-conclusion-text">${v.summary}</div>
-            <div class="smic-conclusion-rating ${v.rating}">${v.rating_text}</div>
+    document.getElementById('fii-verdict-body').innerHTML = `
+        <div class="fii-verdict-card bull"><div class="fii-verdict-card-title">📈 看多逻辑</div><ul class="fii-verdict-list">${v.bull.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+        <div class="fii-verdict-card bear"><div class="fii-verdict-card-title">📉 看空逻辑</div><ul class="fii-verdict-list">${v.bear.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+        <div class="fii-verdict-card catalyst"><div class="fii-verdict-card-title">⚡ 关键催化剂</div><ul class="fii-verdict-list">${v.catalysts.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+        <div class="fii-verdict-card position"><div class="fii-verdict-card-title">🎯 仓位建议</div><ul class="fii-verdict-list"><li>${v.positioning}</li></ul></div>
+        <div class="fii-conclusion-box">
+            <div class="fii-conclusion-title">🏛️ 投资研判总结</div>
+            <div class="fii-conclusion-text">${v.summary}</div>
+            <div class="fii-conclusion-rating ${v.rating}">${v.rating_text}</div>
         </div>`;
 }
 
@@ -559,7 +550,7 @@ function renderVerdict(d) {
 function renderTimeline(d) {
     const container = document.getElementById('audit-timeline');
     if(!container) return;
-    const hk = 'alphacore_smic_audit_history_v3';
+    const hk = 'alphacore_fii_audit_history_v3';
     let hist = []; try { hist = JSON.parse(localStorage.getItem(hk)||'[]'); } catch(e){}
     const last = hist.length>0 ? hist[hist.length-1].time : '';
     if(d.audit_time !== last) hist.push({score:d.trust_score, time:d.audit_time, grade:d.trust_grade});
@@ -583,37 +574,36 @@ function renderTimeline(d) {
         yAxis:{type:'value',min:0,max:100,axisLabel:{fontSize:10,color:'#475569'},splitLine:{lineStyle:{color:'rgba(255,255,255,0.04)'}},
             markLine:{silent:true,data:[{yAxis:70,label:{show:true,formatter:'可投线',color:'#4ade80',fontSize:9},lineStyle:{color:'rgba(74,222,128,0.2)',type:'dashed'}},{yAxis:55,label:{show:true,formatter:'警戒线',color:'#fbbf24',fontSize:9},lineStyle:{color:'rgba(251,191,36,0.2)',type:'dashed'}}]}},
         series:[{type:'line',data:hist.map(h=>h.score),smooth:true,symbol:'circle',symbolSize:7,
-            lineStyle:{color:'#6366f1',width:2.5},itemStyle:{color:'#818cf8',borderColor:'#6366f1',borderWidth:2},
-            areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(99,102,241,0.2)'},{offset:1,color:'rgba(99,102,241,0)'}]}}
+            lineStyle:{color:'#0ea5e9',width:2.5},itemStyle:{color:'#38bdf8',borderColor:'#0ea5e9',borderWidth:2},
+            areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(14,165,233,0.2)'},{offset:1,color:'rgba(14,165,233,0)'}]}}
         }]
     });
 }
 
 // ═══════════════════════════════════════════════════════
-//  KPI Dashboard — NEW in V2.0
+//  KPI Dashboard
 // ═══════════════════════════════════════════════════════
 function renderKPIDashboard(d) {
-    const c = document.getElementById('smic-kpi-dashboard');
+    const c = document.getElementById('fii-kpi-dashboard');
     if(!c) return;
     const accentMap = { pass:'rgba(16,185,129,0.5)', warn:'rgba(245,158,11,0.5)', fail:'rgba(239,68,68,0.5)' };
     const colorMap = { pass:'#34d399', warn:'#fbbf24', fail:'#f87171' };
-    const valLevel = d.modules.valuation.score>=55?'warn':'fail';
     const kpis = [
         { label:'综合评分', icon:'🏆', value:d.trust_score, suffix:'/100', sub:`${d.trust_grade}级 · ${d.total_checks}项审计检查`, level:d.trust_score>=70?'pass':d.trust_score>=55?'warn':'fail', indicator:d.trust_score>=70?'● 可投':d.trust_score>=55?'◐ 谨慎':'✖ 高危' },
-        { label:'财务健康', icon:'💰', value:d.modules.financial.score, suffix:'', sub:`营收+27% · 毛利率${d.financials.gross_margin[6]}%`, level:d.modules.financial.score>=70?'pass':'warn' },
-        { label:'地缘风险', icon:'🌍', value:d.modules.geopolitics.score, suffix:'', sub:'制裁风险为核心制约因子', level:d.modules.geopolitics.score>=55?'warn':'fail', indicator:'⚠ 高风险' },
-        { label:'技术护城河', icon:'🔬', value:d.modules.tech_moat.score, suffix:'', sub:'产能已破100万片/月', level:d.modules.tech_moat.score>=70?'pass':'warn' },
-        { label:'估值合理性', icon:'📊', value:d.modules.valuation.score, suffix:'', sub:`PE ${d.pe}X · PB ${d.pb}X`, level:valLevel, indicator:valLevel==='fail'?'🔴 严重偏高':'⚠ 偏高' },
-        { label:'成长动能', icon:'🚀', value:d.modules.growth.score, suffix:'', sub:'CAGR 22-28% · 百万片里程碑', level:d.modules.growth.score>=70?'pass':'warn' },
+        { label:'财务健康', icon:'💰', value:d.modules.financial.score, suffix:'', sub:`营收+48% · 净利+52%`, level:d.modules.financial.score>=70?'pass':'warn' },
+        { label:'AI算力护城河', icon:'🤖', value:d.modules.ai_moat.score, suffix:'', sub:'全球AI服务器份额>40%', level:d.modules.ai_moat.score>=85?'pass':d.modules.ai_moat.score>=70?'pass':'warn', indicator:'🟢 绝对龙头' },
+        { label:'供应链韧性', icon:'🔗', value:d.modules.supply_chain.score, suffix:'', sub:'客户集中度为核心关切', level:d.modules.supply_chain.score>=70?'pass':d.modules.supply_chain.score>=55?'warn':'fail', indicator:'⚠ 需关注' },
+        { label:'估值合理性', icon:'📊', value:d.modules.valuation.score, suffix:'', sub:`PE ${d.pe}X · PB ${d.pb}X`, level:d.modules.valuation.score>=70?'pass':'warn' },
+        { label:'成长动能', icon:'🚀', value:d.modules.growth.score, suffix:'', sub:'AI CapEx超级周期驱动', level:d.modules.growth.score>=85?'pass':d.modules.growth.score>=70?'pass':'warn', indicator:'🟢 强劲' },
     ];
     c.innerHTML = kpis.map((kpi,i) => {
         const accent = accentMap[kpi.level];
         const color = colorMap[kpi.level];
-        return `<div class="smic-kpi-card" style="--kpi-accent:${accent};animation:smicSlideUp 0.45s cubic-bezier(0.22,1,0.36,1) ${0.1+i*0.07}s both">
-            <div class="smic-kpi-label">${kpi.icon} ${kpi.label}</div>
-            <div class="smic-kpi-value" id="kpi-val-${i}" style="color:${color}">0${kpi.suffix||''}</div>
-            <div class="smic-kpi-sub">${kpi.sub}</div>
-            ${kpi.indicator?`<div class="smic-kpi-indicator ${kpi.level}">${kpi.indicator}</div>`:''}
+        return `<div class="fii-kpi-card" style="--kpi-accent:${accent};animation:fiiSlideUp 0.45s cubic-bezier(0.22,1,0.36,1) ${0.1+i*0.07}s both">
+            <div class="fii-kpi-label">${kpi.icon} ${kpi.label}</div>
+            <div class="fii-kpi-value" id="kpi-val-${i}" style="color:${color}">0${kpi.suffix||''}</div>
+            <div class="fii-kpi-sub">${kpi.sub}</div>
+            ${kpi.indicator?`<div class="fii-kpi-indicator ${kpi.level}">${kpi.indicator}</div>`:''}
         </div>`;
     }).join('');
     // Animate KPI numbers

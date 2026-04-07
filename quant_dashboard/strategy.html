@@ -46,6 +46,11 @@
             <div class="nav-parent" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')"><span class="icon">📑</span><span>个股深研</span><span class="nav-arrow">▶</span></div>
             <div class="nav-sub-group">
                 <a href="./smic_audit.html" class="nav-item"><span class="icon">🔬</span><span>中芯国际</span><span class="badge-beta" style="background:rgba(239,68,68,0.15);color:#f87171;border-color:rgba(239,68,68,0.3);">DEEP</span></a>
+                <a href="./zijin_audit.html" class="nav-item"><span class="icon">⛏️</span><span>紫金矿业</span><span class="badge-beta" style="background:rgba(245,158,11,0.15);color:#fbbf24;border-color:rgba(245,158,11,0.3);">DEEP</span></a>
+                <a href="./byd_audit.html" class="nav-item"><span class="icon">🚗</span><span>比亚迪</span><span class="badge-beta" style="background:rgba(16,185,129,0.15);color:#34d399;border-color:rgba(16,185,129,0.3);">DEEP</span></a>
+                <a href="./eastmoney_audit.html" class="nav-item"><span class="icon">💹</span><span>东方财富</span><span class="badge-beta" style="background:rgba(37,99,235,0.15);color:#60a5fa;border-color:rgba(37,99,235,0.3);">DEEP</span></a>
+                <a href="./fii_audit.html" class="nav-item"><span class="icon">🤖</span><span>工业富联</span><span class="badge-beta" style="background:rgba(14,165,233,0.15);color:#38bdf8;border-color:rgba(14,165,233,0.3);">DEEP</span></a>
+                <a href="./wus_audit.html" class="nav-item"><span class="icon">💻</span><span>沪电股份</span><span class="badge-beta" style="background:rgba(236,72,153,0.15);color:#f472b6;border-color:rgba(236,72,153,0.3);">DEEP</span></a>
             </div>
             <div class="nav-group-title">账 户 管 理</div>
             <a href="./portfolio.html" class="nav-item">
@@ -72,16 +77,240 @@
 
             <!-- 标签切换 -->
             <div class="st-tab-bar">
-                <button class="st-tab active" data-report="st-mean-reversion">📐 均值回归策略 V4.2</button>
+                <button class="st-tab active" data-report="st-aiae-position">🌡️ AIAE宏观仓位 V2.0</button>
+                <button class="st-tab" data-report="st-erp-timing">⚡ 宏观ERP择时 V2.0</button>
+                <button class="st-tab" data-report="st-mean-reversion">📐 均值回归策略 V4.2</button>
                 <button class="st-tab" data-report="st-dividend-trend">💰 红利趋势策略 V4.0</button>
                 <button class="st-tab" data-report="st-momentum">🚀 行业动量轮动 V3.0</button>
-                <button class="st-tab" data-report="st-erp-timing">⚡ 宏观ERP择时 V2.0</button>
                 <button class="st-tab" data-report="st-signal-rules">🎯 信号评分系统</button>
                 <button class="st-tab" data-report="st-execution">📊 策略执行结果</button>
             </div>
 
+            <!-- ==================== AIAE 宏观仓位管控 V2.0 ==================== -->
+            <div class="st-report active" id="st-aiae-position">
+
+            <!-- ZONE 0 · 策略身份 Hero -->
+            <section class="st-hero glass-panel aiae-hero">
+                <div class="st-hero-badge aiae-badge">🌡️ AlphaCore V6.0 · AIAE 全市场权益配置择时</div>
+                <h2 class="st-hero-title aiae-title">🌡️ AIAE 宏观仓位管控 V2.0</h2>
+                <p class="st-hero-sub">全市场投资者权益配置比例 · 五档状态引擎 · AIAE×ERP 仓位矩阵 · 子策略配额分配</p>
+                <div class="st-hero-stats" id="aiae-hero-stats">
+                    <div class="st-hero-stat"><span class="st-hs-label">当前 AIAE</span><span class="st-hs-value aiae-amber" id="aiae-hero-value">—</span></div>
+                    <div class="st-hero-stat"><span class="st-hs-label">档位状态</span><span class="st-hs-value" id="aiae-hero-regime">—</span></div>
+                    <div class="st-hero-stat"><span class="st-hs-label">建议仓位</span><span class="st-hs-value st-green" id="aiae-hero-position">—</span></div>
+                    <div class="st-hero-stat"><span class="st-hs-label">ERP 交叉</span><span class="st-hs-value st-blue" id="aiae-hero-erp">—</span></div>
+                </div>
+                <div style="display:flex;gap:10px;margin-top:16px;align-items:center;">
+                    <button onclick="loadAIAEReport()" id="aiae-load-btn" class="aiae-btn aiae-btn-primary">
+                        ⚡ 加载实时数据
+                    </button>
+                    <button onclick="loadAIAEReport(true)" id="aiae-refresh-btn" class="aiae-btn aiae-btn-ghost">
+                        🔄 强制刷新
+                    </button>
+                    <span id="aiae-load-status" style="font-size:0.72rem; color:var(--text-muted);"></span>
+                </div>
+            </section>
+
+            <!-- ZONE 1 · AIAE 温度计 -->
+            <div class="aiae-zone-header" style="--aiae-zone-color:#f59e0b;">
+                <span class="zone-icon">🌡️</span>
+                <div>
+                    <div class="zone-title">ZONE 1 · AIAE 温度计</div>
+                    <div class="zone-sub">当前读数 · 五档状态 · 月环比斜率</div>
+                </div>
+            </div>
+            <section class="st-section">
+                <div style="display:grid; grid-template-columns:1fr 1.5fr; gap:20px;">
+                    <!-- ECharts 仪表盘 -->
+                    <div class="glass-panel aiae-gauge-wrap">
+                        <div id="aiae-gauge-container" style="width:100%; height:220px;"></div>
+                        <div style="margin-top:8px;">
+                            <span id="aiae-gauge-label" class="aiae-gauge-value">—</span>
+                            <span style="font-size:0.9rem; color:var(--text-muted);">%</span>
+                        </div>
+                        <div id="aiae-gauge-regime" class="aiae-gauge-regime">—</div>
+                        <div id="aiae-slope-indicator" class="aiae-gauge-slope">月环比斜率: —</div>
+                    </div>
+                    <!-- 五档状态卡片组 -->
+                    <div>
+                        <div style="font-size:0.8rem; font-weight:700; color:#f59e0b; margin-bottom:12px; letter-spacing:0.03em;">五档市场状态引擎</div>
+                        <div id="aiae-regime-cards" style="display:grid; grid-template-columns:repeat(5,1fr); gap:8px;">
+                            <div class="aiae-regime-card" data-regime="1"><div class="aiae-rc-emoji">🟢</div><div class="aiae-rc-name">Ⅰ级</div><div class="aiae-rc-cn">极度恐慌</div><div class="aiae-rc-range">&lt;12%</div><div class="aiae-rc-pos">90-95%</div></div>
+                            <div class="aiae-regime-card" data-regime="2"><div class="aiae-rc-emoji">🔵</div><div class="aiae-rc-name">Ⅱ级</div><div class="aiae-rc-cn">低配置区</div><div class="aiae-rc-range">12-16%</div><div class="aiae-rc-pos">70-85%</div></div>
+                            <div class="aiae-regime-card" data-regime="3"><div class="aiae-rc-emoji">🟡</div><div class="aiae-rc-name">Ⅲ级</div><div class="aiae-rc-cn">中性均衡</div><div class="aiae-rc-range">16-24%</div><div class="aiae-rc-pos">50-65%</div></div>
+                            <div class="aiae-regime-card" data-regime="4"><div class="aiae-rc-emoji">🟠</div><div class="aiae-rc-name">Ⅳ级</div><div class="aiae-rc-cn">偏热区域</div><div class="aiae-rc-range">24-32%</div><div class="aiae-rc-pos">25-40%</div></div>
+                            <div class="aiae-regime-card" data-regime="5"><div class="aiae-rc-emoji">🔴</div><div class="aiae-rc-name">Ⅴ级</div><div class="aiae-rc-cn">极度过热</div><div class="aiae-rc-range">&gt;32%</div><div class="aiae-rc-pos">0-15%</div></div>
+                        </div>
+                        <!-- 数据来源面板 -->
+                        <div style="margin-top:14px; display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
+                            <div class="aiae-data-card">
+                                <div class="aiae-data-label">AIAE_简 (月频)</div>
+                                <div id="aiae-data-simple" class="aiae-data-value" style="color:#f59e0b;">—</div>
+                                <div class="aiae-data-hint">总市值/(总市值+M2)</div>
+                            </div>
+                            <div class="aiae-data-card">
+                                <div class="aiae-data-label">融资热度 (日频)</div>
+                                <div id="aiae-data-margin" class="aiae-data-value" style="color:#f97316;">—</div>
+                                <div class="aiae-data-hint">融资余额/总市值</div>
+                            </div>
+                            <div class="aiae-data-card">
+                                <div class="aiae-data-label">基金仓位 (季频)</div>
+                                <div id="aiae-data-fund" class="aiae-data-value" style="color:#eab308;">—</div>
+                                <div class="aiae-data-hint">偏股基金中位数</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ZONE 2 · 仓位矩阵 -->
+            <div class="aiae-zone-header" style="--aiae-zone-color:#d97706;">
+                <span class="zone-icon">📐</span>
+                <div>
+                    <div class="zone-title">ZONE 2 · 仓位矩阵</div>
+                    <div class="zone-sub">AIAE × ERP 交叉查表 · 子策略配额分配</div>
+                </div>
+            </div>
+            <section class="st-section">
+                <div style="display:grid; grid-template-columns:1.2fr 1fr; gap:20px;">
+                    <!-- 5×4 矩阵表 -->
+                    <div class="glass-panel" style="padding:22px;">
+                        <div style="font-size:0.8rem; font-weight:700; color:#f59e0b; margin-bottom:14px; letter-spacing:0.03em;">AIAE × ERP 仓位交叉矩阵</div>
+                        <table class="aiae-matrix-table" id="aiae-matrix-table">
+                            <thead>
+                                <tr><th></th><th>Ⅰ级<br><span>&lt;12%</span></th><th>Ⅱ级<br><span>12-16%</span></th><th>Ⅲ级<br><span>16-24%</span></th><th>Ⅳ级<br><span>24-32%</span></th><th>Ⅴ级<br><span>&gt;32%</span></th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td class="aiae-matrix-row-label">ERP &gt;6%</td><td>95%</td><td>85%</td><td>70%</td><td>45%</td><td>20%</td></tr>
+                                <tr><td class="aiae-matrix-row-label">ERP 4-6%</td><td>90%</td><td>80%</td><td>65%</td><td>40%</td><td>15%</td></tr>
+                                <tr><td class="aiae-matrix-row-label">ERP 2-4%</td><td>85%</td><td>70%</td><td>55%</td><td>30%</td><td>10%</td></tr>
+                                <tr><td class="aiae-matrix-row-label">ERP &lt;2%</td><td>75%</td><td>60%</td><td>40%</td><td>20%</td><td>5%</td></tr>
+                            </tbody>
+                        </table>
+                        <div id="aiae-matrix-verdict" style="margin-top:14px; font-size:0.82rem; color:var(--text-muted); text-align:center;">加载数据后显示当前交叉位置</div>
+                    </div>
+                    <!-- 子策略配额卡片 -->
+                    <div>
+                        <div style="font-size:0.8rem; font-weight:700; color:#f59e0b; margin-bottom:14px; letter-spacing:0.03em;">子策略配额分配</div>
+                        <div id="aiae-alloc-cards" style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                            <div class="aiae-alloc-card" data-strategy="mr">
+                                <div class="aiae-ac-icon">📐</div>
+                                <div class="aiae-ac-name">均值回归</div>
+                                <div class="aiae-ac-pct" id="aiae-alloc-mr-pct">—%</div>
+                                <div class="aiae-ac-pos" id="aiae-alloc-mr-pos">—% 仓位</div>
+                                <div class="aiae-ac-bar"><div class="aiae-ac-bar-fill aiae-bar-blue" id="aiae-alloc-mr-bar" style="width:0%"></div></div>
+                            </div>
+                            <div class="aiae-alloc-card" data-strategy="div">
+                                <div class="aiae-ac-icon">💰</div>
+                                <div class="aiae-ac-name">红利趋势</div>
+                                <div class="aiae-ac-pct" id="aiae-alloc-div-pct">—%</div>
+                                <div class="aiae-ac-pos" id="aiae-alloc-div-pos">—% 仓位</div>
+                                <div class="aiae-ac-bar"><div class="aiae-ac-bar-fill aiae-bar-purple" id="aiae-alloc-div-bar" style="width:0%"></div></div>
+                            </div>
+                            <div class="aiae-alloc-card" data-strategy="mom">
+                                <div class="aiae-ac-icon">🚀</div>
+                                <div class="aiae-ac-name">行业动量</div>
+                                <div class="aiae-ac-pct" id="aiae-alloc-mom-pct">—%</div>
+                                <div class="aiae-ac-pos" id="aiae-alloc-mom-pos">—% 仓位</div>
+                                <div class="aiae-ac-bar"><div class="aiae-ac-bar-fill aiae-bar-orange" id="aiae-alloc-mom-bar" style="width:0%"></div></div>
+                            </div>
+                            <div class="aiae-alloc-card" data-strategy="erp">
+                                <div class="aiae-ac-icon">⚡</div>
+                                <div class="aiae-ac-name">ERP择时</div>
+                                <div class="aiae-ac-pct" id="aiae-alloc-erp-pct">—%</div>
+                                <div class="aiae-ac-pos" id="aiae-alloc-erp-pos">—% 仓位</div>
+                                <div class="aiae-ac-bar"><div class="aiae-ac-bar-fill aiae-bar-amber" id="aiae-alloc-erp-bar" style="width:0%"></div></div>
+                            </div>
+                        </div>
+                        <!-- 交叉验证 -->
+                        <div class="aiae-cross-panel" style="margin-top:12px;">
+                            <div style="font-size:0.78rem; font-weight:700; color:#f59e0b; margin-bottom:8px;">🔗 AIAE × ERP 交叉验证</div>
+                            <div id="aiae-cross-validation" style="font-size:0.82rem; color:var(--text-muted);">加载数据后显示验证结果</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ZONE 3 · 历史走势图 -->
+            <div class="aiae-zone-header" style="--aiae-zone-color:#b45309;">
+                <span class="zone-icon">📈</span>
+                <div>
+                    <div class="zone-title">ZONE 3 · 历史走势</div>
+                    <div class="zone-sub">A股证券化率20年回溯 · 五档区间色带 · 历史信号标注</div>
+                </div>
+            </div>
+            <section class="st-section">
+                <div class="glass-panel" style="padding:24px;">
+                    <div id="aiae-history-chart" style="width:100%; height:380px;"></div>
+                </div>
+            </section>
+
+            <!-- ZONE 4 · 信号面板 -->
+            <div class="aiae-zone-header" style="--aiae-zone-color:#92400e;">
+                <span class="zone-icon">📡</span>
+                <div>
+                    <div class="zone-title">ZONE 4 · 信号面板</div>
+                    <div class="zone-sub">辅助信号 · 融资占比 · 斜率异常 · 档位切换日志</div>
+                </div>
+            </div>
+            <section class="st-section">
+                <div id="aiae-signal-cards" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(300px,1fr)); gap:12px;">
+                    <div class="aiae-signal-card" style="--signal-color:#475569;">
+                        <div class="aiae-signal-icon">📡</div>
+                        <div class="aiae-signal-text">加载数据后显示信号面板</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ZONE 5 · 风控与纪律 (折叠) -->
+            <div class="aiae-zone-header" style="--aiae-zone-color:#78350f;">
+                <span class="zone-icon">🛡️</span>
+                <div>
+                    <div class="zone-title">ZONE 5 · 风控纪律</div>
+                    <div class="zone-sub">三层防御 · Black Swan 条款 · 操作员 SOP</div>
+                </div>
+            </div>
+            <section class="st-section" style="padding:0;">
+                <div class="aiae-accordion-trigger" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open');">
+                    <span style="font-size:1rem;">🛡️</span>
+                    <span class="acc-title">风控与操作纪律手册</span>
+                    <span class="acc-arrow">›</span>
+                </div>
+                <div class="aiae-accordion-body">
+                    <div class="glass-panel" style="padding:24px; border-color:rgba(245,158,11,0.15);">
+                        <!-- 三层防御体系 -->
+                        <div style="font-size:0.82rem; font-weight:700; color:#f59e0b; margin-bottom:12px;">三层防御体系</div>
+                        <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:20px;">
+                            <div style="background:rgba(16,185,129,0.06); border:1px solid rgba(16,185,129,0.2); border-radius:10px; padding:14px;">
+                                <div style="font-size:0.8rem; font-weight:700; color:#10b981; margin-bottom:6px;">第一层 · AIAE 总仓位</div>
+                                <div style="font-size:0.75rem; color:var(--text-muted); line-height:1.7;">控制"参与市场的比例"<br>五档状态自动切换仓位上限</div>
+                            </div>
+                            <div style="background:rgba(59,130,246,0.06); border:1px solid rgba(59,130,246,0.2); border-radius:10px; padding:14px;">
+                                <div style="font-size:0.8rem; font-weight:700; color:#60a5fa; margin-bottom:6px;">第二层 · 子策略止损</div>
+                                <div style="font-size:0.75rem; color:var(--text-muted); line-height:1.7;">均值回归 -8%<br>红利趋势 -5%<br>行业动量 -7%</div>
+                            </div>
+                            <div style="background:rgba(239,68,68,0.06); border:1px solid rgba(239,68,68,0.2); border-radius:10px; padding:14px;">
+                                <div style="font-size:0.8rem; font-weight:700; color:#f87171; margin-bottom:6px;">第三层 · 组合级强制止损</div>
+                                <div style="font-size:0.75rem; color:var(--text-muted); line-height:1.7;">回撤 &gt;12% → 减至50%<br>回撤 &gt;18% → 减至25%<br>回撤 &gt;25% → 触发Ⅴ级清仓</div>
+                            </div>
+                        </div>
+                        <!-- 禁止行为 -->
+                        <div style="font-size:0.82rem; font-weight:700; color:#ef4444; margin-bottom:8px;">🚫 铁律 · 禁止行为清单</div>
+                        <ul style="font-size:0.78rem; color:var(--text-muted); line-height:2.0; padding-left:20px; margin:0;">
+                            <li>❌ 禁止在 Ⅴ级状态下开任何新仓位</li>
+                            <li>❌ 禁止在 AIAE 上行期追买进攻型标的</li>
+                            <li>❌ 禁止在档位切换当天完成全部调仓（除Ⅴ级紧急清仓外）</li>
+                            <li>❌ 禁止因"这次不一样"手动覆盖 AIAE 信号</li>
+                            <li>❌ 禁止总仓位超过当前档位上限 ×110%</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            </div><!-- /st-aiae-position -->
+
             <!-- ==================== 均值回归策略 ==================== -->
-            <div class="st-report active" id="st-mean-reversion">
+            <div class="st-report" id="st-mean-reversion">
 
             <!-- ==================== ZONE 0 · 策略身份 ==================== -->
             <section class="st-hero glass-panel">
@@ -2659,8 +2888,8 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                 <section class="st-section">
                     <div class="st-run-bar glass-panel">
                         <div class="st-run-info">
-                            <h3 style="margin:0;font-size:1.1rem;color:#fff;">📊 量化四策略 · 实时执行引擎 <span style="font-size:0.7rem;background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:2px 8px;border-radius:6px;margin-left:8px;">V3.0</span></h3>
-                            <p style="margin:4px 0 0;font-size:0.82rem;color:var(--text-muted);">均值回归 35只 / 红利趋势 8只 / 动量轮动 20只 / 宏观ERP 4只 | 并行执行 · 四策略共振 · ERP仓位调节</p>
+                            <h3 style="margin:0;font-size:1.1rem;color:#fff;">📊 量化五策略 · 实时执行引擎 <span style="font-size:0.7rem;background:linear-gradient(135deg,#f59e0b,#d97706);padding:2px 8px;border-radius:6px;margin-left:8px;">V4.0</span></h3>
+                            <p style="margin:4px 0 0;font-size:0.82rem;color:var(--text-muted);">均值回归 35只 / 红利趋势 8只 / 动量轮动 20只 / ERP择时 4只 / 🌡️ AIAE标的池 8只ETF | 五策略共振 · AIAE主控仓位</p>
                         </div>
                         <div class="st-run-actions">
                             <select id="st-strategy-select" class="st-select" style="background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:8px 12px; margin-right:12px; outline:none; font-family:inherit;">
@@ -2680,6 +2909,7 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                             <div id="prog-seg-2" style="flex:1; background:rgba(255,255,255,0.06); border-radius:2px; transition:background 0.5s;"></div>
                             <div id="prog-seg-3" style="flex:1; background:rgba(255,255,255,0.06); border-radius:2px; transition:background 0.5s;"></div>
                             <div id="prog-seg-4" style="flex:1; background:rgba(255,255,255,0.06); border-radius:2px; transition:background 0.5s;"></div>
+                            <div id="prog-seg-5" style="flex:1; background:rgba(255,255,255,0.06); border-radius:2px; transition:background 0.5s;"></div>
                         </div>
                         <p id="exec-progress-text" style="margin:6px 0 0; font-size:0.75rem; color:var(--text-muted); text-align:center;">准备中...</p>
                     </div>
@@ -2697,25 +2927,29 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                                 <div id="exec-gauge-label" style="font-size:1.8rem; font-weight:800; color:#fff; margin-top:-8px;">—%</div>
                                 <div style="font-size:0.72rem; color:var(--text-muted); margin-top:4px;">加权建议仓位</div>
                                 <div id="exec-gauge-regime-cap" style="font-size:0.6rem; color:#f59e0b; margin-top:2px; opacity:0.8;">—</div>
-                                <!-- 权重可视化条 -->
+                                <!-- AIAE 主控状态徽章 -->
+                                <div id="exec-aiae-badge" style="margin-top:8px; padding:4px 10px; border-radius:8px; background:rgba(245,158,11,0.1); border:1px solid rgba(245,158,11,0.25); font-size:0.65rem; color:#fbbf24; display:inline-block;">🌡️ AIAE — · Cap —%</div>
+                                <!-- 权重可视化条 (5策略) -->
                                 <div class="gauge-weight-bar">
-                                    <span class="gw-seg gw-mr" style="flex:0.30;" title="均值回归 30%"></span>
-                                    <span class="gw-seg gw-div" style="flex:0.25;" title="红利趋势 25%"></span>
-                                    <span class="gw-seg gw-mom" style="flex:0.15;" title="动量轮动 15%"></span>
-                                    <span class="gw-seg gw-erp" style="flex:0.30;" title="ERP择时 30%"></span>
+                                    <span class="gw-seg gw-mr" id="gw-mr" style="flex:0.20;" title="均值回归"></span>
+                                    <span class="gw-seg gw-div" id="gw-div" style="flex:0.25;" title="红利趋势"></span>
+                                    <span class="gw-seg gw-mom" id="gw-mom" style="flex:0.15;" title="动量轮动"></span>
+                                    <span class="gw-seg gw-erp" id="gw-erp" style="flex:0.15;" title="ERP择时"></span>
+                                    <span class="gw-seg gw-aiae" id="gw-aiae" style="flex:0.25; background:linear-gradient(90deg,#f59e0b,#d97706);" title="AIAE标的池"></span>
                                 </div>
-                                <div style="display:flex; justify-content:center; gap:6px; margin-top:6px; font-size:0.58rem; color:var(--text-muted);">
+                                <div style="display:flex; justify-content:center; gap:5px; margin-top:6px; font-size:0.55rem; color:var(--text-muted);">
                                     <span class="gw-conf-label" style="color:#60a5fa;">MR —%</span>
                                     <span class="gw-conf-label" style="color:#a78bfa;">DIV —%</span>
                                     <span class="gw-conf-label" style="color:#fb923c;">MOM —%</span>
                                     <span class="gw-conf-label" style="color:#fbbf24;">ERP —%</span>
+                                    <span class="gw-conf-label" style="color:#f59e0b;">AIAE —%</span>
                                 </div>
                             </div>
                             <!-- 8 KPI 卡片 + 微提示 -->
                             <div class="st-overview-grid" style="grid-template-columns:repeat(4, 1fr);">
                                 <div class="st-ov-card glass-panel st-ov-buy">
                                     <span class="st-ov-label">买入机会</span><span class="st-ov-value" id="exec-buy-total">—</span>
-                                    <span class="kpi-tip">4策略合计买入信号标的</span>
+                                    <span class="kpi-tip">5策略合计买入信号标的</span>
                                 </div>
                                 <div class="st-ov-card glass-panel st-ov-sell">
                                     <span class="st-ov-label">风险预警</span><span class="st-ov-value" id="exec-sell-total">—</span>
@@ -2782,6 +3016,7 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                                 <button class="exec-tab" data-strategy="div" onclick="switchExecTab('div')">💰 红利趋势 <span id="exec-div-count" style="font-size:0.7rem;opacity:0.6;">8</span></button>
                                 <button class="exec-tab" data-strategy="mom" onclick="switchExecTab('mom')">🚀 动量轮动 <span id="exec-mom-count" style="font-size:0.7rem;opacity:0.6;">20</span></button>
                                 <button class="exec-tab" data-strategy="erp" onclick="switchExecTab('erp')" style="border-color:rgba(245,158,11,0.3);">🌐 ERP择时 <span id="exec-erp-count" style="font-size:0.7rem;opacity:0.6;">4</span></button>
+                                <button class="exec-tab" data-strategy="aiae_etf" onclick="switchExecTab('aiae_etf')" style="border-color:rgba(245,158,11,0.4); background:rgba(245,158,11,0.06);">🌡️ AIAE标的 <span id="exec-aiae-count" style="font-size:0.7rem;opacity:0.6;">8</span></button>
                             </div>
                         </div>
                         <!-- MR 热力表 -->
@@ -2816,13 +3051,24 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                                 <tbody id="exec-tbody-erp"></tbody>
                             </table>
                         </div>
+                        <!-- AIAE ETF 热力表 -->
+                        <div id="exec-table-aiae_etf" class="glass-panel" style="padding:12px; overflow-x:auto; display:none; border:1px solid rgba(245,158,11,0.2); background:linear-gradient(135deg,rgba(245,158,11,0.03),rgba(0,0,0,0.15));">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                                <span style="font-size:0.78rem;color:#f59e0b;font-weight:700;">🌡️ AIAE 宏观仓位管控 · 五档ETF信号（AIAE Regime驱动）</span>
+                                <span id="aiae-regime-score-badge" style="font-size:0.72rem;padding:2px 8px;border-radius:6px;background:rgba(245,158,11,0.12);color:#f59e0b;">Regime: --</span>
+                            </div>
+                            <table class="st-table st-full-table exec-heatmap-table">
+                                <thead><tr><th>标的</th><th>代码</th><th title="ETF类型: 宽基/红利">类型</th><th title="AIAE五档信号评分: I级100→V级20">评分 ℹ️</th><th title="投资风格分类">风格</th><th>信号</th><th title="AIAE仓位矩阵建议仓位%">仓位</th></tr></thead>
+                                <tbody id="exec-tbody-aiae_etf"></tbody>
+                            </table>
+                        </div>
                     </section>
                 </div>
 
                 <!-- ====== Zone 5: 信号共振分析 ====== -->
                 <div id="exec-zone5" style="display:none;">
                     <section class="st-section">
-                        <h3>🔗 四策略信号共振 <span style="font-size:0.7rem;color:var(--text-muted);font-weight:400;">MR × DIV × MOM × ERP</span></h3>
+                        <h3>🔗 五策略信号共振 <span style="font-size:0.7rem;color:var(--text-muted);font-weight:400;">MR × DIV × MOM × ERP × AIAE</span></h3>
                         <div class="resonance-guide">
                             💡 共振 = ≥2个策略同方向信号 &nbsp;|&nbsp; <span style="color:#10b981">🟢 强买 = 2+策略看涨</span> &nbsp;|&nbsp; <span style="color:#ef4444">🔴 强卖 = 2+策略看跌</span> &nbsp;|&nbsp; <span style="color:#f59e0b">⚠️ 分歧 = 同时有买+卖信号</span>
                         </div>
@@ -2945,6 +3191,111 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                                         </ul>
                                         <h5 style="color:#f59e0b;margin:12px 0 8px;font-size:0.82rem;">⚠️ 适用范围</h5>
                                         <p style="color:var(--text-muted);font-size:0.78rem;margin:0;line-height:1.6;">仅适用于与中国宏观高度相关的宽基ETF(300/500/红利/H股)。不适用于科技主题ETF或海外市场。</p>
+                                    </div>
+                                </div>
+                            </details>
+                            <!-- AIAE 宏观仓位管控 -->
+                            <details class="exec-encyclopedia-item glass-panel" style="border:1px solid rgba(245,158,11,0.2);">
+                                <summary style="padding:14px 20px; cursor:pointer; font-weight:600; color:#fff; font-size:0.9rem; list-style:none; display:flex; align-items:center; justify-content:space-between; background:linear-gradient(90deg,rgba(245,158,11,0.06),transparent);">
+                                    <span>🌡️ AIAE 宏观仓位管控 V2.0 <span style="font-size:0.6rem;background:linear-gradient(135deg,#f59e0b,#d97706);padding:1px 6px;border-radius:4px;margin-left:6px;color:#000;font-weight:800;">主控</span></span>
+                                    <span style="font-size:0.75rem; color:var(--text-muted);">全市场温度计 · 五档Regime · ETF标的池 ▸</span>
+                                </summary>
+                                <div style="padding:0 20px 20px;">
+                                    <!-- Row 1: 核心公式 + 五档Regime -->
+                                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+                                        <div>
+                                            <h5 style="color:#f59e0b;margin:0 0 8px;font-size:0.82rem;">📐 核心公式 (AIAE_V1)</h5>
+                                            <div style="background:rgba(245,158,11,0.06); border:1px solid rgba(245,158,11,0.15); border-radius:8px; padding:10px 14px; font-size:0.75rem; color:var(--text-muted); line-height:1.8;">
+                                                <div><strong style="color:#fbbf24;">AIAE_简</strong> = A股总市值 / (A股总市值 + M2)</div>
+                                                <div style="margin-top:4px;"><strong style="color:#fbbf24;">AIAE_V1</strong> = 0.5×AIAE_简 + 0.3×基金仓位 + 0.2×融资占比</div>
+                                                <div style="margin-top:6px; font-size:0.7rem; opacity:0.7;">数据源: Tushare daily_basic / cn_m / margin (并行获取 ~5s)</div>
+                                            </div>
+                                            <h5 style="color:#60a5fa;margin:12px 0 8px;font-size:0.82rem;">🏛️ 在策略引擎中的角色</h5>
+                                            <ul style="color:var(--text-muted);padding-left:16px;font-size:0.78rem;line-height:1.9;margin:0;">
+                                                <li><strong style="color:#f59e0b;">主控层</strong>：统管全局仓位上限和子策略权重</li>
+                                                <li><strong style="color:#60a5fa;">双保险Cap</strong>：min(MA趋势Cap, AIAE仓位矩阵Cap)</li>
+                                                <li><strong style="color:#a78bfa;">第5策略</strong>：独立运行8只ETF标的池信号</li>
+                                                <li><strong style="color:#10b981;">手动覆盖</strong>：<code style="font-size:0.7rem;background:rgba(255,255,255,0.06);padding:1px 4px;border-radius:3px;">?override_cap=XX</code></li>
+                                            </ul>
+                                        </div>
+                                        <div>
+                                            <h5 style="color:#a78bfa;margin:0 0 8px;font-size:0.82rem;">🌡️ 五档 Regime 判定</h5>
+                                            <div style="display:flex; flex-direction:column; gap:4px;">
+                                                <div style="display:flex; align-items:center; gap:8px; padding:5px 10px; border-radius:6px; background:rgba(16,185,129,0.08); border-left:3px solid #10b981;">
+                                                    <span style="font-size:0.8rem;">🟢</span>
+                                                    <div style="font-size:0.72rem;"><strong style="color:#10b981;">Ⅰ级 EXTREME FEAR</strong> <span style="color:var(--text-muted);">AIAE &lt;12% → 仓位 90-95%</span></div>
+                                                </div>
+                                                <div style="display:flex; align-items:center; gap:8px; padding:5px 10px; border-radius:6px; background:rgba(59,130,246,0.08); border-left:3px solid #3b82f6;">
+                                                    <span style="font-size:0.8rem;">🔵</span>
+                                                    <div style="font-size:0.72rem;"><strong style="color:#3b82f6;">Ⅱ级 LOW ALLOC</strong> <span style="color:var(--text-muted);">AIAE 12-16% → 仓位 70-85%</span></div>
+                                                </div>
+                                                <div style="display:flex; align-items:center; gap:8px; padding:5px 10px; border-radius:6px; background:rgba(234,179,8,0.08); border-left:3px solid #eab308;">
+                                                    <span style="font-size:0.8rem;">🟡</span>
+                                                    <div style="font-size:0.72rem;"><strong style="color:#eab308;">Ⅲ级 NEUTRAL</strong> <span style="color:var(--text-muted);">AIAE 16-24% → 仓位 50-65%</span></div>
+                                                </div>
+                                                <div style="display:flex; align-items:center; gap:8px; padding:5px 10px; border-radius:6px; background:rgba(249,115,22,0.08); border-left:3px solid #f97316;">
+                                                    <span style="font-size:0.8rem;">🟠</span>
+                                                    <div style="font-size:0.72rem;"><strong style="color:#f97316;">Ⅳ级 GETTING HOT</strong> <span style="color:var(--text-muted);">AIAE 24-32% → 仓位 25-40%</span></div>
+                                                </div>
+                                                <div style="display:flex; align-items:center; gap:8px; padding:5px 10px; border-radius:6px; background:rgba(239,68,68,0.08); border-left:3px solid #ef4444;">
+                                                    <span style="font-size:0.8rem;">🔴</span>
+                                                    <div style="font-size:0.72rem;"><strong style="color:#ef4444;">Ⅴ级 EUPHORIA</strong> <span style="color:var(--text-muted);">AIAE &gt;32% → 仓位 0-15%</span></div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- Row 2: ETF标的池 + 动态权重 -->
+                                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                                        <div>
+                                            <h5 style="color:#10b981;margin:0 0 8px;font-size:0.82rem;">📦 ETF 标的池 (8只)</h5>
+                                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+                                                <div style="background:rgba(59,130,246,0.06); border:1px solid rgba(59,130,246,0.15); border-radius:6px; padding:8px 10px;">
+                                                    <div style="font-size:0.7rem; font-weight:700; color:#60a5fa; margin-bottom:4px;">🔵 宽基 5只 (进攻)</div>
+                                                    <ul style="color:var(--text-muted);padding-left:14px;font-size:0.7rem;line-height:1.7;margin:0;">
+                                                        <li>沪深300ETF · 核心压舱石</li>
+                                                        <li>上证50ETF · 大盘蓝筹锚</li>
+                                                        <li>中证500ETF · 中盘弹性</li>
+                                                        <li>创业板ETF · 仅Ⅰ级开放</li>
+                                                        <li>中证1000ETF · 仅Ⅰ级开放</li>
+                                                    </ul>
+                                                </div>
+                                                <div style="background:rgba(245,158,11,0.06); border:1px solid rgba(245,158,11,0.15); border-radius:6px; padding:8px 10px;">
+                                                    <div style="font-size:0.7rem; font-weight:700; color:#f59e0b; margin-bottom:4px;">🟡 红利 3只 (防御)</div>
+                                                    <ul style="color:var(--text-muted);padding-left:14px;font-size:0.7rem;line-height:1.7;margin:0;">
+                                                        <li>红利ETF · 全档位配置</li>
+                                                        <li>红利低波100 · Ⅲ~Ⅴ级重配</li>
+                                                        <li>深红利ETF · Ⅲ~Ⅴ级重配</li>
+                                                    </ul>
+                                                </div>
+                                            </div>
+                                            <div style="margin-top:8px; font-size:0.7rem; color:var(--text-muted); line-height:1.6;">
+                                                <strong style="color:#f59e0b;">核心逻辑:</strong> Ⅰ级(恐慌)→满配宽基, Ⅴ级(过热)→清仓宽基只留红利底仓
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <h5 style="color:#a78bfa;margin:0 0 8px;font-size:0.82rem;">⚖️ 动态子策略权重</h5>
+                                            <table style="width:100%; font-size:0.68rem; color:var(--text-muted); border-collapse:collapse;">
+                                                <thead>
+                                                    <tr style="border-bottom:1px solid rgba(255,255,255,0.08);">
+                                                        <th style="text-align:left;padding:4px 6px;color:#a78bfa;">档位</th>
+                                                        <th style="text-align:center;padding:4px 4px;color:#60a5fa;">MR</th>
+                                                        <th style="text-align:center;padding:4px 4px;color:#a78bfa;">DIV</th>
+                                                        <th style="text-align:center;padding:4px 4px;color:#fb923c;">MOM</th>
+                                                        <th style="text-align:center;padding:4px 4px;color:#fbbf24;">ERP</th>
+                                                        <th style="text-align:center;padding:4px 4px;color:#f59e0b;">AIAE</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr><td style="padding:3px 6px;">🟢 Ⅰ</td><td style="text-align:center;color:#10b981;font-weight:700;">35%</td><td style="text-align:center;">15%</td><td style="text-align:center;color:#10b981;font-weight:700;">25%</td><td style="text-align:center;">10%</td><td style="text-align:center;">15%</td></tr>
+                                                    <tr><td style="padding:3px 6px;">🔵 Ⅱ</td><td style="text-align:center;">30%</td><td style="text-align:center;">20%</td><td style="text-align:center;">20%</td><td style="text-align:center;">10%</td><td style="text-align:center;">20%</td></tr>
+                                                    <tr style="background:rgba(234,179,8,0.04);"><td style="padding:3px 6px;">🟡 Ⅲ</td><td style="text-align:center;">20%</td><td style="text-align:center;">25%</td><td style="text-align:center;">15%</td><td style="text-align:center;">15%</td><td style="text-align:center;color:#f59e0b;font-weight:700;">25%</td></tr>
+                                                    <tr><td style="padding:3px 6px;">🟠 Ⅳ</td><td style="text-align:center;">10%</td><td style="text-align:center;color:#f59e0b;font-weight:700;">35%</td><td style="text-align:center;">5%</td><td style="text-align:center;">15%</td><td style="text-align:center;color:#f59e0b;font-weight:700;">35%</td></tr>
+                                                    <tr style="background:rgba(239,68,68,0.04);"><td style="padding:3px 6px;">🔴 Ⅴ</td><td style="text-align:center;color:#475569;">0%</td><td style="text-align:center;color:#ef4444;font-weight:700;">45%</td><td style="text-align:center;color:#475569;">0%</td><td style="text-align:center;">10%</td><td style="text-align:center;color:#ef4444;font-weight:700;">45%</td></tr>
+                                                </tbody>
+                                            </table>
+                                            <h5 style="color:#f59e0b;margin:12px 0 8px;font-size:0.82rem;">⚠️ 历史失效警示</h5>
+                                            <p style="color:var(--text-muted);font-size:0.78rem;margin:0;line-height:1.6;">AIAE_简 在M2统计口径调整(如纳入政府债)时会出现跳变，导致虚假档位切换。此时应观察AIAE斜率而非绝对值——若斜率平稳，忽略数值跳变。</p>
+                                        </div>
                                     </div>
                                 </div>
                             </details>

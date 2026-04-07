@@ -1,81 +1,82 @@
 /**
- * AlphaCore · SMIC 个股穿透审计终端 V3.0
- * 五维穿透审计：财务健康 · 技术护城河 · 地缘风险 · 估值合理性 · 成长动能
- * Self-contained — Real-time data sync + Enhanced UI
+ * AlphaCore · 东方财富 个股穿透审计终端 V3.0
+ * 五维穿透审计：财务健康 · 平台生态 · 竞争格局 · 估值合理性 · 成长动能
+ * Self-contained — Blue/Gold FinTech premium theme
  */
 
 // ═══════════════════════════════════════════════════════
-//  SMIC 五维审计数据模型
+//  东方财富 五维审计数据模型
 // ═══════════════════════════════════════════════════════
-const SMIC_MODULES = {
-    financial:  { icon: '💰', color: '#10b981', label: '财务健康', weight: 25 },
-    tech_moat:  { icon: '🔬', color: '#6366f1', label: '技术护城河', weight: 20 },
-    geopolitics:{ icon: '🌍', color: '#f59e0b', label: '地缘风险', weight: 25 },
-    valuation:  { icon: '📊', color: '#3b82f6', label: '估值合理性', weight: 15 },
-    growth:     { icon: '🚀', color: '#8b5cf6', label: '成长动能', weight: 15 },
+const EM_MODULES = {
+    financial:   { icon: '💰', color: '#10b981', label: '财务健康', weight: 25 },
+    platform:    { icon: '🌐', color: '#2563eb', label: '平台生态', weight: 20 },
+    competition: { icon: '⚔️', color: '#f59e0b', label: '竞争格局', weight: 20 },
+    valuation:   { icon: '📊', color: '#8b5cf6', label: '估值合理性', weight: 15 },
+    growth:      { icon: '🚀', color: '#06b6d4', label: '成长动能', weight: 20 },
 };
 
 const GRADE_COLORS = { A:'#34d399', B:'#60a5fa', C:'#fbbf24', D:'#f87171' };
 
-function buildSMICData() {
+function buildEMData() {
     const modules = {
         financial: {
-            score: 70, grade: 'B',
+            score: 82, grade: 'B',
             checks: [
-                { name:'营收增长', score:80, status:'pass', detail:'2025年营收约660亿元(~$93.3亿)，YoY +27%，受益于AI需求+国产替代爆发', explanation:'晶圆代工行业平均增速12%，SMIC增速显著领先同业', threshold:'🟢 >15% | 🟡 5-15% | 🔴 <5%' },
-                { name:'毛利率', score:62, status:'warn', detail:'综合毛利率约22.0%，较2024(18.6%)回升但仍低于台积电(55%)和联电(32%)', explanation:'产能利用率回升推动毛利率修复，但折旧压力持续', threshold:'🟢 >30% | 🟡 15-30% | 🔴 <15%' },
-                { name:'净利润', score:50, status:'warn', detail:'净利润约49亿元(~$6.85亿)，净利率~7.4%，YoY +39%但绝对规模仍低', explanation:'折旧高峰期(2025折旧增长约30%)吞噬大量利润空间' },
-                { name:'自由现金流', score:38, status:'fail', detail:'FCF持续为负(约-300亿元)，资本开支/营收比超55%', explanation:'半导体制造属重资产行业，4座新厂同步建设期FCF必然为负', action:'关注产能利用率回升节点，FCF拐点预计2027-2028年' },
-                { name:'资产负债率', score:72, status:'pass', detail:'资产负债率54%，有息负债率40%，整体可控', explanation:'对比行业平均55%，SMIC杠杆水平合理' },
-                { name:'研发投入', score:85, status:'pass', detail:'研发费用率约10.5%，研发投入约69亿元', explanation:'持续高研发投入是突破先进制程的必要条件' },
+                { name:'营收增长', score:85, status:'pass', detail:'2025年营收约185亿元(+22.5%)，基金代销+经纪业务+两融利息三引擎共振复苏', explanation:'2024年营收约151亿元(+3.2%)，2025年受益于A股日均成交额突破1.5万亿元', threshold:'🟢 >15% | 🟡 5-15% | 🔴 <5%' },
+                { name:'净利润', score:88, status:'pass', detail:'归母净利润约105亿元(+28.0%)，EPS约0.66元，盈利弹性显著', explanation:'2024年归母净利润82亿元(+1.3%)，2025年牛市催化下利润弹性极强' },
+                { name:'毛利率', score:90, status:'pass', detail:'综合毛利率约72%，互联网金融平台属性保持极高毛利率', explanation:'轻资产互联网模式毛利率远超传统券商(35-45%)，护城河显著', threshold:'🟢 >60% | 🟡 40-60% | 🔴 <40%' },
+                { name:'ROE', score:78, status:'pass', detail:'ROE约14.8%(2024: 12.5%)，市场回暖推动ROE回升', explanation:'互联网券商ROE波动大，与市场活跃度高度相关', threshold:'🟢 >15% | 🟡 10-15% | 🔴 <10%' },
+                { name:'资产负债率', score:72, status:'pass', detail:'资产负债率约62%，有息负债约480亿元(两融+自营融资)，整体可控', explanation:'券商行业负债率天然偏高(客户保证金+两融)，东方财富杠杆水平低于行业均值68%' },
+                { name:'手续费收入', score:80, status:'pass', detail:'手续费及佣金净收入约95亿元(+25%)，经纪+基金代销为核心', explanation:'佣金率下行趋势下，以量补价，市占率提升对冲费率压力' },
             ]
         },
-        tech_moat: {
-            score: 68, grade: 'C',
+        platform: {
+            score: 88, grade: 'A',
             checks: [
-                { name:'制程节点', score:60, status:'warn', detail:'量产最先进制程：14nm FinFET(N+1/N+2)，与台积电(2nm)差距约5代', explanation:'受EUV光刻机禁运限制，7nm以下制程推进受阻' },
-                { name:'产能规模', score:82, status:'pass', detail:'月产能已突破100万片8寸当量(2025年底)，全球第三大纯晶圆代工厂', explanation:'规模效应显著，成熟制程产能利用率93.5%' },
-                { name:'技术自主率', score:55, status:'warn', detail:'关键设备自主率约18-22%，国产替代进程加速中', explanation:'光刻机、刻蚀机等核心设备仍依赖进口存量' },
-                { name:'客户集中度', score:70, status:'pass', detail:'前五大客户营收占比约52%，客户结构持续优化', explanation:'消费电子/汽车芯片/AI边缘芯片占比持续提升' },
-                { name:'专利壁垒', score:70, status:'pass', detail:'累计专利超13,500项，年新增专利约1,600项', explanation:'专利布局集中在成熟制程工艺和先进封装技术' },
+                { name:'天天基金代销规模', score:92, status:'pass', detail:'天天基金非货基保有量约8,500亿元，非货基代销市占率约4.8%，第三方独立平台第一', explanation:'天天基金是中国最大的独立基金销售平台，仅次于蚂蚁/招行等银行系渠道' },
+                { name:'东方财富APP矩阵', score:90, status:'pass', detail:'东方财富APP月活约5,200万，Choice金融终端覆盖超80%专业投资者', explanation:'APP矩阵:东方财富(行情)+天天基金(代销)+Choice(数据)+股吧(社区)' },
+                { name:'股吧社区生态', score:82, status:'pass', detail:'股吧注册用户超3亿，日均发帖量约120万条，为A股最大投资者社区', explanation:'内容生态形成用户黏性飞轮:行情→社区→交易→基金，转化效率极高' },
+                { name:'数据终端壁垒', score:85, status:'pass', detail:'Choice金融终端付费用户约18万，年费约1.2-3.6万元/终端', explanation:'对标Wind/Bloomberg的国产金融数据终端，护城河深厚' },
+                { name:'用户增长趋势', score:78, status:'pass', detail:'2025年新增开户约280万户，累计开户约2,800万户，行业排名第三', explanation:'互联网获客成本约200元/户，远低于传统券商800元/户' },
+                { name:'AI赋能进展', score:72, status:'pass', detail:'AI智投助手上线，基于大模型的智能选基/选股功能覆盖60%用户', explanation:'AI赋能提升用户体验和转化率，但尚处早期阶段' },
             ]
         },
-        geopolitics: {
-            score: 42, grade: 'D',
+        competition: {
+            score: 75, grade: 'B',
             checks: [
-                { name:'制裁风险', score:28, status:'fail', detail:'已被列入美国实体清单，EUV及部分DUV设备禁运持续', explanation:'2022年10月BIS新规后，先进制程设备获取受限，2025年管控进一步趋严', action:'持续跟踪美国商务部出口管制政策及荷兰/日本跟进措施' },
-                { name:'供应链韧性', score:40, status:'fail', detail:'核心设备(ASML/LAM/AMAT)断供风险高，备件库存约16个月', explanation:'设备禁运→产能扩张受限→长期竞争力天花板' },
-                { name:'政策支持', score:82, status:'pass', detail:'大基金一期/二期/三期持续投资，地方政策补贴力度加大', explanation:'国家半导体战略核心标的，政策扶持确定性极高' },
-                { name:'国际竞争格局', score:45, status:'warn', detail:'与GlobalFoundries、联电、华虹竞争成熟制程市场', explanation:'成熟制程价格战加剧，28nm及以上制程竞争白热化' },
-                { name:'合规风险', score:32, status:'fail', detail:'美国"最终用户"审查趋严，部分客户订单受限', explanation:'地缘政治不确定性为最大系统性风险因子，2026年美国大选增加政策不确定性' },
+                { name:'经纪市占率', score:78, status:'pass', detail:'2025年A股经纪业务市占率约4.2%，排名第八，互联网券商第一', explanation:'前三名:中信(7.2%)、华泰(6.5%)、国泰君安(5.8%)，东方财富以互联网模式差异化竞争' },
+                { name:'基金代销竞争', score:72, status:'pass', detail:'非货基代销市占率4.8%，面临蚂蚁(15%)、招行(8%)、京东金融等激烈竞争', explanation:'费率战持续，基金代销费率从1%降至0.1%,以规模换利润', action:'关注基金销售费率改革对公司收入结构的影响' },
+                { name:'佣金率下行压力', score:55, status:'warn', detail:'行业平均佣金率已降至万1.5左右，东方财富约万2.0，仍有下行空间', explanation:'零佣金趋势不可逆，需通过增值服务(两融/数据/AI)弥补收入缺口', action:'监控佣金率变化趋势及增值业务占比' },
+                { name:'牌照优势', score:85, status:'pass', detail:'持有证券、基金销售、期货、保险代销全牌照，金融版图完整', explanation:'全牌照优势使得平台可实现一站式金融服务，转化效率最高' },
+                { name:'同花顺竞争', score:68, status:'warn', detail:'同花顺(300033)在行情软件市占率更高(MAU约6,800万)，AI能力更强', explanation:'同花顺侧重工具+AI，东方财富侧重交易+代销，赛道略有差异', action:'跟踪两家AI产品迭代速度及用户转化率对比' },
             ]
         },
         valuation: {
-            score: 38, grade: 'D',
+            score: 60, grade: 'C',
             checks: [
-                { name:'PE估值', score:18, status:'fail', detail:'PE(TTM) ~145.7X，显著高于台积电(24X)和联电(9X)，为全球主要晶圆代工厂最高', explanation:'市场price-in极强国产替代溢价，当前估值透支未来3-5年盈利增长', threshold:'🟢 <20X | 🟡 20-40X | 🔴 >40X' },
-                { name:'PB估值', score:68, status:'pass', detail:'PB ~1.94X，对比历史中位数2.0X处于合理区间', explanation:'重资产行业PB估值更具参考价值，当前PB位于52周低位(1.94-2.62)', threshold:'🟢 <1.5X | 🟡 1.5-2.5X | 🔴 >2.5X' },
-                { name:'EV/EBITDA', score:45, status:'warn', detail:'EV/EBITDA ~18X，高于行业平均8X，溢价程度偏高', explanation:'高CAPEX导致EBITDA虚高，自由现金流收益率为负' },
-                { name:'DCF内在价值', score:42, status:'warn', detail:'乐观/中性/悲观情景估值：105/72/50 元(当前¥91.78)', explanation:'中性情景隐含21%下行空间，当前价格接近乐观情景', action:'若股价突破¥105，需重新评估安全边际' },
-                { name:'股息率', score:60, status:'warn', detail:'股息率约0.5%，分红率约12%', explanation:'半导体扩产期分红率极低，EPS仅¥0.63' },
+                { name:'PE估值', score:52, status:'warn', detail:'PE(TTM) ~32X，高于传统券商(12-18X)但低于同花顺(45X)', explanation:'互联网金融平台享有科技属性溢价，但32X已处于合理上沿', threshold:'🟢 <25X | 🟡 25-40X | 🔴 >40X' },
+                { name:'PB估值', score:55, status:'warn', detail:'PB ~3.2X，高于传统券商PB中位数1.2X', explanation:'轻资产模式PB天然偏高，但3.2X需盈利持续增长支撑', threshold:'🟢 <2.5X | 🟡 2.5-4.0X | 🔴 >4.0X' },
+                { name:'EV/EBITDA', score:62, status:'warn', detail:'EV/EBITDA ~22X，高于券商行业中位数10X', explanation:'高EV/EBITDA反映市场对东方财富平台化商业模式的溢价认可' },
+                { name:'DCF内在价值', score:68, status:'pass', detail:'乐观/中性/悲观情景估值：28/22/16 元(当前¥21.5)', explanation:'中性情景估值与当前股价接近，安全边际约2%' },
+                { name:'股息率', score:62, status:'warn', detail:'股息率约1.2%，分红率约28%', explanation:'互联网公司偏低分红属正常，但相比传统券商(3-5%)缺乏吸引力', threshold:'🟢 >2% | 🟡 1-2% | 🔴 <1%' },
             ]
         },
         growth: {
-            score: 78, grade: 'B',
+            score: 80, grade: 'B',
             checks: [
-                { name:'营收增速', score:85, status:'pass', detail:'2024-2026E CAGR约22-28%，增速大幅超越全球同业', explanation:'AI算力需求+国产替代+消费电子复苏三轮驱动' },
-                { name:'产能扩张', score:80, status:'pass', detail:'4座12寸晶圆厂(深圳/上海/北京/天津)同步推进，月产能已突破100万片', explanation:'2025年底实现百万片里程碑，2027年目标120万片' },
-                { name:'下游需求', score:75, status:'pass', detail:'AI边缘推理芯片/汽车芯片/IoT需求爆发式增长', explanation:'成熟制程需求结构性增长，28nm仍是主力节点' },
-                { name:'国产替代市占率', score:82, status:'pass', detail:'国内晶圆代工市占率约38%，国产替代渗透率加速提升', explanation:'政策驱动+供应链安全诉求→份额确定性提升' },
-                { name:'技术演进', score:52, status:'warn', detail:'N+1/N+2制程良率提升缓慢，7nm量产时间表仍不明确', explanation:'无EUV约束下的先进制程突破存在根本性不确定性' },
+                { name:'基金代销恢复', score:82, status:'pass', detail:'2025年偏股基金发行回暖，天天基金非货基保有量+18%，结构性牛市催化', explanation:'基金行业从2022-2024年寒冬中复苏，代销规模与市场情绪高度正相关' },
+                { name:'两融业务弹性', score:85, status:'pass', detail:'两融余额约280亿元(+35%)，融资融券利差约4.5%，利息收入贡献显著', explanation:'市场活跃时两融弹性极大，是东方财富盈利弹性的放大器' },
+                { name:'财富管理转型', score:75, status:'pass', detail:'从交易佣金向财富管理AUM模式转型，投顾签约资产约450亿元', explanation:'买方投顾试点推进，长期利好以客户资产规模为导向的盈利模式' },
+                { name:'机构业务拓展', score:68, status:'warn', detail:'机构客户(私募/险资/公募)覆盖率约35%，Choice终端渗透率持续提升', explanation:'机构业务TO-B模式增长曲线更平稳，但面临Wind的强力竞争', action:'跟踪Choice终端在公募基金市场的渗透进度' },
+                { name:'市场周期依赖', score:55, status:'warn', detail:'营收/利润与A股成交量高度正相关(相关系数0.85+)，周期性风险显著', explanation:'互联网券商本质是A股牛熊市的Beta放大器，非纯Alpha标的', action:'关注日均成交额是否跌破1万亿(盈利警戒线)' },
+                { name:'海外业务布局', score:60, status:'warn', detail:'东方财富国际(香港)业务起步阶段，2025年港股通交易市占率约1.5%', explanation:'海外业务为增量但短期贡献有限，面临富途/老虎等互联网券商竞争' },
             ]
         }
     };
 
-    // Calculate trust score
     let weightedSum = 0, totalWeight = 0;
     for (const [k, mod] of Object.entries(modules)) {
-        const w = SMIC_MODULES[k].weight;
+        const w = EM_MODULES[k].weight;
         weightedSum += mod.score * w;
         totalWeight += w;
     }
@@ -93,39 +94,39 @@ function buildSMICData() {
     }
 
     return {
-        company: '中芯国际', ticker_a: '688981.SH', ticker_h: '0981.HK',
-        market_cap: '4,524亿', price: '91.78', pe: '145.7', pb: '1.94',
-        eps: '0.63', week52_high: '153.00', week52_low: '77.80',
+        company: '东方财富', ticker_a: '300059.SZ', ticker_h: '—',
+        market_cap: '2,918亿', price: '18.48', pe: '28.0', pb: '2.76',
+        eps: '0.66', week52_high: '31.00', week52_low: '10.58',
         trust_score: trustScore, trust_grade: trustGrade,
         pass_count: pass, warn_count: warn, fail_count: fail, total_checks: total,
         modules,
         audit_time: new Date().toLocaleString('zh-CN', { hour12: false }),
         risks: [
-            { name:'EUV设备禁运', level:'critical', desc:'美国BIS限制ASML向中国出口EUV光刻机，直接制约7nm及以下制程量产能力', probability:'极高', impact:'致命', mitigation:'DUV多重曝光替代方案' },
-            { name:'制裁升级风险', level:'critical', desc:'若美方将DUV光刻机纳入禁运清单，现有产能扩张计划将面临根本性威胁', probability:'中等', impact:'致命', mitigation:'加速国产设备导入验证' },
-            { name:'估值泡沫化风险', level:'critical', desc:'PE(TTM) 145X严重偏离基本面，一旦政策预期落空，股价可能面临40%+回撤', probability:'高', impact:'致命', mitigation:'严格仓位控制+动态止损' },
-            { name:'产能过剩周期', level:'high', desc:'全球成熟制程产能集中释放(2025-2027)，价格战压力加大', probability:'高', impact:'重大', mitigation:'差异化工艺+长期合约锁定' },
-            { name:'折旧海啸', level:'high', desc:'2025-2027年折旧增长30%+，新产能投产后利润率可能持续承压', probability:'极高', impact:'重大', mitigation:'提升高毛利产品组合占比' },
-            { name:'技术追赶瓶颈', level:'medium', desc:'无EUV条件下先进制程推进速度慢于预期', probability:'高', impact:'中等', mitigation:'聚焦成熟制程差异化竞争' },
-            { name:'客户流失风险', level:'medium', desc:'地缘政治不确定性导致部分国际客户转单', probability:'中等', impact:'中等', mitigation:'拓展国内客户+多元化客户结构' },
+            { name:'市场周期性风险', level:'critical', desc:'营收/利润与A股成交量高度正相关(相关系数0.85+)，若日均成交跌破1万亿，利润可能腰斩', probability:'中等', impact:'致命', mitigation:'多元化收入结构+财富管理转型' },
+            { name:'佣金率持续下行', level:'high', desc:'行业佣金率已降至万1.5且仍有下行趋势，零佣金压力迫在眉睫', probability:'高', impact:'重大', mitigation:'增值服务变现+两融利差+基金代销' },
+            { name:'基金代销费率改革', level:'high', desc:'监管推动基金销售费率市场化改革，天天基金代销费率可能进一步压缩', probability:'高', impact:'中等', mitigation:'以规模换利润+买方投顾转型' },
+            { name:'同花顺AI竞争', level:'medium', desc:'同花顺在AI金融领域投入更大，AI选股/AI投顾产品可能分流用户', probability:'中等', impact:'中等', mitigation:'加大AI研发投入+利用交易闭环优势' },
+            { name:'监管政策风险', level:'medium', desc:'证监会对互联网金融监管趋严，基金代销合规要求提升', probability:'低', impact:'中等', mitigation:'全牌照合规优势+积极配合监管' },
+            { name:'估值压缩风险', level:'medium', desc:'PE 32X处于合理上沿，市场转熊后估值可能压缩至20X以下', probability:'中等', impact:'中等', mitigation:'严格止损纪律+仓位控制' },
         ],
         verdict: {
-            bull: ['国产替代逻辑确定性极高，大基金三期持续注资', '成熟制程需求结构性爆发(AI边缘/汽车/IoT)', '产能百万片里程碑达成，规模效应加速显现', '2025营收增速27%大幅领先全球同业'],
-            bear: ['PE 145X严重透支，估值泡沫化风险极高', '地缘政治风险为不可控系统性因子', '先进制程突破受限，技术天花板明确', 'FCF持续为负，EPS仅¥0.63，盈利质量差'],
-            catalysts: ['DUV多重曝光7nm量产突破', '国产光刻机导入验证成功', '全球晶圆代工涨价周期启动', '大基金三期投资落地'],
-            positioning: '⚠️ 高风险标的。当前PE 145X严重偏高，建议仓位严格控制在3-5%以内。核心逻辑为国产替代情绪Beta，非基本面Alpha。务必设置地缘政治事件+估值回归双重止损线。',
-            rating: 'hold', rating_text: '⚖️ 谨慎持有 / 等待回调',
-            summary: '中芯国际是A股半导体制造板块的核心Beta标的，国产替代叙事提供长期支撑(2025营收+27%)，但PE 145X已严重脱离基本面。地缘政治风险(制裁升级)构成系统性不确定性，折旧海啸将持续压制利润率至2027年。建议已持仓者控制仓位谨慎持有，未建仓者等待估值回调至PE 60X以下(约¥38)或技术突破催化剂出现后再行介入。'
+            bull: ['A股最大互联网券商，全牌照+平台生态构成核心竞争力', '天天基金非货基保有量8,500亿元，独立第三方第一', '毛利率72%远超传统券商，轻资产模式利润弹性极大', '2025年牛市催化，营收+22.5%/净利润+28%，弹性兑现'],
+            bear: ['营收与A股成交量相关系数0.85+，市场周期Beta属性极强', '佣金率下行趋势不可逆，核心经纪收入持续承压', 'PE 32X处于合理偏高区间，估值回归风险存在', '同花顺AI能力更强，面临工具端竞争压力'],
+            catalysts: ['A股日均成交突破2万亿(牛市信号)', '买方投顾试点全面推广', '天天基金非货基保有量突破1万亿', 'AI智投产品大规模落地提升用户ARPU'],
+            positioning: '✅ 牛市弹性标的。当前PE 32X基本合理，建议仓位控制在5-8%。核心逻辑为A股流动性改善Beta + 互联网金融份额集中Alpha。设置日均成交<1万亿 / 佣金率降至万1.2以下为风险警戒线。',
+            rating: 'buy', rating_text: '📈 趋势跟踪 / 牛市加仓',
+            summary: '东方财富是A股唯一的互联网金融全生态平台，集行情(APP 5200万MAU)+社区(股吧3亿用户)+交易(经纪市占率4.2%)+代销(天天基金8500亿)于一体。2025年受益于A股牛市回暖，营收185亿元(+22.5%)，净利润105亿元(+28%)。毛利率72%的轻资产模式使其盈利弹性远超传统券商。主要风险为高度周期性(与成交量相关系数0.85+)及佣金率持续下行。当前PE 32X合理偏高，建议采取\"趋势跟踪+牛市加仓\"策略，市场转弱时及时减仓。'
         },
         financials: {
-            years: ['2019','2020','2021','2022','2023','2024','2025'],
-            revenue: [220.2, 274.7, 356.3, 495.2, 452.5, 519.3, 660.0],
-            net_income: [17.9, 43.3, 107.3, 121.3, 48.2, 35.3, 49.0],
-            gross_margin: [20.8, 23.8, 28.7, 38.3, 19.3, 18.6, 22.0],
-            caputil: [97.8, 95.2, 100.4, 92.1, 75.8, 85.6, 93.5],
-            rd_expense: [47.4, 46.7, 41.2, 49.5, 55.3, 62.1, 69.0],
-            capex: [67.2, 57.0, 105.0, 255.0, 310.0, 288.0, 350.0],
-            node_split: { '28nm+': 27.5, '40nm': 13.8, '55nm': 19.2, '0.15-0.18µm': 28.5, '其他': 11.0 }
+            years: ['2019','2020','2021','2022','2023','2024','2025E'],
+            revenue: [50.4, 82.4, 131.0, 112.0, 146.5, 151.0, 185.0],
+            net_income: [18.5, 48.0, 85.5, 51.6, 81.0, 82.0, 105.0],
+            gross_margin: [65.2, 68.5, 72.8, 70.1, 71.5, 71.8, 72.0],
+            roe: [8.2, 16.5, 22.8, 10.5, 14.2, 12.5, 14.8],
+            fund_aum: [2800, 4200, 7500, 5200, 6500, 7200, 8500],
+            margin_balance: [85, 120, 180, 110, 160, 210, 280],
+            brokerage_share: [2.1, 2.8, 3.5, 3.4, 3.8, 4.0, 4.2],
+            revenue_split: { '经纪业务': 35, '基金代销': 28, '利息净收入': 22, '数据服务': 8, '其他': 7 }
         }
     };
 }
@@ -133,30 +134,29 @@ function buildSMICData() {
 // ═══════════════════════════════════════════════════════
 //  初始化
 // ═══════════════════════════════════════════════════════
-document.addEventListener('DOMContentLoaded', () => { runSMICAudit(); });
+document.addEventListener('DOMContentLoaded', () => { runEMAudit(); });
 
-const SMIC_SECTIONS = ['smic-identity','trust-hero','smic-kpi-dashboard','audit-overview','smic-charts-grid','smic-risk-matrix','smic-verdict','audit-timeline'];
+const EM_SECTIONS = ['em-identity','trust-hero','em-kpi-dashboard','audit-overview','em-charts-grid','em-risk-matrix','em-verdict','audit-timeline'];
 
-function runSMICAudit() {
+function runEMAudit() {
     const btn = document.getElementById('audit-refresh-btn');
     const spinner = document.getElementById('audit-spinner');
     if(btn) btn.disabled = true;
     if(spinner) spinner.style.display = 'inline-block';
 
     document.getElementById('audit-loading').style.display = 'block';
-    SMIC_SECTIONS.forEach(id => {
+    EM_SECTIONS.forEach(id => {
         const el = document.getElementById(id);
         if(el) { el.style.display = 'none'; el.style.opacity = '0'; }
     });
 
-    // Enhanced loading: show module names during audit
     const loadingStatus = document.querySelector('.loading-status');
     const moduleSteps = [
-        { t: 300,  text: '🔬 正在审计 [1/5] 财务健康… 营收·利润率·现金流·杠杆率' },
-        { t: 600,  text: '🔬 正在审计 [2/5] 技术护城河… 制程节点·产能规模·专利壁垒' },
-        { t: 900,  text: '🌍 正在审计 [3/5] 地缘风险… 制裁清单·供应链·政策支持' },
-        { t: 1200, text: '📊 正在审计 [4/5] 估值合理性… PE·PB·DCF·EV/EBITDA' },
-        { t: 1500, text: '🚀 正在审计 [5/5] 成长动能… 产能扩张·下游需求·市占率' },
+        { t: 300,  text: '💰 正在审计 [1/5] 财务健康… 营收·净利润·毛利率·ROE·手续费收入' },
+        { t: 600,  text: '🌐 正在审计 [2/5] 平台生态… 天天基金·APP矩阵·股吧·Choice·AI赋能' },
+        { t: 900,  text: '⚔️ 正在审计 [3/5] 竞争格局… 经纪市占率·基金代销·佣金率·牌照·同花顺' },
+        { t: 1200, text: '📊 正在审计 [4/5] 估值合理性… PE·PB·DCF·EV/EBITDA·股息率' },
+        { t: 1500, text: '🚀 正在审计 [5/5] 成长动能… 基金代销恢复·两融弹性·财富管理·海外' },
         { t: 1800, text: '✅ 五维穿透审计完成，正在生成报告…' },
     ];
     moduleSteps.forEach(step => {
@@ -164,7 +164,7 @@ function runSMICAudit() {
     });
 
     setTimeout(() => {
-        const data = buildSMICData();
+        const data = buildEMData();
         renderAll(data);
         if(btn) btn.disabled = false;
         if(spinner) spinner.style.display = 'none';
@@ -177,9 +177,8 @@ function runSMICAudit() {
 function renderAll(data) {
     document.getElementById('audit-loading').style.display = 'none';
 
-    // Display map for grid vs block
-    const displayMap = { 'trust-hero':'grid', 'audit-overview':'grid', 'smic-charts-grid':'grid', 'smic-kpi-dashboard':'grid' };
-    SMIC_SECTIONS.forEach(id => {
+    const displayMap = { 'trust-hero':'grid', 'audit-overview':'grid', 'em-charts-grid':'grid', 'em-kpi-dashboard':'grid' };
+    EM_SECTIONS.forEach(id => {
         const el = document.getElementById(id);
         if(el) el.style.display = displayMap[id] || 'block';
     });
@@ -198,8 +197,7 @@ function renderAll(data) {
     document.getElementById('audit-time').textContent = data.audit_time;
     document.getElementById('footer-time').textContent = `· 审计于 ${data.audit_time}`;
 
-    // Staggered entrance animations
-    SMIC_SECTIONS.forEach((id, i) => {
+    EM_SECTIONS.forEach((id, i) => {
         const el = document.getElementById(id);
         if(!el) return;
         setTimeout(() => {
@@ -210,17 +208,14 @@ function renderAll(data) {
         el.style.transform = 'translateY(12px)';
     });
 
-    // Scan animation
     const layout = document.getElementById('audit-layout');
     layout.classList.remove('scan-complete');
     void layout.offsetWidth;
     layout.classList.add('scan-complete');
-
-    // Detail panel no longer auto-expands — users click to view
 }
 
 // ═══════════════════════════════════════════════════════
-//  Counter-Up
+//  Counter-Up Animation
 // ═══════════════════════════════════════════════════════
 function counterUp(el, target, suffix='', dur=1200) {
     if(!el) return;
@@ -239,14 +234,12 @@ function counterUp(el, target, suffix='', dur=1200) {
 // ═══════════════════════════════════════════════════════
 function renderIdentity(d) {
     document.getElementById('qs-mcap').textContent = d.market_cap;
-    const priceEl = document.getElementById('qs-price');
-    priceEl.textContent = '¥'+d.price;
-    // Color code PE by severity
+    document.getElementById('qs-price').textContent = '¥'+d.price;
     const peEl = document.getElementById('qs-pe');
     peEl.textContent = d.pe+'X';
     const peVal = parseFloat(d.pe);
-    if(peVal > 100) peEl.style.color = '#f87171';
-    else if(peVal > 40) peEl.style.color = '#fbbf24';
+    if(peVal > 40) peEl.style.color = '#f87171';
+    else if(peVal > 25) peEl.style.color = '#fbbf24';
     else peEl.style.color = '#34d399';
     document.getElementById('qs-pb').textContent = d.pb+'X';
 }
@@ -264,24 +257,22 @@ function renderTrustHero(d) {
     badge.textContent = d.trust_grade;
     badge.className = `trust-grade-badge grade-${d.trust_grade}`;
 
-    const verdicts = { A:'投资价值突出，各维度均衡优秀', B:'整体可投，存在结构性风险需关注', C:'风险与机会并存，需精选入场时机', D:'⚠️ 高风险标的，估值严重偏高，不建议重仓' };
+    const verdicts = { A:'投资价值突出，各维度均衡优秀', B:'整体可投，存在结构性风险需关注', C:'风险与机会并存，需精选入场时机', D:'⚠️ 高风险标的，不建议重仓' };
     document.getElementById('trust-verdict').textContent = verdicts[d.trust_grade] || '';
     document.getElementById('stat-pass').textContent = `✅ ${d.pass_count} 优势`;
     document.getElementById('stat-warn').textContent = `⚠️ ${d.warn_count} 关注`;
     document.getElementById('stat-fail').textContent = `❌ ${d.fail_count} 风险`;
     document.getElementById('trust-meta').textContent = `共 ${d.total_checks} 项检查 · 加权评分 ${d.trust_score}/100 · ${d.audit_time}`;
 
-    // Equalizer
-    const keys = Object.keys(SMIC_MODULES);
-    const shortLabels = { financial:'财务', tech_moat:'技术', geopolitics:'地缘', valuation:'估值', growth:'成长' };
+    const keys = Object.keys(EM_MODULES);
+    const shortLabels = { financial:'财务', platform:'平台', competition:'竞争', valuation:'估值', growth:'成长' };
     document.getElementById('trust-equalizer').innerHTML = keys.map((k,i) => {
         const s = d.modules[k].score;
         const c = s>=85?'#10b981':s>=70?'#3b82f6':s>=55?'#f59e0b':'#ef4444';
         const h = Math.max(s*1.4, 8);
-        return `<div class="eq-bar-group" title="${SMIC_MODULES[k].label}: ${s}/100"><span class="eq-score" style="color:${c}">${s}</span><div class="eq-track"><div class="eq-fill" style="--bar-h:${h}px;height:${h}px;background:${c};animation-delay:${0.1+i*0.12}s"></div></div><span class="eq-label">${shortLabels[k]}</span></div>`;
+        return `<div class="eq-bar-group" title="${EM_MODULES[k].label}: ${s}/100"><span class="eq-score" style="color:${c}">${s}</span><div class="eq-track"><div class="eq-fill" style="--bar-h:${h}px;height:${h}px;background:${c};animation-delay:${0.1+i*0.12}s"></div></div><span class="eq-label">${shortLabels[k]}</span></div>`;
     }).join('');
 
-    // Gauge
     const chart = echarts.init(document.getElementById('trust-gauge-chart'));
     chart.setOption({
         series:[{ type:'gauge', startAngle:210, endAngle:-30, radius:'88%', center:['50%','55%'], min:0, max:100, splitNumber:4,
@@ -309,7 +300,7 @@ function renderAlertBanner(d) {
     } else if(d.warn_count > 0) {
         banner.className = 'alert-banner level-warn visible';
         document.getElementById('alert-icon').textContent = '⚠️';
-        document.getElementById('alert-text').innerHTML = `<strong>${d.warn_count} 项需要关注</strong>`;
+        document.getElementById('alert-text').innerHTML = `<strong>${d.warn_count} 项需要关注</strong> — 估值偏高、佣金率下行、市场周期性等`;
     } else { banner.classList.remove('visible'); }
 }
 
@@ -317,19 +308,19 @@ function renderAlertBanner(d) {
 //  4. Radar
 // ═══════════════════════════════════════════════════════
 function renderRadar(d) {
-    const keys = Object.keys(SMIC_MODULES);
+    const keys = Object.keys(EM_MODULES);
     const chart = echarts.init(document.getElementById('radar-chart'));
     chart.setOption({
-        radar:{ indicator:keys.map(k=>({name:SMIC_MODULES[k].label,max:100})), shape:'polygon', radius:'72%',
+        radar:{ indicator:keys.map(k=>({name:EM_MODULES[k].label,max:100})), shape:'polygon', radius:'72%',
             axisName:{color:'#94a3b8',fontSize:11,fontWeight:600},
-            splitLine:{lineStyle:{color:'rgba(255,255,255,0.06)'}}, splitArea:{areaStyle:{color:['rgba(99,102,241,0.02)','rgba(99,102,241,0.04)']}},
+            splitLine:{lineStyle:{color:'rgba(255,255,255,0.06)'}}, splitArea:{areaStyle:{color:['rgba(37,99,235,0.02)','rgba(37,99,235,0.04)']}},
             axisLine:{lineStyle:{color:'rgba(255,255,255,0.08)'}} },
-        series:[{ type:'radar', data:[{ value:keys.map(k=>d.modules[k].score), name:'SMIC审计',
-            areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(99,102,241,0.35)'},{offset:1,color:'rgba(59,130,246,0.08)'}]}},
-            lineStyle:{color:'#6366f1',width:2}, itemStyle:{color:'#818cf8'}, symbol:'circle', symbolSize:7 }] }]
+        series:[{ type:'radar', data:[{ value:keys.map(k=>d.modules[k].score), name:'东方财富审计',
+            areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(37,99,235,0.35)'},{offset:1,color:'rgba(59,130,246,0.08)'}]}},
+            lineStyle:{color:'#2563eb',width:2}, itemStyle:{color:'#60a5fa'}, symbol:'circle', symbolSize:7 }] }]
     });
     document.getElementById('radar-legend').innerHTML = keys.map(k => {
-        const m = SMIC_MODULES[k]; const s = d.modules[k].score;
+        const m = EM_MODULES[k]; const s = d.modules[k].score;
         return `<span class="radar-legend-item"><span class="radar-legend-dot" style="background:${m.color}"></span>${m.label} ${s}</span>`;
     }).join('');
 }
@@ -337,12 +328,12 @@ function renderRadar(d) {
 // ═══════════════════════════════════════════════════════
 //  5. Module Cards
 // ═══════════════════════════════════════════════════════
-let smicData = null, activeModule = null;
+let emData = null, activeModule = null;
 
 function renderModuleCards(d) {
-    smicData = d;
+    emData = d;
     const container = document.getElementById('module-cards');
-    container.innerHTML = Object.entries(SMIC_MODULES).map(([key, meta]) => {
+    container.innerHTML = Object.entries(EM_MODULES).map(([key, meta]) => {
         const mod = d.modules[key]; if(!mod) return '';
         const {score, grade, checks} = mod;
         const gc = GRADE_COLORS[grade]||'#94a3b8';
@@ -372,7 +363,7 @@ function toggleDetail(key, noScroll=false) {
     activeModule = key;
     const card = document.getElementById(`card-${key}`);
     if(card) card.classList.add('expanded');
-    const meta = SMIC_MODULES[key], mod = smicData.modules[key];
+    const meta = EM_MODULES[key], mod = emData.modules[key];
     if(!mod) return;
     document.getElementById('detail-title').textContent = `${meta.icon} ${meta.label} · ${mod.score}/100 (${mod.grade}级)`;
 
@@ -421,36 +412,20 @@ function toggleRule(e, rid) {
 function closeDetail() { document.getElementById('detail-section').classList.remove('visible'); document.querySelectorAll('.module-card').forEach(c=>c.classList.remove('expanded')); activeModule=null; }
 
 function scrollToFirstIssue() {
-    if(!smicData) return;
-    for(const key of Object.keys(SMIC_MODULES)) {
-        if(smicData.modules[key]?.checks?.some(c=>c.status==='fail'||c.status==='warn')) { toggleDetail(key); return; }
+    if(!emData) return;
+    for(const key of Object.keys(EM_MODULES)) {
+        if(emData.modules[key]?.checks?.some(c=>c.status==='fail'||c.status==='warn')) { toggleDetail(key); return; }
     }
-}
-
-function autoExpandWorst(d) {
-    let wk=null, ws=101;
-    for(const k of Object.keys(SMIC_MODULES)) {
-        const mod=d.modules[k]; if(!mod) continue;
-        const ef = mod.checks?.some(c=>c.status==='fail') ? mod.score-100 : mod.score;
-        if(ef<ws){ ws=ef; wk=k; }
-    }
-    if(wk && ws<100) toggleDetail(wk, true);
 }
 
 // ═══════════════════════════════════════════════════════
-//  7. Financial Charts — ENHANCED V2.0
+//  7. Financial Charts — Blue/Gold FinTech Theme
 // ═══════════════════════════════════════════════════════
 function renderCharts(d) {
     const f = d.financials;
     const darkGrid = { top:40, bottom:28, left:55, right:20 };
     const axisStyle = { axisLabel:{fontSize:11,color:'#64748b',fontFamily:'Outfit'}, axisLine:{lineStyle:{color:'rgba(255,255,255,0.08)'}}, splitLine:{lineStyle:{color:'rgba(255,255,255,0.04)',type:'dashed'}} };
-    const tooltipStyle = {
-        trigger:'axis',
-        backgroundColor:'rgba(15,23,42,0.92)',
-        borderColor:'rgba(99,102,241,0.2)',
-        textStyle:{color:'#e2e8f0',fontSize:12,fontFamily:'Inter'},
-        padding:[10,14]
-    };
+    const tooltipStyle = { trigger:'axis', backgroundColor:'rgba(15,23,42,0.92)', borderColor:'rgba(37,99,235,0.2)', textStyle:{color:'#e2e8f0',fontSize:12,fontFamily:'Inter'}, padding:[10,14] };
     const legendStyle = { top:6, right:10, textStyle:{color:'#94a3b8',fontSize:10}, itemWidth:12, itemHeight:8 };
 
     // Revenue & Net Income
@@ -460,54 +435,58 @@ function renderCharts(d) {
         yAxis:{type:'value',name:'亿元',nameTextStyle:{color:'#64748b',fontSize:10},...axisStyle},
         series:[
             {name:'营收',type:'bar',data:f.revenue,barWidth:'38%',
-                itemStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'#818cf8'},{offset:1,color:'#6366f1'}]},borderRadius:[4,4,0,0]},
-                emphasis:{itemStyle:{shadowBlur:12,shadowColor:'rgba(99,102,241,0.3)'}}},
+                itemStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'#60a5fa'},{offset:1,color:'#2563eb'}]},borderRadius:[4,4,0,0]},
+                emphasis:{itemStyle:{shadowBlur:12,shadowColor:'rgba(37,99,235,0.3)'}}},
             {name:'净利润',type:'line',data:f.net_income,smooth:true,
-                lineStyle:{color:'#10b981',width:2.5},itemStyle:{color:'#34d399',borderColor:'#10b981',borderWidth:2},
+                lineStyle:{color:'#f59e0b',width:2.5},itemStyle:{color:'#fbbf24',borderColor:'#f59e0b',borderWidth:2},
                 symbol:'circle',symbolSize:7,
-                areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(16,185,129,0.12)'},{offset:1,color:'transparent'}]}}}
+                areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(245,158,11,0.12)'},{offset:1,color:'transparent'}]}}}
         ]
     });
 
-    // Margins & Utilization
+    // Gross Margin & ROE
     echarts.init(document.getElementById('chart-margins')).setOption({
         grid:darkGrid, tooltip:tooltipStyle, legend:legendStyle,
         xAxis:{type:'category',data:f.years,...axisStyle},
-        yAxis:{type:'value',name:'%',nameTextStyle:{color:'#64748b',fontSize:10},...axisStyle,max:110},
+        yAxis:{type:'value',name:'%',nameTextStyle:{color:'#64748b',fontSize:10},...axisStyle,max:80},
         series:[
             {name:'毛利率',type:'line',data:f.gross_margin,smooth:true,
-                lineStyle:{color:'#f59e0b',width:2.5},itemStyle:{color:'#fbbf24',borderColor:'#f59e0b',borderWidth:2},symbol:'circle',symbolSize:7,
-                areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(245,158,11,0.15)'},{offset:1,color:'transparent'}]}},
-                markLine:{silent:true,data:[{yAxis:30,label:{show:true,formatter:'健康线 30%',color:'#4ade80',fontSize:9,position:'insideEndTop'},lineStyle:{color:'rgba(74,222,128,0.3)',type:'dashed',width:1}}]}},
-            {name:'产能利用率',type:'line',data:f.caputil,smooth:true,
-                lineStyle:{color:'#06b6d4',width:2,type:'dashed'},itemStyle:{color:'#22d3ee',borderColor:'#06b6d4',borderWidth:2},symbol:'circle',symbolSize:6}
+                lineStyle:{color:'#2563eb',width:2.5},itemStyle:{color:'#60a5fa',borderColor:'#2563eb',borderWidth:2},symbol:'circle',symbolSize:7,
+                areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(37,99,235,0.15)'},{offset:1,color:'transparent'}]}},
+                markLine:{silent:true,data:[{yAxis:45,label:{show:true,formatter:'券商均值 45%',color:'#4ade80',fontSize:9,position:'insideEndTop'},lineStyle:{color:'rgba(74,222,128,0.3)',type:'dashed',width:1}}]}},
+            {name:'ROE',type:'line',data:f.roe,smooth:true,
+                lineStyle:{color:'#8b5cf6',width:2,type:'dashed'},itemStyle:{color:'#a78bfa',borderColor:'#8b5cf6',borderWidth:2},symbol:'circle',symbolSize:6}
         ]
     });
 
-    // R&D vs CAPEX
-    echarts.init(document.getElementById('chart-rdcapex')).setOption({
+    // Fund AUM & Margin Balance
+    echarts.init(document.getElementById('chart-platform')).setOption({
         grid:darkGrid, tooltip:tooltipStyle, legend:legendStyle,
         xAxis:{type:'category',data:f.years,...axisStyle},
-        yAxis:{type:'value',name:'亿元',nameTextStyle:{color:'#64748b',fontSize:10},...axisStyle},
+        yAxis:[
+            {type:'value',name:'亿元(基金)',nameTextStyle:{color:'#64748b',fontSize:10},...axisStyle},
+            {type:'value',name:'亿元(两融)',nameTextStyle:{color:'#64748b',fontSize:10},...axisStyle,splitLine:{show:false}}
+        ],
         series:[
-            {name:'研发投入',type:'bar',data:f.rd_expense,barWidth:'28%',
-                itemStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'#a78bfa'},{offset:1,color:'#8b5cf6'}]},borderRadius:[3,3,0,0]}},
-            {name:'资本开支',type:'bar',data:f.capex,barWidth:'28%',
-                itemStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'#fb7185'},{offset:1,color:'#ef4444'}]},borderRadius:[3,3,0,0]}}
+            {name:'基金保有量',type:'bar',data:f.fund_aum,barWidth:'30%',yAxisIndex:0,
+                itemStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'#60a5fa'},{offset:1,color:'#2563eb'}]},borderRadius:[4,4,0,0]}},
+            {name:'两融余额',type:'line',data:f.margin_balance,smooth:true,yAxisIndex:1,
+                lineStyle:{color:'#f59e0b',width:2.5},itemStyle:{color:'#fbbf24',borderColor:'#f59e0b',borderWidth:2},symbol:'circle',symbolSize:7,
+                areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(245,158,11,0.1)'},{offset:1,color:'transparent'}]}}}
         ]
     });
 
-    // Node Split (Pie)
-    const ns = d.financials.node_split;
-    echarts.init(document.getElementById('chart-nodes')).setOption({
-        tooltip:{trigger:'item',formatter:'{b}: {c}%',backgroundColor:'rgba(15,23,42,0.92)',borderColor:'rgba(99,102,241,0.2)',textStyle:{color:'#e2e8f0',fontSize:12}},
+    // Revenue Split (Pie)
+    const rs = d.financials.revenue_split;
+    echarts.init(document.getElementById('chart-segments')).setOption({
+        tooltip:{trigger:'item',formatter:'{b}: {c}%',backgroundColor:'rgba(15,23,42,0.92)',borderColor:'rgba(37,99,235,0.2)',textStyle:{color:'#e2e8f0',fontSize:12}},
         legend:{bottom:4,textStyle:{color:'#94a3b8',fontSize:9},itemWidth:10,itemHeight:8},
         series:[{type:'pie',radius:['38%','68%'],center:['50%','46%'],
-            data:Object.entries(ns).map(([k,v])=>({name:k,value:v})),
+            data:Object.entries(rs).map(([k,v])=>({name:k,value:v})),
             label:{show:false},
-            emphasis:{label:{show:true,color:'#e2e8f0',fontSize:11,fontWeight:700},itemStyle:{shadowBlur:16,shadowColor:'rgba(99,102,241,0.3)'}},
+            emphasis:{label:{show:true,color:'#e2e8f0',fontSize:11,fontWeight:700},itemStyle:{shadowBlur:16,shadowColor:'rgba(37,99,235,0.3)'}},
             itemStyle:{borderColor:'rgba(15,23,42,0.9)',borderWidth:3},
-            color:['#6366f1','#8b5cf6','#a78bfa','#06b6d4','#475569']
+            color:['#2563eb','#f59e0b','#10b981','#8b5cf6','#475569']
         }]
     });
 }
@@ -519,18 +498,18 @@ function renderRiskMatrix(d) {
     const badge = document.getElementById('rm-badge');
     const critCount = d.risks.filter(r=>r.level==='critical').length;
     badge.textContent = critCount>0 ? `${critCount} 项致命风险` : '风险可控';
-    badge.className = `smic-rm-badge ${critCount>0?'high':'medium'}`;
+    badge.className = `em-rm-badge ${critCount>0?'high':'medium'}`;
 
-    document.getElementById('smic-rm-body').innerHTML = d.risks.map(r => {
+    document.getElementById('em-rm-body').innerHTML = d.risks.map(r => {
         const cls = r.level==='critical'?'risk-critical':r.level==='high'?'risk-high':r.level==='medium'?'risk-medium':'risk-low';
         const icon = r.level==='critical'?'🔴':r.level==='high'?'🟠':r.level==='medium'?'🟡':'🟢';
-        return `<div class="smic-risk-item ${cls}">
-            <div class="smic-risk-name">${icon} ${r.name}</div>
-            <div class="smic-risk-desc">${r.desc}</div>
-            <div class="smic-risk-tags">
-                <span class="smic-risk-tag probability">概率: ${r.probability}</span>
-                <span class="smic-risk-tag impact">影响: ${r.impact}</span>
-                <span class="smic-risk-tag mitigation">对冲: ${r.mitigation}</span>
+        return `<div class="em-risk-item ${cls}">
+            <div class="em-risk-name">${icon} ${r.name}</div>
+            <div class="em-risk-desc">${r.desc}</div>
+            <div class="em-risk-tags">
+                <span class="em-risk-tag probability">概率: ${r.probability}</span>
+                <span class="em-risk-tag impact">影响: ${r.impact}</span>
+                <span class="em-risk-tag mitigation">对冲: ${r.mitigation}</span>
             </div>
         </div>`;
     }).join('');
@@ -541,15 +520,15 @@ function renderRiskMatrix(d) {
 // ═══════════════════════════════════════════════════════
 function renderVerdict(d) {
     const v = d.verdict;
-    document.getElementById('smic-verdict-body').innerHTML = `
-        <div class="smic-verdict-card bull"><div class="smic-verdict-card-title">📈 看多逻辑</div><ul class="smic-verdict-list">${v.bull.map(x=>`<li>${x}</li>`).join('')}</ul></div>
-        <div class="smic-verdict-card bear"><div class="smic-verdict-card-title">📉 看空逻辑</div><ul class="smic-verdict-list">${v.bear.map(x=>`<li>${x}</li>`).join('')}</ul></div>
-        <div class="smic-verdict-card catalyst"><div class="smic-verdict-card-title">⚡ 关键催化剂</div><ul class="smic-verdict-list">${v.catalysts.map(x=>`<li>${x}</li>`).join('')}</ul></div>
-        <div class="smic-verdict-card position"><div class="smic-verdict-card-title">🎯 仓位建议</div><ul class="smic-verdict-list"><li>${v.positioning}</li></ul></div>
-        <div class="smic-conclusion-box">
-            <div class="smic-conclusion-title">🏛️ 投资研判总结</div>
-            <div class="smic-conclusion-text">${v.summary}</div>
-            <div class="smic-conclusion-rating ${v.rating}">${v.rating_text}</div>
+    document.getElementById('em-verdict-body').innerHTML = `
+        <div class="em-verdict-card bull"><div class="em-verdict-card-title">📈 看多逻辑</div><ul class="em-verdict-list">${v.bull.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+        <div class="em-verdict-card bear"><div class="em-verdict-card-title">📉 看空逻辑</div><ul class="em-verdict-list">${v.bear.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+        <div class="em-verdict-card catalyst"><div class="em-verdict-card-title">⚡ 关键催化剂</div><ul class="em-verdict-list">${v.catalysts.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+        <div class="em-verdict-card position"><div class="em-verdict-card-title">🎯 仓位建议</div><ul class="em-verdict-list"><li>${v.positioning}</li></ul></div>
+        <div class="em-conclusion-box">
+            <div class="em-conclusion-title">🏛️ 投资研判总结</div>
+            <div class="em-conclusion-text">${v.summary}</div>
+            <div class="em-conclusion-rating ${v.rating}">${v.rating_text}</div>
         </div>`;
 }
 
@@ -559,7 +538,7 @@ function renderVerdict(d) {
 function renderTimeline(d) {
     const container = document.getElementById('audit-timeline');
     if(!container) return;
-    const hk = 'alphacore_smic_audit_history_v3';
+    const hk = 'alphacore_em_audit_history_v3';
     let hist = []; try { hist = JSON.parse(localStorage.getItem(hk)||'[]'); } catch(e){}
     const last = hist.length>0 ? hist[hist.length-1].time : '';
     if(d.audit_time !== last) hist.push({score:d.trust_score, time:d.audit_time, grade:d.trust_grade});
@@ -583,40 +562,38 @@ function renderTimeline(d) {
         yAxis:{type:'value',min:0,max:100,axisLabel:{fontSize:10,color:'#475569'},splitLine:{lineStyle:{color:'rgba(255,255,255,0.04)'}},
             markLine:{silent:true,data:[{yAxis:70,label:{show:true,formatter:'可投线',color:'#4ade80',fontSize:9},lineStyle:{color:'rgba(74,222,128,0.2)',type:'dashed'}},{yAxis:55,label:{show:true,formatter:'警戒线',color:'#fbbf24',fontSize:9},lineStyle:{color:'rgba(251,191,36,0.2)',type:'dashed'}}]}},
         series:[{type:'line',data:hist.map(h=>h.score),smooth:true,symbol:'circle',symbolSize:7,
-            lineStyle:{color:'#6366f1',width:2.5},itemStyle:{color:'#818cf8',borderColor:'#6366f1',borderWidth:2},
-            areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(99,102,241,0.2)'},{offset:1,color:'rgba(99,102,241,0)'}]}}
+            lineStyle:{color:'#2563eb',width:2.5},itemStyle:{color:'#60a5fa',borderColor:'#2563eb',borderWidth:2},
+            areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(37,99,235,0.2)'},{offset:1,color:'rgba(37,99,235,0)'}]}}
         }]
     });
 }
 
 // ═══════════════════════════════════════════════════════
-//  KPI Dashboard — NEW in V2.0
+//  KPI Dashboard
 // ═══════════════════════════════════════════════════════
 function renderKPIDashboard(d) {
-    const c = document.getElementById('smic-kpi-dashboard');
+    const c = document.getElementById('em-kpi-dashboard');
     if(!c) return;
     const accentMap = { pass:'rgba(16,185,129,0.5)', warn:'rgba(245,158,11,0.5)', fail:'rgba(239,68,68,0.5)' };
     const colorMap = { pass:'#34d399', warn:'#fbbf24', fail:'#f87171' };
-    const valLevel = d.modules.valuation.score>=55?'warn':'fail';
     const kpis = [
         { label:'综合评分', icon:'🏆', value:d.trust_score, suffix:'/100', sub:`${d.trust_grade}级 · ${d.total_checks}项审计检查`, level:d.trust_score>=70?'pass':d.trust_score>=55?'warn':'fail', indicator:d.trust_score>=70?'● 可投':d.trust_score>=55?'◐ 谨慎':'✖ 高危' },
-        { label:'财务健康', icon:'💰', value:d.modules.financial.score, suffix:'', sub:`营收+27% · 毛利率${d.financials.gross_margin[6]}%`, level:d.modules.financial.score>=70?'pass':'warn' },
-        { label:'地缘风险', icon:'🌍', value:d.modules.geopolitics.score, suffix:'', sub:'制裁风险为核心制约因子', level:d.modules.geopolitics.score>=55?'warn':'fail', indicator:'⚠ 高风险' },
-        { label:'技术护城河', icon:'🔬', value:d.modules.tech_moat.score, suffix:'', sub:'产能已破100万片/月', level:d.modules.tech_moat.score>=70?'pass':'warn' },
-        { label:'估值合理性', icon:'📊', value:d.modules.valuation.score, suffix:'', sub:`PE ${d.pe}X · PB ${d.pb}X`, level:valLevel, indicator:valLevel==='fail'?'🔴 严重偏高':'⚠ 偏高' },
-        { label:'成长动能', icon:'🚀', value:d.modules.growth.score, suffix:'', sub:'CAGR 22-28% · 百万片里程碑', level:d.modules.growth.score>=70?'pass':'warn' },
+        { label:'财务健康', icon:'💰', value:d.modules.financial.score, suffix:'', sub:`营收+22.5% · 毛利率${d.financials.gross_margin[6]}%`, level:d.modules.financial.score>=70?'pass':'warn' },
+        { label:'平台生态', icon:'🌐', value:d.modules.platform.score, suffix:'', sub:'天天基金+股吧+Choice全生态', level:d.modules.platform.score>=85?'pass':d.modules.platform.score>=70?'pass':'warn', indicator:'🥇 顶级' },
+        { label:'竞争格局', icon:'⚔️', value:d.modules.competition.score, suffix:'', sub:'互联网券商第一·佣金率承压', level:d.modules.competition.score>=70?'pass':d.modules.competition.score>=55?'warn':'fail', indicator:d.modules.competition.score>=70?'● 领先':'⚠ 承压' },
+        { label:'估值合理性', icon:'📊', value:d.modules.valuation.score, suffix:'', sub:`PE ${d.pe}X · PB ${d.pb}X`, level:d.modules.valuation.score>=70?'pass':'warn', indicator:'◐ 合理偏高' },
+        { label:'成长动能', icon:'🚀', value:d.modules.growth.score, suffix:'', sub:'基金代销恢复·两融弹性', level:d.modules.growth.score>=70?'pass':'warn', indicator:'● 强劲' },
     ];
     c.innerHTML = kpis.map((kpi,i) => {
         const accent = accentMap[kpi.level];
         const color = colorMap[kpi.level];
-        return `<div class="smic-kpi-card" style="--kpi-accent:${accent};animation:smicSlideUp 0.45s cubic-bezier(0.22,1,0.36,1) ${0.1+i*0.07}s both">
-            <div class="smic-kpi-label">${kpi.icon} ${kpi.label}</div>
-            <div class="smic-kpi-value" id="kpi-val-${i}" style="color:${color}">0${kpi.suffix||''}</div>
-            <div class="smic-kpi-sub">${kpi.sub}</div>
-            ${kpi.indicator?`<div class="smic-kpi-indicator ${kpi.level}">${kpi.indicator}</div>`:''}
+        return `<div class="em-kpi-card" style="--kpi-accent:${accent};animation:emSlideUp 0.45s cubic-bezier(0.22,1,0.36,1) ${0.1+i*0.07}s both">
+            <div class="em-kpi-label">${kpi.icon} ${kpi.label}</div>
+            <div class="em-kpi-value" id="kpi-val-${i}" style="color:${color}">0${kpi.suffix||''}</div>
+            <div class="em-kpi-sub">${kpi.sub}</div>
+            ${kpi.indicator?`<div class="em-kpi-indicator ${kpi.level}">${kpi.indicator}</div>`:''}
         </div>`;
     }).join('');
-    // Animate KPI numbers
     kpis.forEach((kpi,i) => {
         setTimeout(() => counterUp(document.getElementById(`kpi-val-${i}`), kpi.value, kpi.suffix||'', 900), 200 + i*100);
     });

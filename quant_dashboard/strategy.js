@@ -921,6 +921,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (targetId === 'st-erp-timing') {
                 setTimeout(() => loadERPTimingData(), 100);
             }
+            // 切换到AIAE宏观仓位时自动加载数据
+            if (targetId === 'st-aiae-position') {
+                setTimeout(() => loadAIAEReport(), 100);
+            }
         });
     });
 });
@@ -950,7 +954,7 @@ async function runStrategy() {
 
         // 进度动画
         const setProgress = (stage, text) => {
-            for (let i = 1; i <= 4; i++) {
+            for (let i = 1; i <= 5; i++) {
                 const seg = document.getElementById(`prog-seg-${i}`);
                 if (seg) seg.style.background = i <= stage ? 'linear-gradient(90deg, #6366f1, #8b5cf6)' : 'rgba(255,255,255,0.06)';
             }
@@ -959,8 +963,8 @@ async function runStrategy() {
         setProgress(1, '🔄 正在并行拉取4策略数据...');
 
         try {
-            const timer2 = setTimeout(() => setProgress(2, '📊 均值回归 + 红利趋势 + 动量轮动 + ERP择时计算中...'), 5000);
-            const timer3 = setTimeout(() => setProgress(3, '🔗 四策略共振分析 + ERP仓位调节中...'), 12000);
+            const timer2 = setTimeout(() => setProgress(2, '📊 均值回归 + 红利趋势 + 动量轮动 + ERP择时 + AIAE标的池计算中...'), 5000);
+            const timer3 = setTimeout(() => setProgress(3, '🔗 五策略共振分析 + AIAE主控仓位调节中...'), 12000);
 
             const resp = await fetch(`${API_URL}/api/v1/strategy/run-all`);
             const json = await resp.json();
@@ -1035,21 +1039,52 @@ function renderExecutionDashboard(data, helpers) {
     safelySetText('exec-gauge-label', pos + '%');
     renderExecGauge(pos);
 
-    // 仪表盘下方 regime cap 注释
+    // 仪表盘下方 regime cap 注释 (双保险Cap)
     const regimeCapEl = document.getElementById('exec-gauge-regime-cap');
     if (regimeCapEl) {
         const regimeCN = { 'BULL': '牛市', 'RANGE': '震荡', 'BEAR': '熊市', 'CRASH': '危机' };
-        regimeCapEl.textContent = `${regimeCN[g.regime] || g.regime}上限 ${g.regime_cap || 100}%`;
+        const aiae = g.aiae || {};
+        if (aiae.override_active) {
+            regimeCapEl.textContent = `手动覆盖Cap ${g.regime_cap}% (原始 ${aiae.original_cap}%)`;
+            regimeCapEl.style.color = '#ef4444';
+        } else {
+            regimeCapEl.textContent = `${regimeCN[g.regime] || g.regime} MA:${aiae.ma_cap || '-'}% / AIAE:${aiae.aiae_cap || '-'}% → Cap ${g.regime_cap || 100}%`;
+        }
     }
 
-    // 权重条下方：各策略信心度
+    // AIAE 主控状态徽章
+    const aiaeBadge = document.getElementById('exec-aiae-badge');
+    if (aiaeBadge && g.aiae) {
+        const a = g.aiae;
+        const regimeEmoji = {1:'🟢',2:'🔵',3:'🟡',4:'🟠',5:'🔴'};
+        aiaeBadge.textContent = `🌡️ AIAE ${regimeEmoji[a.regime]||''} ${a.regime_cn} · V1=${(a.aiae_value||0).toFixed(1)}% · Cap ${a.aiae_cap}%`;
+        aiaeBadge.style.borderColor = a.regime <= 2 ? 'rgba(16,185,129,0.4)' : a.regime >= 4 ? 'rgba(239,68,68,0.4)' : 'rgba(245,158,11,0.4)';
+    }
+
+    // 权重条动态更新 (如果有AIAE动态权重)
+    const w = g.weights || {};
+    if (w.mr !== undefined) {
+        const gwMr = document.getElementById('gw-mr');
+        const gwDiv = document.getElementById('gw-div');
+        const gwMom = document.getElementById('gw-mom');
+        const gwErp = document.getElementById('gw-erp');
+        const gwAiae = document.getElementById('gw-aiae');
+        if (gwMr) gwMr.style.flex = w.mr;
+        if (gwDiv) gwDiv.style.flex = w.div;
+        if (gwMom) gwMom.style.flex = w.mom;
+        if (gwErp) gwErp.style.flex = w.erp;
+        if (gwAiae) gwAiae.style.flex = w.aiae_etf || 0.25;
+    }
+
+    // 权重条下方：各策略信心度 (5策略)
     const conf = g.confidence || {};
     const confLabels = document.querySelectorAll('.gw-conf-label');
-    if (confLabels.length >= 4) {
+    if (confLabels.length >= 5) {
         confLabels[0].textContent = `MR ${conf.mr || 0}%`;
         confLabels[1].textContent = `DIV ${conf.div || 0}%`;
         confLabels[2].textContent = `MOM ${conf.mom || 0}%`;
         confLabels[3].textContent = `ERP ${conf.erp || 0}%`;
+        confLabels[4].textContent = `AIAE ${conf.aiae_etf || 0}%`;
     }
 
     // KPI cards
@@ -1070,7 +1105,7 @@ function renderExecutionDashboard(data, helpers) {
     const erpScore = g.erp_score || 0;
     const erpColor = erpScore >= 55 ? '#10b981' : erpScore >= 40 ? '#f59e0b' : '#ef4444';
     safelySetHTML('exec-erp-score', `<span style="color:${erpColor}">${erpScore}</span>`);
-    const totalCoverage = (data.strategies.mr?.signals?.length || 0) + (data.strategies.div?.signals?.length || 0) + (data.strategies.mom?.signals?.length || 0) + (data.strategies.erp?.signals?.length || 0);
+    const totalCoverage = (data.strategies.mr?.signals?.length || 0) + (data.strategies.div?.signals?.length || 0) + (data.strategies.mom?.signals?.length || 0) + (data.strategies.erp?.signals?.length || 0) + (data.strategies.aiae_etf?.signals?.length || 0);
     safelySetHTML('exec-coverage', `<span style="color:#a78bfa">${totalCoverage} <span style="font-size:0.6rem;color:var(--text-muted)">只</span></span>`);
 
     // --- Zone 2+3: 行动信号 + 风险预警 ---
@@ -1089,16 +1124,19 @@ function renderExecutionDashboard(data, helpers) {
     renderHeatmapTable('div', data.strategies.div);
     renderHeatmapTable('mom', data.strategies.mom);
     renderHeatmapTable('erp', data.strategies.erp);
+    renderHeatmapTable('aiae_etf', data.strategies.aiae_etf);
 
     // 更新tab计数
     const mrSigs = (data.strategies.mr?.signals || []).length;
     const divSigs = (data.strategies.div?.signals || []).length;
     const momSigs = (data.strategies.mom?.signals || []).length;
     const erpSigs = (data.strategies.erp?.signals || []).length;
+    const aiaeSigs = (data.strategies.aiae_etf?.signals || []).length;
     safelySetText('exec-mr-count', mrSigs);
     safelySetText('exec-div-count', divSigs);
     safelySetText('exec-mom-count', momSigs);
     safelySetText('exec-erp-count', erpSigs);
+    safelySetText('exec-aiae-count', aiaeSigs);
 
     // ERP宏观评分徽章 (erpScore 已在上方声明)
     const erpBadge = document.getElementById('erp-macro-score-badge');
@@ -1309,7 +1347,7 @@ function renderHeatmapTable(strategyKey, strategyData) {
 
 // ====== Tab切换 ======
 function switchExecTab(key) {
-    ['mr', 'div', 'mom', 'erp'].forEach(k => {
+    ['mr', 'div', 'mom', 'erp', 'aiae_etf'].forEach(k => {
         const table = document.getElementById(`exec-table-${k}`);
         if (table) table.style.display = k === key ? 'block' : 'none';
     });
@@ -1330,7 +1368,7 @@ function renderResonancePanel(resonance, { safelySetHTML }) {
         const dotFor = (sig) => sig === 'buy' ? 'dot-buy' : sig?.includes('sell') ? 'dot-sell' : sig === '-' ? 'dot-none' : 'dot-hold';
 
         const hitCount = Object.values(item.signals || {}).filter(v => v !== '-').length;
-        const hitBadge = hitCount >= 3 ? `<span class="resonance-hit-badge hit-strong">命中 ${hitCount}/4</span>` : `<span class="resonance-hit-badge hit-weak">命中 ${hitCount}/4</span>`;
+        const hitBadge = hitCount >= 3 ? `<span class="resonance-hit-badge hit-strong">命中 ${hitCount}/5</span>` : `<span class="resonance-hit-badge hit-weak">命中 ${hitCount}/5</span>`;
 
         return `<div class="resonance-card ${typeClass}">
             <div style="font-weight:700;color:#fff;font-size:0.88rem;margin-bottom:6px;">${item.name}${hitBadge}</div>
@@ -3228,8 +3266,411 @@ function renderRatesChart(chart) {
     });
 }
 
-// 窗口resize
-window.addEventListener('resize', function() {
-    if (_ratesGaugeChart) _ratesGaugeChart.resize();
-    if (_ratesMainChart) _ratesMainChart.resize();
+// ====================================================================
+//  AIAE 宏观仓位管控模块 V2.0
+//  琥珀金色系 · ECharts仪表盘 · 五档markArea色带 · 脉冲信号卡片
+// ====================================================================
+
+let _aiaeData = null;
+let _aiaeLoading = false;
+
+async function loadAIAEReport(forceRefresh = false) {
+    if (_aiaeLoading) return;
+    if (_aiaeData && !forceRefresh) {
+        renderAIAEUI(_aiaeData);
+        return;
+    }
+
+    _aiaeLoading = true;
+    const statusEl = document.getElementById('aiae-load-status');
+    const loadBtn = document.getElementById('aiae-load-btn');
+    const refreshBtn = document.getElementById('aiae-refresh-btn');
+    if (statusEl) statusEl.textContent = '⏳ 正在连接 Tushare 数据源...';
+    if (loadBtn) { loadBtn.disabled = true; loadBtn.innerHTML = '⏳ 加载中...'; }
+    if (refreshBtn) refreshBtn.disabled = true;
+
+    try {
+        const endpoint = forceRefresh ? '/api/v1/aiae/refresh' : '/api/v1/aiae/report';
+        const resp = await fetch(endpoint);
+        const json = await resp.json();
+
+        if (json.status === 'success' && json.data) {
+            _aiaeData = json.data;
+            try {
+                renderAIAEUI(_aiaeData);
+            } catch(renderErr) {
+                console.warn('[AIAE] Partial render error (non-blocking):', renderErr);
+            }
+            if (statusEl) {
+                const st = _aiaeData.status === 'fallback' ? '⚠️ 降级数据' : '✅ 实时数据';
+                statusEl.textContent = st + ' · ' + new Date().toLocaleTimeString();
+            }
+            if (loadBtn) loadBtn.innerHTML = '✅ 数据已加载';
+            setTimeout(() => { if (loadBtn) loadBtn.innerHTML = '⚡ 加载实时数据'; }, 2000);
+        } else {
+            if (statusEl) statusEl.textContent = `❌ ${json.message || '加载失败'}`;
+            if (loadBtn) loadBtn.innerHTML = '❌ 重试';
+            setTimeout(() => { if (loadBtn) loadBtn.innerHTML = '⚡ 加载实时数据'; }, 3000);
+        }
+    } catch (e) {
+        console.error('[AIAE] Load error:', e);
+        if (statusEl) statusEl.textContent = `❌ 网络异常: ${e.message}`;
+        if (loadBtn) loadBtn.innerHTML = '❌ 重试';
+        setTimeout(() => { if (loadBtn) loadBtn.innerHTML = '⚡ 加载实时数据'; }, 3000);
+    } finally {
+        _aiaeLoading = false;
+        if (loadBtn) loadBtn.disabled = false;
+        if (refreshBtn) refreshBtn.disabled = false;
+    }
+}
+
+function renderAIAEUI(data) {
+    if (!data) return;
+    const c = data.current;
+    const p = data.position;
+    const cv = data.cross_validation;
+    const ri = c.regime_info;
+
+    // ── Hero Stats ──
+    const $v = document.getElementById('aiae-hero-value');
+    const $r = document.getElementById('aiae-hero-regime');
+    const $p = document.getElementById('aiae-hero-position');
+    const $e = document.getElementById('aiae-hero-erp');
+    if ($v) $v.textContent = c.aiae_v1 + '%';
+    if ($r) { $r.textContent = `${ri.emoji} ${ri.cn}`; $r.style.color = ri.color; }
+    if ($p) $p.textContent = p.matrix_position + '%';
+    if ($e) { $e.textContent = cv.verdict; $e.style.color = cv.color; }
+
+    // ── ZONE 1: ECharts Gauge ──
+    try { renderAIAEGauge(c.aiae_v1, c.regime, ri); } catch(e) { console.warn('[AIAE] gauge skip:', e); }
+    const $gl = document.getElementById('aiae-gauge-label');
+    const $gr = document.getElementById('aiae-gauge-regime');
+    const $sl = document.getElementById('aiae-slope-indicator');
+    if ($gl) $gl.textContent = c.aiae_v1;
+    if ($gr) { $gr.textContent = `${ri.emoji} ${ri.name}`; $gr.style.color = ri.color; }
+    if ($sl) {
+        const slope = c.slope;
+        const arrow = slope.direction === 'rising' ? '↗' : (slope.direction === 'falling' ? '↘' : '→');
+        $sl.textContent = `月环比斜率: ${arrow} ${slope.slope > 0 ? '+' : ''}${slope.slope}`;
+        $sl.style.color = slope.direction === 'rising' ? '#f97316' : (slope.direction === 'falling' ? '#10b981' : '#94a3b8');
+    }
+
+    // ── Regime cards highlight ──
+    document.querySelectorAll('.aiae-regime-card').forEach(card => {
+        const r = parseInt(card.dataset.regime);
+        card.classList.toggle('active', r === c.regime);
+    });
+
+    // ── Data source cards ──
+    const $ds = document.getElementById('aiae-data-simple');
+    const $dm = document.getElementById('aiae-data-margin');
+    const $df = document.getElementById('aiae-data-fund');
+    if ($ds) $ds.textContent = c.aiae_simple + '%';
+    if ($dm) $dm.textContent = c.margin_heat + '%';
+    if ($df) $df.textContent = c.fund_position + '%';
+
+    // ── ZONE 2: Matrix highlight ──
+    renderAIAEMatrix(p, cv);
+
+    // ── Allocations ──
+    renderAIAEAllocs(p.allocations, p.matrix_position);
+
+    // ── Cross validation ──
+    const $cv = document.getElementById('aiae-cross-validation');
+    if ($cv) {
+        $cv.innerHTML = `
+            <div style="display:flex;align-items:center;gap:10px;">
+                <span class="aiae-cross-stars">${cv.confidence_stars}</span>
+                <span class="aiae-cross-verdict" style="color:${cv.color};">${cv.verdict}</span>
+            </div>
+            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;line-height:1.6;">
+                AIAE Ⅳ${c.regime}级 × ERP ${p.erp_value}% (${cv.erp_level}) · 置信度 ${cv.confidence}/5
+            </div>
+        `;
+    }
+
+    // ── ZONE 3: History chart ──
+    try { if (data.chart) renderAIAEHistoryChart(data.chart, c.aiae_v1); } catch(e) { console.warn('[AIAE] chart skip:', e); }
+
+    // ── ZONE 4: Signals ──
+    renderAIAESignals(data.signals);
+}
+
+// ── ECharts Gauge V2.0 ──
+function renderAIAEGauge(value, regime, ri) {
+    const container = document.getElementById('aiae-gauge-container');
+    if (!container || typeof echarts === 'undefined') return;
+    if (window._aiaeGaugeChart) window._aiaeGaugeChart.dispose();
+    window._aiaeGaugeChart = echarts.init(container);
+
+    const v = Math.min(Math.max(value, 0), 50);
+
+    window._aiaeGaugeChart.setOption({
+        series: [{
+            type: 'gauge',
+            startAngle: 200,
+            endAngle: -20,
+            min: 0,
+            max: 50,
+            pointer: {
+                show: true,
+                length: '58%',
+                width: 4,
+                itemStyle: { color: ri.color, shadowColor: ri.color, shadowBlur: 8 },
+                icon: 'triangle'
+            },
+            anchor: {
+                show: true,
+                size: 10,
+                itemStyle: { color: '#0f172a', borderColor: ri.color, borderWidth: 3 }
+            },
+            axisLine: {
+                lineStyle: {
+                    width: 14,
+                    color: [
+                        [0.24, '#10b981'],   // Ⅰ: 0-12
+                        [0.32, '#3b82f6'],   // Ⅱ: 12-16
+                        [0.48, '#eab308'],   // Ⅲ: 16-24
+                        [0.64, '#f97316'],   // Ⅳ: 24-32
+                        [1, '#ef4444']       // Ⅴ: 32-50
+                    ]
+                }
+            },
+            axisTick: {
+                length: 8,
+                distance: -14,
+                lineStyle: { color: 'auto', width: 1.5 }
+            },
+            splitLine: {
+                length: 14,
+                distance: -14,
+                lineStyle: { color: 'auto', width: 2 }
+            },
+            splitNumber: 5,
+            axisLabel: {
+                distance: -36,
+                color: '#64748b',
+                fontSize: 9,
+                formatter: function(val) {
+                    var map = {0: '0', 10: '10', 12: 'Ⅰ', 16: 'Ⅱ', 20: '20', 24: 'Ⅲ', 30: '30', 32: 'Ⅳ', 40: '40', 50: '50'};
+                    return map[val] || '';
+                }
+            },
+            detail: { show: false },
+            data: [{ value: v }],
+            animationDuration: 1200,
+            animationEasingUpdate: 'cubicOut'
+        }]
+    });
+}
+
+// ── History Chart V2.0 (五档 markArea 色带) ──
+function renderAIAEHistoryChart(chart, currentValue) {
+    const container = document.getElementById('aiae-history-chart');
+    if (!container || typeof echarts === 'undefined') return;
+    try {
+        if (window._aiaeHistChart) window._aiaeHistChart.dispose();
+        window._aiaeHistChart = echarts.init(container);
+
+        // 五档区间色带
+        const markAreaData = [
+            [{ yAxis: 0, itemStyle: { color: 'rgba(16,185,129,0.06)' } }, { yAxis: 12 }],   // Ⅰ
+            [{ yAxis: 12, itemStyle: { color: 'rgba(59,130,246,0.05)' } }, { yAxis: 16 }],   // Ⅱ
+            [{ yAxis: 16, itemStyle: { color: 'rgba(234,179,8,0.05)' } }, { yAxis: 24 }],    // Ⅲ
+            [{ yAxis: 24, itemStyle: { color: 'rgba(249,115,22,0.06)' } }, { yAxis: 32 }],   // Ⅳ
+            [{ yAxis: 32, itemStyle: { color: 'rgba(239,68,68,0.06)' } }, { yAxis: 50 }],    // Ⅴ
+        ];
+
+        // 分界参考线
+        const markLines = [12, 16, 24, 32].map(val => ({
+            yAxis: val,
+            lineStyle: { color: val <= 16 ? '#3b82f644' : (val <= 24 ? '#eab30844' : '#ef444444'), type: 'dashed', width: 1 },
+            label: {
+                formatter: val === 12 ? 'Ⅰ|Ⅱ' : (val === 16 ? 'Ⅱ|Ⅲ' : (val === 24 ? 'Ⅲ|Ⅳ' : 'Ⅳ|Ⅴ')),
+                position: 'end', color: '#64748b', fontSize: 9
+            }
+        }));
+
+        window._aiaeHistChart.setOption({
+            backgroundColor: 'transparent',
+            tooltip: {
+                trigger: 'axis',
+                backgroundColor: 'rgba(15,23,42,0.95)',
+                borderColor: 'rgba(245,158,11,0.3)',
+                textStyle: { color: '#e2e8f0', fontSize: 11 },
+                formatter: function(params) {
+                    if (!params.length) return '';
+                    const p = params[0];
+                    const idx = chart.dates.indexOf(p.axisValue);
+                    const label = idx >= 0 && chart.labels[idx] ? chart.labels[idx] : '';
+                    // Determine tier
+                    const val = p.value;
+                    let tierLabel = '';
+                    if (val < 12) tierLabel = '<span style="color:#10b981">Ⅰ级 极度恐慌</span>';
+                    else if (val < 16) tierLabel = '<span style="color:#3b82f6">Ⅱ级 低配置区</span>';
+                    else if (val < 24) tierLabel = '<span style="color:#eab308">Ⅲ级 中性均衡</span>';
+                    else if (val < 32) tierLabel = '<span style="color:#f97316">Ⅳ级 偏热区域</span>';
+                    else tierLabel = '<span style="color:#ef4444">Ⅴ级 极度过热</span>';
+
+                    return '<b>' + p.axisValue + '</b><br/>' +
+                        '<span style="color:#f59e0b">●</span> AIAE: <b>' + p.value + '%</b><br/>' +
+                        tierLabel +
+                        (label ? '<br/><span style="color:#94a3b8">' + label + '</span>' : '');
+                }
+            },
+            grid: { left: 55, right: 30, top: 32, bottom: 32 },
+            xAxis: {
+                type: 'category', data: chart.dates, boundaryGap: false,
+                axisLabel: { color: '#64748b', fontSize: 9, formatter: function(v) { return v.substring(0, 7); } },
+                axisLine: { lineStyle: { color: '#334155' } }
+            },
+            yAxis: {
+                type: 'value', min: 0, max: 50,
+                axisLabel: { color: '#64748b', fontSize: 9, formatter: function(v) { return v + '%'; } },
+                splitLine: { lineStyle: { color: 'rgba(255,255,255,0.04)' } }
+            },
+            series: [{
+                type: 'line', data: chart.values, smooth: true,
+                symbol: 'circle', symbolSize: 10,
+                lineStyle: { color: '#f59e0b', width: 3, shadowColor: 'rgba(245,158,11,0.3)', shadowBlur: 6 },
+                itemStyle: { color: '#f59e0b', borderColor: '#0f172a', borderWidth: 2 },
+                areaStyle: {
+                    color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                        colorStops: [
+                            { offset: 0, color: 'rgba(245,158,11,0.25)' },
+                            { offset: 1, color: 'rgba(245,158,11,0)' }
+                        ]
+                    }
+                },
+                label: {
+                    show: true, fontSize: 8, color: '#f59e0b',
+                    formatter: function(p) { return p.value + '%'; },
+                    position: 'top'
+                },
+                markArea: { silent: true, data: markAreaData },
+                markLine: { silent: true, symbol: 'none', data: markLines }
+            }]
+        });
+    } catch(err) {
+        console.warn('[AIAE] History chart error:', err);
+    }
+}
+
+
+function renderAIAEMatrix(pos, cv) {
+    const table = document.getElementById('aiae-matrix-table');
+    if (!table) return;
+
+    // Heatmap color function: 高仓位=绿, 低仓位=红
+    function posColor(v) {
+        if (v >= 80) return 'rgba(16,185,129,0.2)';
+        if (v >= 60) return 'rgba(52,211,153,0.12)';
+        if (v >= 40) return 'rgba(234,179,8,0.1)';
+        if (v >= 20) return 'rgba(249,115,22,0.12)';
+        return 'rgba(239,68,68,0.15)';
+    }
+
+    // 清除旧高亮 + 添加热力图
+    const posValues = [[95,85,70,45,20],[90,80,65,40,15],[85,70,55,30,10],[75,60,40,20,5]];
+    const rows = table.querySelectorAll('tbody tr');
+    rows.forEach((row, ri) => {
+        const cells = row.querySelectorAll('td');
+        cells.forEach((td, ci) => {
+            td.classList.remove('aiae-matrix-active');
+            if (ci > 0 && posValues[ri]) { // skip row label
+                td.style.background = posColor(posValues[ri][ci-1]);
+            }
+        });
+    });
+
+    // 确定当前交叉位置并高亮
+    const erpMap = { 'erp_gt6': 0, 'erp_4_6': 1, 'erp_2_4': 2, 'erp_lt2': 3 };
+    const rowIdx = erpMap[pos.erp_level] ?? 2;
+    const colIdx = Math.min(pos.regime - 1, 4);
+    if (rows[rowIdx]) {
+        const cells = rows[rowIdx].querySelectorAll('td');
+        if (cells[colIdx + 1]) cells[colIdx + 1].classList.add('aiae-matrix-active');
+    }
+
+    const regimeNames = {1:'Ⅰ', 2:'Ⅱ', 3:'Ⅲ', 4:'Ⅳ', 5:'Ⅴ'};
+    const $verdict = document.getElementById('aiae-matrix-verdict');
+    if ($verdict) {
+        $verdict.innerHTML = '当前: <b style="color:#f59e0b">' + regimeNames[pos.regime] + '级</b>' +
+            ' × <b style="color:#60a5fa">ERP ' + pos.erp_value + '%</b>' +
+            ' → 建议总仓位 <b style="color:#10b981;font-size:1.1rem;">' + pos.matrix_position + '%</b>';
+    }
+}
+
+function renderAIAEAllocs(allocs, totalPos) {
+    if (!allocs) return;
+    const strategies = ['mr', 'div', 'mom', 'erp'];
+    strategies.forEach(key => {
+        const a = allocs[key];
+        if (!a) return;
+        const $pct = document.getElementById(`aiae-alloc-${key}-pct`);
+        const $pos = document.getElementById(`aiae-alloc-${key}-pos`);
+        const $bar = document.getElementById(`aiae-alloc-${key}-bar`);
+        if ($pct) $pct.textContent = a.pct + '%';
+        if ($pos) $pos.textContent = a.position + '% 仓位';
+        if ($bar) $bar.style.width = Math.min(a.pct, 100) + '%';
+    });
+}
+
+function renderAIAESignals(signals) {
+    const container = document.getElementById('aiae-signal-cards');
+    if (!container || !signals || !signals.length) return;
+
+    function hexToRgba(hex, alpha) {
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        return `rgba(${r},${g},${b},${alpha})`;
+    }
+
+    container.innerHTML = signals.map((s, i) => {
+        const c = s.color || '#f59e0b';
+        const isMain = s.type === 'main' || i === 0;
+        const icon = s.type === 'main' ? '🌡️' : (s.type === 'slope' ? '📐' : (s.type === 'margin' ? '💳' : '📡'));
+        const mainClass = isMain ? ' aiae-signal-main' : '';
+        const time = new Date().toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'});
+        return `<div class="aiae-signal-card${mainClass}" style="--signal-color:${c};">
+            <div class="aiae-signal-icon">${icon}</div>
+            <div>
+                <div class="aiae-signal-text" style="color:${c}">${s.text}</div>
+                <span class="aiae-signal-time">${time}</span>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+// 页面首次加载时，如果AIAE是默认active tab则自动加载
+document.addEventListener('DOMContentLoaded', function() {
+    const aiaeTab = document.querySelector('.st-tab[data-report="st-aiae-position"]');
+    if (aiaeTab && aiaeTab.classList.contains('active')) {
+        setTimeout(() => loadAIAEReport(), 500);
+    }
 });
+
+// ── ECharts 全局 Resize Handler (防抖 200ms, 合并所有图表实例) ──
+(function() {
+    let _resizeTimer = null;
+    window.addEventListener('resize', function() {
+        clearTimeout(_resizeTimer);
+        _resizeTimer = setTimeout(function() {
+            // Rates module charts
+            if (typeof _ratesGaugeChart !== 'undefined' && _ratesGaugeChart) {
+                try { _ratesGaugeChart.resize(); } catch(e) {}
+            }
+            if (typeof _ratesMainChart !== 'undefined' && _ratesMainChart) {
+                try { _ratesMainChart.resize(); } catch(e) {}
+            }
+            // AIAE module charts
+            if (window._aiaeGaugeChart) {
+                try { window._aiaeGaugeChart.resize(); } catch(e) {}
+            }
+            if (window._aiaeHistChart) {
+                try { window._aiaeHistChart.resize(); } catch(e) {}
+            }
+        }, 200);
+    });
+})();

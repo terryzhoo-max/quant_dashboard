@@ -336,6 +336,14 @@ body {
     gap: 12px;
 }
 
+/* Signal card: long text needs smaller font */
+#card-signal .stat-value {
+    font-size: 0.95rem;
+    flex-direction: column;
+    gap: 6px;
+    line-height: 1.5;
+}
+
 .trend {
     font-size: 0.9rem;
     font-weight: 600;
@@ -580,6 +588,8 @@ body {
 .seg-div { background: linear-gradient(135deg, #f59e0b, #d97706); }
 .seg-mr  { background: linear-gradient(135deg, #3b82f6, #2563eb); }
 .seg-mom { background: linear-gradient(135deg, #10b981, #059669); }
+.seg-erp { background: linear-gradient(135deg, #a78bfa, #7c3aed); }
+.seg-aiae { background: linear-gradient(135deg, #fbbf24, #d97706); }
 .alloc-details {
     display: flex;
     justify-content: space-around;
@@ -606,6 +616,8 @@ body {
 .dot-div { background: #f59e0b; }
 .dot-mr  { background: #3b82f6; }
 .dot-mom { background: #10b981; }
+.dot-erp { background: #a78bfa; }
+.dot-aiae { background: #fbbf24; }
 .filter-badge {
     font-size: 0.7rem;
     padding: 2px 6px;
@@ -955,45 +967,52 @@ body {
 /* 响应式调整 */
 @media (max-width: 1200px) {
     .heatmap-grid { grid-template-columns: repeat(3, 1fr); }
+    .strategy-cards-grid { grid-template-columns: repeat(3, 1fr); }
 }
 
 @media (max-width: 768px) {
     .heatmap-grid { grid-template-columns: repeat(2, 1fr); }
+    .strategy-cards-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
-/* 策略状态卡片区 (Option C) */
+/* 策略状态卡片区 V7.0 (5策略) */
 .strategy-cards-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 24px;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 16px;
 }
 
 .strategy-card {
-    padding: 24px 28px;
+    padding: 16px 18px;
     cursor: pointer;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    height: 180px;
+    min-height: 180px;
     position: relative;
     overflow: hidden;
 }
 
 .strategy-card:hover { border-color: var(--accent); }
+.strat-card-aiae { border-color: rgba(245,158,11,0.3); background: linear-gradient(135deg, rgba(23,23,23,0.9), rgba(40,30,10,0.8)); }
+.strat-card-aiae:hover { border-color: rgba(245,158,11,0.6); box-shadow: 0 0 20px rgba(245,158,11,0.15); }
+.strategy-card .strat-body { font-size: 0.82rem; }
 
 .strat-header {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin-bottom: 16px;
+    gap: 6px 8px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
 }
 
 .strat-icon {
-    font-size: 1.5rem;
+    font-size: 1.1rem;
     background: rgba(255,255,255,0.08);
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    border-radius: 7px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1001,8 +1020,8 @@ body {
 
 .strat-header h3 {
     margin: 0;
-    font-size: 1.1rem;
-    flex: 1;
+    font-size: 0.88rem;
+    white-space: nowrap;
 }
 
 .strat-header h3::before { display: none; }
@@ -1028,10 +1047,10 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 0.95rem;
+    font-size: 0.82rem;
 }
 
-.strat-metric .label { color: var(--text-muted); font-size: 0.9rem; }
+.strat-metric .label { color: var(--text-muted); font-size: 0.78rem; }
 .strat-metric strong { color: #fff; font-weight: 600; }
 
 h3 {
@@ -1824,15 +1843,26 @@ h3::before {
 
 /* ================= V5.0 策略卡片状态指示 ================= */
 .version-pill {
-    font-size: 0.65rem;
-    padding: 2px 8px;
+    font-size: 0.6rem;
+    padding: 1px 6px;
     background: linear-gradient(135deg, rgba(99,102,241,0.2), rgba(139,92,246,0.15));
     color: #a78bfa;
     border: 1px solid rgba(139,92,246,0.3);
-    border-radius: 6px;
+    border-radius: 5px;
     font-weight: 700;
     letter-spacing: 0.5px;
     text-transform: uppercase;
+    white-space: nowrap;
+}
+.weight-pill {
+    font-size: 0.6rem;
+    padding: 1px 6px;
+    background: rgba(255,255,255,0.06);
+    color: #94a3b8;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 5px;
+    font-weight: 500;
+    white-space: nowrap;
 }
 .strat-status-row {
     display: flex;

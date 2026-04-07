@@ -22,6 +22,7 @@ from audit_engine import run_full_audit
 from momentum_rotation_engine import run_momentum_strategy
 from momentum_backtest_engine import run_momentum_backtest, run_momentum_optimize
 from erp_timing_engine import get_erp_engine
+from aiae_engine import get_aiae_engine, AIAE_RUN_ALL_WEIGHTS, REGIMES as AIAE_REGIMES
 from data_manager import FactorDataManager
 from industry_engine import IndustryEngine
 from portfolio_engine import PortfolioEngine
@@ -184,11 +185,12 @@ async def startup_event():
     # 异步预热 (不阻塞启动)
     threading.Thread(target=_warmup_erp_cache, daemon=True).start()
     threading.Thread(target=_warmup_rates_cache, daemon=True).start()  # V1.5: 利率预热
+    threading.Thread(target=lambda: get_aiae_engine().generate_report(), daemon=True).start()  # AIAE预热
     # 注册收盘后定时预热 (15:35 A股)
     _schedule_daily_warmup()
     # 注册 FRED 利率刷新 (18:30 = 美东6:30AM)
     _schedule_fred_daily_refresh()
-    print("[Startup] AlphaCore 服务启动完成 · ERP+利率预热已触发 · 每日15:35刷新A股 · 每日18:30刷新FRED利率")
+    print("[Startup] AlphaCore 服务启动完成 · ERP+利率+AIAE预热已触发 · 每日15:35刷新A股 · 每日18:30刷新FRED利率")
 
 
 # --- AlphaCore DMSO Sub-Engines (V3.3 机构级) ---
@@ -641,7 +643,7 @@ async def get_dashboard_data():
 
     if is_trading_hours and has_strategy_cache:
         # 盘中: 只拉 VIX + CNY (约 2 秒), 合并旧策略数据
-        print(f"[{now_dt.strftime('%H:%M:%S')}] ⚡ 盘中热刷新: 仅更新 VIX/CNY, 跳过策略引擎")
+        print(f"[{now_dt.strftime('%H:%M:%S')}] [HOT] Trading-hours refresh: VIX/CNY only, skip strategy engine")
         try:
             loop = asyncio.get_event_loop()
             def _fetch_yf(ticker, period="5d"):
@@ -696,7 +698,7 @@ async def get_dashboard_data():
             # 更新缓存
             STRATEGY_CACHE["last_update"] = current_time
             STRATEGY_CACHE["dashboard_data"] = hot_data
-            print(f"[{now_dt.strftime('%H:%M:%S')}] ⚡ 热刷新完成: VIX={hot_vix:.2f} CNY={hot_cny:.4f}")
+            print(f"[{now_dt.strftime('%H:%M:%S')}] [HOT] Refresh done: VIX={hot_vix:.2f} CNY={hot_cny:.4f}")
             return hot_data
         except Exception as e:
             print(f"[Hot Refresh] 降级到全量刷新: {e}")
@@ -797,6 +799,26 @@ async def get_dashboard_data():
             "metric1": f"买入信号: {div_overview.get('buy_count', 0)}",
             "metric2": f"建议 {div_overview.get('total_suggested_pos', 0)}%"
         }
+
+        # --- V7.0: AIAE 引擎注入 (dashboard-data 级) ---
+        aiae_regime = 3  # 默认 Ⅲ级 中性均衡
+        aiae_cap = 65
+        aiae_v1_value = 0.0
+        aiae_regime_cn = "中性均衡"
+        aiae_report = {}
+        try:
+            _aiae_engine = get_aiae_engine()
+            aiae_report = _aiae_engine.generate_report()
+            if aiae_report.get("status") == "success":
+                aiae_regime = aiae_report["current"]["regime"]
+                aiae_v1_value = aiae_report["current"]["aiae_v1"]
+                aiae_cap = aiae_report["position"]["matrix_position"]
+                aiae_regime_cn = aiae_report["current"]["regime_info"]["cn"]
+                print(f"[Dashboard] AIAE注入成功: V1={aiae_v1_value:.1f}% Regime={aiae_regime} Cap={aiae_cap}%")
+            else:
+                print(f"[Dashboard] AIAE降级: {aiae_report.get('message', 'unknown')}")
+        except Exception as e:
+            print(f"[Dashboard] AIAE引擎异常,降级Ⅲ级: {e}")
 
         # 4. 汇总买入/卖出区 (Buy/Danger Zone Synchronization)
         vetted_buy = []
@@ -926,16 +948,52 @@ async def get_dashboard_data():
             status_label = "过热" if total_temp > 80 else ("偏冷" if total_temp < 30 else "温暖")
         temp_label = f"{status_label} | {valuation_label}"
         
-        # 策略权重分配 (仍使用温度驱动的 regime)
-        regime_weights_raw, regime_name = get_regime_allocation(total_temp)
-        regime_weights, strategy_filters = apply_strategy_filters(regime_weights_raw)
-        
-        # 各策略名义仓位 (由新引擎的总仓位 × 权重)
+        # V7.0: 策略权重分配 (AIAE 五档驱动, 替代旧版温度驱动)
+        # 仍保留 regime_name 用于 banner 显示
+        _, regime_name = get_regime_allocation(total_temp)
+        regime_weights_5 = AIAE_RUN_ALL_WEIGHTS.get(aiae_regime, AIAE_RUN_ALL_WEIGHTS[3])
+        # apply_strategy_filters 只处理 3 策略, 对 ERP/AIAE 透传
+        regime_weights_3 = {"div": regime_weights_5["div"], "mr": regime_weights_5["mr"], "mom": regime_weights_5["mom"]}
+        filtered_3, strategy_filters = apply_strategy_filters(regime_weights_3)
+        # 合并回 5 策略权重
+        regime_weights = {
+            "mr": filtered_3["mr"], "div": filtered_3["div"], "mom": filtered_3["mom"],
+            "erp": regime_weights_5["erp"], "aiae_etf": regime_weights_5["aiae_etf"]
+        }
+        # 归一化
+        _wt = sum(regime_weights.values())
+        if _wt > 0:
+            regime_weights = {k: round(v / _wt, 3) for k, v in regime_weights.items()}
+
+        # V7.0: 双保险仓位 Cap — min(Hub仓位, AIAE Cap)
+        final_pos_val = min(final_pos_val, aiae_cap)
+        pos_advice = hub_result["position_label"]  # 刷新 label
+
+        # 各策略名义仓位 (5策略)
         strategy_positions = {
             "mr_pos":  round(final_pos_val * regime_weights["mr"], 1),
             "mom_pos": round(final_pos_val * regime_weights["mom"], 1),
             "div_pos": round(final_pos_val * regime_weights["div"], 1),
+            "erp_pos": round(final_pos_val * regime_weights["erp"], 1),
+            "aiae_pos": round(final_pos_val * regime_weights["aiae_etf"], 1),
             "total":   round(final_pos_val, 1)
+        }
+
+        # V7.0: ERP择时 策略卡片数据 (此处 valuation_label/erp_z 已可用)
+        erp_status = {
+            "status_text": f"ERP {valuation_label}",
+            "status_class": "active" if erp_z > 0.5 else ("warning" if erp_z < -0.5 else "dormant"),
+            "metric1": f"ERP {round(erp_val, 2)}%",
+            "metric2": f"Z-Score {round(erp_z, 2)}"
+        }
+
+        # V7.0: AIAE宏观仓位 策略卡片数据
+        aiae_regime_info = AIAE_REGIMES.get(aiae_regime, AIAE_REGIMES[3])
+        aiae_status = {
+            "status_text": f"{aiae_regime_info['emoji']} {aiae_regime_cn}",
+            "status_class": "active" if aiae_regime <= 2 else ("warning" if aiae_regime >= 4 else "dormant"),
+            "metric1": f"AIAE {round(aiae_v1_value, 1)}%",
+            "metric2": f"Cap {aiae_cap}%"
         }
 
         # 7. 行业热力全景图 V4.0 (Sector Rotation Heatmap with RPS)
@@ -1050,8 +1108,8 @@ async def get_dashboard_data():
                     "capital_a": capital_a,
                     "capital_h": capital_h,
                     "signal": {
-                        "value": f"MR {mr_overview.get('signal_count',{}).get('buy',0)}买/{mr_overview.get('signal_count',{}).get('sell',0)}卖",
-                        "trend": f"DT {div_overview.get('trend_up_count',0)}/8趋 · MOM {mom_overview.get('top1_name','—')}",
+                        "value": f"MR {mr_overview.get('signal_count',{}).get('buy',0)}买/{mr_overview.get('signal_count',{}).get('sell',0)}卖 · ERP {valuation_label}",
+                        "trend": f"DT {div_overview.get('trend_up_count',0)}/8趋 · AIAE {aiae_regime_cn} · MOM {mom_overview.get('top1_name','—')}",
                         "status": "up" if (mr_overview.get('signal_count',{}).get('buy',0) + div_overview.get('buy_count',0)) > 0 else "neutral"
                     },
                     "regime_banner": {
@@ -1060,7 +1118,11 @@ async def get_dashboard_data():
                         "advice": pos_advice,
                         "vix": round(latest_vix, 2),
                         "vix_label": vix_analysis.get('label','—'),
-                        "z_capital": round(total_money_z, 2)
+                        "z_capital": round(total_money_z, 2),
+                        "aiae_regime": aiae_regime,
+                        "aiae_regime_cn": aiae_regime_cn,
+                        "aiae_cap": aiae_cap,
+                        "aiae_v1": round(aiae_v1_value, 1)
                     },
                     "market_temp": {
                         "value": total_temp, 
@@ -1078,7 +1140,7 @@ async def get_dashboard_data():
                         "mindset": get_institutional_mindset(total_temp),
                         "holding_cycle_a": "5-8 个交易日",
                         "holding_cycle_hk": "15-22 个交易日",
-                        "hub_factors": hub_result["factors"],
+                        "hub_factors": {**hub_result["factors"], "aiae_temp": {"score": round(max(10, 100 - (aiae_regime - 1) * 22.5), 1), "weight": 0.15, "label": aiae_regime_cn}},
                         "hub_confidence": hub_result["confidence"],
                         "hub_composite": hub_result["composite_score"],
                         "hub_signal_detail": hub_result["signal_detail"],
@@ -1091,7 +1153,7 @@ async def get_dashboard_data():
                     }
                 },
                 "sector_heatmap": sector_heatmap,
-                "strategy_status": {"mr": mr_status, "mom": mom_status, "div": div_status},
+                "strategy_status": {"mr": mr_status, "mom": mom_status, "div": div_status, "erp": erp_status, "aiae": aiae_status},
                 "execution_lists": {"buy_zone": vetted_buy, "danger_zone": vetted_sell}
             }
         }
@@ -1280,7 +1342,82 @@ async def get_erp_strategy():
 
 
 # ─────────────────────────────────────────────
-# 四策略并行执行 + 共振分析 API (V3.0)
+# AIAE 宏观仓位管控策略 — ETF标的池执行 API
+# ─────────────────────────────────────────────
+def _run_aiae_strategy() -> dict:
+    """AIAE策略执行：获取AIAE五档判定 → 对8只ETF标的池生成标准化信号"""
+    from datetime import datetime as _dt
+    try:
+        engine = get_aiae_engine()
+        report = engine.generate_report()
+
+        if report.get("status") not in ("success", "fallback"):
+            return {"status": "error", "message": "AIAE引擎异常"}
+
+        regime = report["current"]["regime"]
+        regime_info = report["current"]["regime_info"]
+        aiae_v1 = report["current"]["aiae_v1"]
+        matrix_pos = report["position"]["matrix_position"]
+
+        # 生成 ETF 信号
+        signals = engine.generate_etf_signals(regime)
+
+        # 获取动态权重
+        run_all_weights = engine.get_run_all_weights(regime)
+
+        buy_count = sum(1 for s in signals if s["signal"] == "buy")
+        sell_count = sum(1 for s in signals if s["signal"] == "sell")
+
+        return {
+            "status": "success",
+            "timestamp": _dt.now().isoformat(),
+            "data": {
+                "signals": signals,
+                "market_overview": {
+                    "aiae_value": aiae_v1,
+                    "regime": regime,
+                    "regime_cn": regime_info["cn"],
+                    "matrix_position": matrix_pos,
+                    "buy_count": buy_count,
+                    "sell_count": sell_count,
+                    "composite_score": max(10, 100 - (regime - 1) * 20),
+                },
+                "run_all_weights": run_all_weights,
+                "aiae_report": report,  # 完整 AIAE 报告供前端展示
+            },
+        }
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        print(f"[AIAE Strategy] Error: {e}")
+        # 降级: 返回 Regime III 中性信号
+        try:
+            engine = get_aiae_engine()
+            fallback_signals = engine.generate_etf_signals(3)
+            return {
+                "status": "fallback",
+                "timestamp": _dt.now().isoformat(),
+                "data": {
+                    "signals": fallback_signals,
+                    "market_overview": {
+                        "aiae_value": 22.0, "regime": 3, "regime_cn": "中性均衡",
+                        "matrix_position": 55, "buy_count": 5, "sell_count": 0,
+                        "composite_score": 60,
+                    },
+                    "run_all_weights": engine.get_run_all_weights(3),
+                },
+            }
+        except:
+            return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/v1/aiae_strategy")
+async def get_aiae_strategy():
+    """AIAE ETF标的池实时信号"""
+    return await asyncio.get_event_loop().run_in_executor(executor, _run_aiae_strategy)
+
+
+# ─────────────────────────────────────────────
+# 五策略并行执行 + 共振分析 API (V4.0)
 # ─────────────────────────────────────────────
 def _extract_signals_normalized(strategy_type: str, raw_result) -> list:
     """从各策略原始返回中提取标准化信号列表"""
@@ -1299,6 +1436,10 @@ def _extract_signals_normalized(strategy_type: str, raw_result) -> list:
             return raw_result["data"].get("signals", [])
         return []
     elif strategy_type == "erp":
+        if isinstance(raw_result, dict) and "data" in raw_result:
+            return raw_result["data"].get("signals", [])
+        return []
+    elif strategy_type == "aiae_etf":
         if isinstance(raw_result, dict) and "data" in raw_result:
             return raw_result["data"].get("signals", [])
         return []
@@ -1429,25 +1570,34 @@ def _compute_risk_overlay(all_signals):
 
 
 @app.get("/api/v1/strategy/run-all")
-async def run_all_strategies():
-    """V3.0 四策略并行执行 (MR+DIV+MOM+ERP) + 共振分析 + ERP宏观仓位调节"""
+async def run_all_strategies(override_cap: int = None):
+    """V4.0 五策略并行执行 (MR+DIV+MOM+ERP+AIAE_ETF)
+    + AIAE主控仓位Cap + 动态权重 + 共振分析
+
+    Query Params:
+        override_cap (int, optional): 手动覆盖仓位上限 (0-100), 用于人工干预AIAE判定
+    """
     from datetime import datetime as _dt
     loop = asyncio.get_event_loop()
 
     try:
-        # 并行执行4策略
-        mr_task = loop.run_in_executor(executor, run_strategy)
-        div_task = loop.run_in_executor(executor, lambda: run_dividend_strategy(regime=None))
-        mom_task = loop.run_in_executor(executor, run_momentum_strategy)
-        erp_task = loop.run_in_executor(executor, _run_erp_strategy)
+        # ── 并行执行5策略 ──
+        mr_task   = loop.run_in_executor(executor, run_strategy)
+        div_task  = loop.run_in_executor(executor, lambda: run_dividend_strategy(regime=None))
+        mom_task  = loop.run_in_executor(executor, run_momentum_strategy)
+        erp_task  = loop.run_in_executor(executor, _run_erp_strategy)
+        aiae_task = loop.run_in_executor(executor, _run_aiae_strategy)
 
-        mr_raw, div_raw, mom_raw, erp_raw = await asyncio.gather(mr_task, div_task, mom_task, erp_task)
+        mr_raw, div_raw, mom_raw, erp_raw, aiae_raw = await asyncio.gather(
+            mr_task, div_task, mom_task, erp_task, aiae_task
+        )
 
         # 包装结果
         mr_result = _wrap_mr_results(mr_raw) if isinstance(mr_raw, list) else mr_raw
         div_result = div_raw
         mom_result = mom_raw
         erp_result = erp_raw
+        aiae_result = aiae_raw
 
         # 缓存
         STRATEGY_CACHE["strategy_results"]["mr"] = mr_result
@@ -1455,35 +1605,38 @@ async def run_all_strategies():
         STRATEGY_CACHE["strategy_results"]["mom"] = mom_result
 
         # 提取标准化信号
-        mr_signals = _extract_signals_normalized("mr", mr_result)
-        div_signals = _extract_signals_normalized("div", div_result)
-        mom_signals = _extract_signals_normalized("mom", mom_result)
-        erp_signals = _extract_signals_normalized("erp", erp_result)
+        mr_signals   = _extract_signals_normalized("mr", mr_result)
+        div_signals  = _extract_signals_normalized("div", div_result)
+        mom_signals  = _extract_signals_normalized("mom", mom_result)
+        erp_signals  = _extract_signals_normalized("erp", erp_result)
+        aiae_signals = _extract_signals_normalized("aiae_etf", aiae_result)
 
-        # 四策略共振分析
-        resonance = _compute_resonance(mr_signals, div_signals, mom_signals, erp_signals)
+        # 五策略共振分析 (AIAE信号也参与共振)
+        resonance = _compute_resonance(mr_signals, div_signals, mom_signals, erp_signals + aiae_signals)
 
         # 风险覆盖
         all_buy_signals = (
             [s for s in mr_signals if s.get("signal") == "buy"] +
             [s for s in div_signals if s.get("signal") == "buy"] +
-            [s for s in mom_signals if s.get("signal") == "buy"]
+            [s for s in mom_signals if s.get("signal") == "buy"] +
+            [s for s in aiae_signals if s.get("signal") == "buy"]
         )
         risk_overlay = _compute_risk_overlay(all_buy_signals)
 
         # 全局指标
-        mr_ov = mr_result.get("data", {}).get("market_overview", {}) if isinstance(mr_result, dict) else {}
-        div_ov = div_result.get("data", {}).get("market_overview", {}) if isinstance(div_result, dict) else {}
-        mom_ov = mom_result.get("data", {}).get("market_overview", {}) if isinstance(mom_result, dict) else {}
-        erp_ov = erp_result.get("data", {}).get("market_overview", {}) if isinstance(erp_result, dict) else {}
+        mr_ov   = mr_result.get("data", {}).get("market_overview", {}) if isinstance(mr_result, dict) else {}
+        div_ov  = div_result.get("data", {}).get("market_overview", {}) if isinstance(div_result, dict) else {}
+        mom_ov  = mom_result.get("data", {}).get("market_overview", {}) if isinstance(mom_result, dict) else {}
+        erp_ov  = erp_result.get("data", {}).get("market_overview", {}) if isinstance(erp_result, dict) else {}
+        aiae_ov = aiae_result.get("data", {}).get("market_overview", {}) if isinstance(aiae_result, dict) else {}
 
         mr_regime = mr_signals[0].get("regime", "RANGE") if mr_signals else "RANGE"
-        total_buy = mr_ov.get("signal_count", {}).get("buy", 0) + div_ov.get("buy_count", 0) + mom_ov.get("buy_count", 0) + erp_ov.get("buy_count", 0)
-        total_sell = mr_ov.get("signal_count", {}).get("sell", 0) + div_ov.get("sell_count", 0) + mom_ov.get("sell_count", 0) + erp_ov.get("sell_count", 0)
+        total_buy = (mr_ov.get("signal_count", {}).get("buy", 0) + div_ov.get("buy_count", 0) +
+                     mom_ov.get("buy_count", 0) + erp_ov.get("buy_count", 0) + aiae_ov.get("buy_count", 0))
+        total_sell = (mr_ov.get("signal_count", {}).get("sell", 0) + div_ov.get("sell_count", 0) +
+                      mom_ov.get("sell_count", 0) + erp_ov.get("sell_count", 0) + aiae_ov.get("sell_count", 0))
 
-        # ─── 科学仓位计算 V3.1 ───
-        # 核心逻辑：每策略贡献 = 该策略buy信号的平均仓位(信心度)
-        # 而非所有标的仓位之和(会严重膨胀)
+        # ─── 科学仓位计算 V4.0 (AIAE主控) ───
         def _avg_confidence(signals_list):
             """计算策略内buy信号的平均仓位(=策略信心度，0~100%)"""
             buy_sigs = [s for s in signals_list if s.get("signal") == "buy"]
@@ -1492,34 +1645,65 @@ async def run_all_strategies():
             positions = [s.get("suggested_position", 0) for s in buy_sigs]
             return sum(positions) / len(positions) if positions else 0.0
 
-        mr_conf = _avg_confidence(mr_signals)
-        div_conf = _avg_confidence(div_signals)
-        mom_conf = _avg_confidence(mom_signals)
-        erp_conf = _avg_confidence(erp_signals)
+        mr_conf   = _avg_confidence(mr_signals)
+        div_conf  = _avg_confidence(div_signals)
+        mom_conf  = _avg_confidence(mom_signals)
+        erp_conf  = _avg_confidence(erp_signals)
+        aiae_conf = _avg_confidence(aiae_signals)
 
-        # 加权平均信心度 (MR30% + DIV25% + MOM15% + ERP30%)
-        raw_pos = round(mr_conf * 0.30 + div_conf * 0.25 + mom_conf * 0.15 + erp_conf * 0.30)
+        # ── AIAE 驱动的动态权重 (替代固定 30/25/15/30) ──
+        aiae_regime = aiae_ov.get("regime", 3)
+        aiae_weights = aiae_result.get("data", {}).get("run_all_weights", None)
+        if aiae_weights:
+            w = aiae_weights
+        else:
+            # 降级: 使用中性权重
+            w = {"mr": 0.20, "div": 0.25, "mom": 0.15, "erp": 0.15, "aiae_etf": 0.25}
 
-        # Regime 硬顶 — 不同市场环境下的科学仓位上限
-        regime_cap = {"BULL": 95, "RANGE": 70, "BEAR": 50, "CRASH": 20}
-        cap = regime_cap.get(mr_regime, 70)
+        raw_pos = round(
+            mr_conf   * w["mr"] +
+            div_conf  * w["div"] +
+            mom_conf  * w["mom"] +
+            erp_conf  * w["erp"] +
+            aiae_conf * w["aiae_etf"]
+        )
+
+        # ── 双保险仓位 Cap: MA趋势(技术面) × AIAE(基本面) ──
+        # Layer A: MA 趋势 Cap
+        ma_cap_map = {"BULL": 95, "RANGE": 70, "BEAR": 50, "CRASH": 20}
+        ma_cap = ma_cap_map.get(mr_regime, 70)
+
+        # Layer B: AIAE 仓位矩阵 Cap
+        aiae_cap = aiae_ov.get("matrix_position", 65)
+
+        # 双保险: 取更保守值
+        cap = min(ma_cap, aiae_cap)
+
+        # 手动覆盖选项 (PO 人工干预)
+        override_active = False
+        original_cap = cap
+        if override_cap is not None and 0 <= override_cap <= 100:
+            cap = override_cap
+            override_active = True
+            print(f"[RUN-ALL V4] 手动覆盖仓位Cap: {original_cap}% → {cap}%")
+
         avg_pos = min(raw_pos, cap)
 
         # ERP 宏观屏障: ERP score <= 40 → 全局仓位上限压至30%
         erp_score = erp_ov.get("composite_score", 50)
         erp_cap_active = False
-        if erp_score <= 40:
+        if erp_score <= 40 and not override_active:
             avg_pos = min(avg_pos, 30)
             erp_cap_active = True
 
-        # 策略一致性评估
+        # 策略一致性评估 (增加 AIAE regime 参与)
         regimes = [mr_regime]
         div_regime = div_result.get("data", {}).get("regime_params", {}).get("regime", "RANGE") if isinstance(div_result, dict) else "RANGE"
         regimes.append(div_regime)
         consistency = "high" if len(set(regimes)) == 1 else "low"
 
-        # 分歧降仓: 一致性低时再打8折
-        if consistency != "high":
+        # 分歧降仓: 一致性低时再打8折 (手动覆盖时跳过)
+        if consistency != "high" and not override_active:
             avg_pos = round(avg_pos * 0.8)
 
         return {
@@ -1533,7 +1717,7 @@ async def run_all_strategies():
                     "total_buy": total_buy,
                     "total_sell": total_sell,
                     "consistency": consistency,
-                    "strategy_count": 4,
+                    "strategy_count": 5,
                     "erp_score": erp_score,
                     "erp_cap_active": erp_cap_active,
                     "confidence": {
@@ -1541,6 +1725,19 @@ async def run_all_strategies():
                         "div": round(div_conf),
                         "mom": round(mom_conf),
                         "erp": round(erp_conf),
+                        "aiae_etf": round(aiae_conf),
+                    },
+                    "weights": w,
+                    # ── AIAE 主控状态 (供前端展示) ──
+                    "aiae": {
+                        "regime": aiae_regime,
+                        "regime_cn": aiae_ov.get("regime_cn", "中性均衡"),
+                        "aiae_value": aiae_ov.get("aiae_value", 22.0),
+                        "aiae_cap": aiae_cap,
+                        "ma_cap": ma_cap,
+                        "override_active": override_active,
+                        "override_cap": override_cap if override_active else None,
+                        "original_cap": original_cap,
                     },
                 },
                 "strategies": {
@@ -1548,6 +1745,7 @@ async def run_all_strategies():
                     "div": div_result.get("data", div_result) if isinstance(div_result, dict) else {"signals": div_signals},
                     "mom": mom_result.get("data", mom_result) if isinstance(mom_result, dict) else {"signals": mom_signals},
                     "erp": erp_result.get("data", erp_result) if isinstance(erp_result, dict) else {"signals": erp_signals},
+                    "aiae_etf": aiae_result.get("data", aiae_result) if isinstance(aiae_result, dict) else {"signals": aiae_signals},
                 },
                 "resonance": resonance,
                 "risk_overlay": risk_overlay,
@@ -1555,7 +1753,7 @@ async def run_all_strategies():
         }
     except Exception as e:
         import traceback
-        print(f"[RUN-ALL] Error: {traceback.format_exc()}")
+        print(f"[RUN-ALL V4] Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
 
 
@@ -2911,6 +3109,42 @@ async def get_audit_enforcer_log(limit: int = 20):
         from audit_enforcer import get_enforcement_log
         logs = get_enforcement_log(limit)
         return {"status": "ok", "logs": logs}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+# ─── AIAE 宏观仓位管控 API ───
+
+@app.get("/api/v1/aiae/report")
+async def get_aiae_report():
+    """AIAE 完整报告: 当前AIAE值、五档状态、仓位矩阵、子策略配额、信号"""
+    try:
+        loop = asyncio.get_event_loop()
+        engine = get_aiae_engine()
+        report = await loop.run_in_executor(executor, engine.generate_report)
+        return {"status": "success", "data": report, "timestamp": datetime.now().isoformat()}
+    except Exception as e:
+        print(f"[AIAE API] report error: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/v1/aiae/chart")
+async def get_aiae_chart():
+    """AIAE 历史走势图数据"""
+    try:
+        engine = get_aiae_engine()
+        chart = engine.get_chart_data()
+        return {"status": "success", "data": chart}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/v1/aiae/refresh")
+async def refresh_aiae():
+    """强制刷新AIAE数据(清除缓存)"""
+    try:
+        loop = asyncio.get_event_loop()
+        engine = get_aiae_engine()
+        engine.refresh()
+        report = await loop.run_in_executor(executor, engine.generate_report)
+        return {"status": "success", "data": report, "timestamp": datetime.now().isoformat()}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

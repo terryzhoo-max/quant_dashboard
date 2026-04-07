@@ -131,6 +131,14 @@ function updateDashboard(marketData) {
                 banner.className = `regime-banner glass-panel ${colorClass}`;
                 dot.className = `rb-dot ${colorClass}`;
             }
+            
+            // V7.0: AIAE 状态标签
+            const aiaeEl = document.getElementById('rb-aiae');
+            if (aiaeEl && rb.aiae_regime_cn) {
+                aiaeEl.innerText = `🌡️ AIAE ${rb.aiae_regime_cn} Cap${rb.aiae_cap}%`;
+                const ar = rb.aiae_regime || 3;
+                aiaeEl.style.borderColor = ar <= 2 ? 'rgba(16,185,129,0.5)' : ar >= 4 ? 'rgba(239,68,68,0.5)' : 'rgba(245,158,11,0.5)';
+            }
         }
     }
     
@@ -192,11 +200,13 @@ function updateDashboard(marketData) {
         renderExecutionLists(document.getElementById('list-danger-zone'), marketData.execution_lists.danger_zone);
     }
     
-    // 2. 更新策略监控卡片 (Option C)
+    // 2. 更新策略监控卡片 (5策略)
     if (marketData.strategy_status) {
         updateStrategyCard('mr', marketData.strategy_status.mr);
         updateStrategyCard('mom', marketData.strategy_status.mom);
         updateStrategyCard('div', marketData.strategy_status.div);
+        updateStrategyCard('erp', marketData.strategy_status.erp);
+        updateStrategyCard('aiae', marketData.strategy_status.aiae);
     }
 }
 
@@ -317,7 +327,8 @@ function renderPositionHub(temp) {
             'capital': { barId: 'fbar-capital',  scoreId: 'fscore-capital', data: temp.hub_factors.capital_flow },
             'temp':    { barId: 'fbar-temp',     scoreId: 'fscore-temp',    data: temp.hub_factors.macro_temp },
             'erp':     { barId: 'fbar-erp',      scoreId: 'fscore-erp',     data: temp.hub_factors.erp_value },
-            'signal':  { barId: 'fbar-signal',   scoreId: 'fscore-signal',  data: temp.hub_factors.signal_sync }
+            'signal':  { barId: 'fbar-signal',   scoreId: 'fscore-signal',  data: temp.hub_factors.signal_sync },
+            'aiae':    { barId: 'fbar-aiae',     scoreId: 'fscore-aiae',    data: temp.hub_factors.aiae_temp }
         };
         
         for (const [key, cfg] of Object.entries(factorMap)) {
@@ -343,23 +354,27 @@ function renderPositionHub(temp) {
     // 策略权重条
     if (temp.regime_weights) {
         const rw = temp.regime_weights;
-        // 策略卡片权重 pill 更新
+        // 策略卡片权重 pill 更新 (5策略)
         if (el('weight-mr'))  el('weight-mr').innerText  = `${(rw.mr * 100).toFixed(0)}%权重`;
         if (el('weight-mom')) el('weight-mom').innerText = `${(rw.mom * 100).toFixed(0)}%权重`;
         if (el('weight-div')) el('weight-div').innerText = `${(rw.div * 100).toFixed(0)}%权重`;
+        if (el('weight-erp')) el('weight-erp').innerText = `${((rw.erp || 0) * 100).toFixed(0)}%权重`;
+        if (el('weight-aiae')) el('weight-aiae').innerText = `${((rw.aiae_etf || 0) * 100).toFixed(0)}%权重`;
         
-        // 堆叠条
+        // 堆叠条 (5策略)
         const updateBar = (id, key, label) => {
             const b = el(id);
             if (b) {
-                b.style.width = `${(rw[key] * 100).toFixed(0)}%`;
+                b.style.width = `${((rw[key] || 0) * 100).toFixed(0)}%`;
                 const span = b.querySelector('span');
-                if (span) span.innerText = `${label} ${(rw[key] * 100).toFixed(0)}%`;
+                if (span) span.innerText = `${label} ${((rw[key] || 0) * 100).toFixed(0)}%`;
             }
         };
         updateBar('bar-div', 'div', '红利');
         updateBar('bar-mr',  'mr',  '均值');
         updateBar('bar-mom', 'mom', '动量');
+        updateBar('bar-erp', 'erp', 'ERP');
+        updateBar('bar-aiae', 'aiae_etf', 'AIAE');
     }
     
     // 各策略名义仓位
@@ -370,6 +385,8 @@ function renderPositionHub(temp) {
         setPos('val-pos-div', sp.div_pos);
         setPos('val-pos-mr',  sp.mr_pos);
         setPos('val-pos-mom', sp.mom_pos);
+        setPos('val-pos-erp', sp.erp_pos || 0);
+        setPos('val-pos-aiae', sp.aiae_pos || 0);
     }
     
     // 策略过滤器状态
@@ -413,17 +430,24 @@ function showFallbackData() {
             tomorrow_plan: {
                 pos_control: "60-80%",
                 tech_logic: "🚀 均线多头持有",
-                framework: ["适度加仓硬科技龙头", "持有国产算力/AI核心资产"],
+                framework: ["🔥 优先：适度加仓硬科技龙头", "💎 持有算力/AI核心资产", "🛡️ 红利ETF底仓不动"],
                 scenarios: [
                     {case: "VIX回落至22-24", action: "适度加仓"},
                     {case: "VIX突破30+", action: "强制止损"}
+                ],
+                current_tactics: { regime: "🟡 Ⅱ级 正常震荡" },
+                regime_matrix: [
+                    { regime: "Ⅰ 恐慌 (VIX>30)", tactics: "停止买入·核心仓锁仓·对冲", pos: "≤25%", active: false },
+                    { regime: "Ⅱ 正常 (20-30)",   tactics: "结构性调仓·均值回归优先", pos: "50-70%", active: true },
+                    { regime: "Ⅲ 低波 (15-20)",   tactics: "趋势跟踪·动量轮动为主", pos: "70-85%", active: false },
+                    { regime: "Ⅳ 极静 (<15)",     tactics: "满仓进攻·关注拥挤度风险", pos: "85-95%", active: false }
                 ]
             },
             capital_a: { value: "A: 151.4 亿", trend: "外资稳步买入", status: "up" },
             capital_h: { value: "H: 20.5 亿", trend: "南向博弈均衡", status: "neutral" },
-            signal: { value: "MR 2买/3卖", trend: "DT 5/8趋 · MOM AI领涨", status: "up" },
+            signal: { value: "MR 2买/3卖 · ERP 极度低估", trend: "DT 5/8趋 · AIAE 中性均衡 · MOM AI领涨", status: "up" },
             erp: { value: "3.5%", trend: "极度低估", status: "up" },
-            regime_banner: { regime: "🟠 震荡偏多", temp: 52.3, advice: "50-65% (中性偏多)", vix: 20.15, vix_label: "🟡 正常震荡", z_capital: 0.8 },
+            regime_banner: { regime: "🟠 震荡偏多", temp: 52.3, advice: "50-65% (中性偏多)", vix: 20.15, vix_label: "🟡 正常震荡", z_capital: 0.8, aiae_regime: 3, aiae_regime_cn: "中性均衡", aiae_cap: 65, aiae_v1: 22.3 },
             market_temp: {
                 value: 52.3, label: "温暖 | 极度低估", advice: "55% (趋势共振)",
                 regime_name: "平衡模式", mindset: "⚖️ 仓位中型，等待分歧",
@@ -431,17 +455,32 @@ function showFallbackData() {
                 hub_confidence: 72,
                 hub_composite: 62.5,
                 hub_factors: {
-                    vix_fear:     { score: 78, weight: 0.30, label: "恐慌低位" },
-                    capital_flow: { score: 63, weight: 0.20, label: "资金中性" },
-                    macro_temp:   { score: 48, weight: 0.20, label: "宏观中性" },
+                    vix_fear:     { score: 78, weight: 0.25, label: "恐慌低位" },
+                    capital_flow: { score: 63, weight: 0.15, label: "资金中性" },
+                    macro_temp:   { score: 48, weight: 0.15, label: "宏观中性" },
                     erp_value:    { score: 85, weight: 0.15, label: "极度低估" },
-                    signal_sync:  { score: 55, weight: 0.15, label: "策略分歧" }
+                    signal_sync:  { score: 55, weight: 0.15, label: "策略分歧" },
+                    aiae_temp:    { score: 55, weight: 0.15, label: "中性均衡" }
                 },
-                regime_weights: { div: 0.35, mr: 0.40, mom: 0.25 },
-                strategy_positions: { div_pos: 19.3, mr_pos: 22.0, mom_pos: 13.8, total: 55.0 },
+                regime_weights: { div: 0.30, mr: 0.24, mom: 0.18, erp: 0.11, aiae_etf: 0.18 },
+                strategy_positions: { div_pos: 18.5, mr_pos: 14.5, mom_pos: 11.0, erp_pos: 6.6, aiae_pos: 11.0, total: 61.6 },
                 strategy_filters: { div: "正常", mr: "正常", mom: "正常" }
             }
         },
+        sector_heatmap: [
+            { name: "医药生物", change:  1.60, trend_5d:  0.8, rps: 91 },
+            { name: "银行/金融", change: -0.99, trend_5d:  0.3, rps: 100 },
+            { name: "酒/自选消费", change: -1.00, trend_5d:  0.2, rps: 75 },
+            { name: "上证180/主板", change: -0.87, trend_5d: -0.6, rps: 58 },
+            { name: "有色金属", change: -1.00, trend_5d: -1.8, rps: 25 },
+            { name: "证券/非银", change: -0.88, trend_5d: -2.0, rps: 41 },
+            { name: "计算机/AI", change: -0.44, trend_5d: -2.3, rps: 33 },
+            { name: "中证传媒", change: -1.15, trend_5d: -2.9, rps: 50 },
+            { name: "军工龙头", change: -1.17, trend_5d: -3.0, rps: 16 },
+            { name: "半导体/芯片", change: -0.26, trend_5d: -3.6, rps: 8 },
+            { name: "创业板/成长", change: -0.73, trend_5d: -3.8, rps: 83 },
+            { name: "新能源车", change: -2.07, trend_5d: -5.7, rps: 66 }
+        ],
         execution_lists: {
             buy_zone: [
                 { name: "某AI行业龙头", code: "60XXXX.SH", pe: 15.2, score: 82.5, badge: "核心资产", badgeClass: "buy" },
@@ -455,7 +494,9 @@ function showFallbackData() {
         strategy_status: {
             mr: { status_text: "发现极值猎物", status_class: "active", metric1: "54只", metric2: "全仓 80%" },
             mom: { status_text: "动能衰竭", status_class: "warning", metric1: "红利低波", metric2: "拥挤度 92%" },
-            div: { status_text: "稳定防御", status_class: "dormant", metric1: "4.82%", metric2: "62%" }
+            div: { status_text: "稳定防御", status_class: "dormant", metric1: "4.82%", metric2: "62%" },
+            erp: { status_text: "ERP 极度低估", status_class: "active", metric1: "ERP 3.5%", metric2: "Z: +1.8" },
+            aiae: { status_text: "🟡 中性均衡", status_class: "dormant", metric1: "AIAE 22.3%", metric2: "Cap 65%" }
         }
     };
     updateDashboard(fallbackData);

@@ -54,6 +54,11 @@
             <div class="nav-parent" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')"><span class="icon">📑</span><span>个股深研</span><span class="nav-arrow">▶</span></div>
             <div class="nav-sub-group">
                 <a href="./smic_audit.html" class="nav-item"><span class="icon">🔬</span><span>中芯国际</span><span class="badge-beta" style="background:rgba(239,68,68,0.15);color:#f87171;border-color:rgba(239,68,68,0.3);">DEEP</span></a>
+                <a href="./zijin_audit.html" class="nav-item"><span class="icon">⛏️</span><span>紫金矿业</span><span class="badge-beta" style="background:rgba(245,158,11,0.15);color:#fbbf24;border-color:rgba(245,158,11,0.3);">DEEP</span></a>
+                <a href="./byd_audit.html" class="nav-item"><span class="icon">🚗</span><span>比亚迪</span><span class="badge-beta" style="background:rgba(16,185,129,0.15);color:#34d399;border-color:rgba(16,185,129,0.3);">DEEP</span></a>
+                <a href="./eastmoney_audit.html" class="nav-item"><span class="icon">💹</span><span>东方财富</span><span class="badge-beta" style="background:rgba(37,99,235,0.15);color:#60a5fa;border-color:rgba(37,99,235,0.3);">DEEP</span></a>
+                <a href="./fii_audit.html" class="nav-item"><span class="icon">🤖</span><span>工业富联</span><span class="badge-beta" style="background:rgba(14,165,233,0.15);color:#38bdf8;border-color:rgba(14,165,233,0.3);">DEEP</span></a>
+                <a href="./wus_audit.html" class="nav-item"><span class="icon">💻</span><span>沪电股份</span><span class="badge-beta" style="background:rgba(236,72,153,0.15);color:#f472b6;border-color:rgba(236,72,153,0.3);">DEEP</span></a>
             </div>
             <div class="nav-group-title">账 户 管 理</div>
             <a href="./portfolio.html" class="nav-item">
@@ -96,6 +101,7 @@
                 </div>
                 <div class="rb-center" id="rb-advice">建议仓位: --%</div>
                 <div class="rb-right">
+                    <span class="rb-tag" id="rb-aiae">🌡️ AIAE --</span>
                     <span class="rb-tag" id="rb-vix">VIX --</span>
                     <span class="rb-tag" id="rb-capital">资金 Z:--</span>
                 </div>
@@ -129,9 +135,9 @@
                     <div class="stat-desc" id="desc-capital">实时追踪北向与南向资金共振</div>
                 </div>
                 <div class="stat-card glass-panel" id="card-signal">
-                    <div class="stat-title">当前量化极值活跃度</div>
-                    <div class="stat-value" id="val-signal">-- <span class="trend" id="trend-signal">--</span></div>
-                    <div class="stat-desc" id="desc-signal">监控三大策略触发共振情况</div>
+                    <div class="stat-title">五策略信号</div>
+                    <div class="stat-value" id="val-signal" style="font-size:1.1rem;">-- <span class="trend" id="trend-signal">--</span></div>
+                    <div class="stat-desc" id="desc-signal">监控五大策略共振情况</div>
                 </div>
             </div>
 
@@ -148,7 +154,7 @@
 
         <!-- V6.0 情绪与持仓枢纽 (Sentiment & Position Hub) -->
         <div class="sentiment-section">
-            <div class="hub-main-title">AlphaCore 情绪与持仓枢纽 V6.0 (Sentiment & Position Hub)</div>
+            <div class="hub-main-title">AlphaCore 情绪与持仓枢纽 V7.0 (Sentiment & Position Hub)</div>
             <div class="sentiment-hub glass-panel" id="card-sentiment-hub">
                 <div class="hub-container-v6">
                     <!-- 左栏：宏观温度计 -->
@@ -228,6 +234,11 @@
                                 <div class="factor-bar-bg"><div class="factor-bar" id="fbar-signal" style="width:50%"></div></div>
                                 <span class="factor-score" id="fscore-signal">--</span>
                             </div>
+                            <div class="factor-row">
+                                <span class="factor-name">AIAE温度</span>
+                                <div class="factor-bar-bg"><div class="factor-bar" id="fbar-aiae" style="width:50%"></div></div>
+                                <span class="factor-score" id="fscore-aiae">--</span>
+                            </div>
                         </div>
                     </div>
 
@@ -239,14 +250,20 @@
                             <span class="alloc-total-badge" id="val-alloc-total">总仓位: --%</span>
                         </div>
                         <div class="alloc-stacked-bar">
-                            <div class="alloc-seg seg-div" id="bar-div" style="width:33%">
+                            <div class="alloc-seg seg-div" id="bar-div" style="width:25%">
                                 <span>红利 --%</span>
                             </div>
-                            <div class="alloc-seg seg-mr" id="bar-mr" style="width:34%">
+                            <div class="alloc-seg seg-mr" id="bar-mr" style="width:20%">
                                 <span>均值 --%</span>
                             </div>
-                            <div class="alloc-seg seg-mom" id="bar-mom" style="width:33%">
+                            <div class="alloc-seg seg-mom" id="bar-mom" style="width:15%">
                                 <span>动量 --%</span>
+                            </div>
+                            <div class="alloc-seg seg-erp" id="bar-erp" style="width:15%">
+                                <span>ERP --%</span>
+                            </div>
+                            <div class="alloc-seg seg-aiae" id="bar-aiae" style="width:25%">
+                                <span>AIAE --%</span>
                             </div>
                         </div>
                         <div class="alloc-items">
@@ -267,6 +284,16 @@
                                 <span class="alloc-name">动量轮动</span>
                                 <strong id="val-pos-mom">--%</strong>
                                 <span class="filter-badge" id="filter-mom"></span>
+                            </div>
+                            <div class="alloc-item">
+                                <span class="dot dot-erp"></span>
+                                <span class="alloc-name">ERP择时</span>
+                                <strong id="val-pos-erp">--%</strong>
+                            </div>
+                            <div class="alloc-item">
+                                <span class="dot dot-aiae"></span>
+                                <span class="alloc-name">AIAE标的</span>
+                                <strong id="val-pos-aiae">--%</strong>
                             </div>
                         </div>
                         <div class="cycle-badge">
@@ -308,7 +335,7 @@
                 </div>
 
                 <div class="plan-scenarios" id="list-plan-scenarios"></div>
-                <div class="plan-disclaimer">基于 VIX 4阶矩阵 · AlphaCore V4.4 Real-time Protocol</div>
+                <div class="plan-disclaimer">基于 VIX 4阶矩阵 + AIAE五档Cap · AlphaCore V7.0 Real-time Protocol</div>
             </div>
 
             <!-- ERP 历史走势图 (近5年) · 买卖区间可视化 -->
@@ -327,7 +354,7 @@
                 <div class="strategy-card glass-panel" onclick="window.location.href='./strategy.html?strat=mean-reversion'">
                     <div class="strat-header">
                         <span class="strat-icon">📐</span>
-                        <h3>均值回归引擎</h3>
+                        <h3>均值回归</h3>
                         <span class="version-pill">V4.2</span>
                         <span class="weight-pill" id="weight-mr">30%权重</span>
                     </div>
@@ -345,7 +372,7 @@
                 <div class="strategy-card glass-panel" onclick="window.location.href='./strategy.html?strat=momentum'">
                     <div class="strat-header">
                         <span class="strat-icon">🚀</span>
-                        <h3>动量轮动过滤</h3>
+                        <h3>动量轮动</h3>
                         <span class="version-pill">V3.0</span>
                         <span class="weight-pill" id="weight-mom">20%权重</span>
                     </div>
@@ -363,7 +390,7 @@
                 <div class="strategy-card glass-panel" onclick="window.location.href='./strategy.html?strat=dividend'">
                     <div class="strat-header">
                         <span class="strat-icon">🛡️</span>
-                        <h3>红利趋势防线</h3>
+                        <h3>红利防线</h3>
                         <span class="version-pill">V4.0</span>
                         <span class="weight-pill" id="weight-div">50%权重</span>
                     </div>
@@ -374,6 +401,42 @@
                     <div class="strat-body">
                         <div class="strat-metric"><span class="label">平均股息溢价</span> <strong id="strat-metric1-div">--</strong></div>
                         <div class="strat-metric"><span class="label">多头排列占比</span> <strong id="strat-metric2-div">--</strong></div>
+                    </div>
+                </div>
+
+                <!-- ERP宏观择时 -->
+                <div class="strategy-card glass-panel" onclick="window.location.href='./strategy.html?strat=erp'">
+                    <div class="strat-header">
+                        <span class="strat-icon">🌐</span>
+                        <h3>ERP择时</h3>
+                        <span class="version-pill">V2.0</span>
+                        <span class="weight-pill" id="weight-erp">15%权重</span>
+                    </div>
+                    <div class="strat-status-row" id="strat-status-row-erp">
+                        <span class="strat-dot"></span>
+                        <span class="strat-status-text" id="strat-status-erp">同步中...</span>
+                    </div>
+                    <div class="strat-body">
+                        <div class="strat-metric"><span class="label">ERP估值</span> <strong id="strat-metric1-erp">--</strong></div>
+                        <div class="strat-metric"><span class="label">Z-Score</span> <strong id="strat-metric2-erp">--</strong></div>
+                    </div>
+                </div>
+
+                <!-- AIAE宏观仓位 -->
+                <div class="strategy-card glass-panel strat-card-aiae" onclick="window.location.href='./strategy.html?strat=aiae'">
+                    <div class="strat-header">
+                        <span class="strat-icon">🌡️</span>
+                        <h3>AIAE管控</h3>
+                        <span class="version-pill" style="background:rgba(245,158,11,0.2);color:#fbbf24;">V2.0</span>
+                        <span class="weight-pill" id="weight-aiae">25%权重</span>
+                    </div>
+                    <div class="strat-status-row" id="strat-status-row-aiae">
+                        <span class="strat-dot"></span>
+                        <span class="strat-status-text" id="strat-status-aiae">同步中...</span>
+                    </div>
+                    <div class="strat-body">
+                        <div class="strat-metric"><span class="label">当前AIAE</span> <strong id="strat-metric1-aiae">--</strong></div>
+                        <div class="strat-metric"><span class="label">档位+Cap</span> <strong id="strat-metric2-aiae">--</strong></div>
                     </div>
                 </div>
             </div>

@@ -1577,3 +1577,584 @@
 .hit-strong { background: rgba(16,185,129,0.12); color: #34d399; }
 .hit-weak   { background: rgba(245,158,11,0.12); color: #fbbf24; }
 
+/* ================================================
+   AIAE 宏观仓位管控 V2.0 · 琥珀金机构级视觉系统
+   ================================================ */
+
+/* ── Hero 琥珀金深度玻璃态 ── */
+.aiae-hero {
+    border-color: rgba(245,158,11,0.3) !important;
+    background: linear-gradient(135deg,
+        rgba(245,158,11,0.1) 0%,
+        rgba(20,24,34,0.6) 40%,
+        rgba(217,119,6,0.08) 70%,
+        rgba(180,83,9,0.06) 100%) !important;
+    position: relative;
+    overflow: hidden;
+}
+.aiae-hero::before {
+    background: linear-gradient(90deg, #f59e0b, #d97706, #fbbf24, #f59e0b) !important;
+    background-size: 300% 100% !important;
+    animation: aiae-hero-glow 6s ease infinite !important;
+    height: 3px !important;
+}
+.aiae-hero::after {
+    content: '';
+    position: absolute;
+    top: -50%; right: -20%;
+    width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(245,158,11,0.06) 0%, transparent 70%);
+    border-radius: 50%;
+    pointer-events: none;
+    animation: aiae-orb-drift 12s ease-in-out infinite alternate;
+}
+@keyframes aiae-hero-glow {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+}
+@keyframes aiae-orb-drift {
+    0% { transform: translate(0, 0) scale(1); opacity: 0.6; }
+    100% { transform: translate(-80px, 60px) scale(1.3); opacity: 0.3; }
+}
+.aiae-badge {
+    background: rgba(245,158,11,0.15) !important;
+    border-color: rgba(245,158,11,0.35) !important;
+    color: #fbbf24 !important;
+    letter-spacing: 1.5px !important;
+    text-shadow: 0 0 12px rgba(245,158,11,0.3);
+}
+.aiae-title {
+    background: linear-gradient(110deg, #ffffff 20%, #fbbf24 50%, #f59e0b 80%) !important;
+    -webkit-background-clip: text !important;
+    background-clip: text !important;
+    text-shadow: none;
+}
+.aiae-amber { color: #f59e0b !important; }
+
+/* ── ZONE 标题组件化 ── */
+.aiae-zone-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 12px 0 6px;
+    padding: 12px 18px;
+    background: rgba(255,255,255,0.02);
+    border-radius: 12px;
+    border-left: 3px solid var(--aiae-zone-color, #f59e0b);
+    transition: background 0.2s, border-color 0.2s;
+}
+.aiae-zone-header:hover {
+    background: rgba(255,255,255,0.04);
+}
+.aiae-zone-header .zone-icon {
+    font-size: 1.15rem;
+    flex-shrink: 0;
+}
+.aiae-zone-header .zone-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--aiae-zone-color, #f59e0b);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.aiae-zone-header .zone-sub {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-top: 1px;
+}
+
+/* ── 加载按钮升级 ── */
+.aiae-btn {
+    border-radius: 10px;
+    padding: 10px 22px;
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 700;
+    font-family: inherit;
+    border: none;
+    transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+    position: relative;
+    overflow: hidden;
+}
+.aiae-btn::after {
+    content: '';
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 0; height: 0;
+    background: rgba(255,255,255,0.15);
+    border-radius: 50%;
+    transform: translate(-50%,-50%);
+    transition: width 0.4s, height 0.4s;
+}
+.aiae-btn:hover::after {
+    width: 200px; height: 200px;
+}
+.aiae-btn-primary {
+    background: linear-gradient(135deg, rgba(245,158,11,0.3), rgba(217,119,6,0.2));
+    border: 1px solid rgba(245,158,11,0.45) !important;
+    color: #fbbf24;
+    box-shadow: 0 4px 16px rgba(245,158,11,0.15);
+}
+.aiae-btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 24px rgba(245,158,11,0.25);
+}
+.aiae-btn-ghost {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.12) !important;
+    color: var(--text-muted);
+}
+.aiae-btn-ghost:hover {
+    background: rgba(255,255,255,0.08);
+    color: #e2e8f0;
+}
+.aiae-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none !important;
+}
+
+/* ── 骨架加载态 ── */
+.aiae-skeleton {
+    position: relative;
+    overflow: hidden;
+    background: rgba(255,255,255,0.03);
+    border-radius: 8px;
+}
+.aiae-skeleton::after {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%; right: -100%; bottom: 0;
+    background: linear-gradient(90deg,
+        transparent 0%,
+        rgba(245,158,11,0.06) 40%,
+        rgba(245,158,11,0.12) 50%,
+        rgba(245,158,11,0.06) 60%,
+        transparent 100%);
+    animation: aiae-shimmer 1.8s ease infinite;
+}
+@keyframes aiae-shimmer {
+    0% { transform: translateX(-50%); }
+    100% { transform: translateX(50%); }
+}
+
+/* ── 五档状态卡片 V2.0 (玻璃态 + 分色呼吸灯) ── */
+.aiae-regime-card {
+    background: rgba(255,255,255,0.025);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 14px 8px 12px;
+    text-align: center;
+    transition: all 0.35s cubic-bezier(0.4,0,0.2,1);
+    cursor: default;
+    position: relative;
+    overflow: hidden;
+    backdrop-filter: blur(8px);
+}
+.aiae-regime-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    opacity: 0.4;
+    transition: opacity 0.3s;
+}
+.aiae-regime-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255,255,255,0.15);
+}
+/* 分色顶部条 */
+.aiae-regime-card[data-regime="1"]::before { background: linear-gradient(90deg, #10b981, #34d399); }
+.aiae-regime-card[data-regime="2"]::before { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+.aiae-regime-card[data-regime="3"]::before { background: linear-gradient(90deg, #eab308, #fbbf24); }
+.aiae-regime-card[data-regime="4"]::before { background: linear-gradient(90deg, #f97316, #fb923c); }
+.aiae-regime-card[data-regime="5"]::before { background: linear-gradient(90deg, #ef4444, #f87171); }
+
+/* 激活态 — 动态呼吸 + 强边框 */
+.aiae-regime-card.active {
+    transform: scale(1.06) translateY(-2px);
+}
+.aiae-regime-card.active::before {
+    opacity: 1;
+    height: 3px;
+}
+.aiae-regime-card[data-regime="1"].active {
+    border-color: rgba(16,185,129,0.6);
+    background: linear-gradient(135deg, rgba(16,185,129,0.15), rgba(16,185,129,0.04));
+    box-shadow: 0 0 24px rgba(16,185,129,0.2), inset 0 0 20px rgba(16,185,129,0.05);
+    animation: aiae-breathe-green 2.5s ease-in-out infinite;
+}
+.aiae-regime-card[data-regime="2"].active {
+    border-color: rgba(59,130,246,0.6);
+    background: linear-gradient(135deg, rgba(59,130,246,0.15), rgba(59,130,246,0.04));
+    box-shadow: 0 0 24px rgba(59,130,246,0.2), inset 0 0 20px rgba(59,130,246,0.05);
+    animation: aiae-breathe-blue 2.5s ease-in-out infinite;
+}
+.aiae-regime-card[data-regime="3"].active {
+    border-color: rgba(234,179,8,0.6);
+    background: linear-gradient(135deg, rgba(234,179,8,0.15), rgba(234,179,8,0.04));
+    box-shadow: 0 0 24px rgba(234,179,8,0.2), inset 0 0 20px rgba(234,179,8,0.05);
+    animation: aiae-breathe-amber 2.5s ease-in-out infinite;
+}
+.aiae-regime-card[data-regime="4"].active {
+    border-color: rgba(249,115,22,0.6);
+    background: linear-gradient(135deg, rgba(249,115,22,0.15), rgba(249,115,22,0.04));
+    box-shadow: 0 0 24px rgba(249,115,22,0.2), inset 0 0 20px rgba(249,115,22,0.05);
+    animation: aiae-breathe-orange 2.5s ease-in-out infinite;
+}
+.aiae-regime-card[data-regime="5"].active {
+    border-color: rgba(239,68,68,0.6);
+    background: linear-gradient(135deg, rgba(239,68,68,0.15), rgba(239,68,68,0.04));
+    box-shadow: 0 0 24px rgba(239,68,68,0.25), inset 0 0 20px rgba(239,68,68,0.06);
+    animation: aiae-breathe-red 1.8s ease-in-out infinite;
+}
+@keyframes aiae-breathe-green {
+    0%, 100% { box-shadow: 0 0 24px rgba(16,185,129,0.2), inset 0 0 20px rgba(16,185,129,0.05); }
+    50% { box-shadow: 0 0 36px rgba(16,185,129,0.3), inset 0 0 28px rgba(16,185,129,0.08); }
+}
+@keyframes aiae-breathe-blue {
+    0%, 100% { box-shadow: 0 0 24px rgba(59,130,246,0.2), inset 0 0 20px rgba(59,130,246,0.05); }
+    50% { box-shadow: 0 0 36px rgba(59,130,246,0.3), inset 0 0 28px rgba(59,130,246,0.08); }
+}
+@keyframes aiae-breathe-amber {
+    0%, 100% { box-shadow: 0 0 24px rgba(234,179,8,0.2), inset 0 0 20px rgba(234,179,8,0.05); }
+    50% { box-shadow: 0 0 36px rgba(234,179,8,0.3), inset 0 0 28px rgba(234,179,8,0.08); }
+}
+@keyframes aiae-breathe-orange {
+    0%, 100% { box-shadow: 0 0 24px rgba(249,115,22,0.2), inset 0 0 20px rgba(249,115,22,0.05); }
+    50% { box-shadow: 0 0 36px rgba(249,115,22,0.3), inset 0 0 28px rgba(249,115,22,0.08); }
+}
+@keyframes aiae-breathe-red {
+    0%, 100% { box-shadow: 0 0 24px rgba(239,68,68,0.25), inset 0 0 20px rgba(239,68,68,0.06); }
+    50% { box-shadow: 0 0 40px rgba(239,68,68,0.4), inset 0 0 30px rgba(239,68,68,0.1); }
+}
+
+.aiae-rc-emoji { font-size: 1.4rem; margin-bottom: 6px; line-height: 1; }
+.aiae-rc-name { font-size: 0.82rem; font-weight: 800; color: #f1f5f9; letter-spacing: 0.02em; }
+.aiae-rc-cn { font-size: 0.7rem; color: var(--text-muted); margin: 3px 0; }
+.aiae-rc-range {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+    opacity: 0.7;
+}
+.aiae-rc-pos {
+    font-size: 0.75rem;
+    font-weight: 800;
+    color: #f59e0b;
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+}
+/* 激活态字色跟随档位 */
+.aiae-regime-card[data-regime="1"].active .aiae-rc-pos { color: #34d399; }
+.aiae-regime-card[data-regime="2"].active .aiae-rc-pos { color: #60a5fa; }
+.aiae-regime-card[data-regime="3"].active .aiae-rc-pos { color: #fbbf24; }
+.aiae-regime-card[data-regime="4"].active .aiae-rc-pos { color: #fb923c; }
+.aiae-regime-card[data-regime="5"].active .aiae-rc-pos { color: #f87171; }
+
+/* ── 仓位矩阵表 V2.0 (热力图 + 交叉高亮) ── */
+.aiae-matrix-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 4px;
+    font-size: 0.78rem;
+}
+.aiae-matrix-table thead th {
+    padding: 10px 6px;
+    text-align: center;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #f59e0b;
+    background: rgba(245,158,11,0.06);
+    border-radius: 8px;
+    border-bottom: 2px solid rgba(245,158,11,0.15);
+}
+.aiae-matrix-table thead th span {
+    display: block;
+    font-size: 0.6rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+.aiae-matrix-table tbody td {
+    padding: 11px 8px;
+    text-align: center;
+    background: rgba(0,0,0,0.2);
+    border-radius: 8px;
+    color: var(--text-muted);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+    cursor: default;
+    position: relative;
+}
+.aiae-matrix-table tbody td:not(.aiae-matrix-row-label):hover {
+    transform: scale(1.08);
+    z-index: 2;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+.aiae-matrix-table tbody td.aiae-matrix-active {
+    background: linear-gradient(135deg, rgba(245,158,11,0.25), rgba(217,119,6,0.15)) !important;
+    border: 2px solid #f59e0b !important;
+    color: #fff !important;
+    font-weight: 900;
+    font-size: 0.88rem;
+    box-shadow: 0 0 20px rgba(245,158,11,0.3), inset 0 0 12px rgba(245,158,11,0.1);
+    animation: aiae-matrix-glow 2s ease-in-out infinite;
+}
+@keyframes aiae-matrix-glow {
+    0%, 100% { box-shadow: 0 0 20px rgba(245,158,11,0.3), inset 0 0 12px rgba(245,158,11,0.1); }
+    50% { box-shadow: 0 0 32px rgba(245,158,11,0.45), inset 0 0 18px rgba(245,158,11,0.15); }
+}
+.aiae-matrix-row-label {
+    font-weight: 700 !important;
+    color: #94a3b8 !important;
+    text-align: left !important;
+    font-size: 0.72rem !important;
+    white-space: nowrap;
+    background: transparent !important;
+}
+
+/* ── 子策略配额卡片 V2.0 (渐变边框 + 圆环暗示) ── */
+.aiae-alloc-card {
+    background: rgba(0,0,0,0.22);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 16px;
+    transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+    position: relative;
+    overflow: hidden;
+}
+.aiae-alloc-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    opacity: 0.5;
+}
+.aiae-alloc-card[data-strategy="mr"]::before { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+.aiae-alloc-card[data-strategy="div"]::before { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
+.aiae-alloc-card[data-strategy="mom"]::before { background: linear-gradient(90deg, #f97316, #fb923c); }
+.aiae-alloc-card[data-strategy="erp"]::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+
+.aiae-alloc-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(245,158,11,0.25);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+}
+.aiae-alloc-card:hover::before { opacity: 1; }
+
+.aiae-ac-icon { font-size: 1.3rem; margin-bottom: 6px; }
+.aiae-ac-name { font-size: 0.8rem; font-weight: 700; color: #e2e8f0; letter-spacing: 0.02em; }
+.aiae-ac-pct { font-size: 1.6rem; font-weight: 900; color: #f59e0b; margin: 6px 0 3px; letter-spacing: -0.5px; }
+.aiae-ac-pos { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 10px; }
+.aiae-ac-bar {
+    height: 5px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 3px;
+    overflow: hidden;
+}
+.aiae-ac-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.8s cubic-bezier(0.25,0.8,0.25,1);
+    position: relative;
+}
+.aiae-ac-bar-fill::after {
+    content: '';
+    position: absolute;
+    top: 0; right: 0;
+    width: 20px; height: 100%;
+    background: rgba(255,255,255,0.2);
+    border-radius: 3px;
+    filter: blur(4px);
+}
+.aiae-bar-blue { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+.aiae-bar-purple { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
+.aiae-bar-orange { background: linear-gradient(90deg, #f97316, #fb923c); }
+.aiae-bar-amber { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+
+/* ── 信号卡片 V2.0 (脉冲边框 + 等级色带) ── */
+.aiae-signal-card {
+    padding: 16px 18px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(0,0,0,0.2);
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+    position: relative;
+    overflow: hidden;
+}
+.aiae-signal-card::before {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0; left: 0;
+    width: 3px;
+    border-radius: 3px 0 0 3px;
+    background: var(--signal-color, #f59e0b);
+}
+.aiae-signal-card:hover {
+    border-color: rgba(245,158,11,0.2);
+    transform: translateX(4px);
+    background: rgba(0,0,0,0.3);
+}
+.aiae-signal-card.aiae-signal-main {
+    border-color: rgba(245,158,11,0.2);
+    background: linear-gradient(135deg, rgba(245,158,11,0.06), rgba(0,0,0,0.2));
+    animation: aiae-signal-pulse 3s ease-in-out infinite;
+}
+@keyframes aiae-signal-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0); }
+    50% { box-shadow: 0 0 0 4px rgba(245,158,11,0.08); }
+}
+.aiae-signal-icon { font-size: 1.3rem; flex-shrink: 0; margin-top: 1px; }
+.aiae-signal-text { font-size: 0.85rem; color: #cbd5e1; line-height: 1.6; }
+.aiae-signal-time {
+    font-size: 0.62rem;
+    color: var(--text-muted);
+    opacity: 0.6;
+    margin-top: 4px;
+    display: block;
+}
+
+/* ── 数据源面板升级 ── */
+.aiae-data-card {
+    padding: 12px;
+    text-align: center;
+    border-radius: 10px;
+    border: 1px solid rgba(245,158,11,0.12);
+    background: rgba(0,0,0,0.2);
+    backdrop-filter: blur(8px);
+    transition: all 0.25s;
+}
+.aiae-data-card:hover {
+    border-color: rgba(245,158,11,0.3);
+    transform: translateY(-2px);
+}
+.aiae-data-label {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+.aiae-data-value {
+    font-size: 1.15rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+.aiae-data-hint {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    opacity: 0.6;
+    margin-top: 2px;
+}
+
+/* ── 交叉验证面板 ── */
+.aiae-cross-panel {
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(245,158,11,0.2);
+    background: linear-gradient(135deg, rgba(245,158,11,0.04), rgba(0,0,0,0.15));
+    backdrop-filter: blur(8px);
+}
+.aiae-cross-stars {
+    font-size: 1.2rem;
+    letter-spacing: 2px;
+    filter: drop-shadow(0 0 4px rgba(245,158,11,0.4));
+}
+.aiae-cross-verdict {
+    font-weight: 800;
+    font-size: 1rem;
+    letter-spacing: 0.03em;
+}
+
+/* ── 仪表盘容器 ── */
+.aiae-gauge-wrap {
+    padding: 24px;
+    text-align: center;
+    background: rgba(0,0,0,0.15);
+    border-radius: 14px;
+    border: 1px solid rgba(245,158,11,0.1);
+}
+.aiae-gauge-value {
+    font-size: 2.2rem;
+    font-weight: 900;
+    color: #f59e0b;
+    letter-spacing: -1px;
+    font-variant-numeric: tabular-nums;
+}
+.aiae-gauge-regime {
+    font-size: 0.88rem;
+    font-weight: 700;
+    margin-top: 6px;
+}
+.aiae-gauge-slope {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+}
+
+/* ── 风控纪律折叠动画 ── */
+.aiae-accordion-trigger {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 22px;
+    cursor: pointer;
+    background: rgba(255,255,255,0.03);
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.06);
+    user-select: none;
+    transition: all 0.25s;
+}
+.aiae-accordion-trigger:hover {
+    background: rgba(255,255,255,0.06);
+    border-color: rgba(245,158,11,0.15);
+}
+.aiae-accordion-trigger .acc-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    flex: 1;
+}
+.aiae-accordion-trigger .acc-arrow {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+}
+.aiae-accordion-trigger.open .acc-arrow {
+    transform: rotate(90deg);
+}
+.aiae-accordion-body {
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    transition: max-height 0.5s cubic-bezier(0.4,0,0.2,1), opacity 0.3s ease, padding 0.3s;
+    padding: 0 0;
+}
+.aiae-accordion-body.open {
+    max-height: 2000px;
+    opacity: 1;
+    padding: 14px 0 0;
+}
+
+/* ── AIAE 执行面板专用样式 ── */
+.gw-seg.gw-aiae {
+    background: linear-gradient(90deg, #f59e0b, #d97706);
+    border-radius: 0 4px 4px 0;
+}
+#exec-aiae-badge {
+    transition: border-color 0.4s ease, background 0.4s ease;
+}
+#exec-table-aiae_etf {
+    transition: opacity 0.3s ease;
+}
+.exec-tab[data-strategy="aiae_etf"].active {
+    background: rgba(245,158,11,0.18) !important;
+    border-color: rgba(245,158,11,0.5) !important;
+    color: #fbbf24 !important;
+}
