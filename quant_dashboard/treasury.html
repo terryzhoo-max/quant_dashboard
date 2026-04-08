@@ -419,6 +419,58 @@
                 </div>
             </div>
 
+            <!-- ===== V1.1: 日股手動データ更新パネル ===== -->
+            <div class="gaiae-accordion-trigger" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open');">
+                <span style="font-size:1rem;">🇯🇵</span>
+                <span class="acc-title">日股手动数据更新 · 信用取引 / 外資流向</span>
+                <span class="acc-arrow">›</span>
+            </div>
+            <div class="gaiae-accordion-body">
+                <div style="background:rgba(15,23,42,0.6);border-radius:12px;padding:20px;border:1px solid rgba(220,38,38,0.15);margin-bottom:14px;">
+                    <div style="font-size:0.72rem;color:#94a3b8;margin-bottom:14px;line-height:1.6;">
+                        💡 日股の信用取引残高と外国人投資家フローは自動取得不可のため、手動更新が必要です。<br>
+                        データソース: <a href="https://www.jpx.co.jp/markets/statistics-equities/margin/index.html" target="_blank" style="color:#60a5fa;">東証·信用取引統計</a> / 
+                        <a href="https://www.jpx.co.jp/markets/statistics-equities/investor-type/index.html" target="_blank" style="color:#60a5fa;">投資部門別統計</a>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                        <!-- 信用取引残高 -->
+                        <div style="background:rgba(30,41,59,0.5);border-radius:10px;padding:14px;border:1px solid rgba(220,38,38,0.1);">
+                            <div style="font-size:0.78rem;font-weight:700;color:#f87171;margin-bottom:8px;">🔥 信用取引残高 (買残)</div>
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <input type="number" id="jp-margin-input" step="0.1" min="0" max="20" placeholder="例: 3.8"
+                                    style="flex:1;background:rgba(15,23,42,0.8);border:1px solid rgba(100,116,139,0.3);border-radius:6px;padding:8px 12px;color:#e2e8f0;font-size:0.85rem;font-family:inherit;outline:none;" />
+                                <span style="font-size:0.72rem;color:#64748b;white-space:nowrap;">兆円</span>
+                            </div>
+                            <div style="font-size:0.55rem;color:#475569;margin-top:6px;">現在値: <span id="jp-margin-current" style="color:#94a3b8;">--</span> | 警戒: >5.0兆円</div>
+                            <button onclick="submitJPMargin()" id="jp-margin-btn"
+                                style="margin-top:10px;width:100%;background:rgba(220,38,38,0.12);color:#f87171;border:1px solid rgba(220,38,38,0.3);border-radius:6px;padding:6px;cursor:pointer;font-size:0.72rem;font-weight:600;font-family:inherit;transition:all 0.3s;">
+                                📤 更新信用取引残高
+                            </button>
+                        </div>
+                        <!-- 外国人投資家 -->
+                        <div style="background:rgba(30,41,59,0.5);border-radius:10px;padding:14px;border:1px solid rgba(59,130,246,0.1);">
+                            <div style="font-size:0.78rem;font-weight:700;color:#60a5fa;margin-bottom:8px;">💹 外国人投資家フロー</div>
+                            <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+                                <input type="number" id="jp-foreign-input" step="100" placeholder="例: 1500"
+                                    style="flex:1;background:rgba(15,23,42,0.8);border:1px solid rgba(100,116,139,0.3);border-radius:6px;padding:8px 12px;color:#e2e8f0;font-size:0.85rem;font-family:inherit;outline:none;" />
+                                <span style="font-size:0.72rem;color:#64748b;white-space:nowrap;">億円/週</span>
+                            </div>
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <input type="number" id="jp-foreign-cum-input" step="100" placeholder="例: 2500 (可选)"
+                                    style="flex:1;background:rgba(15,23,42,0.8);border:1px solid rgba(100,116,139,0.3);border-radius:6px;padding:8px 12px;color:#e2e8f0;font-size:0.75rem;font-family:inherit;outline:none;" />
+                                <span style="font-size:0.65rem;color:#475569;white-space:nowrap;">12M累計</span>
+                            </div>
+                            <div style="font-size:0.55rem;color:#475569;margin-top:6px;">現在値: <span id="jp-foreign-current" style="color:#94a3b8;">--</span></div>
+                            <button onclick="submitJPForeign()" id="jp-foreign-btn"
+                                style="margin-top:10px;width:100%;background:rgba(59,130,246,0.12);color:#60a5fa;border:1px solid rgba(59,130,246,0.3);border-radius:6px;padding:6px;cursor:pointer;font-size:0.72rem;font-weight:600;font-family:inherit;transition:all 0.3s;">
+                                📤 更新外資流向
+                            </button>
+                        </div>
+                    </div>
+                    <div id="jp-update-status" style="margin-top:10px;font-size:0.65rem;color:#94a3b8;text-align:center;min-height:18px;"></div>
+                </div>
+            </div>
+
             <!-- 声明 -->
             <div style="margin-top:8px;padding:8px 14px;background:rgba(15,23,42,0.5);border-radius:8px;font-size:0.6rem;color:#475569;">
                 ⚠️ 数据源: FRED (Wilshire5000/M2/Nikkei225/日本M2) + AAII Sentiment + yfinance。信号仅供参考，不构成投资建议。
@@ -859,6 +911,99 @@
             setTimeout(loadGlobalERP, 300);
         }
     });
+
+    // V1.1: JP手動データ更新
+    async function submitJPMargin() {
+        const input = document.getElementById('jp-margin-input');
+        const val = parseFloat(input.value);
+        if (isNaN(val) || val <= 0 || val > 20) {
+            _jpUpdateStatus('❌ 请输入有效的信用取引残高 (0.1~20.0 兆円)', '#ef4444');
+            return;
+        }
+        const btn = document.getElementById('jp-margin-btn');
+        btn.disabled = true; btn.textContent = '⏳ 提交中...';
+        try {
+            const resp = await fetch('/api/v1/aiae_jp/update_margin', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({margin_buying_trillion_jpy: val})
+            });
+            const json = await resp.json();
+            if (json.status === 'success') {
+                _jpUpdateStatus('✅ ' + json.message, '#10b981');
+                input.value = '';
+                // 自动刷新AIAE数据
+                setTimeout(() => loadGlobalAIAE(true), 500);
+            } else {
+                _jpUpdateStatus('❌ ' + (json.message || '更新失败'), '#ef4444');
+            }
+        } catch(e) {
+            _jpUpdateStatus('❌ 网络错误: ' + e.message, '#ef4444');
+        }
+        btn.disabled = false; btn.textContent = '📤 更新信用取引残高';
+    }
+
+    async function submitJPForeign() {
+        const input = document.getElementById('jp-foreign-input');
+        const cumInput = document.getElementById('jp-foreign-cum-input');
+        const val = parseFloat(input.value);
+        if (isNaN(val)) {
+            _jpUpdateStatus('❌ 请输入有效的外資净買越金额 (億円)', '#ef4444');
+            return;
+        }
+        const body = {net_buy_billion_jpy: val};
+        const cumVal = parseFloat(cumInput.value);
+        if (!isNaN(cumVal)) body.cumulative_12m_billion_jpy = cumVal;
+
+        const btn = document.getElementById('jp-foreign-btn');
+        btn.disabled = true; btn.textContent = '⏳ 提交中...';
+        try {
+            const resp = await fetch('/api/v1/aiae_jp/update_foreign', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body)
+            });
+            const json = await resp.json();
+            if (json.status === 'success') {
+                _jpUpdateStatus('✅ ' + json.message, '#10b981');
+                input.value = ''; cumInput.value = '';
+                setTimeout(() => loadGlobalAIAE(true), 500);
+            } else {
+                _jpUpdateStatus('❌ ' + (json.message || '更新失败'), '#ef4444');
+            }
+        } catch(e) {
+            _jpUpdateStatus('❌ 网络错误: ' + e.message, '#ef4444');
+        }
+        btn.disabled = false; btn.textContent = '📤 更新外資流向';
+    }
+
+    function _jpUpdateStatus(msg, color) {
+        const el = document.getElementById('jp-update-status');
+        if (el) { el.textContent = msg; el.style.color = color; }
+        setTimeout(() => { if (el) el.textContent = ''; }, 5000);
+    }
+
+    // Hook: 当AIAE数据加载后，填充JP当前值
+    const _origRenderGlobalAIAE = typeof renderGlobalAIAE === 'function' ? renderGlobalAIAE : null;
+    if (_origRenderGlobalAIAE) {
+        window._origRenderGlobalAIAE = _origRenderGlobalAIAE;
+        window.renderGlobalAIAE = function(json) {
+            _origRenderGlobalAIAE(json);
+            // 填充JP当前值
+            try {
+                const jpData = json.jp || {};
+                const jpCurrent = jpData.current || {};
+                const margin = jpCurrent.margin_heat || 0;
+                const foreign = (jpCurrent.foreign_flow || {}).net_buy_billion_jpy || 0;
+                const marginRaw = (jpData.raw_data || {}).margin || {};
+                const foreignRaw = (jpData.raw_data || {}).foreign || {};
+                const $mc = document.getElementById('jp-margin-current');
+                const $fc = document.getElementById('jp-foreign-current');
+                if ($mc) $mc.textContent = (marginRaw.margin_buying_trillion_jpy || 0).toFixed(1) + '兆円 (' + marginRaw.date + ')';
+                if ($fc) $fc.textContent = (foreignRaw.net_buy_billion_jpy || 0) + '億円 (' + foreignRaw.date + ')';
+            } catch(e) {}
+        };
+    }
     </script>
 
 </body>

@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, File
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -70,6 +71,12 @@ STRATEGY_CACHE = {
     }
 }
 
+# 海外 AIAE 全局缓存 (V1.1: L1 API结果级缓存)
+AIAE_GLOBAL_CACHE = {
+    "last_update": None,
+    "report_data": None
+}
+
 def _get_cache_ttl() -> int:
     """智能缓存 TTL：盘中5分钟 / 盘后1小时 / 周末24小时"""
     now = datetime.now()
@@ -81,6 +88,17 @@ def _get_cache_ttl() -> int:
     return 300 if in_session else 3600
 
 CACHE_TTL = 3600  # 向下兼容，实际使用 _get_cache_ttl()
+
+def _get_global_aiae_ttl() -> int:
+    """海外AIAE缓存TTL: 美股盘中30min / 盘后4h / 周末24h (UTC+8)"""
+    now = datetime.now()
+    if now.weekday() >= 5:
+        return 86400    # 周末 24h
+    h = now.hour
+    # 美股盘中 (北京 21:30~04:00)
+    if h >= 21 or h < 4:
+        return 1800     # 30min
+    return 14400        # 4h
 
 # ─── 收盘后自动预热缓存 (每日 15:30 触发) ───
 
@@ -236,6 +254,146 @@ def _daily_warmup_callback():
     _schedule_daily_warmup()  # 注册明天的
     print(f"==================================================")
 
+# --- V1.1: 海外 AIAE 定时预热 (US 06:30 / JP 15:30 / AAII 周五09:00) ---
+
+def _warmup_us_aiae_cache():
+    """预热 US AIAE 引擎: 清除内存缓存 -> 重新拉取 FRED 数据 -> 生成报告"""
+    engine = get_us_aiae_engine()
+    engine.refresh()
+    report = engine.generate_report()
+    status = report.get('status', 'unknown')
+    v1 = report.get('current', {}).get('aiae_v1', '?')
+    print(f"[US AIAE Warmup] 预热完成 · status={status} · AIAE={v1}%")
+    if status != 'success':
+        raise Exception(f"US AIAE warmup failed: {status}")
+
+def _warmup_jp_aiae_cache():
+    """预热 JP AIAE 引擎: 清除内存缓存 -> 重新拉取 TOPIX/M2 -> 生成报告"""
+    engine = get_jp_aiae_engine()
+    engine.refresh()
+    report = engine.generate_report()
+    status = report.get('status', 'unknown')
+    v1 = report.get('current', {}).get('aiae_v1', '?')
+    print(f"[JP AIAE Warmup] 预热完成 · status={status} · AIAE={v1}%")
+    if status != 'success':
+        raise Exception(f"JP AIAE warmup failed: {status}")
+
+def _warmup_aaii_sentiment():
+    """周期性爬取 AAII Sentiment Survey: 强制重新爬取并写入文件"""
+    engine = get_us_aiae_engine()
+    crawled = engine._crawl_aaii_sentiment()
+    if crawled:
+        engine._aaii_data = crawled
+        print(f"[AAII Warmup] 爬取成功: spread={crawled.get('spread', 0):.1f}%")
+    else:
+        print(f"[AAII Warmup] 爬取失败, 保留旧数据")
+
+def _warmup_global_aiae_cache():
+    """后台预热海外AIAE: US+JP引擎并行, 写入L1缓存"""
+    try:
+        us_engine = get_us_aiae_engine()
+        jp_engine = get_jp_aiae_engine()
+        us_report = us_engine.generate_report()
+        jp_report = jp_engine.generate_report()
+        cn_aiae_v1, cn_regime = 22.0, 3
+        try:
+            cn_engine = get_aiae_engine()
+            cn_report = cn_engine.generate_report()
+            if cn_report.get('status') in ('success', 'fallback'):
+                cn_aiae_v1 = cn_report['current']['aiae_v1']
+                cn_regime = cn_report['current']['regime']
+        except Exception:
+            pass
+        us_v1 = us_report.get('current', {}).get('aiae_v1', 25.0)
+        jp_v1 = jp_report.get('current', {}).get('aiae_v1', 17.0)
+        us_regime = us_report.get('current', {}).get('regime', 3)
+        jp_regime = jp_report.get('current', {}).get('regime', 3)
+        vals = {'cn': cn_aiae_v1, 'us': us_v1, 'jp': jp_v1}
+        coldest = min(vals, key=vals.get)
+        hottest = max(vals, key=vals.get)
+        region_names = {'cn': 'A股', 'us': '美股', 'jp': '日股'}
+        recommendation = f"当前{region_names[coldest]}(AIAE={vals[coldest]:.1f}%)配置热度最低, 超配优先; {region_names[hottest]}(AIAE={vals[hottest]:.1f}%)最高, 谨慎配置"
+        data = {
+            'status': 'success',
+            'timestamp': datetime.now().isoformat(),
+            'us': us_report,
+            'jp': jp_report,
+            'global_comparison': {
+                'cn_aiae': cn_aiae_v1, 'cn_regime': cn_regime,
+                'us_aiae': us_v1, 'us_regime': us_regime,
+                'jp_aiae': jp_v1, 'jp_regime': jp_regime,
+                'coldest': coldest, 'hottest': hottest,
+                'recommendation': recommendation,
+            }
+        }
+        AIAE_GLOBAL_CACHE['last_update'] = time.time()
+        AIAE_GLOBAL_CACHE['report_data'] = data
+        print(f"[Global AIAE Warmup] L1缓存预热完成 · US={us_v1:.1f}% JP={jp_v1:.1f}% CN={cn_aiae_v1:.1f}% · 最冷={region_names[coldest]}")
+    except Exception as e:
+        print(f"[Global AIAE Warmup] 预热失败 (non-fatal): {e}")
+
+def _schedule_us_aiae_warmup():
+    """美股AIAE数据刷新: 北京06:30 (美东收盘后, FRED数据更新)"""
+    now = datetime.now()
+    target = now.replace(hour=6, minute=30, second=0, microsecond=0)
+    if now >= target:
+        target += timedelta(days=1)
+    while target.weekday() >= 5:
+        target += timedelta(days=1)
+    delay = (target - now).total_seconds()
+    print(f"[Scheduler] US AIAE预热: {target.strftime('%Y-%m-%d %H:%M')} ({delay/3600:.1f}h后)")
+    timer = threading.Timer(delay, _us_aiae_warmup_callback)
+    timer.daemon = True
+    timer.start()
+
+def _us_aiae_warmup_callback():
+    print(f"==================================================")
+    print(f"[Scheduler] US AIAE定时预热 @ {datetime.now().strftime('%H:%M:%S')}")
+    with_retry(_warmup_us_aiae_cache, "US_AIAE_Warmup", 3, 300)
+    _warmup_global_aiae_cache()
+    _schedule_us_aiae_warmup()
+    print(f"==================================================")
+
+def _schedule_jp_aiae_warmup():
+    """日股AIAE数据刷新: 北京15:30 (東証収盘后)"""
+    now = datetime.now()
+    target = now.replace(hour=15, minute=30, second=0, microsecond=0)
+    if now >= target:
+        target += timedelta(days=1)
+    while target.weekday() >= 5:
+        target += timedelta(days=1)
+    delay = (target - now).total_seconds()
+    print(f"[Scheduler] JP AIAE预热: {target.strftime('%Y-%m-%d %H:%M')} ({delay/3600:.1f}h后)")
+    timer = threading.Timer(delay, _jp_aiae_warmup_callback)
+    timer.daemon = True
+    timer.start()
+
+def _jp_aiae_warmup_callback():
+    print(f"==================================================")
+    print(f"[Scheduler] JP AIAE定时预热 @ {datetime.now().strftime('%H:%M:%S')}")
+    with_retry(_warmup_jp_aiae_cache, "JP_AIAE_Warmup", 3, 300)
+    _warmup_global_aiae_cache()
+    _schedule_jp_aiae_warmup()
+    print(f"==================================================")
+
+def _schedule_aaii_weekly_crawl():
+    """AAII Sentiment 每周五09:00自动爬取 (美东周四发布)"""
+    now = datetime.now()
+    days_ahead = (4 - now.weekday()) % 7  # 4=Friday
+    if days_ahead == 0 and now.hour >= 9:
+        days_ahead = 7
+    target = (now + timedelta(days=days_ahead)).replace(hour=9, minute=0, second=0, microsecond=0)
+    delay = (target - now).total_seconds()
+    print(f"[Scheduler] AAII爬取: {target.strftime('%Y-%m-%d %H:%M')} ({delay/3600:.1f}h后)")
+    timer = threading.Timer(delay, _aaii_crawl_callback)
+    timer.daemon = True
+    timer.start()
+
+def _aaii_crawl_callback():
+    print(f"[Scheduler] AAII Sentiment 自动爬取 @ {datetime.now().strftime('%H:%M:%S')}")
+    with_retry(_warmup_aaii_sentiment, "AAII_Crawl", 2, 600)
+    _schedule_aaii_weekly_crawl()
+
 @app.on_event("startup")
 async def startup_event():
     """服务启动: 后台预热 ERP + 利率 + AIAE + 注册每日定时任务"""
@@ -250,8 +408,14 @@ async def startup_event():
     _schedule_morning_warmup()
     # 注册 FRED 利率刷新 (18:30 = 美东6:30AM)
     _schedule_fred_daily_refresh()
+    # V1.1: 海外AIAE定时预热
+    _schedule_us_aiae_warmup()      # 北京06:30 美股FRED数据更新
+    _schedule_jp_aiae_warmup()      # 北京15:30 日股收盘后
+    _schedule_aaii_weekly_crawl()    # 每周五09:00 散户情绪
+    # V1.1: 后台预热海外AIAE (L3磁盘缓存->L1内存)
+    threading.Thread(target=_warmup_global_aiae_cache, daemon=True).start()
     
-    print("[Startup] AlphaCore 服务启动完成 · 引擎常驻预热就绪 · 调度器(08:30/15:35/18:30)已激活")
+    print("[Startup] AlphaCore 服务启动完成 · 引擎常驻预热就绪 · 调度器(06:30US/08:30CN/15:30JP/15:35A/18:30FRED/周五AAII)已激活")
 
 
 # --- AlphaCore DMSO Sub-Engines (V3.3 机构级) ---
@@ -3215,7 +3379,16 @@ async def refresh_aiae():
 
 @app.get("/api/v1/aiae_global/report")
 async def get_aiae_global_report():
-    """海外 AIAE 全球报告: 并行执行 US + JP 引擎, 含三地对比 (CN/US/JP)"""
+    """海外 AIAE 全球报告: L1缓存 + 并行执行 US + JP 引擎, 含三地对比 (CN/US/JP)"""
+    # V1.1: L1缓存命中检查
+    current_time = time.time()
+    ttl = _get_global_aiae_ttl()
+    if AIAE_GLOBAL_CACHE["last_update"] and (current_time - AIAE_GLOBAL_CACHE["last_update"] < ttl):
+        age = int(current_time - AIAE_GLOBAL_CACHE["last_update"])
+        ttl_label = "美股盘中30min" if ttl == 1800 else ("周末24h" if ttl == 86400 else "盘后4h")
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Global AIAE Cache Hit [{ttl_label}] ({age}s ago)")
+        return AIAE_GLOBAL_CACHE["report_data"]
+
     try:
         loop = asyncio.get_event_loop()
         us_engine = get_us_aiae_engine()
@@ -3250,7 +3423,7 @@ async def get_aiae_global_report():
         region_names = {"cn": "A股", "us": "美股", "jp": "日股"}
         recommendation = f"当前{region_names[coldest]}(AIAE={vals[coldest]:.1f}%)配置热度最低, 超配优先; {region_names[hottest]}(AIAE={vals[hottest]:.1f}%)最高, 谨慎配置"
 
-        return {
+        data = {
             "status": "success",
             "timestamp": datetime.now().isoformat(),
             "us": us_report,
@@ -3263,6 +3436,13 @@ async def get_aiae_global_report():
                 "recommendation": recommendation,
             }
         }
+
+        # V1.1: 写入 L1 缓存
+        AIAE_GLOBAL_CACHE["last_update"] = current_time
+        AIAE_GLOBAL_CACHE["report_data"] = data
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Global AIAE Cache Miss -> 已重建 (US={us_v1:.1f}% JP={jp_v1:.1f}%)")
+
+        return data
     except Exception as e:
         import traceback; traceback.print_exc()
         return {"status": "error", "message": str(e)}
@@ -3270,8 +3450,12 @@ async def get_aiae_global_report():
 
 @app.get("/api/v1/aiae_global/refresh")
 async def refresh_aiae_global():
-    """强制刷新海外 AIAE 数据"""
+    """强制刷新海外 AIAE 数据: 清除L1+L2缓存后重建"""
     try:
+        # V1.1: 清除 L1 缓存
+        AIAE_GLOBAL_CACHE["last_update"] = None
+        AIAE_GLOBAL_CACHE["report_data"] = None
+        # 清除 L2 引擎缓存
         us_engine = get_us_aiae_engine()
         jp_engine = get_jp_aiae_engine()
         us_engine.refresh()
@@ -3292,6 +3476,41 @@ async def get_aiae_global_chart():
             "us_chart": us_engine.get_chart_data(),
             "jp_chart": jp_engine.get_chart_data(),
         }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# ===== V1.1: 日股手動データ更新 API =====
+
+class JPMarginUpdate(BaseModel):
+    margin_buying_trillion_jpy: float
+
+class JPForeignUpdate(BaseModel):
+    net_buy_billion_jpy: float
+    cumulative_12m_billion_jpy: float = None
+
+@app.post("/api/v1/aiae_jp/update_margin")
+async def update_jp_margin(req: JPMarginUpdate):
+    """手动更新日股信用取引残高: 写入文件 + 清除缓存"""
+    try:
+        engine = get_jp_aiae_engine()
+        engine.update_jp_margin(req.margin_buying_trillion_jpy)
+        # 清除L1缓存使下次请求重算
+        AIAE_GLOBAL_CACHE["last_update"] = None
+        AIAE_GLOBAL_CACHE["report_data"] = None
+        return {"status": "success", "message": f"信用取引残高已更新为 {req.margin_buying_trillion_jpy}兆円"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.post("/api/v1/aiae_jp/update_foreign")
+async def update_jp_foreign(req: JPForeignUpdate):
+    """手动更新日股外国人投資家流向: 写入文件 + 清除缓存"""
+    try:
+        engine = get_jp_aiae_engine()
+        engine.update_jp_foreign(req.net_buy_billion_jpy, req.cumulative_12m_billion_jpy)
+        AIAE_GLOBAL_CACHE["last_update"] = None
+        AIAE_GLOBAL_CACHE["report_data"] = None
+        return {"status": "success", "message": f"外資流向已更新: 周次净買越={req.net_buy_billion_jpy}億円"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

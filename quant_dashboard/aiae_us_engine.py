@@ -35,6 +35,15 @@ FRED_API_KEY = "eadf412d4f0e8ccd2bb3993b357bdca6"
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
+# ===== 频率感知 TTL 常量 (V1.1 优化) =====
+TTL_M2       = 14 * 86400   # 14天 (M2 月频数据)
+TTL_MARGIN   = 30 * 86400   # 30天 (Margin Debt 季频数据)
+TTL_AAII     = 3  * 86400   # 3天  (AAII 周频, 配合定时爬取)
+
+def _get_wilshire_ttl() -> int:
+    """Wilshire5000 智能TTL: 工作日4h / 周末24h"""
+    return 86400 if datetime.now().weekday() >= 5 else 14400
+
 # ===== 线程安全 TTL 缓存 =====
 _us_aiae_cache = {}
 _us_aiae_lock = threading.Lock()
@@ -148,6 +157,13 @@ class AIAEUSEngine:
     def __init__(self):
         self._aaii_data = self._load_aaii_sentiment()
 
+    def refresh(self):
+        """清除内存缓存, 下次 generate_report 时强制从数据源重新获取"""
+        global _us_aiae_cache
+        with _us_aiae_lock:
+            _us_aiae_cache.clear()
+        _log("缓存已清除 (refresh)")
+
     # ========== 数据获取层 ==========
 
     def _fetch_wilshire5000_market_cap(self) -> Dict:
@@ -194,7 +210,7 @@ class AIAEUSEngine:
                 "is_fallback": True
             }
 
-        return _cached("us_aiae_wilshire", 86400, _fetch)
+        return _cached("us_aiae_wilshire", _get_wilshire_ttl(), _fetch)
 
     def _fetch_us_m2(self) -> Dict:
         """获取美国 M2 货币供应 (FRED M2SL, 月频)"""
@@ -233,7 +249,7 @@ class AIAEUSEngine:
                 "fetched_at": datetime.now().isoformat(), "is_fallback": True
             }
 
-        return _cached("us_aiae_m2", 7 * 86400, _fetch)
+        return _cached("us_aiae_m2", TTL_M2, _fetch)
 
     def _fetch_us_margin_debt(self) -> Dict:
         """获取美股融资余额代理 (FRED BOGZ1FL663067003Q 或降级估算)"""
@@ -275,14 +291,22 @@ class AIAEUSEngine:
                 "fetched_at": datetime.now().isoformat(), "is_fallback": True
             }
 
-        return _cached("us_aiae_margin", 7 * 86400, _fetch)
+        return _cached("us_aiae_margin", TTL_MARGIN, _fetch)
 
     def _load_aaii_sentiment(self) -> Dict:
-        """加载 AAII 散户情绪数据 (自动爬取 + 手动文件)"""
+        """加载 AAII 散户情绪数据 (自动爬取 + 手动文件 + 过期自动刷新)"""
         if os.path.exists(AAII_SENTIMENT_FILE):
             try:
                 with open(AAII_SENTIMENT_FILE, 'r', encoding='utf-8') as f:
                     data = json.load(f)
+                # V1.1: 检查文件年龄，超过 TTL_AAII(3天) 自动重爬
+                file_age = time.time() - os.path.getmtime(AAII_SENTIMENT_FILE)
+                if file_age > TTL_AAII:
+                    _log(f"AAII 文件过期 ({file_age/86400:.1f}天), 尝试自动重爬...", "INFO")
+                    crawled = self._crawl_aaii_sentiment()
+                    if crawled:
+                        return crawled
+                    _log("AAII 重爬失败, 继续使用旧数据", "WARN")
                 _log(f"AAII Sentiment loaded: spread={data.get('spread', 0):.1f}% ({data.get('date', '?')})")
                 return data
             except Exception:

@@ -35,6 +35,13 @@ FRED_API_KEY = "eadf412d4f0e8ccd2bb3993b357bdca6"
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
+# ===== 频率感知 TTL 常量 (V1.1 优化) =====
+TTL_JP_M2 = 14 * 86400    # 14天 (M2 月频数据)
+
+def _get_topix_ttl() -> int:
+    """TOPIX 智能TTL: 工作日4h / 周末24h"""
+    return 86400 if datetime.now().weekday() >= 5 else 14400
+
 _jp_aiae_cache = {}
 _jp_aiae_lock = threading.Lock()
 
@@ -153,6 +160,13 @@ class AIAEJPEngine:
         self._margin_data = self._load_jp_margin()
         self._foreign_data = self._load_jp_foreign()
 
+    def refresh(self):
+        """キャッシュクリア: 次回 generate_report 時にデータソースから再取得"""
+        global _jp_aiae_cache
+        with _jp_aiae_lock:
+            _jp_aiae_cache.clear()
+        _log("キャッシュクリア (refresh)")
+
     # ========== データ取得層 ==========
 
     def _fetch_topix_market_cap(self) -> Dict:
@@ -222,7 +236,7 @@ class AIAEJPEngine:
                 "is_fallback": True
             }
 
-        return _cached("jp_aiae_topix", 86400, _fetch)
+        return _cached("jp_aiae_topix", _get_topix_ttl(), _fetch)
 
     def _fetch_jp_m2(self) -> Dict:
         """日本M2 (FRED MYAGM2JPM189N, 月頻)"""
@@ -263,7 +277,7 @@ class AIAEJPEngine:
                 "is_fallback": True
             }
 
-        return _cached("jp_aiae_m2", 7 * 86400, _fetch)
+        return _cached("jp_aiae_m2", TTL_JP_M2, _fetch)
 
     def _load_jp_margin(self) -> Dict:
         """信用取引残高（固定推定値 / 手動更新）"""
