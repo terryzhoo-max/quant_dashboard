@@ -52,7 +52,8 @@
                 <a href="./eastmoney_audit.html" class="nav-item"><span class="icon">💹</span><span>东方财富</span><span class="badge-beta" style="background:rgba(37,99,235,0.15);color:#60a5fa;border-color:rgba(37,99,235,0.3);">DEEP</span></a>
                 <a href="./fii_audit.html" class="nav-item"><span class="icon">🤖</span><span>工业富联</span><span class="badge-beta" style="background:rgba(14,165,233,0.15);color:#38bdf8;border-color:rgba(14,165,233,0.3);">DEEP</span></a>
                 <a href="./wus_audit.html" class="nav-item"><span class="icon">💻</span><span>沪电股份</span><span class="badge-beta" style="background:rgba(236,72,153,0.15);color:#f472b6;border-color:rgba(236,72,153,0.3);">DEEP</span></a>
-            </div>
+            <a href="./scc_audit.html" class="nav-item"><span class="icon">📡</span><span>深南电路</span><span class="badge-beta" style="background:rgba(139,92,246,0.15);color:#a855f7;border-color:rgba(139,92,246,0.3);">DEEP</span></a>
+                </div>
             <div class="nav-group-title">账 户 管 理</div>
             <a href="./portfolio.html" class="nav-item">
                 <span class="icon">💼</span>
@@ -78,12 +79,355 @@
 
             <!-- 标签切换 — 仅海外策略 -->
             <div class="st-tab-bar">
-                <button class="st-tab active" data-report="st-erp-global">🌐 海外ERP择时 V2.0</button>
+                <button class="st-tab active" data-report="st-aiae-global">🌡️ 海外AIAE仓位 V1.0</button>
+                <button class="st-tab" data-report="st-erp-global">🌐 海外ERP择时 V2.0</button>
                 <button class="st-tab" data-report="st-rates-strategy">🏦 利率择时 V1.5</button>
             </div>
 
+            <!-- ==================== 海外AIAE宏观仓位管控 V1.0 ==================== -->
+            <div class="st-report active" id="st-aiae-global">
+
+            <style>
+                .gaiae-hero-grid { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:10px; margin-bottom:14px; }
+                .gaiae-hero-card { background:linear-gradient(135deg,rgba(15,23,42,0.9),rgba(30,41,59,0.7)); border-radius:12px; padding:16px; text-align:center; border:1px solid rgba(100,116,139,0.2); transition:all 0.4s; }
+                .gaiae-hero-card:hover { transform:translateY(-2px); box-shadow:0 4px 20px rgba(0,0,0,0.3); }
+                .gaiae-hero-card.coldest-glow { border-color:rgba(16,185,129,0.4); box-shadow:0 0 20px rgba(16,185,129,0.12); }
+                .gaiae-hero-label { font-size:0.6rem; color:#64748b; margin-bottom:4px; }
+                .gaiae-hero-value { font-size:2rem; font-weight:900; letter-spacing:-1px; color:#f59e0b; }
+                .gaiae-hero-sub { font-size:0.6rem; color:#94a3b8; margin-top:3px; }
+                .gaiae-dual-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
+                .gaiae-region-panel { background:rgba(15,23,42,0.6); border-radius:12px; padding:16px; border:1px solid rgba(100,116,139,0.15); }
+                .gaiae-region-panel.us { border-color:rgba(59,130,246,0.25); }
+                .gaiae-region-panel.jp { border-color:rgba(220,38,38,0.25); }
+                .gaiae-region-title { font-size:0.85rem; font-weight:700; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+                .gaiae-gauge-container { width:100%; height:180px; margin-bottom:8px; }
+                .gaiae-gauge-label { text-align:center; font-size:1.2rem; font-weight:800; color:#f59e0b; }
+                .gaiae-gauge-regime { text-align:center; font-size:0.72rem; font-weight:600; margin-bottom:6px; }
+                /* ① 因子卡片 + hover 解释层 */
+                .gaiae-factor-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:10px; }
+                .gaiae-factor-card { background:rgba(30,41,59,0.5); border-radius:8px; padding:8px 6px; text-align:center; border:1px solid rgba(100,116,139,0.1); position:relative; cursor:default; transition:all 0.3s; }
+                .gaiae-factor-card:hover { border-color:rgba(245,158,11,0.3); background:rgba(30,41,59,0.7); }
+                .gaiae-factor-label { font-size:0.5rem; color:#64748b; }
+                .gaiae-factor-value { font-size:0.95rem; font-weight:800; color:#e2e8f0; margin-top:2px; }
+                .gaiae-factor-unit { font-size:0.48rem; color:#475569; }
+                .gaiae-factor-explain { display:none; position:absolute; left:50%; top:100%; transform:translateX(-50%); width:220px; padding:10px 12px; background:rgba(15,23,42,0.97); border:1px solid rgba(245,158,11,0.3); border-radius:8px; z-index:50; font-size:0.55rem; color:#cbd5e1; line-height:1.6; text-align:left; pointer-events:none; box-shadow:0 8px 24px rgba(0,0,0,0.5); }
+                .gaiae-factor-explain .fe-weight { color:#f59e0b; font-weight:700; }
+                .gaiae-factor-explain .fe-warn { color:#ef4444; font-weight:600; }
+                .gaiae-factor-explain .fe-safe { color:#10b981; }
+                .gaiae-factor-card:hover .gaiae-factor-explain { display:block; }
+                /* ⑤ 五档竖卡组 */
+                .gaiae-regime-cards { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; margin-bottom:10px; }
+                .gaiae-rc { border-radius:8px; padding:8px 4px; text-align:center; opacity:0.35; transition:all 0.4s cubic-bezier(.4,0,.2,1); border:1px solid transparent; cursor:default; }
+                .gaiae-rc.active { opacity:1; transform:scale(1.04); border-color:currentColor; box-shadow:0 0 12px rgba(245,158,11,0.15); }
+                .gaiae-rc-emoji { font-size:1.1rem; }
+                .gaiae-rc-name { font-size:0.6rem; font-weight:700; margin-top:2px; }
+                .gaiae-rc-range { font-size:0.5rem; color:#94a3b8; margin-top:1px; }
+                .gaiae-rc-pos { font-size:0.55rem; font-weight:800; margin-top:2px; }
+                .gaiae-rc-tip { font-size:0.42rem; color:#64748b; margin-top:3px; line-height:1.3; }
+                /* ② 警示指标面板 */
+                .gaiae-warn-panel { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:10px; }
+                .gaiae-warn-card { background:rgba(15,23,42,0.5); border-radius:8px; padding:8px; border:1px solid rgba(100,116,139,0.1); transition:all 0.4s; }
+                .gaiae-warn-card.warn-danger { border-color:rgba(239,68,68,0.4); animation:gaiae-warn-pulse 2s ease-in-out infinite; }
+                .gaiae-warn-card.warn-caution { border-color:rgba(245,158,11,0.3); }
+                .gaiae-warn-card.warn-ok { border-color:rgba(16,185,129,0.2); }
+                @keyframes gaiae-warn-pulse { 0%,100%{box-shadow:0 0 0 rgba(239,68,68,0)} 50%{box-shadow:0 0 12px rgba(239,68,68,0.2)} }
+                .gaiae-warn-label { font-size:0.55rem; color:#94a3b8; font-weight:600; margin-bottom:3px; }
+                .gaiae-warn-value { font-size:0.85rem; font-weight:800; }
+                .gaiae-warn-threshold { font-size:0.45rem; color:#475569; margin-top:2px; }
+                .gaiae-warn-bar { height:4px; background:rgba(30,41,59,0.8); border-radius:2px; margin-top:4px; overflow:hidden; }
+                .gaiae-warn-bar-fill { height:100%; border-radius:2px; transition:width 0.8s cubic-bezier(.4,0,.2,1); }
+                /* Matrix */
+                .gaiae-matrix-wrap { background:rgba(15,23,42,0.6); border-radius:12px; padding:14px; border:1px solid rgba(100,116,139,0.15); margin-bottom:14px; }
+                .gaiae-matrix-table { width:100%; border-collapse:collapse; font-size:0.62rem; }
+                .gaiae-matrix-table th { padding:6px 4px; color:#94a3b8; font-weight:600; text-align:center; border-bottom:1px solid rgba(100,116,139,0.2); }
+                .gaiae-matrix-table td { padding:6px 4px; text-align:center; color:#cbd5e1; font-weight:700; border-bottom:1px solid rgba(100,116,139,0.08); border-radius:4px; }
+                .gaiae-matrix-table td.gaiae-cell-active { background:rgba(245,158,11,0.25) !important; color:#fbbf24; box-shadow:0 0 8px rgba(245,158,11,0.3); font-weight:900; font-size:0.72rem; animation:gaiae-cell-breathe 2.5s ease-in-out infinite; }
+                @keyframes gaiae-cell-breathe { 0%,100%{box-shadow:0 0 8px rgba(245,158,11,0.3)} 50%{box-shadow:0 0 16px rgba(245,158,11,0.5)} }
+                /* ③ 操作区合并 */
+                .gaiae-3way { background:rgba(15,23,42,0.6); border-radius:12px; padding:16px; border:1px solid rgba(100,116,139,0.15); margin-bottom:14px; }
+                .gaiae-3way-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:10px; }
+                .gaiae-3way-card { border-radius:10px; padding:14px; text-align:center; transition:all 0.4s; }
+                .gaiae-3way-card.cn { background:rgba(239,68,68,0.06); border:1px solid rgba(239,68,68,0.2); }
+                .gaiae-3way-card.us { background:rgba(59,130,246,0.06); border:1px solid rgba(59,130,246,0.2); }
+                .gaiae-3way-card.jp { background:rgba(220,38,38,0.06); border:1px solid rgba(220,38,38,0.15); }
+                .gaiae-3way-card.is-coldest { box-shadow:0 0 16px rgba(16,185,129,0.15); border-color:rgba(16,185,129,0.35) !important; }
+                .gaiae-3way-flag { font-size:1.8rem; margin-bottom:4px; }
+                .gaiae-3way-value { font-size:1.6rem; font-weight:900; }
+                .gaiae-3way-regime { font-size:0.65rem; margin-top:3px; }
+                .gaiae-3way-crown { display:inline-block; font-size:1rem; animation:crown-bounce 1s ease-in-out infinite alternate; }
+                @keyframes crown-bounce { 0%{transform:translateY(0)} 100%{transform:translateY(-3px)} }
+                .gaiae-recommendation { padding:10px 14px; border-radius:8px; background:rgba(245,158,11,0.06); border:1px solid rgba(245,158,11,0.2); font-size:0.72rem; color:#fbbf24; text-align:center; font-weight:600; }
+                .gaiae-action-zone { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:14px; }
+                .gaiae-az-card { border-radius:10px; padding:14px; transition:all 0.4s; }
+                .gaiae-az-card.az-buy { background:rgba(16,185,129,0.04); border:1px solid rgba(16,185,129,0.15); }
+                .gaiae-az-card.az-hold { background:rgba(234,179,8,0.04); border:1px solid rgba(234,179,8,0.15); }
+                .gaiae-az-card.az-sell { background:rgba(239,68,68,0.04); border:1px solid rgba(239,68,68,0.15); }
+                .gaiae-az-card.az-active { border-width:2px; }
+                .gaiae-az-card.az-buy.az-active { border-color:rgba(16,185,129,0.5); box-shadow:0 0 16px rgba(16,185,129,0.12); background:rgba(16,185,129,0.08); }
+                .gaiae-az-card.az-hold.az-active { border-color:rgba(234,179,8,0.5); box-shadow:0 0 16px rgba(234,179,8,0.12); background:rgba(234,179,8,0.08); }
+                .gaiae-az-card.az-sell.az-active { border-color:rgba(239,68,68,0.5); box-shadow:0 0 16px rgba(239,68,68,0.12); background:rgba(239,68,68,0.08); animation:gaiae-sell-pulse 2s ease-in-out infinite; }
+                @keyframes gaiae-sell-pulse { 0%,100%{box-shadow:0 0 16px rgba(239,68,68,0.12)} 50%{box-shadow:0 0 24px rgba(239,68,68,0.25)} }
+                .gaiae-az-card.az-dimmed { opacity:0.35; }
+                .gaiae-az-title { font-size:0.78rem; font-weight:700; margin-bottom:8px; }
+                .gaiae-az-card ul { list-style:none; padding:0; margin:0; }
+                .gaiae-az-card li { font-size:0.6rem; color:#cbd5e1; padding:3px 0; line-height:1.5; }
+                .gaiae-az-card li.az-region-label { font-weight:700; margin-top:5px; padding-bottom:1px; }
+                .gaiae-chart-container { width:100%; height:280px; }
+                .gaiae-signal-list { display:flex; flex-direction:column; gap:5px; margin-top:8px; }
+                .gaiae-signal-item { display:flex; align-items:center; gap:8px; padding:6px 10px; border-radius:6px; background:rgba(30,41,59,0.4); border-left:3px solid; font-size:0.65rem; color:#e2e8f0; }
+                /* ④ 风控折叠区 */
+                .gaiae-accordion-trigger { display:flex; align-items:center; gap:10px; padding:12px 16px; background:rgba(15,23,42,0.5); border:1px solid rgba(100,116,139,0.15); border-radius:10px; cursor:pointer; transition:all 0.3s; margin-bottom:14px; }
+                .gaiae-accordion-trigger:hover { background:rgba(15,23,42,0.7); border-color:rgba(245,158,11,0.2); }
+                .gaiae-accordion-trigger .acc-title { flex:1; font-size:0.75rem; font-weight:700; color:#f59e0b; }
+                .gaiae-accordion-trigger .acc-arrow { font-size:1rem; color:#64748b; transition:transform 0.3s; }
+                .gaiae-accordion-trigger.open .acc-arrow { transform:rotate(90deg); }
+                .gaiae-accordion-body { max-height:0; overflow:hidden; transition:max-height 0.4s ease; }
+                .gaiae-accordion-body.open { max-height:800px; }
+            </style>
+
+            <!-- Hero Cards -->
+            <div class="gaiae-hero-grid">
+                <div class="gaiae-hero-card">
+                    <div class="gaiae-hero-label">🇺🇸 US AIAE</div>
+                    <div class="gaiae-hero-value" id="gaiae-us-value">--</div>
+                    <div class="gaiae-hero-sub" id="gaiae-us-regime">加载中...</div>
+                </div>
+                <div class="gaiae-hero-card">
+                    <div class="gaiae-hero-label">🇯🇵 JP AIAE</div>
+                    <div class="gaiae-hero-value" id="gaiae-jp-value" style="color:#dc2626">--</div>
+                    <div class="gaiae-hero-sub" id="gaiae-jp-regime">加载中...</div>
+                </div>
+                <div class="gaiae-hero-card" id="gaiae-coldest-card">
+                    <div class="gaiae-hero-label">📊 三地对比</div>
+                    <div class="gaiae-hero-value" id="gaiae-coldest" style="color:#10b981;font-size:1.4rem">--</div>
+                    <div class="gaiae-hero-sub" id="gaiae-coldest-label">最冷市场 · 超配优先</div>
+                </div>
+                <div class="gaiae-hero-card">
+                    <div class="gaiae-hero-label">⏱ 更新时间</div>
+                    <div class="gaiae-hero-value" style="font-size:1rem;color:#94a3b8" id="gaiae-update-time">--:--</div>
+                    <div class="gaiae-hero-sub"><button id="gaiae-refresh-btn" onclick="loadGlobalAIAE(true)" style="background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);color:#f59e0b;padding:3px 12px;border-radius:20px;font-size:0.6rem;cursor:pointer;font-weight:600;">🔄 刷新</button></div>
+                </div>
+            </div>
+
+            <!-- ===== Dual Region Panels ===== -->
+            <div class="gaiae-dual-grid">
+                <!-- US Panel -->
+                <div class="gaiae-region-panel us">
+                    <div class="gaiae-region-title"><span>🇺🇸</span> <span style="color:#3b82f6">美股 AIAE 宏观仓位</span></div>
+                    <div class="gaiae-gauge-container" id="gaiae-us-gauge"></div>
+                    <div class="gaiae-gauge-label" id="gaiae-us-gauge-val">--</div>
+                    <div class="gaiae-gauge-regime" id="gaiae-us-gauge-regime">--</div>
+                    <!-- ⑤ 五档竖卡组 -->
+                    <div class="gaiae-regime-cards" id="gaiae-us-regime-cards">
+                        <div class="gaiae-rc" data-regime="1" style="color:#10b981;background:rgba(16,185,129,0.08)"><div class="gaiae-rc-emoji">🟢</div><div class="gaiae-rc-name">Ⅰ 极度恐慌</div><div class="gaiae-rc-range">&lt;15%</div><div class="gaiae-rc-pos">90-95%</div><div class="gaiae-rc-tip">2008 GFC底部 · 2020 COVID崩盘</div></div>
+                        <div class="gaiae-rc" data-regime="2" style="color:#3b82f6;background:rgba(59,130,246,0.08)"><div class="gaiae-rc-emoji">🔵</div><div class="gaiae-rc-name">Ⅱ 低配置区</div><div class="gaiae-rc-range">15-20%</div><div class="gaiae-rc-pos">70-85%</div><div class="gaiae-rc-tip">2011 欧债危机 · 2022底部</div></div>
+                        <div class="gaiae-rc" data-regime="3" style="color:#eab308;background:rgba(234,179,8,0.08)"><div class="gaiae-rc-emoji">🟡</div><div class="gaiae-rc-name">Ⅲ 中性均衡</div><div class="gaiae-rc-range">20-28%</div><div class="gaiae-rc-pos">50-65%</div><div class="gaiae-rc-tip">常态区间 · 纪律持有</div></div>
+                        <div class="gaiae-rc" data-regime="4" style="color:#f97316;background:rgba(249,115,22,0.08)"><div class="gaiae-rc-emoji">🟠</div><div class="gaiae-rc-name">Ⅳ 偏热区域</div><div class="gaiae-rc-range">28-36%</div><div class="gaiae-rc-pos">25-40%</div><div class="gaiae-rc-tip">2018加息顶部 · 系统减仓</div></div>
+                        <div class="gaiae-rc" data-regime="5" style="color:#ef4444;background:rgba(239,68,68,0.08)"><div class="gaiae-rc-emoji">🔴</div><div class="gaiae-rc-name">Ⅴ 极度过热</div><div class="gaiae-rc-range">&gt;36%</div><div class="gaiae-rc-pos">0-15%</div><div class="gaiae-rc-tip">2000互联网泡沫 · 全面撤退</div></div>
+                    </div>
+                    <!-- ① 因子卡片 + hover 解释 -->
+                    <div class="gaiae-factor-grid">
+                        <div class="gaiae-factor-card"><div class="gaiae-factor-label">证券化率 (Core)</div><div class="gaiae-factor-value" id="gaiae-us-core">--</div><div class="gaiae-factor-unit">W5000/M2 · 权重50%</div>
+                            <div class="gaiae-factor-explain"><span class="fe-weight">权重 50%</span> · 核心指标<br>Wilshire5000全市值 / M2广义货币<br><span class="fe-warn">警戒: &gt;30% 历史性泡沫区</span> (如2000互联网)<br><span class="fe-safe">&lt;18% = 历史大底区域</span><br>均值: ~22%</div>
+                        </div>
+                        <div class="gaiae-factor-card"><div class="gaiae-factor-label">融资热度</div><div class="gaiae-factor-value" id="gaiae-us-margin">--</div><div class="gaiae-factor-unit">Margin/MktCap · 权重20%</div>
+                            <div class="gaiae-factor-explain"><span class="fe-weight">权重 20%</span> · 杠杆温度计<br>NYSE融资余额 / 全市场总市值<br><span class="fe-warn">警戒: &gt;1.5% 散户加杠杆入场</span><br><span class="fe-safe">&lt;0.8% = 去杠杆完成</span><br>正常区间: 0.8-1.3%</div>
+                        </div>
+                        <div class="gaiae-factor-card"><div class="gaiae-factor-label">AAII情绪</div><div class="gaiae-factor-value" id="gaiae-us-aaii">--</div><div class="gaiae-factor-unit">Bull-Bear Spread · 权重30%</div>
+                            <div class="gaiae-factor-explain"><span class="fe-weight">权重 30%</span> · 逆向指标<br>散户看涨% - 看跌%差值<br><span class="fe-warn">警戒: Spread&gt;20% 极度乐观=逆向卖出</span><br><span class="fe-safe">Spread&lt;-15% 极度恐慌=逆向买入</span><br>中性: -5% ~ +10%</div>
+                        </div>
+                    </div>
+                    <!-- ② 警示指标面板 -->
+                    <div class="gaiae-warn-panel" id="gaiae-us-warn-panel">
+                        <div class="gaiae-warn-card warn-ok" id="gaiae-us-warn-margin"><div class="gaiae-warn-label">🔥 Margin/MktCap</div><div class="gaiae-warn-value" id="gaiae-us-warn-margin-val" style="color:#94a3b8">—</div><div class="gaiae-warn-threshold">警戒: &gt;1.5%</div><div class="gaiae-warn-bar"><div class="gaiae-warn-bar-fill" id="gaiae-us-warn-margin-bar" style="width:0%;background:#10b981"></div></div></div>
+                        <div class="gaiae-warn-card warn-ok" id="gaiae-us-warn-slope"><div class="gaiae-warn-label">📐 月斜率</div><div class="gaiae-warn-value" id="gaiae-us-warn-slope-val" style="color:#94a3b8">—</div><div class="gaiae-warn-threshold">警戒: |±3.0|</div><div class="gaiae-warn-bar"><div class="gaiae-warn-bar-fill" id="gaiae-us-warn-slope-bar" style="width:0%;background:#10b981"></div></div></div>
+                        <div class="gaiae-warn-card warn-ok" id="gaiae-us-warn-aaii"><div class="gaiae-warn-label">📊 AAII Spread</div><div class="gaiae-warn-value" id="gaiae-us-warn-aaii-val" style="color:#94a3b8">—</div><div class="gaiae-warn-threshold">警戒: &gt;20%</div><div class="gaiae-warn-bar"><div class="gaiae-warn-bar-fill" id="gaiae-us-warn-aaii-bar" style="width:0%;background:#10b981"></div></div></div>
+                    </div>
+                    <div class="gaiae-signal-list" id="gaiae-us-signals"></div>
+                </div>
+                <!-- JP Panel -->
+                <div class="gaiae-region-panel jp">
+                    <div class="gaiae-region-title"><span>🇯🇵</span> <span style="color:#dc2626">日股 AIAE 宏观仓位</span></div>
+                    <div class="gaiae-gauge-container" id="gaiae-jp-gauge"></div>
+                    <div class="gaiae-gauge-label" id="gaiae-jp-gauge-val" style="color:#dc2626">--</div>
+                    <div class="gaiae-gauge-regime" id="gaiae-jp-gauge-regime">--</div>
+                    <!-- ⑤ 五档竖卡组 -->
+                    <div class="gaiae-regime-cards" id="gaiae-jp-regime-cards">
+                        <div class="gaiae-rc" data-regime="1" style="color:#10b981;background:rgba(16,185,129,0.08)"><div class="gaiae-rc-emoji">🟢</div><div class="gaiae-rc-name">Ⅰ 極度悲観</div><div class="gaiae-rc-range">&lt;10%</div><div class="gaiae-rc-pos">90-95%</div><div class="gaiae-rc-tip">2003 りそな · 2008 リーマン</div></div>
+                        <div class="gaiae-rc" data-regime="2" style="color:#3b82f6;background:rgba(59,130,246,0.08)"><div class="gaiae-rc-emoji">🔵</div><div class="gaiae-rc-name">Ⅱ 低配置区</div><div class="gaiae-rc-range">10-14%</div><div class="gaiae-rc-pos">70-85%</div><div class="gaiae-rc-tip">2012 アベノミクス前夜</div></div>
+                        <div class="gaiae-rc" data-regime="3" style="color:#eab308;background:rgba(234,179,8,0.08)"><div class="gaiae-rc-emoji">🟡</div><div class="gaiae-rc-name">Ⅲ 中性均衡</div><div class="gaiae-rc-range">14-20%</div><div class="gaiae-rc-pos">50-65%</div><div class="gaiae-rc-tip">常態区間 · 規律保有</div></div>
+                        <div class="gaiae-rc" data-regime="4" style="color:#f97316;background:rgba(249,115,22,0.08)"><div class="gaiae-rc-emoji">🟠</div><div class="gaiae-rc-name">Ⅳ 偏熱区域</div><div class="gaiae-rc-range">20-28%</div><div class="gaiae-rc-pos">25-40%</div><div class="gaiae-rc-tip">2018 日経24000天井</div></div>
+                        <div class="gaiae-rc" data-regime="5" style="color:#ef4444;background:rgba(239,68,68,0.08)"><div class="gaiae-rc-emoji">🔴</div><div class="gaiae-rc-name">Ⅴ バブル警報</div><div class="gaiae-rc-range">&gt;28%</div><div class="gaiae-rc-pos">0-15%</div><div class="gaiae-rc-tip">1989 バブル崩壊 · 全面撤退</div></div>
+                    </div>
+                    <!-- ① 因子卡片 + hover 解释 -->
+                    <div class="gaiae-factor-grid">
+                        <div class="gaiae-factor-card"><div class="gaiae-factor-label">証券化率 (Core)</div><div class="gaiae-factor-value" id="gaiae-jp-core">--</div><div class="gaiae-factor-unit">TOPIX/M2 · 権重50%</div>
+                            <div class="gaiae-factor-explain"><span class="fe-weight">権重 50%</span> · 核心指標<br>TOPIX推計時価総額 / 日本M2<br><span class="fe-warn">警戒: &gt;25% 過熱 (vs 美股30%)</span><br><span class="fe-safe">&lt;12% = 歴史的底値</span><br>日本M2/GDPが世界最高→閾値が低い</div>
+                        </div>
+                        <div class="gaiae-factor-card"><div class="gaiae-factor-label">信用取引熱度</div><div class="gaiae-factor-value" id="gaiae-jp-margin">--</div><div class="gaiae-factor-unit">融資残高/時価 · 権重20%</div>
+                            <div class="gaiae-factor-explain"><span class="fe-weight">権重 20%</span> · レバレッジ温度計<br>東証信用買残 / 全市場時価総額<br><span class="fe-warn">警戒: &gt;0.6% 個人レバレッジ過度</span><br><span class="fe-safe">&lt;0.25% = 去杠杆完了</span><br>V1.0固定推定値 · 手動更新可</div>
+                        </div>
+                        <div class="gaiae-factor-card"><div class="gaiae-factor-label">外資流向</div><div class="gaiae-factor-value" id="gaiae-jp-foreign">--</div><div class="gaiae-factor-unit">外國人買い越し · 権重30%</div>
+                            <div class="gaiae-factor-explain"><span class="fe-weight">権重 30%</span> · 日本市場最重要指標<br>外国人投資家の週次フロー<br><span class="fe-warn">警戒: 週&gt;3000億円買越=追高風險</span><br><span class="fe-safe">大幅売越=逆向投資チャンス</span><br>V1.0固定推定值 · 手動更新可</div>
+                        </div>
+                    </div>
+                    <!-- ② 警示指标面板 -->
+                    <div class="gaiae-warn-panel" id="gaiae-jp-warn-panel">
+                        <div class="gaiae-warn-card warn-ok" id="gaiae-jp-warn-margin"><div class="gaiae-warn-label">🔥 信用取引占比</div><div class="gaiae-warn-value" id="gaiae-jp-warn-margin-val" style="color:#94a3b8">—</div><div class="gaiae-warn-threshold">警戒: &gt;0.6%</div><div class="gaiae-warn-bar"><div class="gaiae-warn-bar-fill" id="gaiae-jp-warn-margin-bar" style="width:0%;background:#10b981"></div></div></div>
+                        <div class="gaiae-warn-card warn-ok" id="gaiae-jp-warn-slope"><div class="gaiae-warn-label">📐 月斜率</div><div class="gaiae-warn-value" id="gaiae-jp-warn-slope-val" style="color:#94a3b8">—</div><div class="gaiae-warn-threshold">警戒: |±2.0|</div><div class="gaiae-warn-bar"><div class="gaiae-warn-bar-fill" id="gaiae-jp-warn-slope-bar" style="width:0%;background:#10b981"></div></div></div>
+                        <div class="gaiae-warn-card warn-ok" id="gaiae-jp-warn-foreign"><div class="gaiae-warn-label">💹 外資净買越</div><div class="gaiae-warn-value" id="gaiae-jp-warn-foreign-val" style="color:#94a3b8">—</div><div class="gaiae-warn-threshold">警戒: 週&gt;3000億</div><div class="gaiae-warn-bar"><div class="gaiae-warn-bar-fill" id="gaiae-jp-warn-foreign-bar" style="width:0%;background:#10b981"></div></div></div>
+                    </div>
+                    <div class="gaiae-signal-list" id="gaiae-jp-signals"></div>
+                </div>
+            </div>
+
+            <!-- ===== AIAE × ERP Cross Validation Matrices ===== -->
+            <div class="gaiae-dual-grid">
+                <div class="gaiae-matrix-wrap">
+                    <div style="font-size:0.78rem;font-weight:700;color:#3b82f6;margin-bottom:4px;">🇺🇸 US AIAE × ERP 仓位矩阵</div>
+                    <div style="font-size:0.5rem;color:#475569;margin-bottom:6px;">📖 读法：先找AIAE档位(列) → 再找ERP区间(行) → 交叉格=建议仓位</div>
+                    <div id="gaiae-us-cv-verdict" style="font-size:0.65rem;color:#94a3b8;margin-bottom:8px;"></div>
+                    <table class="gaiae-matrix-table" id="gaiae-us-matrix">
+                        <thead><tr><th>ERP \ AIAE</th><th style="color:#10b981">Ⅰ</th><th style="color:#3b82f6">Ⅱ</th><th style="color:#eab308">Ⅲ</th><th style="color:#f97316">Ⅳ</th><th style="color:#ef4444">Ⅴ</th></tr></thead>
+                        <tbody>
+                            <tr><td style="color:#94a3b8;font-weight:600">ERP≥5%</td><td>95%</td><td>85%</td><td>70%</td><td>45%</td><td>20%</td></tr>
+                            <tr><td style="color:#94a3b8;font-weight:600">3-5%</td><td>90%</td><td>80%</td><td>65%</td><td>40%</td><td>15%</td></tr>
+                            <tr><td style="color:#94a3b8;font-weight:600">1-3%</td><td>85%</td><td>70%</td><td>55%</td><td>30%</td><td>10%</td></tr>
+                            <tr><td style="color:#94a3b8;font-weight:600">ERP&lt;1%</td><td>75%</td><td>60%</td><td>40%</td><td>20%</td><td>5%</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="gaiae-matrix-wrap">
+                    <div style="font-size:0.78rem;font-weight:700;color:#dc2626;margin-bottom:4px;">🇯🇵 JP AIAE × ERP 仓位矩阵</div>
+                    <div style="font-size:0.5rem;color:#475569;margin-bottom:6px;">📖 読法：AIAE档位(列) → ERP区間(行) → 交差格=推奨ポジション</div>
+                    <div id="gaiae-jp-cv-verdict" style="font-size:0.65rem;color:#94a3b8;margin-bottom:8px;"></div>
+                    <table class="gaiae-matrix-table" id="gaiae-jp-matrix">
+                        <thead><tr><th>ERP \ AIAE</th><th style="color:#10b981">Ⅰ</th><th style="color:#3b82f6">Ⅱ</th><th style="color:#eab308">Ⅲ</th><th style="color:#f97316">Ⅳ</th><th style="color:#ef4444">Ⅴ</th></tr></thead>
+                        <tbody>
+                            <tr><td style="color:#94a3b8;font-weight:600">ERP≥4%</td><td>95%</td><td>85%</td><td>70%</td><td>45%</td><td>20%</td></tr>
+                            <tr><td style="color:#94a3b8;font-weight:600">2-4%</td><td>90%</td><td>80%</td><td>65%</td><td>40%</td><td>15%</td></tr>
+                            <tr><td style="color:#94a3b8;font-weight:600">0-2%</td><td>85%</td><td>70%</td><td>55%</td><td>30%</td><td>10%</td></tr>
+                            <tr><td style="color:#94a3b8;font-weight:600">ERP&lt;0</td><td>75%</td><td>60%</td><td>40%</td><td>20%</td><td>5%</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ===== 三地对比 ===== -->
+            <div class="gaiae-3way">
+                <div style="font-size:0.85rem;font-weight:700;color:#f59e0b;margin-bottom:12px;">🌍 全球AIAE三地对比 · 中/美/日 配置热度</div>
+                <div class="gaiae-3way-grid">
+                    <div class="gaiae-3way-card cn" id="gaiae-3way-card-cn">
+                        <div class="gaiae-3way-flag">🇨🇳</div>
+                        <div class="gaiae-3way-value" id="gaiae-3way-cn" style="color:#ef4444">--</div>
+                        <div class="gaiae-3way-regime" id="gaiae-3way-cn-regime" style="color:#94a3b8">A股 AIAE</div>
+                    </div>
+                    <div class="gaiae-3way-card us" id="gaiae-3way-card-us">
+                        <div class="gaiae-3way-flag">🇺🇸</div>
+                        <div class="gaiae-3way-value" id="gaiae-3way-us" style="color:#3b82f6">--</div>
+                        <div class="gaiae-3way-regime" id="gaiae-3way-us-regime" style="color:#94a3b8">美股 AIAE</div>
+                    </div>
+                    <div class="gaiae-3way-card jp" id="gaiae-3way-card-jp">
+                        <div class="gaiae-3way-flag">🇯🇵</div>
+                        <div class="gaiae-3way-value" id="gaiae-3way-jp" style="color:#dc2626">--</div>
+                        <div class="gaiae-3way-regime" id="gaiae-3way-jp-regime" style="color:#94a3b8">日股 AIAE</div>
+                    </div>
+                </div>
+                <div class="gaiae-recommendation" id="gaiae-recommendation">⏳ 加载中...</div>
+            </div>
+
+            <!-- ===== ③ 操作速查 · 合并买入/持有/卖出区 ===== -->
+            <div style="font-size:0.85rem;font-weight:700;color:#c084fc;margin-bottom:10px;">⚡ 操作速查 · 当前档位指令</div>
+            <div class="gaiae-action-zone" id="gaiae-action-zone">
+                <div class="gaiae-az-card az-buy az-dimmed" id="gaiae-az-buy">
+                    <div class="gaiae-az-title" style="color:#10b981">✅ 买入区 · Ⅰ-Ⅱ级触发</div>
+                    <ul id="gaiae-az-buy-list">
+                        <li class="az-region-label" style="color:#3b82f6">🇺🇸 美股</li>
+                        <li>AIAE &lt;20% 进入标准建仓区</li>
+                        <li>优先 SPY/QQQ/VTI 宽基ETF</li>
+                        <li class="az-region-label" style="color:#dc2626">🇯🇵 日股</li>
+                        <li>AIAE &lt;14% 进入标准建仓区</li>
+                        <li>优先 1306/1321 宽基ETF</li>
+                    </ul>
+                </div>
+                <div class="gaiae-az-card az-hold az-dimmed" id="gaiae-az-hold">
+                    <div class="gaiae-az-title" style="color:#eab308">⏸️ 持有区 · Ⅲ级均衡</div>
+                    <ul id="gaiae-az-hold-list">
+                        <li class="az-region-label" style="color:#3b82f6">🇺🇸 美股</li>
+                        <li>维持50-65%均衡仓位</li>
+                        <li>到目标价就卖，不恋战</li>
+                        <li class="az-region-label" style="color:#dc2626">🇯🇵 日股</li>
+                        <li>維持50-65%均衡ポジション</li>
+                        <li>以宽基+高配当ETF为主</li>
+                    </ul>
+                </div>
+                <div class="gaiae-az-card az-sell az-dimmed" id="gaiae-az-sell">
+                    <div class="gaiae-az-title" style="color:#ef4444">🚨 卖出区 · Ⅳ-Ⅴ级触发</div>
+                    <ul id="gaiae-az-sell-list">
+                        <li class="az-region-label" style="color:#3b82f6">🇺🇸 美股</li>
+                        <li>Ⅳ级: 每周减5%总仓位</li>
+                        <li>Ⅴ级: 3天内完成清仓</li>
+                        <li class="az-region-label" style="color:#dc2626">🇯🇵 日股</li>
+                        <li>Ⅳ级: 毎週5%ずつ減倉</li>
+                        <li>Ⅴ级: 3日以内に完全撤退</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- ===== 历史走势 ===== -->
+            <div class="gaiae-matrix-wrap">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                    <div style="font-size:0.82rem;font-weight:700;color:#f59e0b;">📈 AIAE 历史走势</div>
+                    <div style="font-size:0.55rem;color:#64748b;">US=蓝 · JP=红 · 含五档区间色带</div>
+                </div>
+                <div class="gaiae-chart-container" id="gaiae-history-chart"></div>
+            </div>
+
+            <!-- ===== ④ 风控纪律手册 (折叠) ===== -->
+            <div class="gaiae-accordion-trigger" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open');">
+                <span style="font-size:1rem;">🛡️</span>
+                <span class="acc-title">风控与操作纪律手册 · 海外版</span>
+                <span class="acc-arrow">›</span>
+            </div>
+            <div class="gaiae-accordion-body">
+                <div style="background:rgba(15,23,42,0.6);border-radius:12px;padding:20px;border:1px solid rgba(245,158,11,0.15);margin-bottom:14px;">
+                    <!-- 三层防御 -->
+                    <div style="font-size:0.82rem;font-weight:700;color:#f59e0b;margin-bottom:12px;">三层防御体系</div>
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
+                        <div style="background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.2);border-radius:10px;padding:14px;">
+                            <div style="font-size:0.8rem;font-weight:700;color:#10b981;margin-bottom:6px;">第一层 · AIAE 总仓位</div>
+                            <div style="font-size:0.72rem;color:#94a3b8;line-height:1.7;">控制"参与市场的比例"<br>五档状态自动切换仓位上限<br>US/JP 独立管控</div>
+                        </div>
+                        <div style="background:rgba(59,130,246,0.06);border:1px solid rgba(59,130,246,0.2);border-radius:10px;padding:14px;">
+                            <div style="font-size:0.8rem;font-weight:700;color:#60a5fa;margin-bottom:6px;">第二层 · 子策略止损</div>
+                            <div style="font-size:0.72rem;color:#94a3b8;line-height:1.7;">🇺🇸 SPY/QQQ: -8%<br>🇯🇵 1306/1321: -7%<br>🇯🇵 1489高配当: -5%</div>
+                        </div>
+                        <div style="background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);border-radius:10px;padding:14px;">
+                            <div style="font-size:0.8rem;font-weight:700;color:#f87171;margin-bottom:6px;">第三层 · 组合级强制止损</div>
+                            <div style="font-size:0.72rem;color:#94a3b8;line-height:1.7;">回撤 &gt;12% → 减至50%<br>回撤 &gt;18% → 减至25%<br>回撤 &gt;25% → 触发Ⅴ级清仓</div>
+                        </div>
+                    </div>
+                    <!-- 禁止行为 -->
+                    <div style="font-size:0.82rem;font-weight:700;color:#ef4444;margin-bottom:8px;">🚫 铁律 · 禁止行为清单</div>
+                    <ul style="font-size:0.72rem;color:#94a3b8;line-height:2.0;padding-left:20px;margin:0;">
+                        <li>❌ 禁止在 Ⅴ级状态下开任何新仓位（含"抄底"企图）</li>
+                        <li>❌ 禁止在 AIAE 上行期追买进攻型标的</li>
+                        <li>❌ 禁止在档位切换当天完成全部调仓（除Ⅴ级紧急清仓外）</li>
+                        <li>❌ 禁止因"这次不一样"手动覆盖 AIAE 信号</li>
+                        <li>❌ 禁止总仓位超过当前档位上限 ×110%</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- 声明 -->
+            <div style="margin-top:8px;padding:8px 14px;background:rgba(15,23,42,0.5);border-radius:8px;font-size:0.6rem;color:#475569;">
+                ⚠️ 数据源: FRED (Wilshire5000/M2/Nikkei225/日本M2) + AAII Sentiment + yfinance。信号仅供参考，不构成投资建议。
+            </div>
+
+            </div><!-- /st-aiae-global -->
+
             <!-- ==================== 海外ERP择时 V2.0 ==================== -->
-            <div class="st-report active" id="st-erp-global">
+            <div class="st-report" id="st-erp-global">
 
             <!-- V2.0 骨架屏CSS -->
             <style>
@@ -506,10 +850,12 @@
     <script src="./strategy.js"></script>
 
     <script>
-    // V2.0: 页面打开自动加载海外ERP数据
+    // V2.0: 页面打开自动加载
     document.addEventListener('DOMContentLoaded', function() {
         const activeTab = document.querySelector('.st-tab.active');
-        if (activeTab && activeTab.dataset.report === 'st-erp-global') {
+        if (activeTab && activeTab.dataset.report === 'st-aiae-global') {
+            setTimeout(loadGlobalAIAE, 300);
+        } else if (activeTab && activeTab.dataset.report === 'st-erp-global') {
             setTimeout(loadGlobalERP, 300);
         }
     });

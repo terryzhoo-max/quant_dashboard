@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AlphaCore · 沪电股份(002463) 深度穿透审计报告</title>
-    <meta name="description" content="AlphaCore 深度审计报告 — 沪电股份(002463.SZ) 五维穿透式审计：AI算力·财务健康·产能良率·汽车电子·估值周期">
+    <title>AlphaCore · 沪电股份(WUS) 深度穿透审计报告</title>
+    <meta name="description" content="AlphaCore 深度审计报告 — 沪电股份(002463.SZ) 五维穿透式审计：AI算力护城河·财务健康·产能良率·汽车电子·估值周期">
     <link rel="stylesheet" href="./styles.css">
     <link rel="stylesheet" href="./audit.css">
     <link rel="stylesheet" href="./wus_audit.css">
@@ -15,8 +15,8 @@
     <!-- Ambient Orbs -->
     <div class="audit-orb audit-orb-1"></div>
     <div class="audit-orb audit-orb-2"></div>
-    <div class="wus-orb-3"></div>
-    <div class="wus-orb-4"></div>
+    <div class="wus-orb wus-orb-3"></div>
+    <div class="wus-orb wus-orb-4"></div>
 
     <aside class="sidebar">
         <div class="logo"><div class="logo-icon"></div><h1>AlphaCore</h1></div>
@@ -32,7 +32,7 @@
 
             <div class="nav-group-title">研 究 审 计</div>
             <a href="./audit.html" class="nav-item"><span class="icon">🔍</span><span>深度审计</span></a>
-            <div class="nav-parent" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')"><span class="icon">📑</span><span>个股深研</span><span class="nav-arrow">▶</span></div>
+            <div class="nav-parent open" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')"><span class="icon">📑</span><span>个股深研</span><span class="nav-arrow">▶</span></div>
             <div class="nav-sub-group open">
                 <a href="./smic_audit.html" class="nav-item"><span class="icon">🔬</span><span>中芯国际</span><span class="badge-beta" style="background:rgba(239,68,68,0.15);color:#f87171;border-color:rgba(239,68,68,0.3);">DEEP</span></a>
                 <a href="./zijin_audit.html" class="nav-item"><span class="icon">⛏️</span><span>紫金矿业</span><span class="badge-beta" style="background:rgba(245,158,11,0.15);color:#fbbf24;border-color:rgba(245,158,11,0.3);">DEEP</span></a>
@@ -40,7 +40,8 @@
                 <a href="./eastmoney_audit.html" class="nav-item"><span class="icon">💹</span><span>东方财富</span><span class="badge-beta" style="background:rgba(37,99,235,0.15);color:#60a5fa;border-color:rgba(37,99,235,0.3);">DEEP</span></a>
                 <a href="./fii_audit.html" class="nav-item"><span class="icon">🤖</span><span>工业富联</span><span class="badge-beta" style="background:rgba(14,165,233,0.15);color:#38bdf8;border-color:rgba(14,165,233,0.3);">DEEP</span></a>
                 <a href="./wus_audit.html" class="nav-item active"><span class="icon">💻</span><span>沪电股份</span><span class="badge-beta" style="background:rgba(236,72,153,0.15);color:#f472b6;border-color:rgba(236,72,153,0.3);">DEEP</span></a>
-            </div>
+            <a href="./scc_audit.html" class="nav-item"><span class="icon">📡</span><span>深南电路</span><span class="badge-beta" style="background:rgba(139,92,246,0.15);color:#a855f7;border-color:rgba(139,92,246,0.3);">DEEP</span></a>
+                </div>
             <div class="nav-group-title">账 户 管 理</div>
             <a href="./portfolio.html" class="nav-item"><span class="icon">💼</span><span>投资组合</span></a>
         </nav>
@@ -61,100 +62,170 @@
         </header>
 
         <div class="audit-layout" id="audit-layout">
+
+            <!-- Loading -->
             <div id="audit-loading">
                 <div class="audit-skeleton skel-hero" style="margin-bottom:14px;"></div>
                 <div class="audit-skeleton skel-kpi"></div>
                 <div class="audit-skeleton skel-overview"></div>
-                <div class="loading-progress-bar"><div class="loading-progress-fill" style="background:#ec4899"></div></div>
-                <div class="loading-status">🧠 正在执行沪电股份五维穿透审计…</div>
+                <div class="loading-progress-bar"><div class="loading-progress-fill" style="background:linear-gradient(90deg,#ec4899,#8b5cf6);"></div></div>
+                <div class="loading-status">🧠 正在执行沪电股份五维穿透审计… AI算力护城河 · 财务健康 · 产能良率 · 汽车电子 · 估值周期</div>
             </div>
 
-            <div class="wus-identity-banner" id="wus-identity" style="display:none;">
+            <!-- Company Identity Banner -->
+            <div class="wus-identity-banner wus-animate-in" id="wus-identity" style="display:none;">
                 <div class="wus-id-left">
-                    <div class="wus-logo-ring"><span class="wus-logo-text">沪电</span></div>
+                    <div class="wus-logo-ring">
+                        <span class="wus-logo-text">WUS</span>
+                    </div>
                     <div class="wus-id-info">
                         <h2 class="wus-company-name">沪士电子股份有限公司</h2>
-                        <div class="wus-company-en">WUS Printed Circuit (Kunshan) Co., Ltd.</div>
+                        <div class="wus-company-en">WUS Electronics Co., Ltd. (沪士电子)</div>
                         <div class="wus-tickers">
                             <span class="wus-ticker a-share">002463.SZ</span>
                             <span class="wus-sector-tag">AI算力PCB</span>
-                            <span class="wus-sector-tag">英伟达核心果链</span>
+                            <span class="wus-sector-tag">英伟达核心供链</span>
+                            <span class="wus-sector-tag">800G光通信</span>
                         </div>
                     </div>
                 </div>
                 <div class="wus-id-right">
-                    <div class="wus-quick-stat"><span class="wus-qs-label">市值</span><span class="wus-qs-value" id="qs-mcap">--</span></div>
-                    <div class="wus-quick-stat"><span class="wus-qs-label">股价</span><span class="wus-qs-value" id="qs-price">--</span></div>
-                    <div class="wus-quick-stat"><span class="wus-qs-label">PE(TTM)</span><span class="wus-qs-value" id="qs-pe">--</span></div>
-                    <div class="wus-quick-stat"><span class="wus-qs-label">PB</span><span class="wus-qs-value" id="qs-pb">--</span></div>
+                    <div class="wus-quick-stat">
+                        <span class="wus-qs-label">市值</span>
+                        <span class="wus-qs-value" id="qs-mcap">--</span>
+                    </div>
+                    <div class="wus-quick-stat">
+                        <span class="wus-qs-label">股价</span>
+                        <span class="wus-qs-value" id="qs-price">--</span>
+                    </div>
+                    <div class="wus-quick-stat">
+                        <span class="wus-qs-label">PE(TTM)</span>
+                        <span class="wus-qs-value" id="qs-pe">--</span>
+                    </div>
+                    <div class="wus-quick-stat">
+                        <span class="wus-qs-label">PB</span>
+                        <span class="wus-qs-value" id="qs-pb">--</span>
+                    </div>
                 </div>
             </div>
 
+            <!-- Alert Banner -->
             <div class="alert-banner" id="alert-banner">
-                <span class="alert-icon" id="alert-icon"></span><span class="alert-text" id="alert-text"></span>
+                <span class="alert-icon" id="alert-icon"></span>
+                <span class="alert-text" id="alert-text"></span>
+                <button class="alert-action" id="alert-action" onclick="scrollToFirstIssue()">定位问题 →</button>
             </div>
 
-            <div class="trust-hero glass-panel" id="trust-hero" style="display:none;">
-                <div class="trust-gauge"><div class="trust-gauge-chart" id="trust-gauge-chart"></div></div>
+            <!-- Trust Score Hero -->
+            <div class="trust-hero glass-panel wus-animate-in" id="trust-hero" style="display:none;">
+                <div class="trust-gauge">
+                    <div class="trust-gauge-chart" id="trust-gauge-chart"></div>
+                </div>
                 <div class="trust-info">
-                    <div class="trust-score-hero"><span class="trust-big-score" id="trust-big-score">--</span><span class="trust-grade-badge" id="trust-grade-badge">--</span></div>
-                    <div class="trust-title">护城河综合评定</div>
-                    <div class="trust-sub" id="trust-verdict"></div>
-                    <div class="trust-stats">
-                        <span class="trust-stat pass" id="stat-pass">✅ --</span>
-                        <span class="trust-stat warn" id="stat-warn">⚠️ --</span>
-                        <span class="trust-stat fail" id="stat-fail">❌ --</span>
+                    <div class="trust-score-hero">
+                        <span class="trust-big-score" id="trust-big-score">--</span>
+                        <span class="trust-grade-badge" id="trust-grade-badge">--</span>
+                    </div>
+                    <div class="trust-title">AI算力护城河综合评定</div>
+                    <div class="trust-sub" id="trust-verdict">正在执行五维穿透审计...</div>
+                    <div class="trust-stats" id="trust-stats">
+                        <span class="trust-stat pass" id="stat-pass">✅ -- 优势</span>
+                        <span class="trust-stat warn" id="stat-warn">⚠️ -- 关注</span>
+                        <span class="trust-stat fail" id="stat-fail">❌ -- 风险</span>
                     </div>
                     <div class="trust-meta" id="trust-meta"></div>
                 </div>
+                <div class="trust-equalizer" id="trust-equalizer"></div>
             </div>
 
-            <div class="wus-kpi-dashboard" id="wus-kpi-dashboard" style="display:none;"></div>
-            <div class="wus-section-divider" style="display:none;"></div>
+            <!-- KPI Dashboard -->
+            <div class="wus-kpi-dashboard" id="wus-kpi-dashboard"></div>
 
+            <!-- Section: 五维穿透 -->
+            <div class="wus-section-divider"></div>
+
+            <!-- Radar + Module Cards -->
             <div class="audit-overview" id="audit-overview" style="display:none;">
                 <div class="radar-panel glass-panel">
-                    <div style="font-size:0.86rem;font-weight:700;color:#e2e8f0;margin-bottom:8px;">五维穿透雷达</div>
+                    <div style="font-size:0.86rem;font-weight:700;color:#e2e8f0;margin-bottom:8px;">五维穿透审计雷达</div>
                     <div class="radar-chart" id="radar-chart"></div>
+                    <div class="radar-legend" id="radar-legend"></div>
                 </div>
                 <div class="module-cards" id="module-cards"></div>
             </div>
 
-            <div class="wus-section-divider"></div>
-
-            <div class="wus-charts-grid" id="wus-charts-grid" style="display:none;">
-                <div class="wus-chart-panel glass-panel"><div class="wus-chart-title">📊 营收与利润趋势</div><div class="wus-chart-canvas" id="chart-revenue"></div></div>
-                <div class="wus-chart-panel glass-panel"><div class="wus-chart-title">📈 毛利率与产能利用率</div><div class="wus-chart-canvas" id="chart-margins"></div></div>
-                <div class="wus-chart-panel glass-panel"><div class="wus-chart-title">🔬 研发投入与扩张CAPEX</div><div class="wus-chart-canvas" id="chart-rdcapex"></div></div>
-                <div class="wus-chart-panel glass-panel"><div class="wus-chart-title">🌐 AI驱动的产品结构跃迁</div><div class="wus-chart-canvas" id="chart-nodes"></div></div>
+            <!-- Detail Section -->
+            <div class="detail-section" id="detail-section">
+                <div class="detail-header">
+                    <span class="detail-title" id="detail-title">--</span>
+                    <button class="detail-close" onclick="closeDetail()">✕</button>
+                </div>
+                <div class="detail-body" id="detail-body"></div>
             </div>
 
+            <!-- Section: 财务深研 -->
             <div class="wus-section-divider"></div>
 
-            <div class="wus-risk-matrix glass-panel" id="wus-risk-matrix" style="display:none;">
-                <div class="wus-rm-header"><span>⚡ 核心风险矩阵</span><span class="wus-rm-badge" id="rm-badge">--</span></div>
+            <!-- Financial Deep-Dive Charts -->
+            <div class="wus-charts-grid" id="wus-charts-grid" style="display:none;">
+                <div class="wus-chart-panel glass-panel">
+                    <div class="wus-chart-title">📊 营收与利润趋势 (2019-2025E)</div>
+                    <div class="wus-chart-canvas" id="chart-revenue"></div>
+                </div>
+                <div class="wus-chart-panel glass-panel">
+                    <div class="wus-chart-title">📈 毛利率与产能利用率</div>
+                    <div class="wus-chart-canvas" id="chart-margins"></div>
+                </div>
+                <div class="wus-chart-panel glass-panel">
+                    <div class="wus-chart-title">🔬 研发投入 vs 资本开支</div>
+                    <div class="wus-chart-canvas" id="chart-rdcapex"></div>
+                </div>
+                <div class="wus-chart-panel glass-panel">
+                    <div class="wus-chart-title">🌐 AI驱动的产品结构跃迁</div>
+                    <div class="wus-chart-canvas" id="chart-nodes"></div>
+                </div>
+            </div>
+
+            <!-- Section: 风险与研判 -->
+            <div class="wus-section-divider"></div>
+
+            <!-- Risk Matrix -->
+            <div class="wus-risk-matrix glass-panel wus-animate-in" id="wus-risk-matrix" style="display:none;">
+                <div class="wus-rm-header">
+                    <span>⚡ 核心风险矩阵</span>
+                    <span class="wus-rm-badge" id="rm-badge">--</span>
+                </div>
                 <div class="wus-rm-body" id="wus-rm-body"></div>
             </div>
 
-            <div class="wus-verdict-panel glass-panel" id="wus-verdict" style="display:none;">
-                <div class="wus-verdict-header"><span>🎯 资金端动态研判与建仓提醒</span></div>
+            <!-- Investment Verdict -->
+            <div class="wus-verdict-panel glass-panel wus-animate-in" id="wus-verdict" style="display:none;">
+                <div class="wus-verdict-header">
+                    <span>🎯 投资研判结论</span>
+                </div>
                 <div class="wus-verdict-body" id="wus-verdict-body"></div>
             </div>
 
+            <!-- Audit Timeline -->
             <div class="audit-timeline glass-panel" id="audit-timeline" style="display:none;">
                 <div class="timeline-header">
-                    <span>📊 历史归档得分追踪</span>
-                    <span class="timeline-trend stable" id="timeline-trend"></span>
+                    <span>📊 全维度审计评分趋势</span>
+                    <span class="timeline-trend stable" id="timeline-trend">— 首次审计</span>
                 </div>
                 <div class="timeline-chart" id="timeline-chart"></div>
             </div>
 
+            <!-- Footer -->
             <div class="audit-footer">
                 <div class="footer-summary">
-                    <span>💻 AlphaCore 智能硬件终端 V3.0</span>
-                    <span style="margin-left:8px;" id="footer-time"></span>
+                    <span>💻 AlphaCore 个股穿透审计终端 V3.0</span>
+                    <span style="margin-left:8px;" id="footer-time">· 等待审计</span>
+                    <span class="footer-urgent" id="footer-urgent"></span>
                 </div>
-                <button class="audit-btn" id="audit-refresh-btn" onclick="runWUSAudit()"><span class="spinner" id="audit-spinner" style="display:none"></span>🔄 重新计算</button>
+                <button class="audit-btn" id="audit-refresh-btn" onclick="runWUSAudit()">
+                    <span class="spinner" id="audit-spinner"></span>
+                    🔄 重新审计
+                </button>
             </div>
         </div>
     </main>

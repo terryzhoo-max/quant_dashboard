@@ -23,6 +23,8 @@ from momentum_rotation_engine import run_momentum_strategy
 from momentum_backtest_engine import run_momentum_backtest, run_momentum_optimize
 from erp_timing_engine import get_erp_engine
 from aiae_engine import get_aiae_engine, AIAE_RUN_ALL_WEIGHTS, REGIMES as AIAE_REGIMES
+from aiae_us_engine import get_us_aiae_engine
+from aiae_jp_engine import get_jp_aiae_engine
 from data_manager import FactorDataManager
 from industry_engine import IndustryEngine
 from portfolio_engine import PortfolioEngine
@@ -3207,6 +3209,92 @@ async def refresh_aiae():
         return {"status": "success", "data": report, "timestamp": datetime.now().isoformat()}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+# ─── 海外 AIAE 宏观仓位管控 API (US + JP) ───
+
+@app.get("/api/v1/aiae_global/report")
+async def get_aiae_global_report():
+    """海外 AIAE 全球报告: 并行执行 US + JP 引擎, 含三地对比 (CN/US/JP)"""
+    try:
+        loop = asyncio.get_event_loop()
+        us_engine = get_us_aiae_engine()
+        jp_engine = get_jp_aiae_engine()
+
+        us_task = loop.run_in_executor(executor, us_engine.generate_report)
+        jp_task = loop.run_in_executor(executor, jp_engine.generate_report)
+
+        us_report, jp_report = await asyncio.gather(us_task, jp_task)
+
+        # 获取中国 AIAE 用于三地对比
+        cn_aiae_v1 = 22.0
+        cn_regime = 3
+        try:
+            cn_engine = get_aiae_engine()
+            cn_report = cn_engine.generate_report()
+            if cn_report.get("status") in ("success", "fallback"):
+                cn_aiae_v1 = cn_report["current"]["aiae_v1"]
+                cn_regime = cn_report["current"]["regime"]
+        except Exception as e:
+            print(f"[GlobalAIAE] CN engine fallback: {e}")
+
+        us_v1 = us_report.get("current", {}).get("aiae_v1", 25.0)
+        jp_v1 = jp_report.get("current", {}).get("aiae_v1", 17.0)
+        us_regime = us_report.get("current", {}).get("regime", 3)
+        jp_regime = jp_report.get("current", {}).get("regime", 3)
+
+        # 三地配置建议
+        vals = {"cn": cn_aiae_v1, "us": us_v1, "jp": jp_v1}
+        coldest = min(vals, key=vals.get)
+        hottest = max(vals, key=vals.get)
+        region_names = {"cn": "A股", "us": "美股", "jp": "日股"}
+        recommendation = f"当前{region_names[coldest]}(AIAE={vals[coldest]:.1f}%)配置热度最低, 超配优先; {region_names[hottest]}(AIAE={vals[hottest]:.1f}%)最高, 谨慎配置"
+
+        return {
+            "status": "success",
+            "timestamp": datetime.now().isoformat(),
+            "us": us_report,
+            "jp": jp_report,
+            "global_comparison": {
+                "cn_aiae": cn_aiae_v1, "cn_regime": cn_regime,
+                "us_aiae": us_v1, "us_regime": us_regime,
+                "jp_aiae": jp_v1, "jp_regime": jp_regime,
+                "coldest": coldest, "hottest": hottest,
+                "recommendation": recommendation,
+            }
+        }
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/v1/aiae_global/refresh")
+async def refresh_aiae_global():
+    """强制刷新海外 AIAE 数据"""
+    try:
+        us_engine = get_us_aiae_engine()
+        jp_engine = get_jp_aiae_engine()
+        us_engine.refresh()
+        jp_engine.refresh()
+        return await get_aiae_global_report()
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/v1/aiae_global/chart")
+async def get_aiae_global_chart():
+    """海外 AIAE 历史走势数据"""
+    try:
+        us_engine = get_us_aiae_engine()
+        jp_engine = get_jp_aiae_engine()
+        return {
+            "status": "success",
+            "us_chart": us_engine.get_chart_data(),
+            "jp_chart": jp_engine.get_chart_data(),
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 
 @app.get("/")
 async def root():

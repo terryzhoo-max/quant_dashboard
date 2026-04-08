@@ -2898,6 +2898,9 @@ function renderRegionChart(region, chart, color) {
 (function() {
     document.querySelectorAll('.st-tab').forEach(tab => {
         tab.addEventListener('click', function() {
+            if (this.dataset.report === 'st-aiae-global' && !_globalAIAEData) {
+                setTimeout(loadGlobalAIAE, 100);
+            }
             if (this.dataset.report === 'st-erp-global' && !_globalERPData) {
                 setTimeout(loadGlobalERP, 100);
             }
@@ -3392,8 +3395,102 @@ function renderAIAEUI(data) {
     // ── ZONE 3: History chart ──
     try { if (data.chart) renderAIAEHistoryChart(data.chart, c.aiae_v1); } catch(e) { console.warn('[AIAE] chart skip:', e); }
 
+    // ── History summary current value ──
+    const $hc = document.getElementById('aiae-hist-current');
+    if ($hc) $hc.textContent = c.aiae_v1 + '%';
+
     // ── ZONE 4: Signals ──
     renderAIAESignals(data.signals);
+
+    // ── Warning Indicators ──
+    try { renderAIAEWarnings(c); } catch(e) { console.warn('[AIAE] warnings skip:', e); }
+
+    // ── Action Dashboard ──
+    try { renderAIAEActionDashboard(c.regime, ri, p.matrix_position); } catch(e) { console.warn('[AIAE] action skip:', e); }
+}
+
+// ── Warning Indicators V2.1 ──
+function renderAIAEWarnings(c) {
+    // Margin heat
+    const mVal = c.margin_heat || 0;
+    const $mV = document.getElementById('aiae-warn-margin-val');
+    const $mB = document.getElementById('aiae-warn-margin-bar');
+    const $mC = document.getElementById('aiae-warn-margin');
+    if ($mV) { $mV.textContent = mVal + '%'; $mV.style.color = mVal > 3.5 ? '#ef4444' : mVal > 2.5 ? '#f59e0b' : '#10b981'; }
+    if ($mB) { $mB.style.width = Math.min(mVal / 5 * 100, 100) + '%'; $mB.style.background = mVal > 3.5 ? '#ef4444' : mVal > 2.5 ? '#f59e0b' : '#10b981'; }
+    if ($mC) { $mC.className = 'aiae-warning-card ' + (mVal > 3.5 ? 'warn-danger' : mVal > 2.5 ? 'warn-caution' : 'warn-ok'); }
+
+    // Slope
+    const sVal = c.slope?.slope || 0;
+    const absSlope = Math.abs(sVal);
+    const $sV = document.getElementById('aiae-warn-slope-val');
+    const $sB = document.getElementById('aiae-warn-slope-bar');
+    const $sC = document.getElementById('aiae-warn-slope');
+    if ($sV) { $sV.textContent = (sVal > 0 ? '+' : '') + sVal; $sV.style.color = absSlope > 1.5 ? '#ef4444' : absSlope > 0.8 ? '#f59e0b' : '#10b981'; }
+    if ($sB) { $sB.style.width = Math.min(absSlope / 3 * 100, 100) + '%'; $sB.style.background = absSlope > 1.5 ? '#ef4444' : absSlope > 0.8 ? '#f59e0b' : '#10b981'; }
+    if ($sC) { $sC.className = 'aiae-warning-card ' + (absSlope > 1.5 ? 'warn-danger' : absSlope > 0.8 ? 'warn-caution' : 'warn-ok'); }
+
+    // Fund position
+    const fVal = c.fund_position || 0;
+    const $fV = document.getElementById('aiae-warn-fund-val');
+    const $fB = document.getElementById('aiae-warn-fund-bar');
+    const $fC = document.getElementById('aiae-warn-fund');
+    if ($fV) { $fV.textContent = fVal + '%'; $fV.style.color = fVal > 90 ? '#ef4444' : fVal > 85 ? '#f59e0b' : '#10b981'; }
+    if ($fB) { $fB.style.width = Math.min(fVal / 100 * 100, 100) + '%'; $fB.style.background = fVal > 90 ? '#ef4444' : fVal > 85 ? '#f59e0b' : '#10b981'; }
+    if ($fC) { $fC.className = 'aiae-warning-card ' + (fVal > 90 ? 'warn-danger' : fVal > 85 ? 'warn-caution' : 'warn-ok'); }
+}
+
+// ── Action Dashboard V2.1 (dynamic per regime) ──
+function renderAIAEActionDashboard(regime, ri, matrixPos) {
+    const actionData = {
+        1: {
+            buy: ['<b style="color:#10b981">AIAE<12% 满仓进攻模式</b>','分3批建仓，越跌越买','优先宽基ETF: 300/50/500/创业板','红利ETF同步配置底仓'],
+            hold: ['每批完成后等待3-5天观察','不追高，只在下跌日建仓','总仓位控制在90-95%内'],
+            sell: ['此档位禁止任何卖出操作','除非触发组合级-25%强制止损','耐心持有，等待市场修复']
+        },
+        2: {
+            buy: ['<b style="color:#3b82f6">AIAE 12-16% 标准建仓区</b>','按节奏建仓，总目标仓位70-85%','宽基+红利均衡配置','ERP>4%时加大买入力度'],
+            hold: ['已建仓位坚定持有','不因短期波动减仓','定期检查子策略配额是否到位'],
+            sell: ['此档位不主动卖出','仅止损触发时被动减仓','子策略止损线: MR-8% DIV-5% MOM-7%']
+        },
+        3: {
+            buy: ['<b style="color:#eab308">Ⅲ级不主动加仓</b>','仅在子策略出现强烈买入信号时小幅加仓','新增仓位限制在总仓5%以内'],
+            hold: ['维持均衡仓位50-65%','有纪律持有，到目标价就卖','以宽基+红利为主，减少进攻型标的'],
+            sell: ['到达止盈目标的标的及时卖出','密切监控AIAE是否向24%靠近','若接近24%开始做减仓准备']
+        },
+        4: {
+            buy: ['<b style="color:#f97316">Ⅳ级禁止新开仓</b>','不追涨任何进攻型标的','仅保留现有红利型标的'],
+            hold: ['总仓位压缩至25-40%','红利ETF可继续持有','进攻型标的逐步清退'],
+            sell: ['<b style="color:#ef4444">每周减5%总仓位</b>','优先清退高波动标的','3-4周完成减仓至目标水位']
+        },
+        5: {
+            buy: ['<b style="color:#ef4444">Ⅴ级·绝对禁止任何买入</b>','历史级泡沫信号','任何新仓位=与市场对赌'],
+            hold: ['仅保留0-15%极低仓位','仅限红利防御型ETF','现金为王'],
+            sell: ['<b style="color:#ef4444">3天内完成清仓</b>','无例外，不抄底','强制执行，无论盈亏']
+        }
+    };
+
+    const d = actionData[regime] || actionData[3];
+    const $buy = document.getElementById('aiae-action-buy-list');
+    const $hold = document.getElementById('aiae-action-hold-list');
+    const $sell = document.getElementById('aiae-action-sell-list');
+
+    if ($buy) $buy.innerHTML = d.buy.map(t => `<li>${t}</li>`).join('');
+    if ($hold) $hold.innerHTML = d.hold.map(t => `<li>${t}</li>`).join('');
+    if ($sell) $sell.innerHTML = d.sell.map(t => `<li>${t}</li>`).join('');
+
+    // Highlight active zone
+    const cards = document.querySelectorAll('.aiae-action-card');
+    cards.forEach(c => {
+        c.style.opacity = '0.6';
+        c.style.transform = '';
+    });
+    const activeMap = { 1: 0, 2: 0, 3: 1, 4: 2, 5: 2 };
+    const activeIdx = activeMap[regime] ?? 1;
+    if (cards[activeIdx]) {
+        cards[activeIdx].style.opacity = '1';
+        cards[activeIdx].style.transform = 'scale(1.03)';
+    }
 }
 
 // ── ECharts Gauge V2.0 ──
@@ -3657,20 +3754,473 @@ document.addEventListener('DOMContentLoaded', function() {
     window.addEventListener('resize', function() {
         clearTimeout(_resizeTimer);
         _resizeTimer = setTimeout(function() {
-            // Rates module charts
             if (typeof _ratesGaugeChart !== 'undefined' && _ratesGaugeChart) {
                 try { _ratesGaugeChart.resize(); } catch(e) {}
             }
             if (typeof _ratesMainChart !== 'undefined' && _ratesMainChart) {
                 try { _ratesMainChart.resize(); } catch(e) {}
             }
-            // AIAE module charts
             if (window._aiaeGaugeChart) {
                 try { window._aiaeGaugeChart.resize(); } catch(e) {}
             }
             if (window._aiaeHistChart) {
                 try { window._aiaeHistChart.resize(); } catch(e) {}
             }
+            if (window._gaiaeUsGauge) {
+                try { window._gaiaeUsGauge.resize(); } catch(e) {}
+            }
+            if (window._gaiaeJpGauge) {
+                try { window._gaiaeJpGauge.resize(); } catch(e) {}
+            }
+            if (window._gaiaeHistChart) {
+                try { window._gaiaeHistChart.resize(); } catch(e) {}
+            }
         }, 200);
     });
 })();
+
+// ====================================================================
+//  海外 AIAE 宏观仓位管控模块 V1.1
+//  US(蓝) + JP(红) 双面板 | 五档竖卡 | 警示指标 | 三地对比 | 合并操作区
+// ====================================================================
+
+let _globalAIAEData = null;
+let _globalAIAELoading = false;
+
+async function loadGlobalAIAE(forceRefresh = false) {
+    if (_globalAIAELoading) return;
+    if (_globalAIAEData && !forceRefresh) {
+        renderGlobalAIAE(_globalAIAEData);
+        return;
+    }
+
+    _globalAIAELoading = true;
+    const btn = document.getElementById('gaiae-refresh-btn');
+    if (btn) { btn.disabled = true; btn.innerHTML = '⏳ 加载中...'; }
+
+    try {
+        const endpoint = forceRefresh ? '/api/v1/aiae_global/refresh' : '/api/v1/aiae_global/report';
+        const resp = await fetch(endpoint);
+        const json = await resp.json();
+        if (json.status === 'success') {
+            _globalAIAEData = json;
+            renderGlobalAIAE(json);
+            const t = document.getElementById('gaiae-update-time');
+            if (t) t.textContent = new Date().toLocaleTimeString('zh-CN');
+        } else {
+            console.error('[GlobalAIAE] Error:', json.message);
+        }
+    } catch (e) {
+        console.error('[GlobalAIAE] Fetch failed:', e);
+    }
+    if (btn) { btn.disabled = false; btn.innerHTML = '🔄 刷新'; }
+    _globalAIAELoading = false;
+}
+
+function renderGlobalAIAE(json) {
+    const us = json.us || {};
+    const jp = json.jp || {};
+    const gc = json.global_comparison || {};
+
+    // -- Region panels --
+    renderGAIAERegionPanel('us', us, '#3b82f6');
+    renderGAIAERegionPanel('jp', jp, '#dc2626');
+
+    // Hero values
+    const usV1 = (us.current||{}).aiae_v1 || 0;
+    const jpV1 = (jp.current||{}).aiae_v1 || 0;
+    const usRI = (us.current||{}).regime_info || {};
+    const jpRI = (jp.current||{}).regime_info || {};
+
+    const $usV = document.getElementById('gaiae-us-value');
+    const $jpV = document.getElementById('gaiae-jp-value');
+    const $usR = document.getElementById('gaiae-us-regime');
+    const $jpR = document.getElementById('gaiae-jp-regime');
+    if ($usV) $usV.textContent = usV1.toFixed(1) + '%';
+    if ($jpV) $jpV.textContent = jpV1.toFixed(1) + '%';
+    if ($usR) { $usR.textContent = (usRI.emoji||'') + ' ' + (usRI.cn||'--'); $usR.style.color = usRI.color||'#94a3b8'; }
+    if ($jpR) { $jpR.textContent = (jpRI.emoji||'') + ' ' + (jpRI.cn||'--'); $jpR.style.color = jpRI.color||'#94a3b8'; }
+
+    // Coldest market hero card
+    const regionMap = { cn: '🇨🇳 A股', us: '🇺🇸 美股', jp: '🇯🇵 日股' };
+    const $cold = document.getElementById('gaiae-coldest');
+    const $coldL = document.getElementById('gaiae-coldest-label');
+    const $coldCard = document.getElementById('gaiae-coldest-card');
+    if ($cold) $cold.textContent = regionMap[gc.coldest] || '--';
+    if ($coldL) $coldL.textContent = '超配优先 · 远离过热';
+    if ($coldCard) $coldCard.classList.add('coldest-glow');
+
+    // Matrices
+    renderGAIAEMatrix('us', us);
+    renderGAIAEMatrix('jp', jp);
+
+    // 3-way comparison
+    renderGAIAE3Way(gc);
+
+    // Warning indicators
+    renderGAIAEWarnings('us', us);
+    renderGAIAEWarnings('jp', jp);
+
+    // Consolidated actions
+    renderGAIAEActionZone((us.current||{}).regime || 3, (jp.current||{}).regime || 3);
+
+    // Charts
+    try { renderGAIAEHistoryChart(us.chart, jp.chart); } catch(e) { console.warn('[GAIAE] chart skip:', e); }
+}
+
+function renderGAIAERegionPanel(region, data, color) {
+    if (!data || !data.current) return;
+    const c = data.current;
+    const ri = c.regime_info || {};
+
+    // Gauge
+    const max = region === 'us' ? 50 : 40;
+    const bands = region === 'us'
+        ? [[0.30,'#10b981'],[0.40,'#3b82f6'],[0.56,'#eab308'],[0.72,'#f97316'],[1,'#ef4444']]
+        : [[0.25,'#10b981'],[0.35,'#3b82f6'],[0.50,'#eab308'],[0.70,'#f97316'],[1,'#ef4444']];
+
+    try {
+        const el = document.getElementById('gaiae-' + region + '-gauge');
+        if (el && typeof echarts !== 'undefined') {
+            const key = '_gaiae' + region.charAt(0).toUpperCase() + region.slice(1) + 'Gauge';
+            if (window[key]) window[key].dispose();
+            window[key] = echarts.init(el);
+            window[key].setOption({
+                series: [{
+                    type: 'gauge', startAngle: 200, endAngle: -20, min: 0, max: max,
+                    pointer: { show: true, length: '55%', width: 4, itemStyle: { color: ri.color || color, shadowColor: (ri.color||color), shadowBlur: 6 }, icon: 'triangle' },
+                    anchor: { show: true, size: 8, itemStyle: { color: '#0f172a', borderColor: ri.color||color, borderWidth: 2 } },
+                    axisLine: { lineStyle: { width: 12, color: bands } },
+                    axisTick: { length: 6, distance: -12, lineStyle: { color: 'auto', width: 1 } },
+                    splitLine: { length: 10, distance: -12, lineStyle: { color: 'auto', width: 1.5 } },
+                    splitNumber: 5,
+                    axisLabel: { distance: -28, color: '#64748b', fontSize: 8 },
+                    detail: { show: false },
+                    data: [{ value: Math.min(Math.max(c.aiae_v1, 0), max) }],
+                    animationDuration: 1200
+                }]
+            });
+        }
+    } catch(e) { console.warn('[GAIAE] gauge error:', e); }
+
+    // Gauge labels
+    const $gv = document.getElementById('gaiae-' + region + '-gauge-val');
+    const $gr = document.getElementById('gaiae-' + region + '-gauge-regime');
+    if ($gv) $gv.textContent = c.aiae_v1.toFixed(1) + '%';
+    if ($gr) { $gr.textContent = (ri.emoji||'') + ' ' + (ri.cn||'--') + ' · 建议仓位 ' + (data.position||{}).matrix_position + '%'; $gr.style.color = ri.color||'#94a3b8'; }
+
+    // ⑤ Regime cards highlight
+    const cardsEl = document.getElementById('gaiae-' + region + '-regime-cards');
+    if (cardsEl) {
+        cardsEl.querySelectorAll('.gaiae-rc').forEach(card => {
+            card.classList.toggle('active', parseInt(card.dataset.regime) === c.regime);
+        });
+    }
+
+    // Factor cards
+    const $core = document.getElementById('gaiae-' + region + '-core');
+    if ($core) $core.textContent = (c.aiae_core||0).toFixed(1) + '%';
+
+    if (region === 'us') {
+        const $margin = document.getElementById('gaiae-us-margin');
+        const $aaii = document.getElementById('gaiae-us-aaii');
+        if ($margin) $margin.textContent = (c.margin_heat||0).toFixed(2) + '%';
+        if ($aaii) {
+            const spread = (c.aaii_sentiment||{}).spread || 0;
+            $aaii.textContent = (spread > 0 ? '+' : '') + spread.toFixed(0) + '%';
+            $aaii.style.color = spread > 15 ? '#ef4444' : spread < -10 ? '#10b981' : '#e2e8f0';
+        }
+    } else {
+        const $margin = document.getElementById('gaiae-jp-margin');
+        const $foreign = document.getElementById('gaiae-jp-foreign');
+        if ($margin) $margin.textContent = (c.margin_heat||0).toFixed(2) + '%';
+        if ($foreign) {
+            const net = (c.foreign_flow||{}).net_buy_billion_jpy || 0;
+            $foreign.textContent = (net > 0 ? '+' : '') + (net/100).toFixed(0) + '億円';
+            $foreign.style.color = net > 2000 ? '#3b82f6' : net < -2000 ? '#ef4444' : '#e2e8f0';
+        }
+    }
+
+    // Signals
+    const sigEl = document.getElementById('gaiae-' + region + '-signals');
+    if (sigEl && data.signals) {
+        sigEl.innerHTML = data.signals.map(s => {
+            return '<div class="gaiae-signal-item" style="border-color:' + (s.color||'#f59e0b') + '"><span>' + s.text + '</span></div>';
+        }).join('');
+    }
+}
+
+// ② Warning indicators rendering
+function renderGAIAEWarnings(region, data) {
+    if (!data || !data.current) return;
+    const c = data.current;
+    const slope = (data.position||{}).slope || 0;
+
+    if (region === 'us') {
+        _setWarnIndicator('gaiae-us-warn-margin', 'gaiae-us-warn-margin-val', 'gaiae-us-warn-margin-bar',
+            c.margin_heat || 0, '%', 1.5, 1.0);
+        _setWarnIndicator('gaiae-us-warn-slope', 'gaiae-us-warn-slope-val', 'gaiae-us-warn-slope-bar',
+            Math.abs(slope), '', 3.0, 1.5, slope);
+        const spread = (c.aaii_sentiment||{}).spread || 0;
+        _setWarnIndicator('gaiae-us-warn-aaii', 'gaiae-us-warn-aaii-val', 'gaiae-us-warn-aaii-bar',
+            spread, '%', 20, 10);
+    } else {
+        _setWarnIndicator('gaiae-jp-warn-margin', 'gaiae-jp-warn-margin-val', 'gaiae-jp-warn-margin-bar',
+            c.margin_heat || 0, '%', 0.6, 0.4);
+        _setWarnIndicator('gaiae-jp-warn-slope', 'gaiae-jp-warn-slope-val', 'gaiae-jp-warn-slope-bar',
+            Math.abs(slope), '', 2.0, 1.0, slope);
+        const foreign = (c.foreign_flow||{}).net_buy_billion_jpy || 0;
+        _setWarnIndicator('gaiae-jp-warn-foreign', 'gaiae-jp-warn-foreign-val', 'gaiae-jp-warn-foreign-bar',
+            foreign / 100, '億', 30, 15);
+    }
+}
+
+function _setWarnIndicator(cardId, valId, barId, value, unit, dangerThreshold, cautionThreshold, displayVal) {
+    const card = document.getElementById(cardId);
+    const $val = document.getElementById(valId);
+    const $bar = document.getElementById(barId);
+    if (!card) return;
+
+    const dv = displayVal !== undefined ? displayVal : value;
+    const absVal = Math.abs(value);
+    const isDanger = absVal >= dangerThreshold;
+    const isCaution = absVal >= cautionThreshold && !isDanger;
+
+    card.className = 'gaiae-warn-card ' + (isDanger ? 'warn-danger' : isCaution ? 'warn-caution' : 'warn-ok');
+    if ($val) {
+        $val.textContent = (typeof dv === 'number' ? (dv > 0 ? '+' : '') + dv.toFixed(2) : dv) + unit;
+        $val.style.color = isDanger ? '#ef4444' : isCaution ? '#f59e0b' : '#10b981';
+    }
+    if ($bar) {
+        const pct = Math.min((absVal / dangerThreshold) * 100, 100);
+        $bar.style.width = pct + '%';
+        $bar.style.background = isDanger ? '#ef4444' : isCaution ? '#f59e0b' : '#10b981';
+    }
+}
+
+function renderGAIAEMatrix(region, data) {
+    if (!data || !data.position) return;
+    const pos = data.position;
+    const cv = data.cross_validation || {};
+
+    // Cross-validation verdict
+    const $cv = document.getElementById('gaiae-' + region + '-cv-verdict');
+    if ($cv) {
+        $cv.innerHTML = '当前: <b style="color:#f59e0b">Ⅳ' + pos.regime + '级</b>' +
+            ' × <b style="color:#60a5fa">ERP ' + (pos.erp_value||0).toFixed(1) + '%</b>' +
+            ' → 建议仓位 <b style="color:' + (cv.color||'#10b981') + ';font-size:0.85rem">' + pos.matrix_position + '%</b>' +
+            ' · <span style="color:' + (cv.color||'#94a3b8') + '">' + (cv.confidence_stars||'') + ' ' + (cv.verdict||'') + '</span>';
+    }
+
+    // Highlight active cell
+    const table = document.getElementById('gaiae-' + region + '-matrix');
+    if (!table) return;
+
+    const erpMap_us = { 'erp_gt5': 0, 'erp_3_5': 1, 'erp_1_3': 2, 'erp_lt1': 3 };
+    const erpMap_jp = { 'erp_gt4': 0, 'erp_2_4': 1, 'erp_0_2': 2, 'erp_lt0': 3 };
+    const erpMap = region === 'us' ? erpMap_us : erpMap_jp;
+    const rowIdx = erpMap[pos.erp_level] ?? 2;
+    const colIdx = Math.min((pos.regime||3) - 1, 4);
+
+    // Color all cells
+    const posValues = [[95,85,70,45,20],[90,80,65,40,15],[85,70,55,30,10],[75,60,40,20,5]];
+    function posColor(v) {
+        if (v >= 80) return 'rgba(16,185,129,0.15)';
+        if (v >= 60) return 'rgba(52,211,153,0.08)';
+        if (v >= 40) return 'rgba(234,179,8,0.08)';
+        if (v >= 20) return 'rgba(249,115,22,0.08)';
+        return 'rgba(239,68,68,0.1)';
+    }
+    const rows = table.querySelectorAll('tbody tr');
+    rows.forEach((row, ri) => {
+        const cells = row.querySelectorAll('td');
+        cells.forEach((td, ci) => {
+            td.classList.remove('gaiae-cell-active');
+            if (ci > 0 && posValues[ri]) { td.style.background = posColor(posValues[ri][ci-1]); }
+        });
+    });
+    if (rows[rowIdx]) {
+        const cells = rows[rowIdx].querySelectorAll('td');
+        if (cells[colIdx + 1]) cells[colIdx + 1].classList.add('gaiae-cell-active');
+    }
+}
+
+function renderGAIAE3Way(gc) {
+    if (!gc) return;
+    const regimeNames = {1: 'Ⅰ极度恐慌', 2: 'Ⅱ低配置区', 3: 'Ⅲ中性均衡', 4: 'Ⅳ偏热区域', 5: 'Ⅴ极度过热'};
+    const regimeColors = {1: '#10b981', 2: '#3b82f6', 3: '#eab308', 4: '#f97316', 5: '#ef4444'};
+
+    const $cn = document.getElementById('gaiae-3way-cn');
+    const $us = document.getElementById('gaiae-3way-us');
+    const $jp = document.getElementById('gaiae-3way-jp');
+    const $cnR = document.getElementById('gaiae-3way-cn-regime');
+    const $usR = document.getElementById('gaiae-3way-us-regime');
+    const $jpR = document.getElementById('gaiae-3way-jp-regime');
+
+    if ($cn) $cn.textContent = (gc.cn_aiae||0).toFixed(1) + '%';
+    if ($us) $us.textContent = (gc.us_aiae||0).toFixed(1) + '%';
+    if ($jp) $jp.textContent = (gc.jp_aiae||0).toFixed(1) + '%';
+    if ($cnR) { $cnR.textContent = 'A股 ' + (regimeNames[gc.cn_regime]||'Ⅲ中性'); $cnR.style.color = regimeColors[gc.cn_regime]||'#94a3b8'; }
+    if ($usR) { $usR.textContent = '美股 ' + (regimeNames[gc.us_regime]||'Ⅲ中性'); $usR.style.color = regimeColors[gc.us_regime]||'#94a3b8'; }
+    if ($jpR) { $jpR.textContent = '日股 ' + (regimeNames[gc.jp_regime]||'Ⅲ中性'); $jpR.style.color = regimeColors[gc.jp_regime]||'#94a3b8'; }
+
+    // Crown animation on coldest market
+    const coldest = gc.coldest || '';
+    ['cn','us','jp'].forEach(r => {
+        const card = document.getElementById('gaiae-3way-card-' + r);
+        if (card) {
+            card.classList.toggle('is-coldest', r === coldest);
+            // Add crown to flag
+            const flagEl = card.querySelector('.gaiae-3way-flag');
+            if (flagEl && r === coldest && !flagEl.querySelector('.gaiae-3way-crown')) {
+                flagEl.innerHTML += ' <span class="gaiae-3way-crown">👑</span>';
+            }
+        }
+    });
+
+    const $rec = document.getElementById('gaiae-recommendation');
+    if ($rec) $rec.textContent = '🌍 ' + (gc.recommendation || '加载中...');
+}
+
+// ③ Consolidated action zone rendering
+function renderGAIAEActionZone(usRegime, jpRegime) {
+    // Determine which zone is active
+    // Buy: regime 1-2, Hold: regime 3, Sell: regime 4-5
+    // Use the "hotter" regime to be conservative
+    const maxRegime = Math.max(usRegime, jpRegime);
+
+    const $buy = document.getElementById('gaiae-az-buy');
+    const $hold = document.getElementById('gaiae-az-hold');
+    const $sell = document.getElementById('gaiae-az-sell');
+
+    if ($buy) {
+        $buy.classList.toggle('az-active', maxRegime <= 2);
+        $buy.classList.toggle('az-dimmed', maxRegime > 2);
+    }
+    if ($hold) {
+        $hold.classList.toggle('az-active', maxRegime === 3);
+        $hold.classList.toggle('az-dimmed', maxRegime !== 3);
+    }
+    if ($sell) {
+        $sell.classList.toggle('az-active', maxRegime >= 4);
+        $sell.classList.toggle('az-dimmed', maxRegime < 4);
+    }
+
+    // Update action content based on actual regimes
+    const usLabel = '🇺🇸 美股 (Ⅳ' + usRegime + '级)';
+    const jpLabel = '🇯🇵 日股 (Ⅳ' + jpRegime + '级)';
+    const buyData = {
+        1: { us: ['<b>极低 → 满配进攻</b>', '分3批建仓 SPY/QQQ', '总仓位冲至90-95%'], jp: ['<b>極度悲観 → 全力買い</b>', '3批建仓 1306/1321', '総ポジション90-95%'] },
+        2: { us: ['<b>标准建仓区</b>', '目标仓位70-85%', 'ERP为正时加大买入'], jp: ['<b>標準建倉区</b>', '目標70-85%', '積極的にETF配分'] },
+        3: { us: ['Ⅲ级不主动加仓', '新增限制5%以内', '等待回调机会'], jp: ['Ⅲ級 加倉なし', '新規5%以内', '押し目待ち'] },
+        4: { us: ['<b>Ⅳ级禁止新开仓</b>', '不追涨进攻型标的', '仅保留红利型'], jp: ['<b>Ⅳ級 新規禁止</b>', '攻撃型銘柄撤退', '高配当のみ保有'] },
+        5: { us: ['<b>Ⅴ级 绝对禁止买入</b>', '历史级泡沫信号', '任何新仓=与市场对赌'], jp: ['<b>Ⅴ級 絶対禁止</b>', 'バブル警報発令', '新規ポジション厳禁'] }
+    };
+    const holdData = {
+        1: { us: ['每批完成后等3-5天', '只在下跌日建仓', '90-95%上限'], jp: ['各批3-5日間隔', '下落日のみ建倉', '90-95%上限'] },
+        2: { us: ['已建仓位坚定持有', '不因短期波动减仓', '观察AIAE方向'], jp: ['既存ポジション堅持', '短期変動で減らさない', 'AIAE方向を観察'] },
+        3: { us: ['维持50-65%均衡仓位', '到目标价就卖', '宽基+红利为主'], jp: ['50-65%バランス維持', '目標価で売却', 'ETF+高配当中心'] },
+        4: { us: ['总仓位压缩至25-40%', '进攻型逐步清退', '红利ETF可继续'], jp: ['25-40%へ圧縮', '攻撃型段階的撤退', '高配当ETF継続可'] },
+        5: { us: ['仅保留0-15%极低仓', '仅限红利防御型', '现金为王'], jp: ['0-15%極低ポジション', '防御型ETFのみ', 'キャッシュ・イズ・キング'] }
+    };
+    const sellData = {
+        1: { us: ['此档位禁止卖出', '除非触发组合-25%止损', '耐心持有'], jp: ['売却禁止', '組合-25%止損のみ', '忍耐保有'] },
+        2: { us: ['不主动卖出', '仅止损触发时被动减', '子策略止损: -8%'], jp: ['自発的売却なし', '止損のみ反応', '個別止損: -7%'] },
+        3: { us: ['到达止盈目标及时卖', '监控AIAE走向', '接近上档做准备'], jp: ['利確目標で売却', 'AIAE動向監視', '上昇接近で準備'] },
+        4: { us: ['<b>每周减5%总仓位</b>', '优先清退高波动', '3-4周完成减仓'], jp: ['<b>毎週5%ずつ減倉</b>', '高ボラ銘柄から撤退', '3-4週間で完了'] },
+        5: { us: ['<b>3天内完成清仓</b>', '无例外，不抄底', '强制执行，无论盈亏'], jp: ['<b>3日以内に完全撤退</b>', '例外なし・底打ち買い禁止', '損益問わず強制執行'] }
+    };
+
+    const $buyList = document.getElementById('gaiae-az-buy-list');
+    const $holdList = document.getElementById('gaiae-az-hold-list');
+    const $sellList = document.getElementById('gaiae-az-sell-list');
+
+    function makeList(data, usR, jpR) {
+        const ud = data[usR] || data[3];
+        const jd = data[jpR] || data[3];
+        return '<li class="az-region-label" style="color:#3b82f6">' + usLabel + '</li>' +
+            ud.us.map(t => '<li>' + t + '</li>').join('') +
+            '<li class="az-region-label" style="color:#dc2626">' + jpLabel + '</li>' +
+            jd.jp.map(t => '<li>' + t + '</li>').join('');
+    }
+
+    if ($buyList) $buyList.innerHTML = makeList(buyData, usRegime, jpRegime);
+    if ($holdList) $holdList.innerHTML = makeList(holdData, usRegime, jpRegime);
+    if ($sellList) $sellList.innerHTML = makeList(sellData, usRegime, jpRegime);
+}
+
+function renderGAIAEHistoryChart(usChart, jpChart) {
+    const el = document.getElementById('gaiae-history-chart');
+    if (!el || typeof echarts === 'undefined') return;
+    if (window._gaiaeHistChart) window._gaiaeHistChart.dispose();
+    window._gaiaeHistChart = echarts.init(el);
+
+    // Use US chart dates as x-axis (it has more data points typically)
+    const usDates = usChart ? usChart.dates : [];
+    const usValues = usChart ? usChart.values : [];
+    const jpDates = jpChart ? jpChart.dates : [];
+    const jpValues = jpChart ? jpChart.values : [];
+
+    // Merge dates
+    const allDates = [...new Set([...usDates, ...jpDates])].sort();
+    const usMap = {}; usDates.forEach((d, i) => usMap[d] = usValues[i]);
+    const jpMap = {}; jpDates.forEach((d, i) => jpMap[d] = jpValues[i]);
+
+    const usData = allDates.map(d => usMap[d] ?? null);
+    const jpData = allDates.map(d => jpMap[d] ?? null);
+
+    // US five-tier mark areas
+    const markAreaData = [
+        [{ yAxis: 0, itemStyle: { color: 'rgba(16,185,129,0.05)' } }, { yAxis: 15 }],
+        [{ yAxis: 15, itemStyle: { color: 'rgba(59,130,246,0.04)' } }, { yAxis: 20 }],
+        [{ yAxis: 20, itemStyle: { color: 'rgba(234,179,8,0.04)' } }, { yAxis: 28 }],
+        [{ yAxis: 28, itemStyle: { color: 'rgba(249,115,22,0.05)' } }, { yAxis: 36 }],
+        [{ yAxis: 36, itemStyle: { color: 'rgba(239,68,68,0.05)' } }, { yAxis: 50 }],
+    ];
+
+    window._gaiaeHistChart.setOption({
+        backgroundColor: 'transparent',
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(15,23,42,0.95)',
+            borderColor: 'rgba(245,158,11,0.3)',
+            textStyle: { color: '#e2e8f0', fontSize: 11 },
+        },
+        legend: { top: 0, textStyle: { color: '#94a3b8', fontSize: 10 } },
+        grid: { left: 50, right: 20, top: 30, bottom: 30 },
+        xAxis: {
+            type: 'category', data: allDates, boundaryGap: false,
+            axisLabel: { color: '#64748b', fontSize: 8, formatter: function(v) { return v.substring(0, 7); } },
+            axisLine: { lineStyle: { color: '#334155' } }
+        },
+        yAxis: {
+            type: 'value', min: 0, max: 50,
+            axisLabel: { color: '#64748b', fontSize: 8, formatter: function(v) { return v + '%'; } },
+            splitLine: { lineStyle: { color: 'rgba(255,255,255,0.04)' } }
+        },
+        series: [
+            {
+                name: '🇺🇸 US AIAE', type: 'line', data: usData, smooth: true, connectNulls: true,
+                symbol: 'circle', symbolSize: 8,
+                lineStyle: { color: '#3b82f6', width: 2.5, shadowColor: 'rgba(59,130,246,0.3)', shadowBlur: 6 },
+                itemStyle: { color: '#3b82f6', borderColor: '#0f172a', borderWidth: 2 },
+                areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                    colorStops: [{ offset: 0, color: 'rgba(59,130,246,0.15)' }, { offset: 1, color: 'rgba(59,130,246,0)' }]
+                }},
+                label: { show: true, fontSize: 7, color: '#3b82f6', formatter: function(p) { return p.value !== null ? p.value + '%' : ''; }, position: 'top' },
+                markArea: { silent: true, data: markAreaData },
+            },
+            {
+                name: '🇯🇵 JP AIAE', type: 'line', data: jpData, smooth: true, connectNulls: true,
+                symbol: 'diamond', symbolSize: 8,
+                lineStyle: { color: '#dc2626', width: 2.5, shadowColor: 'rgba(220,38,38,0.3)', shadowBlur: 6 },
+                itemStyle: { color: '#dc2626', borderColor: '#0f172a', borderWidth: 2 },
+                areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                    colorStops: [{ offset: 0, color: 'rgba(220,38,38,0.12)' }, { offset: 1, color: 'rgba(220,38,38,0)' }]
+                }},
+                label: { show: true, fontSize: 7, color: '#dc2626', formatter: function(p) { return p.value !== null ? p.value + '%' : ''; }, position: 'bottom' },
+            }
+        ]
+    });
+}
+

@@ -2158,3 +2158,214 @@
     border-color: rgba(245,158,11,0.5) !important;
     color: #fbbf24 !important;
 }
+
+/* ================================================
+   AIAE V2.1 — 操作速查 + 规则解读 + 警示指标
+   ================================================ */
+
+/* ── 操作速查仪表板 ── */
+.aiae-action-dashboard {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px;
+    margin-top: 8px;
+}
+.aiae-action-card {
+    border-radius: 14px;
+    padding: 18px 16px;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+}
+.aiae-action-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+}
+.aiae-action-card:hover {
+    transform: translateY(-3px);
+}
+.aiae-action-buy {
+    background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(16,185,129,0.02));
+    border: 1px solid rgba(16,185,129,0.2);
+}
+.aiae-action-buy::before { background: linear-gradient(90deg, #10b981, #34d399); }
+.aiae-action-buy:hover { border-color: rgba(16,185,129,0.4); box-shadow: 0 8px 24px rgba(16,185,129,0.12); }
+.aiae-action-hold {
+    background: linear-gradient(135deg, rgba(234,179,8,0.08), rgba(234,179,8,0.02));
+    border: 1px solid rgba(234,179,8,0.2);
+}
+.aiae-action-hold::before { background: linear-gradient(90deg, #eab308, #fbbf24); }
+.aiae-action-hold:hover { border-color: rgba(234,179,8,0.4); box-shadow: 0 8px 24px rgba(234,179,8,0.12); }
+.aiae-action-sell {
+    background: linear-gradient(135deg, rgba(239,68,68,0.08), rgba(239,68,68,0.02));
+    border: 1px solid rgba(239,68,68,0.2);
+}
+.aiae-action-sell::before { background: linear-gradient(90deg, #ef4444, #f87171); }
+.aiae-action-sell:hover { border-color: rgba(239,68,68,0.4); box-shadow: 0 8px 24px rgba(239,68,68,0.12); }
+.aiae-action-title {
+    font-size: 0.82rem;
+    font-weight: 800;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.aiae-action-list {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    line-height: 1.9;
+    padding-left: 0;
+    list-style: none;
+    margin: 0;
+}
+.aiae-action-list li::before {
+    content: '';
+    display: inline-block;
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    margin-right: 8px;
+    vertical-align: middle;
+}
+.aiae-action-buy .aiae-action-list li::before { background: #34d399; }
+.aiae-action-hold .aiae-action-list li::before { background: #fbbf24; }
+.aiae-action-sell .aiae-action-list li::before { background: #f87171; }
+
+/* ── 警示指标面板 ── */
+.aiae-warning-panel {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: 14px;
+}
+.aiae-warning-card {
+    padding: 14px;
+    border-radius: 12px;
+    background: rgba(0,0,0,0.2);
+    border: 1px solid rgba(255,255,255,0.06);
+    transition: all 0.3s;
+    text-align: center;
+}
+.aiae-warning-card.warn-danger {
+    border-color: rgba(239,68,68,0.35);
+    background: linear-gradient(135deg, rgba(239,68,68,0.1), rgba(0,0,0,0.2));
+    animation: aiae-warn-pulse 2s ease-in-out infinite;
+}
+.aiae-warning-card.warn-caution {
+    border-color: rgba(245,158,11,0.35);
+    background: linear-gradient(135deg, rgba(245,158,11,0.08), rgba(0,0,0,0.2));
+}
+.aiae-warning-card.warn-ok {
+    border-color: rgba(16,185,129,0.2);
+}
+@keyframes aiae-warn-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
+    50% { box-shadow: 0 0 12px 2px rgba(239,68,68,0.15); }
+}
+.aiae-warn-label {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    margin-bottom: 5px;
+}
+.aiae-warn-value {
+    font-size: 1.2rem;
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+}
+.aiae-warn-threshold {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    opacity: 0.6;
+    margin-top: 3px;
+}
+.aiae-warn-bar {
+    height: 4px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 2px;
+    margin-top: 8px;
+    overflow: hidden;
+}
+.aiae-warn-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.8s ease;
+}
+
+/* ── 五档规则解读 tooltip ── */
+.aiae-regime-card .aiae-rc-tip {
+    font-size: 0.58rem;
+    color: var(--text-muted);
+    opacity: 0;
+    max-height: 0;
+    overflow: hidden;
+    transition: all 0.3s ease;
+    line-height: 1.5;
+    margin-top: 0;
+    padding: 0 2px;
+}
+.aiae-regime-card:hover .aiae-rc-tip,
+.aiae-regime-card.active .aiae-rc-tip {
+    opacity: 0.8;
+    max-height: 60px;
+    margin-top: 6px;
+}
+
+/* ── 矩阵读法指引 ── */
+.aiae-matrix-guide {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    padding: 10px 14px;
+    background: rgba(245,158,11,0.04);
+    border: 1px solid rgba(245,158,11,0.1);
+    border-radius: 8px;
+    margin-bottom: 12px;
+    line-height: 1.6;
+}
+.aiae-matrix-guide strong {
+    color: #fbbf24;
+}
+
+/* ── 历史规律总结条 ── */
+.aiae-history-summary {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 14px;
+    padding: 12px 16px;
+    background: rgba(245,158,11,0.04);
+    border: 1px solid rgba(245,158,11,0.1);
+    border-radius: 10px;
+}
+.aiae-history-stat {
+    text-align: center;
+    flex: 1;
+}
+.aiae-history-stat-label {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    margin-bottom: 3px;
+}
+.aiae-history-stat-value {
+    font-size: 1rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── 数据源解读卡片增强 ── */
+.aiae-data-card .aiae-data-explain {
+    font-size: 0.58rem;
+    color: var(--text-muted);
+    opacity: 0;
+    max-height: 0;
+    overflow: hidden;
+    transition: all 0.3s ease;
+    line-height: 1.5;
+    margin-top: 0;
+    text-align: left;
+    padding: 0 4px;
+}
+.aiae-data-card:hover .aiae-data-explain {
+    opacity: 0.7;
+    max-height: 80px;
+    margin-top: 6px;
+}

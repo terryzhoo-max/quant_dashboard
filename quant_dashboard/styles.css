@@ -180,7 +180,7 @@ body {
     padding-left: 0;
 }
 .nav-sub-group.open {
-    max-height: 200px;
+    max-height: 400px;
 }
 .nav-sub-group .nav-item {
     padding: 9px 14px 9px 16px;

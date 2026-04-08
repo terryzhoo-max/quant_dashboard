@@ -51,7 +51,8 @@
                 <a href="./eastmoney_audit.html" class="nav-item"><span class="icon">💹</span><span>东方财富</span><span class="badge-beta" style="background:rgba(37,99,235,0.15);color:#60a5fa;border-color:rgba(37,99,235,0.3);">DEEP</span></a>
                 <a href="./fii_audit.html" class="nav-item"><span class="icon">🤖</span><span>工业富联</span><span class="badge-beta" style="background:rgba(14,165,233,0.15);color:#38bdf8;border-color:rgba(14,165,233,0.3);">DEEP</span></a>
                 <a href="./wus_audit.html" class="nav-item"><span class="icon">💻</span><span>沪电股份</span><span class="badge-beta" style="background:rgba(236,72,153,0.15);color:#f472b6;border-color:rgba(236,72,153,0.3);">DEEP</span></a>
-            </div>
+            <a href="./scc_audit.html" class="nav-item"><span class="icon">📡</span><span>深南电路</span><span class="badge-beta" style="background:rgba(139,92,246,0.15);color:#a855f7;border-color:rgba(139,92,246,0.3);">DEEP</span></a>
+                </div>
             <div class="nav-group-title">账 户 管 理</div>
             <a href="./portfolio.html" class="nav-item">
                 <span class="icon">💼</span>
@@ -135,11 +136,11 @@
                     <div>
                         <div style="font-size:0.8rem; font-weight:700; color:#f59e0b; margin-bottom:12px; letter-spacing:0.03em;">五档市场状态引擎</div>
                         <div id="aiae-regime-cards" style="display:grid; grid-template-columns:repeat(5,1fr); gap:8px;">
-                            <div class="aiae-regime-card" data-regime="1"><div class="aiae-rc-emoji">🟢</div><div class="aiae-rc-name">Ⅰ级</div><div class="aiae-rc-cn">极度恐慌</div><div class="aiae-rc-range">&lt;12%</div><div class="aiae-rc-pos">90-95%</div></div>
-                            <div class="aiae-regime-card" data-regime="2"><div class="aiae-rc-emoji">🔵</div><div class="aiae-rc-name">Ⅱ级</div><div class="aiae-rc-cn">低配置区</div><div class="aiae-rc-range">12-16%</div><div class="aiae-rc-pos">70-85%</div></div>
-                            <div class="aiae-regime-card" data-regime="3"><div class="aiae-rc-emoji">🟡</div><div class="aiae-rc-name">Ⅲ级</div><div class="aiae-rc-cn">中性均衡</div><div class="aiae-rc-range">16-24%</div><div class="aiae-rc-pos">50-65%</div></div>
-                            <div class="aiae-regime-card" data-regime="4"><div class="aiae-rc-emoji">🟠</div><div class="aiae-rc-name">Ⅳ级</div><div class="aiae-rc-cn">偏热区域</div><div class="aiae-rc-range">24-32%</div><div class="aiae-rc-pos">25-40%</div></div>
-                            <div class="aiae-regime-card" data-regime="5"><div class="aiae-rc-emoji">🔴</div><div class="aiae-rc-name">Ⅴ级</div><div class="aiae-rc-cn">极度过热</div><div class="aiae-rc-range">&gt;32%</div><div class="aiae-rc-pos">0-15%</div></div>
+                            <div class="aiae-regime-card" data-regime="1"><div class="aiae-rc-emoji">🟢</div><div class="aiae-rc-name">Ⅰ级</div><div class="aiae-rc-cn">极度恐慌</div><div class="aiae-rc-range">&lt;12%</div><div class="aiae-rc-pos">90-95%</div><div class="aiae-rc-tip">历史案例: 2008年1664点 · 满仓进攻，分3批建仓</div></div>
+                            <div class="aiae-regime-card" data-regime="2"><div class="aiae-rc-emoji">🔵</div><div class="aiae-rc-name">Ⅱ级</div><div class="aiae-rc-cn">低配置区</div><div class="aiae-rc-range">12-16%</div><div class="aiae-rc-pos">70-85%</div><div class="aiae-rc-tip">历史案例: 2024年2635点 · 标准建仓，不因波动减仓</div></div>
+                            <div class="aiae-regime-card" data-regime="3"><div class="aiae-rc-emoji">🟡</div><div class="aiae-rc-name">Ⅲ级</div><div class="aiae-rc-cn">中性均衡</div><div class="aiae-rc-range">16-24%</div><div class="aiae-rc-pos">50-65%</div><div class="aiae-rc-tip">市场正常运转 · 有纪律持有，到了就卖</div></div>
+                            <div class="aiae-regime-card" data-regime="4"><div class="aiae-rc-emoji">🟠</div><div class="aiae-rc-name">Ⅳ级</div><div class="aiae-rc-cn">偏热区域</div><div class="aiae-rc-range">24-32%</div><div class="aiae-rc-pos">25-40%</div><div class="aiae-rc-tip">历史案例: 2021创业板泡沫 · 每周减5%仓位</div></div>
+                            <div class="aiae-regime-card" data-regime="5"><div class="aiae-rc-emoji">🔴</div><div class="aiae-rc-name">Ⅴ级</div><div class="aiae-rc-cn">极度过热</div><div class="aiae-rc-range">&gt;32%</div><div class="aiae-rc-pos">0-15%</div><div class="aiae-rc-tip">历史案例: 2007年6124点 · 3天清仓，无例外</div></div>
                         </div>
                         <!-- 数据来源面板 -->
                         <div style="margin-top:14px; display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
@@ -147,18 +148,79 @@
                                 <div class="aiae-data-label">AIAE_简 (月频)</div>
                                 <div id="aiae-data-simple" class="aiae-data-value" style="color:#f59e0b;">—</div>
                                 <div class="aiae-data-hint">总市值/(总市值+M2)</div>
+                                <div class="aiae-data-explain">权重50% · A股证券化率核心指标。M2每月15日发布，滞后约2周。历史均值18-20%</div>
                             </div>
                             <div class="aiae-data-card">
                                 <div class="aiae-data-label">融资热度 (日频)</div>
                                 <div id="aiae-data-margin" class="aiae-data-value" style="color:#f97316;">—</div>
                                 <div class="aiae-data-hint">融资余额/总市值</div>
+                                <div class="aiae-data-explain">权重20% · 杠杆资金温度计。正常1.5-3.5%，&gt;3.5%散户加杠杆入场=危险信号</div>
                             </div>
                             <div class="aiae-data-card">
                                 <div class="aiae-data-label">基金仓位 (季频)</div>
                                 <div id="aiae-data-fund" class="aiae-data-value" style="color:#eab308;">—</div>
                                 <div class="aiae-data-hint">偏股基金中位数</div>
+                                <div class="aiae-data-explain">权重30% · 季报滞后2个月。&gt;90%机构弹尽粮绝=顶部信号，&lt;70%机构低配=底部区域</div>
                             </div>
                         </div>
+                        <!-- 三大警示指标 -->
+                        <div class="aiae-warning-panel" id="aiae-warning-panel">
+                            <div class="aiae-warning-card warn-ok" id="aiae-warn-margin">
+                                <div class="aiae-warn-label">🔥 融资热度</div>
+                                <div class="aiae-warn-value" id="aiae-warn-margin-val" style="color:#94a3b8;">—</div>
+                                <div class="aiae-warn-threshold">警戒: &gt;3.5%</div>
+                                <div class="aiae-warn-bar"><div class="aiae-warn-bar-fill" id="aiae-warn-margin-bar" style="width:0%;background:#10b981;"></div></div>
+                            </div>
+                            <div class="aiae-warning-card warn-ok" id="aiae-warn-slope">
+                                <div class="aiae-warn-label">📐 月环比斜率</div>
+                                <div class="aiae-warn-value" id="aiae-warn-slope-val" style="color:#94a3b8;">—</div>
+                                <div class="aiae-warn-threshold">警戒: |±1.5|</div>
+                                <div class="aiae-warn-bar"><div class="aiae-warn-bar-fill" id="aiae-warn-slope-bar" style="width:0%;background:#10b981;"></div></div>
+                            </div>
+                            <div class="aiae-warning-card warn-ok" id="aiae-warn-fund">
+                                <div class="aiae-warn-label">🏦 基金仓位</div>
+                                <div class="aiae-warn-value" id="aiae-warn-fund-val" style="color:#94a3b8;">—</div>
+                                <div class="aiae-warn-threshold">警戒: &gt;90%</div>
+                                <div class="aiae-warn-bar"><div class="aiae-warn-bar-fill" id="aiae-warn-fund-bar" style="width:0%;background:#10b981;"></div></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ZONE 1.5 · 操作速查仪表板 -->
+            <div class="aiae-zone-header" style="--aiae-zone-color:#10b981;">
+                <span class="zone-icon">📋</span>
+                <div>
+                    <div class="zone-title">操作速查 · 当前档位指令</div>
+                    <div class="zone-sub">买入区 · 持有区 · 卖出区 — 随 AIAE 五档状态自动切换</div>
+                </div>
+            </div>
+            <section class="st-section">
+                <div class="aiae-action-dashboard" id="aiae-action-dashboard">
+                    <div class="aiae-action-card aiae-action-buy">
+                        <div class="aiae-action-title" style="color:#10b981;">✅ 买入区 · Ⅰ-Ⅱ级触发</div>
+                        <ul class="aiae-action-list" id="aiae-action-buy-list">
+                            <li>AIAE &lt;16% 进入标准建仓区</li>
+                            <li>优先配置宽基ETF（300/50/500）</li>
+                            <li>Ⅰ级恐慌时分3批越跌越买</li>
+                        </ul>
+                    </div>
+                    <div class="aiae-action-card aiae-action-hold">
+                        <div class="aiae-action-title" style="color:#eab308;">⏸️ 持有区 · Ⅲ级均衡</div>
+                        <ul class="aiae-action-list" id="aiae-action-hold-list">
+                            <li>维持目标仓位50-65%</li>
+                            <li>有纪律持有，到目标价就卖</li>
+                            <li>监控AIAE是否向24%靠近</li>
+                        </ul>
+                    </div>
+                    <div class="aiae-action-card aiae-action-sell">
+                        <div class="aiae-action-title" style="color:#ef4444;">🚨 卖出区 · Ⅳ-Ⅴ级触发</div>
+                        <ul class="aiae-action-list" id="aiae-action-sell-list">
+                            <li>AIAE &gt;24% 启动系统减仓</li>
+                            <li>Ⅳ级每周减5%总仓位</li>
+                            <li>Ⅴ级3天内完成清仓</li>
+                        </ul>
                     </div>
                 </div>
             </section>
@@ -175,7 +237,8 @@
                 <div style="display:grid; grid-template-columns:1.2fr 1fr; gap:20px;">
                     <!-- 5×4 矩阵表 -->
                     <div class="glass-panel" style="padding:22px;">
-                        <div style="font-size:0.8rem; font-weight:700; color:#f59e0b; margin-bottom:14px; letter-spacing:0.03em;">AIAE × ERP 仓位交叉矩阵</div>
+                        <div style="font-size:0.8rem; font-weight:700; color:#f59e0b; margin-bottom:10px; letter-spacing:0.03em;">AIAE × ERP 仓位交叉矩阵</div>
+                        <div class="aiae-matrix-guide">📖 <strong>读法</strong>：先找当前AIAE档位（列） → 再找ERP区间（行） → 交叉格=建议仓位。ERP越高说明股票相对债券越便宜。</div>
                         <table class="aiae-matrix-table" id="aiae-matrix-table">
                             <thead>
                                 <tr><th></th><th>Ⅰ级<br><span>&lt;12%</span></th><th>Ⅱ级<br><span>12-16%</span></th><th>Ⅲ级<br><span>16-24%</span></th><th>Ⅳ级<br><span>24-32%</span></th><th>Ⅴ级<br><span>&gt;32%</span></th></tr>
@@ -241,6 +304,28 @@
             </div>
             <section class="st-section">
                 <div class="glass-panel" style="padding:24px;">
+                    <div class="aiae-history-summary" id="aiae-history-summary">
+                        <div class="aiae-history-stat">
+                            <div class="aiae-history-stat-label">历史最低</div>
+                            <div class="aiae-history-stat-value" style="color:#10b981;">8.2%</div>
+                        </div>
+                        <div class="aiae-history-stat">
+                            <div class="aiae-history-stat-label">20年均值</div>
+                            <div class="aiae-history-stat-value" style="color:#94a3b8;">18.5%</div>
+                        </div>
+                        <div class="aiae-history-stat">
+                            <div class="aiae-history-stat-label">当前值</div>
+                            <div class="aiae-history-stat-value" id="aiae-hist-current" style="color:#f59e0b;">—</div>
+                        </div>
+                        <div class="aiae-history-stat">
+                            <div class="aiae-history-stat-label">历史最高</div>
+                            <div class="aiae-history-stat-value" style="color:#ef4444;">42.5%</div>
+                        </div>
+                        <div class="aiae-history-stat">
+                            <div class="aiae-history-stat-label">核心规律</div>
+                            <div class="aiae-history-stat-value" style="color:#60a5fa;font-size:0.72rem;line-height:1.4;">Ⅰ级买入后1年<br>平均+90%</div>
+                        </div>
+                    </div>
                     <div id="aiae-history-chart" style="width:100%; height:380px;"></div>
                 </div>
             </section>

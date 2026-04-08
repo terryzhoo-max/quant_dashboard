@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AlphaCore · 比亚迪(BYD) 深度穿透审计报告</title>
-    <meta name="description" content="AlphaCore 深度审计报告 — 比亚迪(002594.SZ / 1211.HK) 五维穿透式审计：财务健康·技术护城河·竞争格局·估值合理性·成长动能">
+    <title>AlphaCore · 深南电路(SCC) 深度穿透审计报告</title>
+    <meta name="description" content="AlphaCore 深度审计报告 — 深南电路(002916.SZ) 五维穿透式审计：AI算力护城河·财务健康·产能良率·汽车电子·估值周期">
     <link rel="stylesheet" href="./styles.css">
     <link rel="stylesheet" href="./audit.css">
-    <link rel="stylesheet" href="./byd_audit.css">
+    <link rel="stylesheet" href="./scc_audit.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
     <script src="./echarts.min.js"></script>
 </head>
@@ -15,8 +15,8 @@
     <!-- Ambient Orbs -->
     <div class="audit-orb audit-orb-1"></div>
     <div class="audit-orb audit-orb-2"></div>
-    <div class="byd-orb byd-orb-3"></div>
-    <div class="byd-orb byd-orb-4"></div>
+    <div class="scc-orb scc-orb-3"></div>
+    <div class="scc-orb scc-orb-4"></div>
 
     <aside class="sidebar">
         <div class="logo"><div class="logo-icon"></div><h1>AlphaCore</h1></div>
@@ -36,11 +36,10 @@
             <div class="nav-sub-group open">
                 <a href="./smic_audit.html" class="nav-item"><span class="icon">🔬</span><span>中芯国际</span><span class="badge-beta" style="background:rgba(239,68,68,0.15);color:#f87171;border-color:rgba(239,68,68,0.3);">DEEP</span></a>
                 <a href="./zijin_audit.html" class="nav-item"><span class="icon">⛏️</span><span>紫金矿业</span><span class="badge-beta" style="background:rgba(245,158,11,0.15);color:#fbbf24;border-color:rgba(245,158,11,0.3);">DEEP</span></a>
-                <a href="./byd_audit.html" class="nav-item active"><span class="icon">🚗</span><span>比亚迪</span><span class="badge-beta" style="background:rgba(16,185,129,0.15);color:#34d399;border-color:rgba(16,185,129,0.3);">DEEP</span></a>
+                <a href="./byd_audit.html" class="nav-item"><span class="icon">🚗</span><span>比亚迪</span><span class="badge-beta" style="background:rgba(16,185,129,0.15);color:#34d399;border-color:rgba(16,185,129,0.3);">DEEP</span></a>
                 <a href="./eastmoney_audit.html" class="nav-item"><span class="icon">💹</span><span>东方财富</span><span class="badge-beta" style="background:rgba(37,99,235,0.15);color:#60a5fa;border-color:rgba(37,99,235,0.3);">DEEP</span></a>
                 <a href="./fii_audit.html" class="nav-item"><span class="icon">🤖</span><span>工业富联</span><span class="badge-beta" style="background:rgba(14,165,233,0.15);color:#38bdf8;border-color:rgba(14,165,233,0.3);">DEEP</span></a>
-                <a href="./wus_audit.html" class="nav-item"><span class="icon">💻</span><span>沪电股份</span><span class="badge-beta" style="background:rgba(236,72,153,0.15);color:#f472b6;border-color:rgba(236,72,153,0.3);">DEEP</span></a>
-            <a href="./scc_audit.html" class="nav-item"><span class="icon">📡</span><span>深南电路</span><span class="badge-beta" style="background:rgba(139,92,246,0.15);color:#a855f7;border-color:rgba(139,92,246,0.3);">DEEP</span></a>
+                            <a href="./scc_audit.html" class="nav-item active"><span class="icon">📡</span><span>深南电路</span><span class="badge-beta" style="background:rgba(139,92,246,0.15);color:#a855f7;border-color:rgba(139,92,246,0.3);">DEEP</span></a>
                 </div>
             <div class="nav-group-title">账 户 管 理</div>
             <a href="./portfolio.html" class="nav-item"><span class="icon">💼</span><span>投资组合</span></a>
@@ -55,8 +54,8 @@
         <header class="topbar">
             <div class="search-bar"><input type="text" placeholder="搜索审计维度、财务指标及风险因子..."></div>
             <div class="actions">
-                <span class="byd-topbar-badge">🚗 比亚迪 002594.SZ</span>
-                <span style="font-size:0.78rem;color:#34d399;background:rgba(16,185,129,0.08);padding:4px 14px;border-radius:8px;border:1px solid rgba(16,185,129,0.15);font-weight:600;">🔋 穿透审计 V3.0</span>
+                <span class="scc-topbar-badge">💻 深南电路 002916.SZ</span>
+                <span style="font-size:0.78rem;color:#f472b6;background:rgba(236,72,153,0.08);padding:4px 14px;border-radius:8px;border:1px solid rgba(236,72,153,0.15);font-weight:600;">🧠 穿透审计 V3.0</span>
                 <span id="audit-time" style="font-size:0.7rem;color:#64748b;margin-left:6px;"></span>
             </div>
         </header>
@@ -68,44 +67,43 @@
                 <div class="audit-skeleton skel-hero" style="margin-bottom:14px;"></div>
                 <div class="audit-skeleton skel-kpi"></div>
                 <div class="audit-skeleton skel-overview"></div>
-                <div class="loading-progress-bar"><div class="loading-progress-fill"></div></div>
-                <div class="loading-status">🚗 正在执行比亚迪五维穿透审计… 财务健康 · 技术护城河 · 竞争格局 · 估值合理性 · 成长动能</div>
+                <div class="loading-progress-bar"><div class="loading-progress-fill" style="background:linear-gradient(90deg,#ec4899,#8b5cf6);"></div></div>
+                <div class="loading-status">🧠 正在执行深南电路五维穿透审计… AI算力护城河 · 财务健康 · 产能良率 · 汽车电子 · 估值周期</div>
             </div>
 
             <!-- Company Identity Banner -->
-            <div class="byd-identity-banner byd-animate-in" id="byd-identity" style="display:none;">
-                <div class="byd-id-left">
-                    <div class="byd-logo-ring">
-                        <span class="byd-logo-text">BYD</span>
+            <div class="scc-identity-banner scc-animate-in" id="scc-identity" style="display:none;">
+                <div class="scc-id-left">
+                    <div class="scc-logo-ring">
+                        <span class="scc-logo-text">SCC</span>
                     </div>
-                    <div class="byd-id-info">
-                        <h2 class="byd-company-name">比亚迪股份有限公司</h2>
-                        <div class="byd-company-en">BYD Company Limited</div>
-                        <div class="byd-tickers">
-                            <span class="byd-ticker a-share">002594.SZ</span>
-                            <span class="byd-ticker h-share">1211.HK</span>
-                            <span class="byd-sector-tag">新能源汽车</span>
-                            <span class="byd-sector-tag">动力电池</span>
-                            <span class="byd-sector-tag">垂直整合</span>
+                    <div class="scc-id-info">
+                        <h2 class="scc-company-name">深南电路股份有限公司</h2>
+                        <div class="scc-company-en">Shennan Circuits Co., Ltd. (深南电路)</div>
+                        <div class="scc-tickers">
+                            <span class="scc-ticker a-share">002916.SZ</span>
+                            <span class="scc-sector-tag">AI算力PCB</span>
+                            <span class="scc-sector-tag">英伟达核心供链</span>
+                            <span class="scc-sector-tag">800G光通信</span>
                         </div>
                     </div>
                 </div>
-                <div class="byd-id-right">
-                    <div class="byd-quick-stat">
-                        <span class="byd-qs-label">市值(A)</span>
-                        <span class="byd-qs-value" id="qs-mcap">--</span>
+                <div class="scc-id-right">
+                    <div class="scc-quick-stat">
+                        <span class="scc-qs-label">市值</span>
+                        <span class="scc-qs-value" id="qs-mcap">--</span>
                     </div>
-                    <div class="byd-quick-stat">
-                        <span class="byd-qs-label">股价</span>
-                        <span class="byd-qs-value" id="qs-price">--</span>
+                    <div class="scc-quick-stat">
+                        <span class="scc-qs-label">股价</span>
+                        <span class="scc-qs-value" id="qs-price">--</span>
                     </div>
-                    <div class="byd-quick-stat">
-                        <span class="byd-qs-label">PE(TTM)</span>
-                        <span class="byd-qs-value" id="qs-pe">--</span>
+                    <div class="scc-quick-stat">
+                        <span class="scc-qs-label">PE(TTM)</span>
+                        <span class="scc-qs-value" id="qs-pe">--</span>
                     </div>
-                    <div class="byd-quick-stat">
-                        <span class="byd-qs-label">PB</span>
-                        <span class="byd-qs-value" id="qs-pb">--</span>
+                    <div class="scc-quick-stat">
+                        <span class="scc-qs-label">PB</span>
+                        <span class="scc-qs-value" id="qs-pb">--</span>
                     </div>
                 </div>
             </div>
@@ -118,7 +116,7 @@
             </div>
 
             <!-- Trust Score Hero -->
-            <div class="trust-hero glass-panel byd-animate-in" id="trust-hero" style="display:none;">
+            <div class="trust-hero glass-panel scc-animate-in" id="trust-hero" style="display:none;">
                 <div class="trust-gauge">
                     <div class="trust-gauge-chart" id="trust-gauge-chart"></div>
                 </div>
@@ -127,7 +125,7 @@
                         <span class="trust-big-score" id="trust-big-score">--</span>
                         <span class="trust-grade-badge" id="trust-grade-badge">--</span>
                     </div>
-                    <div class="trust-title">投资可行性综合评估</div>
+                    <div class="trust-title">AI算力护城河综合评定</div>
                     <div class="trust-sub" id="trust-verdict">正在执行五维穿透审计...</div>
                     <div class="trust-stats" id="trust-stats">
                         <span class="trust-stat pass" id="stat-pass">✅ -- 优势</span>
@@ -140,10 +138,10 @@
             </div>
 
             <!-- KPI Dashboard -->
-            <div class="byd-kpi-dashboard" id="byd-kpi-dashboard"></div>
+            <div class="scc-kpi-dashboard" id="scc-kpi-dashboard"></div>
 
             <!-- Section: 五维穿透 -->
-            <div class="byd-section-divider"></div>
+            <div class="scc-section-divider"></div>
 
             <!-- Radar + Module Cards -->
             <div class="audit-overview" id="audit-overview" style="display:none;">
@@ -165,46 +163,46 @@
             </div>
 
             <!-- Section: 财务深研 -->
-            <div class="byd-section-divider"></div>
+            <div class="scc-section-divider"></div>
 
             <!-- Financial Deep-Dive Charts -->
-            <div class="byd-charts-grid" id="byd-charts-grid" style="display:none;">
-                <div class="byd-chart-panel glass-panel">
-                    <div class="byd-chart-title">📊 营收与利润趋势 (2019-2025E)</div>
-                    <div class="byd-chart-canvas" id="chart-revenue"></div>
+            <div class="scc-charts-grid" id="scc-charts-grid" style="display:none;">
+                <div class="scc-chart-panel glass-panel">
+                    <div class="scc-chart-title">📊 营收与利润趋势 (2019-2025E)</div>
+                    <div class="scc-chart-canvas" id="chart-revenue"></div>
                 </div>
-                <div class="byd-chart-panel glass-panel">
-                    <div class="byd-chart-title">📈 毛利率与ROE趋势</div>
-                    <div class="byd-chart-canvas" id="chart-margins"></div>
+                <div class="scc-chart-panel glass-panel">
+                    <div class="scc-chart-title">📈 毛利率与产能利用率</div>
+                    <div class="scc-chart-canvas" id="chart-margins"></div>
                 </div>
-                <div class="byd-chart-panel glass-panel">
-                    <div class="byd-chart-title">🚗 新能源汽车销量趋势</div>
-                    <div class="byd-chart-canvas" id="chart-sales"></div>
+                <div class="scc-chart-panel glass-panel">
+                    <div class="scc-chart-title">🔬 研发投入 vs 资本开支</div>
+                    <div class="scc-chart-canvas" id="chart-rdcapex"></div>
                 </div>
-                <div class="byd-chart-panel glass-panel">
-                    <div class="byd-chart-title">🔋 营收结构 (按业务板块)</div>
-                    <div class="byd-chart-canvas" id="chart-segments"></div>
+                <div class="scc-chart-panel glass-panel">
+                    <div class="scc-chart-title">🌐 AI驱动的产品结构跃迁</div>
+                    <div class="scc-chart-canvas" id="chart-nodes"></div>
                 </div>
             </div>
 
             <!-- Section: 风险与研判 -->
-            <div class="byd-section-divider"></div>
+            <div class="scc-section-divider"></div>
 
             <!-- Risk Matrix -->
-            <div class="byd-risk-matrix glass-panel byd-animate-in" id="byd-risk-matrix" style="display:none;">
-                <div class="byd-rm-header">
+            <div class="scc-risk-matrix glass-panel scc-animate-in" id="scc-risk-matrix" style="display:none;">
+                <div class="scc-rm-header">
                     <span>⚡ 核心风险矩阵</span>
-                    <span class="byd-rm-badge" id="rm-badge">--</span>
+                    <span class="scc-rm-badge" id="rm-badge">--</span>
                 </div>
-                <div class="byd-rm-body" id="byd-rm-body"></div>
+                <div class="scc-rm-body" id="scc-rm-body"></div>
             </div>
 
             <!-- Investment Verdict -->
-            <div class="byd-verdict-panel glass-panel byd-animate-in" id="byd-verdict" style="display:none;">
-                <div class="byd-verdict-header">
+            <div class="scc-verdict-panel glass-panel scc-animate-in" id="scc-verdict" style="display:none;">
+                <div class="scc-verdict-header">
                     <span>🎯 投资研判结论</span>
                 </div>
-                <div class="byd-verdict-body" id="byd-verdict-body"></div>
+                <div class="scc-verdict-body" id="scc-verdict-body"></div>
             </div>
 
             <!-- Audit Timeline -->
@@ -219,11 +217,11 @@
             <!-- Footer -->
             <div class="audit-footer">
                 <div class="footer-summary">
-                    <span>🚗 AlphaCore 个股穿透审计终端 V3.0</span>
+                    <span>💻 AlphaCore 个股穿透审计终端 V3.0</span>
                     <span style="margin-left:8px;" id="footer-time">· 等待审计</span>
                     <span class="footer-urgent" id="footer-urgent"></span>
                 </div>
-                <button class="audit-btn" id="audit-refresh-btn" onclick="runBYDAudit()">
+                <button class="audit-btn" id="audit-refresh-btn" onclick="runSCCAudit()">
                     <span class="spinner" id="audit-spinner"></span>
                     🔄 重新审计
                 </button>
@@ -231,6 +229,6 @@
         </div>
     </main>
 
-    <script src="./byd_audit.js"></script>
+    <script src="./scc_audit.js"></script>
 </body>
 </html>
