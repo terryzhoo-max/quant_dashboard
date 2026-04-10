@@ -142,6 +142,11 @@ function updateDashboard(marketData) {
         }
     }
     
+    // 3.5 AIAE 温度计渲染
+    if (marketData.macro_cards && marketData.macro_cards.aiae_thermometer) {
+        renderAIAEThermometer(marketData.macro_cards.aiae_thermometer);
+    }
+
     // 4. V6.0 情绪与持仓枢纽渲染 (Sentiment & Position Hub)
     if (marketData.macro_cards && marketData.macro_cards.market_temp) {
         renderPositionHub(marketData.macro_cards.market_temp);
@@ -448,6 +453,7 @@ function showFallbackData() {
             signal: { value: "MR 2买/3卖 · ERP 极度低估", trend: "DT 5/8趋 · AIAE 中性均衡 · MOM AI领涨", status: "up" },
             erp: { value: "3.5%", trend: "极度低估", status: "up" },
             regime_banner: { regime: "🟠 震荡偏多", temp: 52.3, advice: "50-65% (中性偏多)", vix: 20.15, vix_label: "🟡 正常震荡", z_capital: 0.8, aiae_regime: 3, aiae_regime_cn: "中性均衡", aiae_cap: 65, aiae_v1: 22.3 },
+            aiae_thermometer: { aiae_v1: 22.3, regime: 3, regime_cn: "中性均衡", regime_emoji: "🟡", regime_color: "#eab308", regime_name: "Regime III", cap: 65, slope: 0.3, slope_direction: "rising", margin_heat: 2.1, fund_position: 82.5, aiae_simple: 19.8, erp_value: 3.5, status: "fallback" },
             market_temp: {
                 value: 52.3, label: "温暖 | 极度低估", advice: "55% (趋势共振)",
                 regime_name: "平衡模式", mindset: "⚖️ 仓位中型，等待分歧",
@@ -455,9 +461,9 @@ function showFallbackData() {
                 hub_confidence: 72,
                 hub_composite: 62.5,
                 hub_factors: {
-                    vix_fear:     { score: 78, weight: 0.25, label: "恐慌低位" },
-                    capital_flow: { score: 63, weight: 0.15, label: "资金中性" },
-                    macro_temp:   { score: 48, weight: 0.15, label: "宏观中性" },
+                    vix_fear:     { score: 78, weight: 0.30, label: "恐慌低位" },
+                    capital_flow: { score: 63, weight: 0.20, label: "资金中性" },
+                    macro_temp:   { score: 48, weight: 0.20, label: "宏观中性" },
                     erp_value:    { score: 85, weight: 0.15, label: "极度低估" },
                     signal_sync:  { score: 55, weight: 0.15, label: "策略分歧" },
                     aiae_temp:    { score: 55, weight: 0.15, label: "中性均衡" }
@@ -721,6 +727,151 @@ function renderERPDashboardChart(chart) {
 }
 
 // ERP 图表响应式 resize
+let _aiaeThermGauge = null;
 window.addEventListener('resize', () => {
     if (_erpDashboardChart) _erpDashboardChart.resize();
+    if (_aiaeThermGauge) try { _aiaeThermGauge.resize(); } catch(e) {}
 });
+
+// ====================================================================
+//  AIAE 温度计 · 量化总览精简渲染引擎
+// ====================================================================
+
+function renderAIAEThermometer(d) {
+    if (!d) return;
+    const el = (id) => document.getElementById(id);
+
+    // ── 仪表盘大字 ──
+    const v1 = d.aiae_v1 || 0;
+    if (el('aiae-thermo-val')) el('aiae-thermo-val').textContent = v1.toFixed(1);
+
+    // ── ECharts 小仪表盘 ──
+    try {
+        const gaugeEl = el('aiae-thermo-gauge');
+        if (gaugeEl && typeof echarts !== 'undefined') {
+            if (_aiaeThermGauge) _aiaeThermGauge.dispose();
+            _aiaeThermGauge = echarts.init(gaugeEl);
+            const rc = d.regime_color || '#eab308';
+            _aiaeThermGauge.setOption({
+                series: [{
+                    type: 'gauge',
+                    startAngle: 200,
+                    endAngle: -20,
+                    min: 0,
+                    max: 50,
+                    pointer: {
+                        show: true, length: '55%', width: 3.5,
+                        itemStyle: { color: rc, shadowColor: rc, shadowBlur: 6 },
+                        icon: 'triangle'
+                    },
+                    anchor: {
+                        show: true, size: 8,
+                        itemStyle: { color: '#0f172a', borderColor: rc, borderWidth: 2 }
+                    },
+                    axisLine: {
+                        lineStyle: {
+                            width: 12,
+                            color: [
+                                [0.24, '#10b981'], [0.32, '#3b82f6'],
+                                [0.48, '#eab308'], [0.64, '#f97316'], [1, '#ef4444']
+                            ]
+                        }
+                    },
+                    axisTick: { length: 6, distance: -12, lineStyle: { color: 'auto', width: 1 } },
+                    splitLine: { length: 10, distance: -12, lineStyle: { color: 'auto', width: 1.5 } },
+                    splitNumber: 5,
+                    axisLabel: {
+                        distance: -30, color: '#64748b', fontSize: 8,
+                        formatter: function(val) {
+                            var m = {0:'0',10:'10',20:'20',30:'30',40:'40',50:'50'};
+                            return m[val] || '';
+                        }
+                    },
+                    detail: { show: false },
+                    data: [{ value: Math.min(Math.max(v1, 0), 50) }],
+                    animationDuration: 1000,
+                    animationEasingUpdate: 'cubicOut'
+                }]
+            });
+        }
+    } catch(e) { console.warn('[AIAE Thermo] gauge skip:', e); }
+
+    // ── 档位徽章 ──
+    const regimeEl = el('aiae-thermo-regime');
+    if (regimeEl) {
+        regimeEl.textContent = (d.regime_emoji || '🟡') + ' ' + (d.regime_cn || '中性均衡');
+        regimeEl.style.color = d.regime_color || '#eab308';
+        regimeEl.style.borderColor = (d.regime_color || '#eab308') + '66';
+        regimeEl.style.background = (d.regime_color || '#eab308') + '18';
+    }
+
+    // ── 月环比斜率 ──
+    const slopeEl = el('aiae-thermo-slope');
+    if (slopeEl) {
+        const slope = d.slope || 0;
+        const dir = d.slope_direction || 'flat';
+        const arrow = dir === 'rising' ? '↗' : (dir === 'falling' ? '↘' : '→');
+        slopeEl.textContent = '月环比: ' + arrow + ' ' + (slope > 0 ? '+' : '') + slope;
+        slopeEl.style.color = dir === 'rising' ? '#f97316' : (dir === 'falling' ? '#10b981' : '#94a3b8');
+    }
+
+    // ── 五档高亮 ──
+    const tiers = document.querySelectorAll('#aiae-thermo-tiers .at-tier');
+    tiers.forEach(t => {
+        const tier = parseInt(t.dataset.tier);
+        t.classList.toggle('active', tier === d.regime);
+    });
+
+    // ── Cap 仓位 ──
+    const cap = d.cap || 0;
+    if (el('aiae-thermo-cap')) el('aiae-thermo-cap').textContent = cap + '%';
+    if (el('aiae-thermo-cap-bar')) el('aiae-thermo-cap-bar').style.width = cap + '%';
+
+    // ── 三大预警 ──
+    // 融资热度
+    const mh = d.margin_heat || 0;
+    if (el('at-warn-margin')) {
+        el('at-warn-margin').textContent = mh + '%';
+        el('at-warn-margin').style.color = mh > 3.5 ? '#ef4444' : mh > 2.5 ? '#f59e0b' : '#10b981';
+    }
+    if (el('at-warn-margin-bar')) {
+        el('at-warn-margin-bar').style.width = Math.min(mh / 5 * 100, 100) + '%';
+        el('at-warn-margin-bar').style.background = mh > 3.5 ? '#ef4444' : mh > 2.5 ? '#f59e0b' : '#10b981';
+    }
+    // 月斜率
+    const absSlope = Math.abs(d.slope || 0);
+    if (el('at-warn-slope')) {
+        el('at-warn-slope').textContent = (d.slope > 0 ? '+' : '') + (d.slope || 0);
+        el('at-warn-slope').style.color = absSlope > 1.5 ? '#ef4444' : absSlope > 0.8 ? '#f59e0b' : '#10b981';
+    }
+    if (el('at-warn-slope-bar')) {
+        el('at-warn-slope-bar').style.width = Math.min(absSlope / 3 * 100, 100) + '%';
+        el('at-warn-slope-bar').style.background = absSlope > 1.5 ? '#ef4444' : absSlope > 0.8 ? '#f59e0b' : '#10b981';
+    }
+    // 基金仓位
+    const fp = d.fund_position || 0;
+    if (el('at-warn-fund')) {
+        el('at-warn-fund').textContent = fp + '%';
+        el('at-warn-fund').style.color = fp > 90 ? '#ef4444' : fp > 85 ? '#f59e0b' : '#10b981';
+    }
+    if (el('at-warn-fund-bar')) {
+        el('at-warn-fund-bar').style.width = Math.min(fp / 100 * 100, 100) + '%';
+        el('at-warn-fund-bar').style.background = fp > 90 ? '#ef4444' : fp > 85 ? '#f59e0b' : '#10b981';
+    }
+
+    // ── 数据来源 ──
+    if (el('at-src-simple')) el('at-src-simple').textContent = 'AIAE_简: ' + (d.aiae_simple || 0) + '%';
+    if (el('at-src-erp')) el('at-src-erp').textContent = 'ERP: ' + (d.erp_value || 0) + '%';
+
+    // ── 操作指引 (按档位) ──
+    const actionMap = {
+        1: '🟢 Ⅰ级恐慌 · 分3批满仓进攻，越跌越买。优先宽基ETF (300/50/500)',
+        2: '🔵 Ⅱ级低配 · 标准建仓区，按节奏买入。不因波动减仓，坚定持有',
+        3: '🟡 Ⅲ级中性 · 维持均衡仓位，有纪律持有。到目标价就卖，不贪婪',
+        4: '🟠 Ⅳ级偏热 · 禁止新开仓。每周减5%总仓位，优先清退高波动标的',
+        5: '🔴 Ⅴ级过热 · 绝对禁止买入！3天内完成清仓，无例外执行'
+    };
+    if (el('aiae-thermo-action-text')) {
+        el('aiae-thermo-action-text').textContent = actionMap[d.regime] || actionMap[3];
+    }
+}

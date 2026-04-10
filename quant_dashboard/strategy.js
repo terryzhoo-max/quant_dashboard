@@ -2519,21 +2519,23 @@ function renderERPDiagnosis(cards) {
 }
 
 // 窗口resize
-let _usErpChart = null, _jpErpChart = null;
+let _usErpChart = null, _jpErpChart = null, _hkErpChart = null;
 window.addEventListener('resize', () => {
     if (_erpGaugeChart) _erpGaugeChart.resize();
     if (_erpHistoryChart) _erpHistoryChart.resize();
     if (_usErpChart) _usErpChart.resize();
     if (_jpErpChart) _jpErpChart.resize();
+    if (_hkErpChart) _hkErpChart.resize();
     if (_usGaugeChart) _usGaugeChart.resize();
     if (_jpGaugeChart) _jpGaugeChart.resize();
+    if (_hkGaugeChart) _hkGaugeChart.resize();
 });
 
 // ============================================================
 // 🌐 海外ERP择时 V2.0 — 渲染引擎 (升级版)
 // ============================================================
 let _globalERPData = null;
-let _usGaugeChart = null, _jpGaugeChart = null;
+let _usGaugeChart = null, _jpGaugeChart = null, _hkGaugeChart = null;
 
 async function loadGlobalERP() {
     const btn = document.getElementById('global-erp-refresh');
@@ -2545,12 +2547,20 @@ async function loadGlobalERP() {
             _globalERPData = json;
             renderRegionPanel('us', json.us, '#3b82f6');
             renderRegionPanel('jp', json.jp, '#dc2626');
+            // HK panel (use hk_hsi as primary)
+            if (json.hk_hsi) {
+                renderRegionPanel('hk', json.hk_hsi, '#a855f7');
+            }
             renderGlobalAlerts('us', json.us);
             renderGlobalAlerts('jp', json.jp);
+            if (json.hk_hsi) {
+                renderGlobalAlerts('hk', json.hk_hsi);
+            }
             renderGlobalComparison(json.global_comparison);
-            renderGlobalEncyclopedia(json.us, json.jp);
+            renderGlobalEncyclopedia(json.us, json.jp, json.hk_hsi);
             if (json.us && json.us.chart) renderRegionChart('us', json.us.chart, '#3b82f6');
             if (json.jp && json.jp.chart) renderRegionChart('jp', json.jp.chart, '#dc2626');
+            if (json.hk_hsi && json.hk_hsi.chart) renderRegionChart('hk', json.hk_hsi.chart, '#a855f7');
             const t = document.getElementById('global-erp-update-time');
             if (t) t.textContent = '更新: ' + new Date().toLocaleTimeString('zh-CN');
         } else {
@@ -2569,7 +2579,7 @@ function renderGlobalAlerts(region, data) {
     const danger = alerts.filter(a => a.level === 'danger' || a.level === 'opportunity');
     if (!danger.length) { el.style.display = 'none'; return; }
     el.style.display = 'block';
-    const flag = region === 'us' ? '🇺🇸' : '🇯🇵';
+    const flag = region === 'us' ? '🇺🇸' : region === 'jp' ? '🇯🇵' : '🇭🇰';
     el.innerHTML = danger.map(a => {
         const bg = a.level === 'danger' ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.08)';
         const bc = a.level === 'danger' ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)';
@@ -2599,7 +2609,9 @@ function renderMiniGauge(elId, score, color) {
     const el = document.getElementById(elId);
     if (!el) return;
     const chart = echarts.init(el);
-    if (elId.startsWith('us')) _usGaugeChart = chart; else _jpGaugeChart = chart;
+    if (elId.startsWith('us')) _usGaugeChart = chart;
+    else if (elId.startsWith('jp')) _jpGaugeChart = chart;
+    else if (elId.startsWith('hk')) _hkGaugeChart = chart;
     chart.setOption({
         series: [{
             type: 'gauge', startAngle: 200, endAngle: -20, min: 0, max: 100,
@@ -2653,7 +2665,7 @@ function renderRegionPanel(region, data, accentColor) {
         setT('us-val-credit', (crd.spread||0).toFixed(1)+'%');
         setC('us-val-credit', (crd.spread||0)<=3?'#10b981':(crd.spread||0)<=5?'#f59e0b':'#ef4444');
         setT('us-sub-credit', (crd.raw_bps||0)+'bps '+(crd.trend==='tightening'?'收窄':'走阔'));
-    } else {
+    } else if (region === 'jp') {
         const yen = (dims.yen_trend||{}).yen_info || {};
         const vol = (dims.volatility||{}).vol_info || {};
         const rate = (dims.rate_env||{}).rate_info || {};
@@ -2666,6 +2678,27 @@ function renderRegionPanel(region, data, accentColor) {
         setT('jp-val-rate', (rate.jgb_now||0).toFixed(3)+'%');
         setC('jp-val-rate', rate.jgb_direction==='rising'?'#ef4444':'#10b981');
         setT('jp-sub-rate', rate.jgb_direction==='rising'?'上行(收紧)':rate.jgb_direction==='falling'?'下行(宽松)':'稳定');
+    } else if (region === 'hk') {
+        // HK-specific aux metrics
+        const sb = (dims.southbound||{}).sb_info || {};
+        const vol = (dims.vhsi||{}).vol_info || {};
+        const rspread = (dims.rate_spread||{}).spread_info || {};
+        // Blended Rf
+        setT('hk-val-yield', (snap.blended_rf||snap.yield_10y||0).toFixed(2)+'%');
+        // Southbound
+        const sbWeekly = sb.weekly||0;
+        setT('hk-val-sb', (sbWeekly>=0?'+':'')+sbWeekly.toFixed(0)+'亿');
+        setC('hk-val-sb', sbWeekly>0?'#10b981':'#ef4444');
+        setT('hk-sub-sb', sb.direction==='inflow'?'净流入':'净流出');
+        // HSI Vol
+        setT('hk-val-vol', (vol.current||0).toFixed(1)+'%');
+        setC('hk-val-vol', vol.regime==='extreme_panic'?'#ef4444':vol.regime==='high'?'#f59e0b':'#10b981');
+        setT('hk-sub-vol', vol.pct?(vol.pct.toFixed(0)+'%分位'):'--');
+        // Rate spread
+        const spread = rspread.spread||0;
+        setT('hk-val-spread', (spread>=0?'+':'')+spread.toFixed(1)+'%');
+        setC('hk-val-spread', spread>2.5?'#ef4444':spread>1.5?'#f59e0b':'#10b981');
+        setT('hk-sub-spread', rspread.trend==='widening'?'走阔↑':rspread.trend==='narrowing'?'收窄↓':'稳定');
     }
 
     // Signal Decision Banner V2.0
@@ -2730,7 +2763,8 @@ function renderRegionPanel(region, data, accentColor) {
     // 共振标签
     const resEl = document.getElementById('global-resonance-'+region);
     if (resEl && trade.resonance_label) {
-        resEl.textContent = (region==='us'?'🇺🇸':'🇯🇵') + ' ' + trade.resonance_label;
+        const flag = region==='us'?'🇺🇸':region==='jp'?'🇯🇵':'🇭🇰';
+        resEl.textContent = flag + ' ' + trade.resonance_label;
     }
 
     // 仪表盘 V2.0 (放大)
@@ -2769,11 +2803,12 @@ function renderRegionPanel(region, data, accentColor) {
 }
 
 // ---- 规则百科 ----
-function renderGlobalEncyclopedia(usData, jpData) {
+function renderGlobalEncyclopedia(usData, jpData, hkData) {
     const el = document.getElementById('global-encyclopedia-body');
     if (!el) return;
     const usEnc = (usData||{}).encyclopedia || {};
     const jpEnc = (jpData||{}).encyclopedia || {};
+    const hkEnc = (hkData||{}).encyclopedia || {};
     let html = '<div><h4 style="margin:0 0 8px;font-size:0.8rem;color:#60a5fa;">🇺🇸 美股五维指标</h4>';
     for (const [k,v] of Object.entries(usEnc)) {
         html += '<div style="background:rgba(59,130,246,0.04);border:1px solid rgba(59,130,246,0.15);border-radius:6px;padding:8px;margin-bottom:6px;">' +
@@ -2796,6 +2831,20 @@ function renderGlobalEncyclopedia(usData, jpData) {
             '</div></div>';
     }
     html += '</div>';
+    // HK Encyclopedia
+    if (Object.keys(hkEnc).length > 0) {
+        html += '<div style="grid-column:1/-1;"><h4 style="margin:0 0 8px;font-size:0.8rem;color:#c084fc;">🇭🇰 港股五维指标</h4><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">';
+        for (const [k,v] of Object.entries(hkEnc)) {
+            html += '<div style="background:rgba(168,85,247,0.04);border:1px solid rgba(168,85,247,0.15);border-radius:6px;padding:8px;">' +
+                '<div style="font-size:0.72rem;font-weight:600;color:#c084fc;margin-bottom:3px;">'+v.title+'</div>' +
+                '<div style="font-size:0.62rem;color:#cbd5e1;line-height:1.5;">' +
+                '<b style="color:#94a3b8;">是什么:</b> '+v.what+'<br>' +
+                '<b style="color:#94a3b8;">为什么:</b> '+v.why+'<br>' +
+                '<b style="color:#f59e0b;">⚠️ 警示:</b> <span style="color:#f59e0b;">'+v.alert+'</span>' +
+                '</div></div>';
+        }
+        html += '</div></div>';
+    }
     el.innerHTML = html;
 }
 
@@ -2805,7 +2854,7 @@ function renderGlobalComparison(gc) {
     const setT = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
     const setCS = (id,c) => { const el=document.getElementById(id); if(el) el.style.color=c; };
     const scores = {};
-    ['cn','us','jp'].forEach(r => {
+    ['cn','us','jp','hk'].forEach(r => {
         const d = gc[r]||{};
         scores[r] = d.score||0;
         setT('global-'+r+'-erp', (d.erp||0).toFixed(2)+'%');
@@ -2825,8 +2874,8 @@ function renderGlobalComparison(gc) {
     });
 
     // V2.0: 皇冠动画 — 最高分卡片获得皇冠
-    const maxScore = Math.max(scores.cn||0, scores.us||0, scores.jp||0);
-    ['cn','us','jp'].forEach(r => {
+    const maxScore = Math.max(scores.cn||0, scores.us||0, scores.jp||0, scores.hk||0);
+    ['cn','us','jp','hk'].forEach(r => {
         const card = document.getElementById('global-'+r+'-card');
         const crown = document.getElementById('global-'+r+'-crown');
         const d = gc[r]||{};
@@ -2852,9 +2901,9 @@ function renderGlobalComparison(gc) {
     const allocText = document.getElementById('global-allocation-text');
     if (allocBar && gc.allocation) {
         const alloc = gc.allocation;
-        const colors = {cn:'#ef4444', us:'#3b82f6', jp:'#dc2626'};
-        const flags = {cn:'🇨🇳', us:'🇺🇸', jp:'🇯🇵'};
-        allocBar.innerHTML = ['cn','us','jp'].map(r => {
+        const colors = {cn:'#ef4444', us:'#3b82f6', jp:'#dc2626', hk:'#a855f7'};
+        const flags = {cn:'🇨🇳', us:'🇺🇸', jp:'🇯🇵', hk:'🇭🇰'};
+        allocBar.innerHTML = ['cn','us','jp','hk'].map(r => {
             const pct = alloc[r] || 0;
             return '<div style="width:'+pct+'%;background:linear-gradient(135deg,'+colors[r]+','+colors[r]+'bb);display:flex;align-items:center;justify-content:center;font-size:0.72rem;color:white;font-weight:700;transition:width 0.6s;">'+flags[r]+' '+pct+'%</div>';
         }).join('');
@@ -2870,7 +2919,9 @@ function renderRegionChart(region, chart, color) {
     const el = document.getElementById(region+'-erp-chart');
     if (!el) return;
     const instance = echarts.init(el);
-    if (region === 'us') _usErpChart = instance; else _jpErpChart = instance;
+    if (region === 'us') _usErpChart = instance;
+    else if (region === 'jp') _jpErpChart = instance;
+    else if (region === 'hk') _hkErpChart = instance;
     const stats = chart.stats || {};
     instance.setOption({
         backgroundColor: 'transparent',
@@ -2911,7 +2962,7 @@ function renderRegionChart(region, chart, color) {
     });
 })();
 
-// 🏦 利率择时引擎 V1.0 — JS渲染
+// 🏦 利率择时引擎 V1.5 — JS渲染
 // ═══════════════════════════════════════════════
 let _ratesData = null;
 let _ratesGaugeChart = null;
@@ -3772,6 +3823,9 @@ document.addEventListener('DOMContentLoaded', function() {
             if (window._gaiaeJpGauge) {
                 try { window._gaiaeJpGauge.resize(); } catch(e) {}
             }
+            if (window._gaiaeHkGauge) {
+                try { window._gaiaeHkGauge.resize(); } catch(e) {}
+            }
             if (window._gaiaeHistChart) {
                 try { window._gaiaeHistChart.resize(); } catch(e) {}
             }
@@ -3820,29 +3874,37 @@ async function loadGlobalAIAE(forceRefresh = false) {
 function renderGlobalAIAE(json) {
     const us = json.us || {};
     const jp = json.jp || {};
+    const hk = json.hk || {};
     const gc = json.global_comparison || {};
 
     // -- Region panels --
     renderGAIAERegionPanel('us', us, '#3b82f6');
     renderGAIAERegionPanel('jp', jp, '#dc2626');
+    renderGAIAERegionPanel('hk', hk, '#a855f7');
 
     // Hero values
     const usV1 = (us.current||{}).aiae_v1 || 0;
     const jpV1 = (jp.current||{}).aiae_v1 || 0;
+    const hkV1 = (hk.current||{}).aiae_v1 || 0;
     const usRI = (us.current||{}).regime_info || {};
     const jpRI = (jp.current||{}).regime_info || {};
+    const hkRI = (hk.current||{}).regime_info || {};
 
     const $usV = document.getElementById('gaiae-us-value');
     const $jpV = document.getElementById('gaiae-jp-value');
+    const $hkV = document.getElementById('gaiae-hk-value');
     const $usR = document.getElementById('gaiae-us-regime');
     const $jpR = document.getElementById('gaiae-jp-regime');
+    const $hkR = document.getElementById('gaiae-hk-regime');
     if ($usV) $usV.textContent = usV1.toFixed(1) + '%';
     if ($jpV) $jpV.textContent = jpV1.toFixed(1) + '%';
+    if ($hkV) $hkV.textContent = hkV1.toFixed(1) + '%';
     if ($usR) { $usR.textContent = (usRI.emoji||'') + ' ' + (usRI.cn||'--'); $usR.style.color = usRI.color||'#94a3b8'; }
     if ($jpR) { $jpR.textContent = (jpRI.emoji||'') + ' ' + (jpRI.cn||'--'); $jpR.style.color = jpRI.color||'#94a3b8'; }
+    if ($hkR) { $hkR.textContent = (hkRI.emoji||'') + ' ' + (hkRI.cn||'--'); $hkR.style.color = hkRI.color||'#94a3b8'; }
 
     // Coldest market hero card
-    const regionMap = { cn: '🇨🇳 A股', us: '🇺🇸 美股', jp: '🇯🇵 日股' };
+    const regionMap = { cn: '🇨🇳 A股', us: '🇺🇸 美股', jp: '🇯🇵 日股', hk: '🇭🇰 港股' };
     const $cold = document.getElementById('gaiae-coldest');
     const $coldL = document.getElementById('gaiae-coldest-label');
     const $coldCard = document.getElementById('gaiae-coldest-card');
@@ -3853,19 +3915,21 @@ function renderGlobalAIAE(json) {
     // Matrices
     renderGAIAEMatrix('us', us);
     renderGAIAEMatrix('jp', jp);
+    renderGAIAEMatrix('hk', hk);
 
-    // 3-way comparison
+    // 4-way comparison
     renderGAIAE3Way(gc);
 
     // Warning indicators
     renderGAIAEWarnings('us', us);
     renderGAIAEWarnings('jp', jp);
+    renderGAIAEWarnings('hk', hk);
 
     // Consolidated actions
-    renderGAIAEActionZone((us.current||{}).regime || 3, (jp.current||{}).regime || 3);
+    renderGAIAEActionZone((us.current||{}).regime || 3, (jp.current||{}).regime || 3, (hk.current||{}).regime || 3);
 
     // Charts
-    try { renderGAIAEHistoryChart(us.chart, jp.chart); } catch(e) { console.warn('[GAIAE] chart skip:', e); }
+    try { renderGAIAEHistoryChart(us.chart, jp.chart, hk.chart); } catch(e) { console.warn('[GAIAE] chart skip:', e); }
 }
 
 function renderGAIAERegionPanel(region, data, color) {
@@ -3874,10 +3938,12 @@ function renderGAIAERegionPanel(region, data, color) {
     const ri = c.regime_info || {};
 
     // Gauge
-    const max = region === 'us' ? 50 : 40;
+    const max = region === 'us' ? 50 : (region === 'jp' ? 40 : 45);
     const bands = region === 'us'
         ? [[0.30,'#10b981'],[0.40,'#3b82f6'],[0.56,'#eab308'],[0.72,'#f97316'],[1,'#ef4444']]
-        : [[0.25,'#10b981'],[0.35,'#3b82f6'],[0.50,'#eab308'],[0.70,'#f97316'],[1,'#ef4444']];
+        : region === 'jp'
+        ? [[0.25,'#10b981'],[0.35,'#3b82f6'],[0.50,'#eab308'],[0.70,'#f97316'],[1,'#ef4444']]
+        : [[0.18,'#10b981'],[0.31,'#3b82f6'],[0.49,'#eab308'],[0.67,'#f97316'],[1,'#ef4444']];
 
     try {
         const el = document.getElementById('gaiae-' + region + '-gauge');
@@ -3930,7 +3996,7 @@ function renderGAIAERegionPanel(region, data, color) {
             $aaii.textContent = (spread > 0 ? '+' : '') + spread.toFixed(0) + '%';
             $aaii.style.color = spread > 15 ? '#ef4444' : spread < -10 ? '#10b981' : '#e2e8f0';
         }
-    } else {
+    } else if (region === 'jp') {
         const $margin = document.getElementById('gaiae-jp-margin');
         const $foreign = document.getElementById('gaiae-jp-foreign');
         if ($margin) $margin.textContent = (c.margin_heat||0).toFixed(2) + '%';
@@ -3938,6 +4004,22 @@ function renderGAIAERegionPanel(region, data, color) {
             const net = (c.foreign_flow||{}).net_buy_billion_jpy || 0;
             $foreign.textContent = (net > 0 ? '+' : '') + (net/100).toFixed(0) + '億円';
             $foreign.style.color = net > 2000 ? '#3b82f6' : net < -2000 ? '#ef4444' : '#e2e8f0';
+        }
+    } else if (region === 'hk') {
+        const $sb = document.getElementById('gaiae-hk-southbound');
+        const $ah = document.getElementById('gaiae-hk-ahpremium');
+        if ($sb) {
+            const sbHeat = c.southbound_heat || 0;
+            // sbHeat from engine is already a percentage (e.g. 1.12 = 1.12%)
+            $sb.textContent = sbHeat.toFixed(2) + '%';
+            $sb.style.color = sbHeat > 1.5 ? '#ef4444' : sbHeat < 0.5 ? '#10b981' : '#e2e8f0';
+        }
+        if ($ah) {
+            const ahVal = typeof c.ah_premium === 'object'
+                ? (c.ah_premium.index_value || 135)
+                : (typeof c.ah_premium === 'number' ? c.ah_premium : 135);
+            $ah.textContent = ahVal.toFixed(0);
+            $ah.style.color = ahVal > 145 ? '#10b981' : ahVal < 115 ? '#ef4444' : '#e2e8f0';
         }
     }
 
@@ -3964,7 +4046,7 @@ function renderGAIAEWarnings(region, data) {
         const spread = (c.aaii_sentiment||{}).spread || 0;
         _setWarnIndicator('gaiae-us-warn-aaii', 'gaiae-us-warn-aaii-val', 'gaiae-us-warn-aaii-bar',
             spread, '%', 20, 10);
-    } else {
+    } else if (region === 'jp') {
         _setWarnIndicator('gaiae-jp-warn-margin', 'gaiae-jp-warn-margin-val', 'gaiae-jp-warn-margin-bar',
             c.margin_heat || 0, '%', 0.6, 0.4);
         _setWarnIndicator('gaiae-jp-warn-slope', 'gaiae-jp-warn-slope-val', 'gaiae-jp-warn-slope-bar',
@@ -3972,6 +4054,18 @@ function renderGAIAEWarnings(region, data) {
         const foreign = (c.foreign_flow||{}).net_buy_billion_jpy || 0;
         _setWarnIndicator('gaiae-jp-warn-foreign', 'gaiae-jp-warn-foreign-val', 'gaiae-jp-warn-foreign-bar',
             foreign / 100, '億', 30, 15);
+    } else if (region === 'hk') {
+        // sbHeat is already a percentage from engine (e.g. 1.12 = 1.12%)
+        const sbHeat = c.southbound_heat || 0;
+        _setWarnIndicator('gaiae-hk-warn-sb', 'gaiae-hk-warn-sb-val', 'gaiae-hk-warn-sb-bar',
+            sbHeat, '%', 2.0, 1.0);
+        _setWarnIndicator('gaiae-hk-warn-slope', 'gaiae-hk-warn-slope-val', 'gaiae-hk-warn-slope-bar',
+            Math.abs(slope), '', 2.5, 1.5, slope);
+        const ahPremium = typeof c.ah_premium === 'object'
+            ? (c.ah_premium.index_value || 135)
+            : (typeof c.ah_premium === 'number' ? c.ah_premium : 135);
+        _setWarnIndicator('gaiae-hk-warn-ah', 'gaiae-hk-warn-ah-val', 'gaiae-hk-warn-ah-bar',
+            ahPremium, '', 145, 130);
     }
 }
 
@@ -4006,7 +4100,8 @@ function renderGAIAEMatrix(region, data) {
     // Cross-validation verdict
     const $cv = document.getElementById('gaiae-' + region + '-cv-verdict');
     if ($cv) {
-        $cv.innerHTML = '当前: <b style="color:#f59e0b">Ⅳ' + pos.regime + '级</b>' +
+        const regimeRN = {1:'Ⅰ', 2:'Ⅱ', 3:'Ⅲ', 4:'Ⅳ', 5:'Ⅴ'};
+        $cv.innerHTML = '当前: <b style="color:#f59e0b">' + (regimeRN[pos.regime]||pos.regime) + '级</b>' +
             ' × <b style="color:#60a5fa">ERP ' + (pos.erp_value||0).toFixed(1) + '%</b>' +
             ' → 建议仓位 <b style="color:' + (cv.color||'#10b981') + ';font-size:0.85rem">' + pos.matrix_position + '%</b>' +
             ' · <span style="color:' + (cv.color||'#94a3b8') + '">' + (cv.confidence_stars||'') + ' ' + (cv.verdict||'') + '</span>';
@@ -4018,7 +4113,8 @@ function renderGAIAEMatrix(region, data) {
 
     const erpMap_us = { 'erp_gt5': 0, 'erp_3_5': 1, 'erp_1_3': 2, 'erp_lt1': 3 };
     const erpMap_jp = { 'erp_gt4': 0, 'erp_2_4': 1, 'erp_0_2': 2, 'erp_lt0': 3 };
-    const erpMap = region === 'us' ? erpMap_us : erpMap_jp;
+    const erpMap_hk = { 'erp_gt5': 0, 'erp_3_5': 1, 'erp_1_3': 2, 'erp_lt1': 3 };
+    const erpMap = region === 'us' ? erpMap_us : (region === 'jp' ? erpMap_jp : erpMap_hk);
     const rowIdx = erpMap[pos.erp_level] ?? 2;
     const colIdx = Math.min((pos.regime||3) - 1, 4);
 
@@ -4053,20 +4149,24 @@ function renderGAIAE3Way(gc) {
     const $cn = document.getElementById('gaiae-3way-cn');
     const $us = document.getElementById('gaiae-3way-us');
     const $jp = document.getElementById('gaiae-3way-jp');
+    const $hk = document.getElementById('gaiae-3way-hk');
     const $cnR = document.getElementById('gaiae-3way-cn-regime');
     const $usR = document.getElementById('gaiae-3way-us-regime');
     const $jpR = document.getElementById('gaiae-3way-jp-regime');
+    const $hkR = document.getElementById('gaiae-3way-hk-regime');
 
     if ($cn) $cn.textContent = (gc.cn_aiae||0).toFixed(1) + '%';
     if ($us) $us.textContent = (gc.us_aiae||0).toFixed(1) + '%';
     if ($jp) $jp.textContent = (gc.jp_aiae||0).toFixed(1) + '%';
+    if ($hk) $hk.textContent = (gc.hk_aiae||0).toFixed(1) + '%';
     if ($cnR) { $cnR.textContent = 'A股 ' + (regimeNames[gc.cn_regime]||'Ⅲ中性'); $cnR.style.color = regimeColors[gc.cn_regime]||'#94a3b8'; }
     if ($usR) { $usR.textContent = '美股 ' + (regimeNames[gc.us_regime]||'Ⅲ中性'); $usR.style.color = regimeColors[gc.us_regime]||'#94a3b8'; }
     if ($jpR) { $jpR.textContent = '日股 ' + (regimeNames[gc.jp_regime]||'Ⅲ中性'); $jpR.style.color = regimeColors[gc.jp_regime]||'#94a3b8'; }
+    if ($hkR) { $hkR.textContent = '港股 ' + (regimeNames[gc.hk_regime]||'Ⅲ中性'); $hkR.style.color = regimeColors[gc.hk_regime]||'#94a3b8'; }
 
     // Crown animation on coldest market
     const coldest = gc.coldest || '';
-    ['cn','us','jp'].forEach(r => {
+    ['cn','us','jp','hk'].forEach(r => {
         const card = document.getElementById('gaiae-3way-card-' + r);
         if (card) {
             card.classList.toggle('is-coldest', r === coldest);
@@ -4083,11 +4183,11 @@ function renderGAIAE3Way(gc) {
 }
 
 // ③ Consolidated action zone rendering
-function renderGAIAEActionZone(usRegime, jpRegime) {
+function renderGAIAEActionZone(usRegime, jpRegime, hkRegime) {
     // Determine which zone is active
     // Buy: regime 1-2, Hold: regime 3, Sell: regime 4-5
     // Use the "hotter" regime to be conservative
-    const maxRegime = Math.max(usRegime, jpRegime);
+    const maxRegime = Math.max(usRegime, jpRegime, hkRegime || 3);
 
     const $buy = document.getElementById('gaiae-az-buy');
     const $hold = document.getElementById('gaiae-az-hold');
@@ -4107,49 +4207,54 @@ function renderGAIAEActionZone(usRegime, jpRegime) {
     }
 
     // Update action content based on actual regimes
-    const usLabel = '🇺🇸 美股 (Ⅳ' + usRegime + '级)';
-    const jpLabel = '🇯🇵 日股 (Ⅳ' + jpRegime + '级)';
+    const _rn = {1:'Ⅰ', 2:'Ⅱ', 3:'Ⅲ', 4:'Ⅳ', 5:'Ⅴ'};
+    const usLabel = '🇺🇸 美股 (' + (_rn[usRegime]||usRegime) + '级)';
+    const jpLabel = '🇯🇵 日股 (' + (_rn[jpRegime]||jpRegime) + '级)';
+    const hkLabel = '🇭🇰 港股 (' + (_rn[hkRegime]||hkRegime) + '级)';
     const buyData = {
-        1: { us: ['<b>极低 → 满配进攻</b>', '分3批建仓 SPY/QQQ', '总仓位冲至90-95%'], jp: ['<b>極度悲観 → 全力買い</b>', '3批建仓 1306/1321', '総ポジション90-95%'] },
-        2: { us: ['<b>标准建仓区</b>', '目标仓位70-85%', 'ERP为正时加大买入'], jp: ['<b>標準建倉区</b>', '目標70-85%', '積極的にETF配分'] },
-        3: { us: ['Ⅲ级不主动加仓', '新增限制5%以内', '等待回调机会'], jp: ['Ⅲ級 加倉なし', '新規5%以内', '押し目待ち'] },
-        4: { us: ['<b>Ⅳ级禁止新开仓</b>', '不追涨进攻型标的', '仅保留红利型'], jp: ['<b>Ⅳ級 新規禁止</b>', '攻撃型銘柄撤退', '高配当のみ保有'] },
-        5: { us: ['<b>Ⅴ级 绝对禁止买入</b>', '历史级泡沫信号', '任何新仓=与市场对赌'], jp: ['<b>Ⅴ級 絶対禁止</b>', 'バブル警報発令', '新規ポジション厳禁'] }
+        1: { us: ['<b>极低 → 满配进攻</b>', '分3批建仓 SPY/QQQ', '总仓位冲至90-95%'], jp: ['<b>極度悲観 → 全力買い</b>', '3批建仓 1306/1321', '総ポジション90-95%'], hk: ['<b>极度恐慌 → 满配</b>', '分3批建仓 159920/513130', '仓位冲至90-95%'] },
+        2: { us: ['<b>标准建仓区</b>', '目标仓位70-85%', 'ERP为正时加大买入'], jp: ['<b>標準建倉区</b>', '目標70-85%', '積極的にETF配分'], hk: ['<b>标准建仓区</b>', '目标70-85%', '南向资金流入验证'] },
+        3: { us: ['Ⅲ级不主动加仓', '新增限制5%以内', '等待回调机会'], jp: ['Ⅲ級 加倉なし', '新規5%以内', '押し目待ち'], hk: ['Ⅲ级不加仓', '新增限制5%以内', '等待南向/AH信号'] },
+        4: { us: ['<b>Ⅳ级禁止新开仓</b>', '不追涨进攻型标的', '仅保留红利型'], jp: ['<b>Ⅳ級 新規禁止</b>', '攻撃型銘柄撤退', '高配当のみ保有'], hk: ['<b>Ⅳ级禁止新开</b>', '科技ETF逐步撤退', '仅保留红利低波'] },
+        5: { us: ['<b>Ⅴ级 绝对禁止买入</b>', '历史级泡沫信号', '任何新仓=与市场对赌'], jp: ['<b>Ⅴ級 絶対禁止</b>', 'バブル警報発令', '新規ポジション厳禁'], hk: ['<b>Ⅴ级 绝对禁止</b>', '2018年1月级泡沫', '任何新仓=接盘'] }
     };
     const holdData = {
-        1: { us: ['每批完成后等3-5天', '只在下跌日建仓', '90-95%上限'], jp: ['各批3-5日間隔', '下落日のみ建倉', '90-95%上限'] },
-        2: { us: ['已建仓位坚定持有', '不因短期波动减仓', '观察AIAE方向'], jp: ['既存ポジション堅持', '短期変動で減らさない', 'AIAE方向を観察'] },
-        3: { us: ['维持50-65%均衡仓位', '到目标价就卖', '宽基+红利为主'], jp: ['50-65%バランス維持', '目標価で売却', 'ETF+高配当中心'] },
-        4: { us: ['总仓位压缩至25-40%', '进攻型逐步清退', '红利ETF可继续'], jp: ['25-40%へ圧縮', '攻撃型段階的撤退', '高配当ETF継続可'] },
-        5: { us: ['仅保留0-15%极低仓', '仅限红利防御型', '现金为王'], jp: ['0-15%極低ポジション', '防御型ETFのみ', 'キャッシュ・イズ・キング'] }
+        1: { us: ['每批完成后等3-5天', '只在下跌日建仓', '90-95%上限'], jp: ['各批3-5日間隔', '下落日のみ建倉', '90-95%上限'], hk: ['每批等3-5天', '只在下跌日建', '90-95%上限'] },
+        2: { us: ['已建仓位坚定持有', '不因短期波动减仓', '观察AIAE方向'], jp: ['既存ポジション堅持', '短期変動で減らさない', 'AIAE方向を観察'], hk: ['仓位坚定持有', '不因波动减仓', '观察南向方向'] },
+        3: { us: ['维持50-65%均衡仓位', '到目标价就卖', '宽基+红利为主'], jp: ['50-65%バランス維持', '目標価で売却', 'ETF+高配当中心'], hk: ['维持50-65%均衡', '恒生ETF+红利低波', '关注AH溢价'] },
+        4: { us: ['总仓位压缩至25-40%', '进攻型逐步清退', '红利ETF可继续'], jp: ['25-40%へ圧縮', '攻撃型段階的撤退', '高配当ETF継続可'], hk: ['压缩至25-40%', '科技ETF逐步清退', '红利低波可继续'] },
+        5: { us: ['仅保留0-15%极低仓', '仅限红利防御型', '现金为王'], jp: ['0-15%極低ポジション', '防御型ETFのみ', 'キャッシュ・イズ・キング'], hk: ['仅保留0-15%', '仅限恒生红利低波', '现金/债券为王'] }
     };
     const sellData = {
-        1: { us: ['此档位禁止卖出', '除非触发组合-25%止损', '耐心持有'], jp: ['売却禁止', '組合-25%止損のみ', '忍耐保有'] },
-        2: { us: ['不主动卖出', '仅止损触发时被动减', '子策略止损: -8%'], jp: ['自発的売却なし', '止損のみ反応', '個別止損: -7%'] },
-        3: { us: ['到达止盈目标及时卖', '监控AIAE走向', '接近上档做准备'], jp: ['利確目標で売却', 'AIAE動向監視', '上昇接近で準備'] },
-        4: { us: ['<b>每周减5%总仓位</b>', '优先清退高波动', '3-4周完成减仓'], jp: ['<b>毎週5%ずつ減倉</b>', '高ボラ銘柄から撤退', '3-4週間で完了'] },
-        5: { us: ['<b>3天内完成清仓</b>', '无例外，不抄底', '强制执行，无论盈亏'], jp: ['<b>3日以内に完全撤退</b>', '例外なし・底打ち買い禁止', '損益問わず強制執行'] }
+        1: { us: ['此档位禁止卖出', '除非触发组合-25%止损', '耐心持有'], jp: ['売却禁止', '組合-25%止損のみ', '忍耐保有'], hk: ['禁止卖出', '除非止损-25%', '耐心持有'] },
+        2: { us: ['不主动卖出', '仅止损触发时被动减', '子策略止损: -8%'], jp: ['自発的売却なし', '止損のみ反応', '個別止損: -7%'], hk: ['不主动卖出', '仅止损时被动减', '个股止损: -8%'] },
+        3: { us: ['到达止盈目标及时卖', '监控AIAE走向', '接近上档做准备'], jp: ['利確目標で売却', 'AIAE動向監視', '上昇接近で準備'], hk: ['止盈目标及时卖', '监控南向+AIAE', '接近Ⅳ做准备'] },
+        4: { us: ['<b>每周减5%总仓位</b>', '优先清退高波动', '3-4周完成减仓'], jp: ['<b>毎週5%ずつ減倉</b>', '高ボラ銘柄から撤退', '3-4週間で完了'], hk: ['<b>每周减5%仓位</b>', '优先清退科技ETF', '3-4周完成'] },
+        5: { us: ['<b>3天内完成清仓</b>', '无例外，不抄底', '强制执行，无论盈亏'], jp: ['<b>3日以内に完全撤退</b>', '例外なし・底打ち買い禁止', '損益問わず強制執行'], hk: ['<b>3天内完成清仓</b>', '无例外，不抄底', '强制执行'] }
     };
 
     const $buyList = document.getElementById('gaiae-az-buy-list');
     const $holdList = document.getElementById('gaiae-az-hold-list');
     const $sellList = document.getElementById('gaiae-az-sell-list');
 
-    function makeList(data, usR, jpR) {
+    function makeList(data, usR, jpR, hkR) {
         const ud = data[usR] || data[3];
         const jd = data[jpR] || data[3];
+        const hd = data[hkR] || data[3];
         return '<li class="az-region-label" style="color:#3b82f6">' + usLabel + '</li>' +
             ud.us.map(t => '<li>' + t + '</li>').join('') +
             '<li class="az-region-label" style="color:#dc2626">' + jpLabel + '</li>' +
-            jd.jp.map(t => '<li>' + t + '</li>').join('');
+            jd.jp.map(t => '<li>' + t + '</li>').join('') +
+            '<li class="az-region-label" style="color:#a855f7">' + hkLabel + '</li>' +
+            hd.hk.map(t => '<li>' + t + '</li>').join('');
     }
 
-    if ($buyList) $buyList.innerHTML = makeList(buyData, usRegime, jpRegime);
-    if ($holdList) $holdList.innerHTML = makeList(holdData, usRegime, jpRegime);
-    if ($sellList) $sellList.innerHTML = makeList(sellData, usRegime, jpRegime);
+    if ($buyList) $buyList.innerHTML = makeList(buyData, usRegime, jpRegime, hkRegime);
+    if ($holdList) $holdList.innerHTML = makeList(holdData, usRegime, jpRegime, hkRegime);
+    if ($sellList) $sellList.innerHTML = makeList(sellData, usRegime, jpRegime, hkRegime);
 }
 
-function renderGAIAEHistoryChart(usChart, jpChart) {
+function renderGAIAEHistoryChart(usChart, jpChart, hkChart) {
     const el = document.getElementById('gaiae-history-chart');
     if (!el || typeof echarts === 'undefined') return;
     if (window._gaiaeHistChart) window._gaiaeHistChart.dispose();
@@ -4160,14 +4265,18 @@ function renderGAIAEHistoryChart(usChart, jpChart) {
     const usValues = usChart ? usChart.values : [];
     const jpDates = jpChart ? jpChart.dates : [];
     const jpValues = jpChart ? jpChart.values : [];
+    const hkDates = hkChart ? hkChart.dates : [];
+    const hkValues = hkChart ? hkChart.values : [];
 
     // Merge dates
-    const allDates = [...new Set([...usDates, ...jpDates])].sort();
+    const allDates = [...new Set([...usDates, ...jpDates, ...hkDates])].sort();
     const usMap = {}; usDates.forEach((d, i) => usMap[d] = usValues[i]);
     const jpMap = {}; jpDates.forEach((d, i) => jpMap[d] = jpValues[i]);
+    const hkMap = {}; hkDates.forEach((d, i) => hkMap[d] = hkValues[i]);
 
     const usData = allDates.map(d => usMap[d] ?? null);
     const jpData = allDates.map(d => jpMap[d] ?? null);
+    const hkData = allDates.map(d => hkMap[d] ?? null);
 
     // US five-tier mark areas
     const markAreaData = [
@@ -4219,6 +4328,16 @@ function renderGAIAEHistoryChart(usChart, jpChart) {
                     colorStops: [{ offset: 0, color: 'rgba(220,38,38,0.12)' }, { offset: 1, color: 'rgba(220,38,38,0)' }]
                 }},
                 label: { show: true, fontSize: 7, color: '#dc2626', formatter: function(p) { return p.value !== null ? p.value + '%' : ''; }, position: 'bottom' },
+            },
+            {
+                name: '🇭🇰 HK AIAE', type: 'line', data: hkData, smooth: true, connectNulls: true,
+                symbol: 'rect', symbolSize: 7,
+                lineStyle: { color: '#a855f7', width: 2.5, shadowColor: 'rgba(168,85,247,0.3)', shadowBlur: 6 },
+                itemStyle: { color: '#a855f7', borderColor: '#0f172a', borderWidth: 2 },
+                areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                    colorStops: [{ offset: 0, color: 'rgba(168,85,247,0.12)' }, { offset: 1, color: 'rgba(168,85,247,0)' }]
+                }},
+                label: { show: true, fontSize: 7, color: '#a855f7', formatter: function(p) { return p.value !== null ? p.value + '%' : ''; }, position: 'insideTopRight' },
             }
         ]
     });

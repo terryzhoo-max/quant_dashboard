@@ -1,5 +1,5 @@
 """
-AlphaCore · 利率择时引擎 V1.0
+AlphaCore · 利率择时引擎 V1.5
 ===================================
 基于美国10年期国债收益率的五维择时系统:
   D1: 利率水平 (绝对值 → 债券吸引力)        — 权重20%
@@ -206,9 +206,9 @@ ENCYCLOPEDIA_RATES = {
 
 
 class RatesStrategyEngine:
-    """利率择时引擎 V1.0"""
+    """利率择时引擎 V1.5"""
 
-    VERSION = "1.0"
+    VERSION = "1.5"
 
     # 五维权重
     W = {
@@ -427,24 +427,27 @@ class RatesStrategyEngine:
         else:
             pct = 50.0
 
+        # V1.5: 评分方向 = "高分=债券有吸引力"
+        #   倒挂 → 预期Fed降息 → 债券牛市在即 → 高分
+        #   陡峭 → 通胀升温/经济过热 → 利率上行压力 → 低分
         if spread_bps < -100:
-            score, regime = 15, "deep_inversion"
-            desc = f"10Y-2Y = {spread_bps:+.0f}bps → 深度倒挂! 衰退预警"
+            score, regime = 90, "deep_inversion"
+            desc = f"10Y-2Y = {spread_bps:+.0f}bps → 深度倒挂! Fed被迫降息在即，长债锁定窗口"
         elif spread_bps < -50:
-            score, regime = 30, "moderate_inversion"
-            desc = f"10Y-2Y = {spread_bps:+.0f}bps → 明显倒挂，12-18月衰退概率高"
+            score, regime = 75, "moderate_inversion"
+            desc = f"10Y-2Y = {spread_bps:+.0f}bps → 明显倒挂，降息预期升温，债券配置价值高"
         elif spread_bps < 0:
-            score, regime = 45, "mild_inversion"
-            desc = f"10Y-2Y = {spread_bps:+.0f}bps → 轻微倒挂，警惕"
+            score, regime = 60, "mild_inversion"
+            desc = f"10Y-2Y = {spread_bps:+.0f}bps → 轻微倒挂，宽松信号渐现"
         elif spread_bps < 50:
-            score, regime = 55, "flat"
-            desc = f"10Y-2Y = {spread_bps:+.0f}bps → 正常偏平坦"
+            score, regime = 50, "flat"
+            desc = f"10Y-2Y = {spread_bps:+.0f}bps → 曲线平坦，中性观望"
         elif spread_bps < 150:
-            score, regime = 75, "normal_steep"
-            desc = f"10Y-2Y = {spread_bps:+.0f}bps → 健康陡峭"
+            score, regime = 35, "normal_steep"
+            desc = f"10Y-2Y = {spread_bps:+.0f}bps → 曲线陡峭，经济扩张期，股票更有吸引力"
         else:
-            score, regime = 90, "extreme_steep"
-            desc = f"10Y-2Y = {spread_bps:+.0f}bps → 极度陡峭，经济复苏/通胀预期强"
+            score, regime = 20, "extreme_steep"
+            desc = f"10Y-2Y = {spread_bps:+.0f}bps → 极度陡峭，通胀升温利空债券"
 
         info = {
             "yield_10y": round(y10, 3),
@@ -625,7 +628,7 @@ class RatesStrategyEngine:
         stop_loss = [
             {"trigger": "10Y > 5.0% (历史罕见)", "action": "逆向加仓TLT 20%", "type": "contrarian_buy", "color": "#10b981",
              "triggered": bool(y10 > 5.0), "current": f"10Y={y10:.2f}%"},
-            {"trigger": "曲线倒挂 > 100bps", "action": "全防御(SHV+Gold)", "type": "recession_hard", "color": "#ef4444",
+            {"trigger": "曲线倒挂 > 100bps", "action": "超配TLT+Gold 30%", "type": "recession_bonds", "color": "#10b981",
              "triggered": bool(spread_bps < -100), "current": f"利差={spread_bps:+.0f}bps"},
             {"trigger": "实际利率 > 2.5%", "action": "逆向买入TIPS 20%", "type": "contrarian_tips", "color": "#10b981",
              "triggered": bool(real_yield > 2.5), "current": f"实际利率={real_yield:.2f}%"},
@@ -656,6 +659,7 @@ class RatesStrategyEngine:
             {"cond": "实际利率 > 1.5%", "met": bool(real_yield > 1.5), "val": f"{real_yield:.2f}%", "why": "TIPS/长债配置价值"},
             {"cond": "Fed在降息", "met": fed_dir in ("fast_easing","easing","mild_easing"), "val": _regime_cn(fed_dir), "why": "降息→债牛"},
             {"cond": "利率3M下行>30bps", "met": bool(chg_3m_bps < -30), "val": f"{chg_3m_bps:+.0f}bps", "why": "动量确认宽松"},
+            {"cond": "曲线倒挂(<0bps)", "met": bool(spread_bps < 0), "val": f"{spread_bps:+.0f}bps", "why": "降息预期→债牛在即"},
         ]
         stock_buy = [
             {"cond": "10Y < 2.0%", "met": bool(y10 < 2.0), "val": f"{y10:.2f}%", "why": "TINA效应驱动股市"},
@@ -663,7 +667,7 @@ class RatesStrategyEngine:
             {"cond": "曲线陡峭化(>50bps)", "met": bool(spread_bps > 50), "val": f"{spread_bps:+.0f}bps", "why": "经济复苏信号"},
         ]
         defense = [
-            {"cond": "曲线深度倒挂(<-50bps)", "met": bool(spread_bps < -50), "val": f"{spread_bps:+.0f}bps", "why": "衰退概率>80%"},
+            {"cond": "曲线深度倒挂(<-50bps)", "met": bool(spread_bps < -50), "val": f"{spread_bps:+.0f}bps", "why": "衰退在即→长债锁定"},
             {"cond": "3M利率骤变>60bps", "met": bool(abs(chg_3m_bps) > 60), "val": f"{chg_3m_bps:+.0f}bps", "why": "市场剧烈波动"},
             {"cond": "通胀预期>2.5%", "met": bool(bei > 2.5), "val": f"{bei:.2f}%", "why": "通胀焦虑，利空"},
         ]
@@ -677,7 +681,7 @@ class RatesStrategyEngine:
             conclusion = f"🔴 避险模式 · 防御信号{defense_met}条触发 · {signal.get('position','')}"
             conclusion_color = "#ef4444"
         elif bond_met >= 3:
-            conclusion = f"🟢 债券买入窗口 · {bond_met}/4条满足 · {signal.get('position','')}"
+            conclusion = f"🟢 债券买入窗口 · {bond_met}/{len(bond_buy)}条满足 · {signal.get('position','')}"
             conclusion_color = "#10b981"
         elif stock_met >= 2:
             conclusion = f"🟠 股票超配区 · {stock_met}/3条满足 · {signal.get('position','')}"

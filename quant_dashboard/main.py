@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-import yfinance as yf
+# yfinance removed — VIX/CNY via FRED/CNBC (see fetch_vix_realtime / dashboard)
 import tushare as ts
 import pandas as pd
 import uvicorn
@@ -26,6 +26,8 @@ from erp_timing_engine import get_erp_engine
 from aiae_engine import get_aiae_engine, AIAE_RUN_ALL_WEIGHTS, REGIMES as AIAE_REGIMES
 from aiae_us_engine import get_us_aiae_engine
 from aiae_jp_engine import get_jp_aiae_engine
+from erp_hk_engine import get_hk_erp_engine
+from aiae_hk_engine import get_hk_aiae_engine
 from data_manager import FactorDataManager
 from industry_engine import IndustryEngine
 from portfolio_engine import PortfolioEngine
@@ -288,13 +290,37 @@ def _warmup_aaii_sentiment():
     else:
         print(f"[AAII Warmup] 爬取失败, 保留旧数据")
 
+def _warmup_hk_erp_cache():
+    """预热 HK ERP 引擎: HSI + HSTECH 双轨"""
+    for mkt in ["HSI", "HSTECH"]:
+        engine = get_hk_erp_engine(mkt)
+        report = engine.generate_report()
+        status = report.get('status', 'unknown')
+        score = report.get('signal', {}).get('score', '?')
+        print(f"[HK ERP Warmup] {mkt} 预热完成 · status={status} · score={score}")
+        if status not in ('success', 'fallback'):
+            raise Exception(f"HK ERP {mkt} warmup failed: {status}")
+
+def _warmup_hk_aiae_cache():
+    """预热 HK AIAE 引擎"""
+    engine = get_hk_aiae_engine()
+    engine.refresh()
+    report = engine.generate_report()
+    status = report.get('status', 'unknown')
+    v1 = report.get('current', {}).get('aiae_v1', '?')
+    print(f"[HK AIAE Warmup] 预热完成 · status={status} · AIAE={v1}%")
+    if status not in ('success', 'fallback'):
+        raise Exception(f"HK AIAE warmup failed: {status}")
+
 def _warmup_global_aiae_cache():
-    """后台预热海外AIAE: US+JP引擎并行, 写入L1缓存"""
+    """后台预热海外AIAE: US+JP+HK引擎并行, 写入L1缓存 (V2.0: 四地对比)"""
     try:
         us_engine = get_us_aiae_engine()
         jp_engine = get_jp_aiae_engine()
+        hk_engine = get_hk_aiae_engine()
         us_report = us_engine.generate_report()
         jp_report = jp_engine.generate_report()
+        hk_report = hk_engine.generate_report()
         cn_aiae_v1, cn_regime = 22.0, 3
         try:
             cn_engine = get_aiae_engine()
@@ -306,29 +332,33 @@ def _warmup_global_aiae_cache():
             pass
         us_v1 = us_report.get('current', {}).get('aiae_v1', 25.0)
         jp_v1 = jp_report.get('current', {}).get('aiae_v1', 17.0)
+        hk_v1 = hk_report.get('current', {}).get('aiae_v1', 14.0)
         us_regime = us_report.get('current', {}).get('regime', 3)
         jp_regime = jp_report.get('current', {}).get('regime', 3)
-        vals = {'cn': cn_aiae_v1, 'us': us_v1, 'jp': jp_v1}
+        hk_regime = hk_report.get('current', {}).get('regime', 3)
+        vals = {'cn': cn_aiae_v1, 'us': us_v1, 'jp': jp_v1, 'hk': hk_v1}
         coldest = min(vals, key=vals.get)
         hottest = max(vals, key=vals.get)
-        region_names = {'cn': 'A股', 'us': '美股', 'jp': '日股'}
+        region_names = {'cn': 'A股', 'us': '美股', 'jp': '日股', 'hk': '港股'}
         recommendation = f"当前{region_names[coldest]}(AIAE={vals[coldest]:.1f}%)配置热度最低, 超配优先; {region_names[hottest]}(AIAE={vals[hottest]:.1f}%)最高, 谨慎配置"
         data = {
             'status': 'success',
             'timestamp': datetime.now().isoformat(),
             'us': us_report,
             'jp': jp_report,
+            'hk': hk_report,
             'global_comparison': {
                 'cn_aiae': cn_aiae_v1, 'cn_regime': cn_regime,
                 'us_aiae': us_v1, 'us_regime': us_regime,
                 'jp_aiae': jp_v1, 'jp_regime': jp_regime,
+                'hk_aiae': hk_v1, 'hk_regime': hk_regime,
                 'coldest': coldest, 'hottest': hottest,
                 'recommendation': recommendation,
             }
         }
         AIAE_GLOBAL_CACHE['last_update'] = time.time()
         AIAE_GLOBAL_CACHE['report_data'] = data
-        print(f"[Global AIAE Warmup] L1缓存预热完成 · US={us_v1:.1f}% JP={jp_v1:.1f}% CN={cn_aiae_v1:.1f}% · 最冷={region_names[coldest]}")
+        print(f"[Global AIAE Warmup] L1缓存预热完成 · US={us_v1:.1f}% JP={jp_v1:.1f}% HK={hk_v1:.1f}% CN={cn_aiae_v1:.1f}% · 最冷={region_names[coldest]}")
     except Exception as e:
         print(f"[Global AIAE Warmup] 预热失败 (non-fatal): {e}")
 
@@ -414,8 +444,11 @@ async def startup_event():
     _schedule_aaii_weekly_crawl()    # 每周五09:00 散户情绪
     # V1.1: 后台预热海外AIAE (L3磁盘缓存->L1内存)
     threading.Thread(target=_warmup_global_aiae_cache, daemon=True).start()
+    # V2.0: 后台预热 HK ERP + AIAE
+    threading.Thread(target=lambda: _warmup_hk_erp_cache(), daemon=True).start()
+    threading.Thread(target=lambda: _warmup_hk_aiae_cache(), daemon=True).start()
     
-    print("[Startup] AlphaCore 服务启动完成 · 引擎常驻预热就绪 · 调度器(06:30US/08:30CN/15:30JP/15:35A/18:30FRED/周五AAII)已激活")
+    print("[Startup] AlphaCore 服务启动完成 · 引擎常驻预热就绪 · 调度器(06:30US/08:30CN/15:30JP/16:30HK/15:35A/18:30FRED/周五AAII)已激活")
 
 
 # --- AlphaCore DMSO Sub-Engines (V3.3 机构级) ---
@@ -846,6 +879,36 @@ def fetch_vix_realtime():
         print(f"SCRAPER ERROR: {e}")
     return None
 
+
+def _fetch_vix_for_dashboard():
+    """FRED VIXCLS → CNBC → 默认值 (返回 (latest, prev) 元组)"""
+    try:
+        from fredapi import Fred
+        fred = Fred(api_key="eadf412d4f0e8ccd2bb3993b357bdca6")
+        s = fred.get_series("VIXCLS", observation_start=(datetime.now() - timedelta(days=10)))
+        if s is not None and not s.empty:
+            s = s.dropna()
+            if len(s) >= 2:
+                return float(s.iloc[-1]), float(s.iloc[-2])
+            return float(s.iloc[-1]), float(s.iloc[-1])
+    except Exception:
+        pass
+    # CNBC fallback
+    rt = fetch_vix_realtime()
+    return (rt, rt) if rt else (18.25, 18.25)
+
+
+def _fetch_cny_for_dashboard():
+    """CNBC USD/CNY → 默认值"""
+    try:
+        url = "https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=USD/CNY&requestMethod=itv&noCache=1&partnerId=2&fund=1&exthrs=1&output=json&events=1"
+        r = requests.get(url, timeout=8, headers={'User-Agent': 'Mozilla/5.0'})
+        quote = r.json().get('FormattedQuoteResult', {}).get('FormattedQuote', [{}])[0]
+        return float(quote.get('last', '7.23').replace(',', ''))
+    except Exception:
+        return 7.23
+
+
 @app.get("/api/v1/dashboard-data")
 async def get_dashboard_data():
     """
@@ -871,29 +934,19 @@ async def get_dashboard_data():
         print(f"[{now_dt.strftime('%H:%M:%S')}] [HOT] Trading-hours refresh: VIX/CNY only, skip strategy engine")
         try:
             loop = asyncio.get_event_loop()
-            def _fetch_yf(ticker, period="5d"):
-                try:
-                    return yf.Ticker(ticker).history(period=period, timeout=5)
-                except:
-                    return pd.DataFrame()
 
-            vix_hist, cny_hist = await asyncio.gather(
-                loop.run_in_executor(executor, _fetch_yf, "^VIX", "5d"),
-                loop.run_in_executor(executor, _fetch_yf, "USDCNY=X", "2d")
+            vix_result, cny_result = await asyncio.gather(
+                loop.run_in_executor(executor, _fetch_vix_for_dashboard),
+                loop.run_in_executor(executor, _fetch_cny_for_dashboard)
             )
 
             # 解析 VIX
-            hot_vix, hot_vix_change, hot_vix_status = 18.25, 0.0, "neutral"
-            if not vix_hist.empty and len(vix_hist) >= 2:
-                hot_vix = float(vix_hist['Close'].iloc[-1])
-                prev_vix = float(vix_hist['Close'].iloc[-2])
-                hot_vix_change = ((hot_vix - prev_vix) / prev_vix) * 100
-                hot_vix_status = "down" if hot_vix_change < 0 else "up"
+            hot_vix, prev_vix = vix_result
+            hot_vix_change = ((hot_vix - prev_vix) / prev_vix * 100) if prev_vix > 0 else 0
+            hot_vix_status = "down" if hot_vix_change < 0 else "up"
 
-            # 解析 CNY
-            hot_cny = 7.23
-            if not cny_hist.empty:
-                hot_cny = float(cny_hist['Close'].iloc[-1])
+            # CNY
+            hot_cny = cny_result
 
             # VIX 分析
             hot_vix_analysis = get_vix_analysis(hot_vix)
@@ -937,42 +990,21 @@ async def get_dashboard_data():
     latest_vix, vix_change, vix_status = 18.25, -1.5, "down"
     latest_cny = 7.23
 
-    def fetch_yf_data(ticker_symbol, period="2d"):
-        try:
-            ticker = yf.Ticker(ticker_symbol)
-            return ticker.history(period=period, timeout=5)
-        except:
-            return pd.DataFrame()
-
     try:
         # 1. 抓取真实的 VIX 恐慌/避险情绪指数
         try:
-            # 优先尝试 yfinance
             loop = asyncio.get_event_loop()
-            vix_hist = await loop.run_in_executor(executor, fetch_yf_data, "^VIX", "5d")
-            if not vix_hist.empty and len(vix_hist) >= 2:
-                latest_vix = vix_hist['Close'].iloc[-1]
-                prev_vix = vix_hist['Close'].iloc[-2]
-                vix_change = ((latest_vix - prev_vix) / prev_vix) * 100
-                vix_status = "down" if vix_change < 0 else "up"
-            else:
-                # yfinance 失败，启用 V4.3 CNBC 实战备用引擎
-                realtime_vix = await loop.run_in_executor(executor, fetch_vix_realtime)
-                if realtime_vix:
-                    # 估算涨跌幅 (基于硬编码昨日收盘或前值，此处按 1.5% 模拟波动)
-                    vix_change = (realtime_vix / latest_vix - 1) * 100 if latest_vix > 0 else 0
-                    latest_vix = realtime_vix
-                    vix_status = "up" if vix_change > 0 else "down"
-                    print(f"V4.3 Sync Success: {latest_vix} (Source: CNBC RT)")
+            vix_result = await loop.run_in_executor(executor, _fetch_vix_for_dashboard)
+            latest_vix, prev_vix = vix_result
+            vix_change = ((latest_vix - prev_vix) / prev_vix * 100) if prev_vix > 0 else 0
+            vix_status = "down" if vix_change < 0 else "up"
         except Exception as e:
             print(f"Warning: VIX fetch failed: {e}")
 
         # 1.1 抓取离岸人民币汇率 (USD/CNY)
         try:
             loop = asyncio.get_event_loop()
-            cny_hist = await loop.run_in_executor(executor, fetch_yf_data, "USDCNY=X", "2d")
-            if not cny_hist.empty:
-                latest_cny = cny_hist['Close'].iloc[-1]
+            latest_cny = await loop.run_in_executor(executor, _fetch_cny_for_dashboard)
         except Exception as e:
             print(f"Warning: CNY fetch failed: {e}")
 
@@ -1349,6 +1381,28 @@ async def get_dashboard_data():
                         "aiae_cap": aiae_cap,
                         "aiae_v1": round(aiae_v1_value, 1)
                     },
+                    "aiae_thermometer": (lambda r: {
+                        "aiae_v1": r.get("current", {}).get("aiae_v1", aiae_v1_value),
+                        "regime": r.get("current", {}).get("regime", aiae_regime),
+                        "regime_cn": r.get("current", {}).get("regime_info", {}).get("cn", aiae_regime_cn),
+                        "regime_emoji": r.get("current", {}).get("regime_info", {}).get("emoji", "🟡"),
+                        "regime_color": r.get("current", {}).get("regime_info", {}).get("color", "#eab308"),
+                        "regime_name": r.get("current", {}).get("regime_info", {}).get("name", "Regime III"),
+                        "cap": r.get("position", {}).get("matrix_position", aiae_cap),
+                        "slope": r.get("current", {}).get("slope", {}).get("slope", 0),
+                        "slope_direction": r.get("current", {}).get("slope", {}).get("direction", "flat"),
+                        "margin_heat": r.get("current", {}).get("margin_heat", 0),
+                        "fund_position": r.get("current", {}).get("fund_position", 0),
+                        "aiae_simple": r.get("current", {}).get("aiae_simple", 0),
+                        "erp_value": r.get("position", {}).get("erp_value", 0),
+                        "status": r.get("status", "fallback"),
+                    })(aiae_report) if aiae_report else {
+                        "aiae_v1": aiae_v1_value, "regime": aiae_regime, "regime_cn": aiae_regime_cn,
+                        "regime_emoji": "🟡", "regime_color": "#eab308", "regime_name": "Regime III",
+                        "cap": aiae_cap, "slope": 0, "slope_direction": "flat",
+                        "margin_heat": 0, "fund_position": 0, "aiae_simple": 0,
+                        "erp_value": 0, "status": "fallback",
+                    },
                     "market_temp": {
                         "value": total_temp, 
                         "label": temp_label, 
@@ -1365,6 +1419,7 @@ async def get_dashboard_data():
                         "mindset": get_institutional_mindset(total_temp),
                         "holding_cycle_a": "5-8 个交易日",
                         "holding_cycle_hk": "15-22 个交易日",
+                        # V7.0: 第6因子(AIAE温度)仅供前端条形图展示, 不参与 compute_scientific_position() 的 composite 计算
                         "hub_factors": {**hub_result["factors"], "aiae_temp": {"score": round(max(10, 100 - (aiae_regime - 1) * 22.5), 1), "weight": 0.15, "label": aiae_regime_cn}},
                         "hub_confidence": hub_result["confidence"],
                         "hub_composite": hub_result["composite_score"],
@@ -2023,7 +2078,7 @@ async def get_erp_timing():
 # ─────────────────────────────────────────────
 @app.get("/api/v1/strategy/erp-global")
 async def get_erp_global():
-    """海外ERP择时 — 美股+日本+中国三地对比"""
+    """海外ERP择时 — 美股+日本+港股+中国四地对比 (V2.0)"""
     try:
         from erp_us_engine import get_us_erp_engine
         from erp_jp_engine import get_jp_erp_engine
@@ -2032,46 +2087,48 @@ async def get_erp_global():
         us_engine = get_us_erp_engine()
         jp_engine = get_jp_erp_engine()
         cn_engine = get_erp_engine()
+        hk_hsi_engine = get_hk_erp_engine("HSI")
+        hk_tech_engine = get_hk_erp_engine("HSTECH")
 
         us_future = loop.run_in_executor(executor, us_engine.generate_report)
         jp_future = loop.run_in_executor(executor, jp_engine.generate_report)
         cn_future = loop.run_in_executor(executor, cn_engine.compute_signal)
+        hk_hsi_future = loop.run_in_executor(executor, hk_hsi_engine.generate_report)
+        hk_tech_future = loop.run_in_executor(executor, hk_tech_engine.generate_report)
 
         us_report = await us_future
         jp_report = await jp_future
         cn_signal = await cn_future
+        hk_hsi_report = await hk_hsi_future
+        hk_tech_report = await hk_tech_future
 
         cn_snap = cn_signal.get("current_snapshot", {})
         cn_sig = cn_signal.get("signal", {})
-        global_comparison = {
-            "cn": {"erp": cn_snap.get("erp_value", 0), "score": cn_sig.get("score", 0),
-                   "key": cn_sig.get("key", "hold"), "label": cn_sig.get("label", "--"),
-                   "color": cn_sig.get("color", "#94a3b8"), "emoji": cn_sig.get("emoji", ""),
-                   "pe": cn_snap.get("pe_ttm", 0), "yield": cn_snap.get("yield_10y", 0)},
-            "us": {"erp": us_report.get("current_snapshot", {}).get("erp_value", 0),
-                   "score": us_report.get("signal", {}).get("score", 0),
-                   "key": us_report.get("signal", {}).get("key", "hold"),
-                   "label": us_report.get("signal", {}).get("label", "--"),
-                   "color": us_report.get("signal", {}).get("color", "#94a3b8"),
-                   "emoji": us_report.get("signal", {}).get("emoji", ""),
-                   "pe": us_report.get("current_snapshot", {}).get("pe_ttm", 0),
-                   "yield": us_report.get("current_snapshot", {}).get("yield_10y", 0)},
-            "jp": {"erp": jp_report.get("current_snapshot", {}).get("erp_value", 0),
-                   "score": jp_report.get("signal", {}).get("score", 0),
-                   "key": jp_report.get("signal", {}).get("key", "hold"),
-                   "label": jp_report.get("signal", {}).get("label", "--"),
-                   "color": jp_report.get("signal", {}).get("color", "#94a3b8"),
-                   "emoji": jp_report.get("signal", {}).get("emoji", ""),
-                   "pe": jp_report.get("current_snapshot", {}).get("pe_ttm", 0),
-                   "yield": jp_report.get("current_snapshot", {}).get("yield_10y", 0)},
-        }
-        scores = {"cn": global_comparison["cn"]["score"], "us": global_comparison["us"]["score"], "jp": global_comparison["jp"]["score"]}
-        sorted_r = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-        rn = {"cn": "A股", "us": "美股", "jp": "日股"}
+        hk_hsi_snap = hk_hsi_report.get("current_snapshot", {})
+        hk_hsi_sig = hk_hsi_report.get("signal", {})
 
-        # === A4: 智能配置比例 (归一化得分 + 最低10%底线) ===
+        def _extract_region(snap, sig):
+            return {
+                "erp": snap.get("erp_value", 0), "score": sig.get("score", 0),
+                "key": sig.get("key", "hold"), "label": sig.get("label", "--"),
+                "color": sig.get("color", "#94a3b8"), "emoji": sig.get("emoji", ""),
+                "pe": snap.get("pe_ttm", 0), "yield": snap.get("yield_10y", snap.get("blended_rf", 0)),
+            }
+
+        global_comparison = {
+            "cn": _extract_region(cn_snap, cn_sig),
+            "us": _extract_region(us_report.get("current_snapshot", {}), us_report.get("signal", {})),
+            "jp": _extract_region(jp_report.get("current_snapshot", {}), jp_report.get("signal", {})),
+            "hk": _extract_region(hk_hsi_snap, hk_hsi_sig),
+        }
+
+        scores = {r: global_comparison[r]["score"] for r in ["cn", "us", "jp", "hk"]}
+        sorted_r = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        rn = {"cn": "A股", "us": "美股", "jp": "日股", "hk": "港股"}
+
+        # === A4: 智能配置比例 (归一化得分 + 最低8%底线) ===
         total_score = max(sum(scores.values()), 1)
-        raw_ratios = {k: max(v / total_score, 0.10) for k, v in scores.items()}
+        raw_ratios = {k: max(v / total_score, 0.08) for k, v in scores.items()}
         ratio_sum = sum(raw_ratios.values())
         alloc = {k: round(v / ratio_sum * 100) for k, v in raw_ratios.items()}
         # 修正至100%
@@ -2080,9 +2137,10 @@ async def get_erp_global():
 
         global_comparison["allocation"] = alloc
         global_comparison["advice"] = f"超配{rn[sorted_r[0][0]]}({sorted_r[0][1]:.0f}), 低配{rn[sorted_r[-1][0]]}({sorted_r[-1][1]:.0f})"
-        global_comparison["allocation_text"] = f"🇨🇳 A股 {alloc['cn']}% / 🇺🇸 美股 {alloc['us']}% / 🇯🇵 日股 {alloc['jp']}%"
+        global_comparison["allocation_text"] = f"🇨🇳 {alloc['cn']}% / 🇺🇸 {alloc['us']}% / 🇯🇵 {alloc['jp']}% / 🇭🇰 {alloc['hk']}%"
 
         return {"status": "success", "us": us_report, "jp": jp_report,
+                "hk_hsi": hk_hsi_report, "hk_tech": hk_tech_report,
                 "global_comparison": global_comparison, "updated_at": datetime.now().isoformat()}
     except Exception as e:
         print(f"[Global ERP] Error: {traceback.format_exc()}")
@@ -3221,6 +3279,28 @@ async def import_portfolio(file: UploadFile = File(...)):
         traceback.print_exc()
         return {"status": "error", "message": str(e)}
 
+@app.post("/api/v1/portfolio/reset")
+async def reset_portfolio():
+    """清零组合: 清除所有持仓和现金"""
+    try:
+        engine = get_portfolio_engine()
+        result = engine.reset_portfolio()
+        return {"status": "success", "data": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.post("/api/v1/portfolio/sync")
+async def sync_portfolio_prices():
+    """同步持仓行情: 从 Tushare 拉取最新日线数据到 data_lake"""
+    try:
+        engine = get_portfolio_engine()
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(executor, engine.sync_prices)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+
 # === 均值回归 V4.0 三态参数 API ===
 import json as _json
 import os as _os
@@ -3379,7 +3459,7 @@ async def refresh_aiae():
 
 @app.get("/api/v1/aiae_global/report")
 async def get_aiae_global_report():
-    """海外 AIAE 全球报告: L1缓存 + 并行执行 US + JP 引擎, 含三地对比 (CN/US/JP)"""
+    """海外 AIAE 全球报告: L1缓存 + 并行执行 US + JP + HK 引擎, 含四地对比 (CN/US/JP/HK) V2.0"""
     # V1.1: L1缓存命中检查
     current_time = time.time()
     ttl = _get_global_aiae_ttl()
@@ -3393,13 +3473,15 @@ async def get_aiae_global_report():
         loop = asyncio.get_event_loop()
         us_engine = get_us_aiae_engine()
         jp_engine = get_jp_aiae_engine()
+        hk_engine = get_hk_aiae_engine()
 
         us_task = loop.run_in_executor(executor, us_engine.generate_report)
         jp_task = loop.run_in_executor(executor, jp_engine.generate_report)
+        hk_task = loop.run_in_executor(executor, hk_engine.generate_report)
 
-        us_report, jp_report = await asyncio.gather(us_task, jp_task)
+        us_report, jp_report, hk_report = await asyncio.gather(us_task, jp_task, hk_task)
 
-        # 获取中国 AIAE 用于三地对比
+        # 获取中国 AIAE 用于四地对比
         cn_aiae_v1 = 22.0
         cn_regime = 3
         try:
@@ -3413,14 +3495,16 @@ async def get_aiae_global_report():
 
         us_v1 = us_report.get("current", {}).get("aiae_v1", 25.0)
         jp_v1 = jp_report.get("current", {}).get("aiae_v1", 17.0)
+        hk_v1 = hk_report.get("current", {}).get("aiae_v1", 14.0)
         us_regime = us_report.get("current", {}).get("regime", 3)
         jp_regime = jp_report.get("current", {}).get("regime", 3)
+        hk_regime = hk_report.get("current", {}).get("regime", 3)
 
-        # 三地配置建议
-        vals = {"cn": cn_aiae_v1, "us": us_v1, "jp": jp_v1}
+        # 四地配置建议
+        vals = {"cn": cn_aiae_v1, "us": us_v1, "jp": jp_v1, "hk": hk_v1}
         coldest = min(vals, key=vals.get)
         hottest = max(vals, key=vals.get)
-        region_names = {"cn": "A股", "us": "美股", "jp": "日股"}
+        region_names = {"cn": "A股", "us": "美股", "jp": "日股", "hk": "港股"}
         recommendation = f"当前{region_names[coldest]}(AIAE={vals[coldest]:.1f}%)配置热度最低, 超配优先; {region_names[hottest]}(AIAE={vals[hottest]:.1f}%)最高, 谨慎配置"
 
         data = {
@@ -3428,10 +3512,12 @@ async def get_aiae_global_report():
             "timestamp": datetime.now().isoformat(),
             "us": us_report,
             "jp": jp_report,
+            "hk": hk_report,
             "global_comparison": {
                 "cn_aiae": cn_aiae_v1, "cn_regime": cn_regime,
                 "us_aiae": us_v1, "us_regime": us_regime,
                 "jp_aiae": jp_v1, "jp_regime": jp_regime,
+                "hk_aiae": hk_v1, "hk_regime": hk_regime,
                 "coldest": coldest, "hottest": hottest,
                 "recommendation": recommendation,
             }
@@ -3440,7 +3526,7 @@ async def get_aiae_global_report():
         # V1.1: 写入 L1 缓存
         AIAE_GLOBAL_CACHE["last_update"] = current_time
         AIAE_GLOBAL_CACHE["report_data"] = data
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] Global AIAE Cache Miss -> 已重建 (US={us_v1:.1f}% JP={jp_v1:.1f}%)")
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Global AIAE Cache Miss -> 已重建 (US={us_v1:.1f}% JP={jp_v1:.1f}% HK={hk_v1:.1f}%)")
 
         return data
     except Exception as e:
@@ -3458,8 +3544,10 @@ async def refresh_aiae_global():
         # 清除 L2 引擎缓存
         us_engine = get_us_aiae_engine()
         jp_engine = get_jp_aiae_engine()
+        hk_engine = get_hk_aiae_engine()
         us_engine.refresh()
         jp_engine.refresh()
+        hk_engine.refresh()
         return await get_aiae_global_report()
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -3467,15 +3555,123 @@ async def refresh_aiae_global():
 
 @app.get("/api/v1/aiae_global/chart")
 async def get_aiae_global_chart():
-    """海外 AIAE 历史走势数据"""
+    """海外 AIAE 历史走势数据 (V2.0: US+JP+HK)"""
     try:
         us_engine = get_us_aiae_engine()
         jp_engine = get_jp_aiae_engine()
+        hk_engine = get_hk_aiae_engine()
         return {
             "status": "success",
             "us_chart": us_engine.get_chart_data(),
             "jp_chart": jp_engine.get_chart_data(),
+            "hk_chart": hk_engine.get_chart_data(),
         }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# ─── 港股 ERP 择时引擎 API (HSI + HSTECH) ───
+
+@app.get("/api/v1/strategy/erp-hk")
+async def get_erp_hk(market: str = "HSI"):
+    """港股ERP择时 — 五维信号 + HSI/HSTECH 双轨"""
+    try:
+        if market not in ("HSI", "HSTECH"):
+            return {"status": "error", "message": "market must be HSI or HSTECH"}
+        engine = get_hk_erp_engine(market)
+        loop = asyncio.get_event_loop()
+        report = await loop.run_in_executor(executor, engine.generate_report)
+        return {"status": "success", "data": report}
+    except Exception as e:
+        print(f"[HK ERP API] Error: {traceback.format_exc()}")
+        return {"status": "error", "message": str(e)}
+
+
+# ─── 港股 AIAE 宏观仓位管控 API ───
+
+@app.get("/api/v1/aiae_hk/report")
+async def get_aiae_hk_report():
+    """港股 AIAE 完整报告: 当前AIAE值、五档状态、仓位矩阵、子策略配额"""
+    try:
+        engine = get_hk_aiae_engine()
+        loop = asyncio.get_event_loop()
+        report = await loop.run_in_executor(executor, engine.generate_report)
+        return {"status": "success", "data": report, "timestamp": datetime.now().isoformat()}
+    except Exception as e:
+        print(f"[HK AIAE API] report error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/v1/aiae_hk/refresh")
+async def refresh_aiae_hk():
+    """强制刷新港股AIAE数据"""
+    try:
+        engine = get_hk_aiae_engine()
+        engine.refresh()
+        loop = asyncio.get_event_loop()
+        report = await loop.run_in_executor(executor, engine.generate_report)
+        # 清除全局L1缓存使四地对比重算
+        AIAE_GLOBAL_CACHE["last_update"] = None
+        AIAE_GLOBAL_CACHE["report_data"] = None
+        return {"status": "success", "data": report, "timestamp": datetime.now().isoformat()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/v1/aiae_hk/chart")
+async def get_aiae_hk_chart():
+    """港股 AIAE 历史走势数据"""
+    try:
+        engine = get_hk_aiae_engine()
+        return {"status": "success", "data": engine.get_chart_data()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# ─── 港股手动数据更新 API (南向资金 + AH溢价) ───
+
+class HKSouthboundUpdate(BaseModel):
+    weekly_net_buy_billion_rmb: float
+    monthly_net_buy_billion_rmb: float = None
+    cumulative_12m_billion_rmb: float = None
+
+class HKAHPremiumUpdate(BaseModel):
+    index_value: float
+
+@app.post("/api/v1/aiae_hk/update_southbound")
+async def update_hk_southbound(req: HKSouthboundUpdate):
+    """手动更新南向资金数据: 写入文件 + 清除缓存"""
+    try:
+        engine = get_hk_aiae_engine()
+        engine.update_southbound(
+            req.weekly_net_buy_billion_rmb,
+            req.monthly_net_buy_billion_rmb,
+            req.cumulative_12m_billion_rmb
+        )
+        # 同步更新ERP引擎的南向数据
+        for mkt in ["HSI", "HSTECH"]:
+            erp_engine = get_hk_erp_engine(mkt)
+            erp_engine.update_southbound(
+                req.weekly_net_buy_billion_rmb,
+                req.monthly_net_buy_billion_rmb,
+                req.cumulative_12m_billion_rmb
+            )
+        # 清除全局L1缓存
+        AIAE_GLOBAL_CACHE["last_update"] = None
+        AIAE_GLOBAL_CACHE["report_data"] = None
+        return {"status": "success", "message": f"南向资金已更新: 周净买入={req.weekly_net_buy_billion_rmb}亿RMB"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.post("/api/v1/aiae_hk/update_ah_premium")
+async def update_hk_ah_premium(req: HKAHPremiumUpdate):
+    """手动更新AH溢价指数"""
+    try:
+        engine = get_hk_aiae_engine()
+        engine.update_ah_premium(req.index_value)
+        AIAE_GLOBAL_CACHE["last_update"] = None
+        AIAE_GLOBAL_CACHE["report_data"] = None
+        return {"status": "success", "message": f"AH溢价指数已更新为 {req.index_value}"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
