@@ -1027,3 +1027,245 @@
     border-color: rgba(167, 139, 250, 0.6);
 }
 
+/* ═══════════════════════════════════
+   同步数据按钮
+   ═══════════════════════════════════ */
+
+.btn-sync {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 20px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    font-family: 'Inter', sans-serif;
+    color: #fff;
+    background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
+    border: 1px solid rgba(6, 182, 212, 0.3);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 0 16px rgba(6, 182, 212, 0.15);
+    letter-spacing: 0.3px;
+}
+
+.btn-sync:hover {
+    box-shadow: 0 0 28px rgba(6, 182, 212, 0.35);
+    transform: translateY(-1px);
+    background: linear-gradient(135deg, #22d3ee 0%, #06b6d4 100%);
+}
+
+.btn-sync:active {
+    transform: translateY(0);
+}
+
+.btn-sync:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-sync-loading {
+    animation: pf-sync-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pf-sync-pulse {
+    0%, 100% {
+        box-shadow: 0 0 16px rgba(6, 182, 212, 0.15);
+    }
+    50% {
+        box-shadow: 0 0 32px rgba(6, 182, 212, 0.45);
+    }
+}
+
+/* ═══════════════════════════════════
+   价格来源标签 (broker / cost / tushare)
+   ═══════════════════════════════════ */
+
+.pf-src-tag {
+    display: inline-block;
+    margin-left: 5px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.62rem;
+    font-weight: 700;
+    font-family: 'Inter', sans-serif;
+    letter-spacing: 0.3px;
+    vertical-align: middle;
+    line-height: 1.4;
+}
+
+.pf-src-broker {
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    color: #fbbf24;
+}
+
+.pf-src-cost {
+    background: rgba(239, 68, 68, 0.10);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    color: #f87171;
+}
+
+.pf-src-ts {
+    background: rgba(99, 102, 241, 0.10);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    color: #a5b4fc;
+}
+
+/* ═══════════════════════════════════
+   清零功能样式
+   ═══════════════════════════════════ */
+
+/* 顶栏清零按钮 — 低调但可识别 */
+.btn-reset {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 16px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    font-family: 'Inter', sans-serif;
+    color: #94a3b8;
+    background: transparent;
+    border: 1px solid rgba(239, 68, 68, 0.15);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    letter-spacing: 0.3px;
+}
+
+.btn-reset:hover {
+    color: #f87171;
+    border-color: rgba(239, 68, 68, 0.4);
+    background: rgba(239, 68, 68, 0.06);
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.08);
+}
+
+/* 清零弹窗内的数据摘要 */
+.pf-reset-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    background: rgba(239, 68, 68, 0.04);
+    border: 1px solid rgba(239, 68, 68, 0.1);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 16px;
+}
+
+.pf-reset-stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    transition: background 0.2s;
+}
+
+.pf-reset-stat-row:hover {
+    background: rgba(239, 68, 68, 0.03);
+}
+
+.pf-reset-stat-row:last-child {
+    border-bottom: none;
+    background: rgba(239, 68, 68, 0.06);
+}
+
+.pf-reset-stat-label {
+    font-size: 0.82rem;
+    color: #94a3b8;
+    font-weight: 600;
+}
+
+.pf-reset-stat-value {
+    font-size: 1.05rem;
+    font-weight: 700;
+    font-family: 'Outfit', sans-serif;
+    color: #e2e8f0;
+}
+
+/* 危险警告条 */
+.pf-reset-warning {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 18px;
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    border-radius: 10px;
+    font-size: 0.82rem;
+    color: #f87171;
+    font-weight: 500;
+    margin-bottom: 20px;
+    animation: pf-fadeUp 0.5s ease-out 0.1s both;
+}
+
+.pf-reset-warning strong {
+    color: #ef4444;
+}
+
+/* 确认输入区 */
+.pf-reset-confirm-zone {
+    margin-bottom: 20px;
+}
+
+.pf-reset-confirm-label {
+    display: block;
+    font-size: 0.82rem;
+    color: #94a3b8;
+    font-weight: 600;
+    margin-bottom: 10px;
+}
+
+.pf-reset-confirm-label strong {
+    color: #f87171;
+    font-family: 'Outfit', monospace;
+    letter-spacing: 2px;
+}
+
+/* 确认清零按钮 */
+.pf-btn-reset-exec {
+    flex: 1;
+    width: 100%;
+    height: 50px;
+    border: none;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 0.95rem;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    color: #fff;
+    letter-spacing: 0.5px;
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    box-shadow: 0 4px 16px rgba(239, 68, 68, 0.2);
+}
+
+.pf-btn-reset-exec:hover:not(:disabled) {
+    box-shadow: 0 6px 28px rgba(239, 68, 68, 0.35);
+    transform: translateY(-1px);
+}
+
+.pf-btn-reset-exec:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+}
+
+/* 交易记录: 清零事件样式 */
+.pf-history-item.pf-hist-reset {
+    border-left: 3px solid rgba(239, 68, 68, 0.4);
+    background: rgba(239, 68, 68, 0.04);
+}
+
+.pf-history-item.pf-hist-reset:hover {
+    background: rgba(239, 68, 68, 0.08);
+    border-color: rgba(239, 68, 68, 0.6);
+}
+
+.pf-hist-reset .pf-hist-status {
+    color: #f87171 !important;
+}
+

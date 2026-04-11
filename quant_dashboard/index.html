@@ -153,6 +153,84 @@
                 </div>
             </div>
 
+        <!-- AIAE 温度计 · 全市场权益配置信号 -->
+        <div class="aiae-thermo-section" id="aiae-thermo-section">
+            <div class="aiae-thermo-header">
+                <div class="aiae-thermo-title-row">
+                    <span class="aiae-thermo-icon">🌡️</span>
+                    <div>
+                        <div class="aiae-thermo-title">AIAE 全市场配置温度计</div>
+                        <div class="aiae-thermo-sub">A股证券化率 · 五档状态引擎 · 仓位Cap信号</div>
+                    </div>
+                </div>
+                <a href="./strategy.html" class="aiae-thermo-link" title="前往策略中心查看完整AIAE报告">
+                    查看完整报告 ▸
+                </a>
+            </div>
+            <div class="aiae-thermo-body glass-panel">
+                <div class="aiae-thermo-grid">
+                    <!-- 左区: 仪表盘 -->
+                    <div class="aiae-thermo-gauge-col">
+                        <div id="aiae-thermo-gauge" class="aiae-thermo-gauge-chart"></div>
+                        <div class="aiae-thermo-gauge-footer">
+                            <span class="aiae-thermo-val" id="aiae-thermo-val">—</span>
+                            <span class="aiae-thermo-unit">%</span>
+                        </div>
+                        <div class="aiae-thermo-regime-badge" id="aiae-thermo-regime">—</div>
+                        <div class="aiae-thermo-slope" id="aiae-thermo-slope">月环比: —</div>
+                    </div>
+
+                    <!-- 中区: 五档 + 操作指引 -->
+                    <div class="aiae-thermo-center-col">
+                        <div class="aiae-thermo-five-tier" id="aiae-thermo-tiers">
+                            <div class="at-tier" data-tier="1"><span class="at-dot" style="background:#10b981"></span><span class="at-label">Ⅰ 恐慌</span><span class="at-range">&lt;12%</span><span class="at-pos">90-95%</span></div>
+                            <div class="at-tier" data-tier="2"><span class="at-dot" style="background:#3b82f6"></span><span class="at-label">Ⅱ 低配</span><span class="at-range">12-16%</span><span class="at-pos">70-85%</span></div>
+                            <div class="at-tier" data-tier="3"><span class="at-dot" style="background:#eab308"></span><span class="at-label">Ⅲ 中性</span><span class="at-range">16-24%</span><span class="at-pos">50-65%</span></div>
+                            <div class="at-tier" data-tier="4"><span class="at-dot" style="background:#f97316"></span><span class="at-label">Ⅳ 偏热</span><span class="at-range">24-32%</span><span class="at-pos">25-40%</span></div>
+                            <div class="at-tier" data-tier="5"><span class="at-dot" style="background:#ef4444"></span><span class="at-label">Ⅴ 过热</span><span class="at-range">&gt;32%</span><span class="at-pos">0-15%</span></div>
+                        </div>
+                        <div class="aiae-thermo-action" id="aiae-thermo-action">
+                            <div class="at-action-label">当前操作指令</div>
+                            <div class="at-action-text" id="aiae-thermo-action-text">加载数据后显示...</div>
+                        </div>
+                    </div>
+
+                    <!-- 右区: Cap仓位 + 三大预警 -->
+                    <div class="aiae-thermo-right-col">
+                        <div class="aiae-thermo-cap-card">
+                            <div class="at-cap-label">建议仓位Cap</div>
+                            <div class="at-cap-value" id="aiae-thermo-cap">—%</div>
+                            <div class="at-cap-bar-bg"><div class="at-cap-bar-fill" id="aiae-thermo-cap-bar" style="width:0%"></div></div>
+                        </div>
+                        <div class="aiae-thermo-warns">
+                            <div class="at-warn-item">
+                                <span class="at-warn-icon">🔥</span>
+                                <span class="at-warn-name">融资热度</span>
+                                <span class="at-warn-val" id="at-warn-margin">—</span>
+                                <div class="at-warn-bar-bg"><div class="at-warn-bar" id="at-warn-margin-bar" style="width:0%"></div></div>
+                            </div>
+                            <div class="at-warn-item">
+                                <span class="at-warn-icon">📐</span>
+                                <span class="at-warn-name">月斜率</span>
+                                <span class="at-warn-val" id="at-warn-slope">—</span>
+                                <div class="at-warn-bar-bg"><div class="at-warn-bar" id="at-warn-slope-bar" style="width:0%"></div></div>
+                            </div>
+                            <div class="at-warn-item">
+                                <span class="at-warn-icon">🏦</span>
+                                <span class="at-warn-name">基金仓位</span>
+                                <span class="at-warn-val" id="at-warn-fund">—</span>
+                                <div class="at-warn-bar-bg"><div class="at-warn-bar" id="at-warn-fund-bar" style="width:0%"></div></div>
+                            </div>
+                        </div>
+                        <div class="aiae-thermo-source">
+                            <span class="at-src-item" id="at-src-simple">AIAE_简: —</span>
+                            <span class="at-src-item" id="at-src-erp">ERP: —</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- V6.0 情绪与持仓枢纽 (Sentiment & Position Hub) -->
         <div class="sentiment-section">
             <div class="hub-main-title">AlphaCore 情绪与持仓枢纽 V7.0 (Sentiment & Position Hub)</div>

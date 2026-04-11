@@ -1944,3 +1944,367 @@ h3::before {
     font-family: 'Outfit', monospace;
     margin-top: 2px;
 }
+
+/* ================= AIAE 温度计 · 量化总览精简卡片 ================= */
+
+.aiae-thermo-section {
+    margin-top: 20px;
+    margin-bottom: 8px;
+}
+
+.aiae-thermo-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    padding: 0 4px;
+}
+
+.aiae-thermo-title-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.aiae-thermo-icon {
+    font-size: 1.6rem;
+    filter: drop-shadow(0 0 8px rgba(245,158,11,0.4));
+}
+
+.aiae-thermo-title {
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: #f59e0b;
+    letter-spacing: 0.5px;
+}
+
+.aiae-thermo-sub {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+    letter-spacing: 0.3px;
+}
+
+.aiae-thermo-link {
+    font-size: 0.75rem;
+    color: #f59e0b;
+    text-decoration: none;
+    font-weight: 600;
+    padding: 6px 16px;
+    border: 1px solid rgba(245,158,11,0.3);
+    border-radius: 8px;
+    background: rgba(245,158,11,0.06);
+    transition: all 0.25s ease;
+    white-space: nowrap;
+}
+
+.aiae-thermo-link:hover {
+    background: rgba(245,158,11,0.15);
+    border-color: rgba(245,158,11,0.5);
+    box-shadow: 0 0 16px rgba(245,158,11,0.15);
+    transform: translateX(2px);
+}
+
+.aiae-thermo-body {
+    padding: 24px;
+    border-color: rgba(245,158,11,0.15) !important;
+    background: linear-gradient(135deg, rgba(12,14,20,0.95) 0%, rgba(30,25,15,0.3) 100%) !important;
+    position: relative;
+    overflow: hidden;
+}
+
+.aiae-thermo-body::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #f59e0b, transparent);
+    opacity: 0.5;
+}
+
+.aiae-thermo-grid {
+    display: grid;
+    grid-template-columns: 200px 1fr 1fr;
+    gap: 24px;
+    align-items: start;
+}
+
+/* 左区: 仪表盘 */
+.aiae-thermo-gauge-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.aiae-thermo-gauge-chart {
+    width: 200px;
+    height: 160px;
+}
+
+.aiae-thermo-gauge-footer {
+    display: flex;
+    align-items: baseline;
+    gap: 2px;
+    margin-top: -4px;
+}
+
+.aiae-thermo-val {
+    font-size: 2rem;
+    font-weight: 900;
+    color: #f59e0b;
+    font-family: 'Inter', monospace;
+    line-height: 1;
+}
+
+.aiae-thermo-unit {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.aiae-thermo-regime-badge {
+    font-size: 0.82rem;
+    font-weight: 700;
+    padding: 4px 14px;
+    border-radius: 20px;
+    background: rgba(245,158,11,0.1);
+    border: 1px solid rgba(245,158,11,0.25);
+    color: #f59e0b;
+    text-align: center;
+    transition: all 0.4s ease;
+}
+
+.aiae-thermo-slope {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+    font-weight: 500;
+}
+
+/* 中区: 五档指示器 + 操作指引 */
+.aiae-thermo-center-col {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.aiae-thermo-five-tier {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.at-tier {
+    display: grid;
+    grid-template-columns: 10px 68px 52px auto;
+    gap: 8px;
+    align-items: center;
+    padding: 5px 10px;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.03);
+    transition: all 0.3s ease;
+    font-size: 0.73rem;
+}
+
+.at-tier.active {
+    background: rgba(245,158,11,0.08);
+    border-color: rgba(245,158,11,0.3);
+    box-shadow: 0 0 12px rgba(245,158,11,0.08);
+}
+
+.at-tier.active .at-label {
+    color: #fff;
+    font-weight: 700;
+}
+
+.at-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.at-tier.active .at-dot {
+    box-shadow: 0 0 8px currentColor;
+    animation: dot-pulse 1.5s infinite;
+}
+
+.at-label {
+    color: var(--text-muted);
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.at-range {
+    color: #64748b;
+    font-family: 'Inter', monospace;
+    font-size: 0.68rem;
+}
+
+.at-pos {
+    color: #94a3b8;
+    font-family: 'Inter', monospace;
+    font-size: 0.68rem;
+    text-align: right;
+}
+
+.at-tier.active .at-pos {
+    color: #f59e0b;
+    font-weight: 700;
+}
+
+.aiae-thermo-action {
+    padding: 12px 14px;
+    background: rgba(245,158,11,0.04);
+    border: 1px solid rgba(245,158,11,0.12);
+    border-radius: 10px;
+    border-left: 3px solid #f59e0b;
+}
+
+.at-action-label {
+    font-size: 0.68rem;
+    color: #f59e0b;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.at-action-text {
+    font-size: 0.78rem;
+    color: #e2e8f0;
+    font-weight: 500;
+    line-height: 1.5;
+}
+
+/* 右区: Cap + 预警 */
+.aiae-thermo-right-col {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.aiae-thermo-cap-card {
+    text-align: center;
+    padding: 14px;
+    background: rgba(245,158,11,0.04);
+    border: 1px solid rgba(245,158,11,0.15);
+    border-radius: 12px;
+}
+
+.at-cap-label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.at-cap-value {
+    font-size: 2rem;
+    font-weight: 900;
+    color: #10b981;
+    font-family: 'Inter', monospace;
+    line-height: 1.1;
+    text-shadow: 0 0 20px rgba(16,185,129,0.3);
+}
+
+.at-cap-bar-bg {
+    height: 6px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 8px;
+}
+
+.at-cap-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #10b981, #34d399);
+    border-radius: 3px;
+    transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+    box-shadow: 0 0 8px rgba(16,185,129,0.3);
+}
+
+.aiae-thermo-warns {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.at-warn-item {
+    display: grid;
+    grid-template-columns: 20px 56px 40px 1fr;
+    gap: 6px;
+    align-items: center;
+    padding: 6px 10px;
+    background: rgba(255,255,255,0.02);
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.04);
+}
+
+.at-warn-icon { font-size: 0.8rem; }
+.at-warn-name { font-size: 0.7rem; color: var(--text-muted); font-weight: 500; }
+.at-warn-val {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #94a3b8;
+    font-family: 'Inter', monospace;
+    text-align: right;
+}
+
+.at-warn-bar-bg {
+    height: 5px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.at-warn-bar {
+    height: 100%;
+    background: #10b981;
+    border-radius: 3px;
+    transition: width 0.6s ease, background 0.3s ease;
+}
+
+.aiae-thermo-source {
+    display: flex;
+    gap: 12px;
+    padding: 6px 10px;
+    background: rgba(255,255,255,0.02);
+    border-radius: 6px;
+}
+
+.at-src-item {
+    font-size: 0.68rem;
+    color: #64748b;
+    font-family: 'Inter', monospace;
+}
+
+/* AIAE 温度计响应式 */
+@media (max-width: 1200px) {
+    .aiae-thermo-grid {
+        grid-template-columns: 180px 1fr;
+    }
+    .aiae-thermo-right-col {
+        grid-column: 1 / -1;
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+    .aiae-thermo-cap-card { flex: 1; min-width: 160px; }
+    .aiae-thermo-warns { flex: 2; min-width: 260px; }
+}
+
+@media (max-width: 768px) {
+    .aiae-thermo-grid {
+        grid-template-columns: 1fr;
+    }
+    .aiae-thermo-gauge-chart {
+        width: 180px;
+        height: 140px;
+    }
+    .aiae-thermo-right-col {
+        flex-direction: column;
+    }
+}

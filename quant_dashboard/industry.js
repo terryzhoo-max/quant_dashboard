@@ -432,28 +432,118 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // === ECharts 仪表盘配置 ===
+    // === ECharts 仪表盘配置 (AIAE 温度计风格) ===
     function getGaugeOption(name, value, color, unit = '') {
+        // 各指标专属色段与量程
+        const gaugeProfiles = {
+            RPS: {
+                max: 100,
+                colors: [
+                    [0.30, '#ef4444'],  // 0-30: 极弱 (红)
+                    [0.50, '#f97316'],  // 30-50: 偏弱 (橙)
+                    [0.70, '#eab308'],  // 50-70: 中性 (黄)
+                    [0.80, '#3b82f6'],  // 70-80: 偏强 (蓝)
+                    [1.00, '#10b981']   // 80-100: 极强 (绿)
+                ],
+                splitNumber: 5,
+                labels: {0:'0',20:'20',40:'40',60:'60',80:'80',100:'100'}
+            },
+            Value: {
+                max: 100,
+                colors: [
+                    [0.20, '#10b981'],  // 0-20: 极度低估 (绿)
+                    [0.30, '#3b82f6'],  // 20-30: 低估 (蓝)
+                    [0.60, '#eab308'],  // 30-60: 合理 (黄)
+                    [0.80, '#f97316'],  // 60-80: 偏高 (橙)
+                    [1.00, '#ef4444']   // 80-100: 极贵 (红)
+                ],
+                splitNumber: 5,
+                labels: {0:'0',20:'20',40:'40',60:'60',80:'80',100:'100'}
+            },
+            Risk: {
+                max: 3,
+                colors: [
+                    [0.27, '#10b981'],  // 0-0.8: 健康 (绿)
+                    [0.50, '#3b82f6'],  // 0.8-1.5: 正常 (蓝)
+                    [0.67, '#eab308'],  // 1.5-2.0: 偏热 (黄)
+                    [0.83, '#f97316'],  // 2.0-2.5: 拥挤 (橙)
+                    [1.00, '#ef4444']   // 2.5-3.0: 极度拥挤 (红)
+                ],
+                splitNumber: 6,
+                labels: {0:'0',0.5:'0.5',1:'1',1.5:'1.5',2:'2',2.5:'2.5',3:'3'}
+            }
+        };
+
+        const profile = gaugeProfiles[name] || gaugeProfiles.RPS;
+        const clampedValue = Math.min(Math.max(value, 0), profile.max);
+
         return {
             series: [{
                 type: 'gauge',
-                startAngle: 180, endAngle: 0,
-                radius: '95%',
-                center: ['50%', '80%'],
-                progress: { show: true, width: 10, itemStyle: { color: color, shadowBlur: 10, shadowColor: color } },
-                axisLine: { lineStyle: { width: 10, color: [[1, 'rgba(255,255,255,0.05)']] } },
-                axisTick: { show: false }, axisLabel: { show: false }, splitLine: { show: false },
-                pointer: { show: false },
+                startAngle: 200,
+                endAngle: -20,
+                min: 0,
+                max: profile.max,
+                radius: '92%',
+                center: ['50%', '68%'],
+                pointer: {
+                    show: true,
+                    length: '55%',
+                    width: 3.5,
+                    itemStyle: {
+                        color: color,
+                        shadowColor: color,
+                        shadowBlur: 8
+                    },
+                    icon: 'triangle'
+                },
+                anchor: {
+                    show: true,
+                    size: 7,
+                    itemStyle: {
+                        color: '#0f172a',
+                        borderColor: color,
+                        borderWidth: 2
+                    }
+                },
+                axisLine: {
+                    lineStyle: {
+                        width: 12,
+                        color: profile.colors
+                    }
+                },
+                axisTick: {
+                    length: 5,
+                    distance: -12,
+                    lineStyle: { color: 'auto', width: 1 }
+                },
+                splitLine: {
+                    length: 9,
+                    distance: -12,
+                    lineStyle: { color: 'auto', width: 1.5 }
+                },
+                splitNumber: profile.splitNumber,
+                axisLabel: {
+                    distance: -28,
+                    color: '#64748b',
+                    fontSize: 8,
+                    fontFamily: 'Outfit',
+                    formatter: function(val) {
+                        return profile.labels[val] || '';
+                    }
+                },
                 detail: {
                     valueAnimation: true,
-                    offsetCenter: [0, -10],
-                    fontSize: 22,
+                    offsetCenter: [0, '30%'],
+                    fontSize: 20,
                     fontWeight: '800',
                     color: '#fff',
                     fontFamily: 'Outfit',
                     formatter: `{value}${unit}`
                 },
-                data: [{ value: value }]
+                data: [{ value: clampedValue }],
+                animationDuration: 1000,
+                animationEasingUpdate: 'cubicOut'
             }]
         };
     }

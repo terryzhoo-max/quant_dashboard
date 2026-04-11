@@ -12,9 +12,9 @@ async function autoFillCalcRegime() {
         const data = await resp.json();
         const regime = data.regime || 'RANGE';
 
-        // 评分位映射：CRASH=0, BEAR=8, RANGE=15, BULL=20
-        const regimeScoreMap = { CRASH: 0, BEAR: 8, RANGE: 15, BULL: 20 };
-        const score = regimeScoreMap[regime] ?? 15;
+        // 评分位映射：与 renderRegime() / HTML <select> 保持一致
+        const regimeScoreMap = { CRASH: 0, BEAR: 0, RANGE: 12, BULL: 20 };
+        const score = regimeScoreMap[regime] ?? 12;
 
         const sel = document.getElementById('calc-regime');
         if (sel) {
@@ -49,7 +49,7 @@ function calcSignalScore() {
     const s2  = parseInt(document.getElementById('calc-rsi-dir')?.value  || 8);   // ② RSI动量方向
     const s3  = parseInt(document.getElementById('calc-bias')?.value    || 13);   // ③ BIAS乖离率
     const s4  = parseInt(document.getElementById('calc-vlt')?.value     || 10);   // ④ 布林带%B
-    const s5  = parseInt(document.getElementById('calc-vol')?.value     || 6);    // ⑤ 量比
+    const s5  = parseInt(document.getElementById('calc-vol')?.value     || 6);    // ⑤ 量比（parseInt自动处理6_low→6, 10_low→10）
     const s6  = parseInt(document.getElementById('calc-trend')?.value   || 7);    // ⑥ 趋势位置
     const s7  = parseInt(document.getElementById('calc-kline')?.value   || 3);    // ⑦ K线形态
     const reg = parseInt(document.getElementById('calc-regime')?.value  || 12);   // 市场环境(门槛用)
@@ -148,8 +148,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-// ====== 💰 红利策略专属评分器 V4.0 ======
-// 七维因子：市场环境(15) + RSI(18) + 乖离率(18) + 股息率(20) + 布林(10) + 波动率(9) + RSI动量方向(10)
+// ====== 💰 红利策略专属评分器 V4.0 · 对齐后端 score_etf() ======
+// 七维因子：市场环境(15) + RSI(18) + 乖离率(18) + 股息率(20) + 布林(10) + 波动率(9) + RSI动量方向(10) = 100
 function calcDividendScore() {
     const regime  = document.getElementById('div-calc-regime')?.value  || 'RANGE';
     const rsiVal  = parseInt(document.getElementById('div-calc-rsi')?.value  || 9);
@@ -838,7 +838,8 @@ function renderRegime(d) {
     _setText('rm-p-topn',  p.top_n           ?? 3);
     _setText('rm-p-rb',    p.rebalance_days  ?? 5);
     _setText('rm-p-poscap',p.pos_cap         ?? 66);
-    _setText('rm-p-sl',    p.stop_loss       ?? -8);
+    const slETF = p.stop_loss ?? -8;
+    _setText('rm-p-sl', `ETF${slETF} / 股-10`);
     _setText('rm-p-gate',  p.entry_threshold ?? 65);
     _setText('regime-param-note', p.note || '');
 
@@ -867,6 +868,18 @@ function renderRegime(d) {
     // Apply regime-specific color to panel border
     const panel = document.getElementById('regime-panel');
     if (panel) panel.style.borderColor = clr + '44';
+
+    // V4.2: 联动入场门槛决策台动态数字
+    const regimeKey = (d.regime || 'RANGE');
+    const gateMap = { BULL: 75, RANGE: 68, BEAR: 78 };
+    const curGate = gateMap[regimeKey] || 68;
+    const curHalf = Math.round(curGate * 0.85);
+    const curFull = Math.min(curGate + 15, 95);
+    _setText('gate-reject', `< ${curHalf}`);
+    _setText('gate-half',   `≥ ${curHalf}`);
+    _setText('gate-standard', `≥ ${curGate}`);
+    _setText('gate-full',   `≥ ${curFull}`);
+    _setText('hero-entry-gate', `${regimeKey} ≥${curGate}分`);
 }
 
 function _setText(id, val) {
@@ -1039,29 +1052,37 @@ function renderExecutionDashboard(data, helpers) {
     safelySetText('exec-gauge-label', pos + '%');
     renderExecGauge(pos);
 
-    // 仪表盘下方 regime cap 注释 (双保险Cap)
+    // 仪表盘下方 regime cap 注释 (V2.0: AIAE×ERP 双维决策)
     const regimeCapEl = document.getElementById('exec-gauge-regime-cap');
     if (regimeCapEl) {
         const regimeCN = { 'BULL': '牛市', 'RANGE': '震荡', 'BEAR': '熊市', 'CRASH': '危机' };
         const aiae = g.aiae || {};
+        const regimeEmoji = {1:'🟢',2:'🔵',3:'🟡',4:'🟠',5:'🔴'};
         if (aiae.override_active) {
             regimeCapEl.textContent = `手动覆盖Cap ${g.regime_cap}% (原始 ${aiae.original_cap}%)`;
             regimeCapEl.style.color = '#ef4444';
         } else {
-            regimeCapEl.textContent = `${regimeCN[g.regime] || g.regime} MA:${aiae.ma_cap || '-'}% / AIAE:${aiae.aiae_cap || '-'}% → Cap ${g.regime_cap || 100}%`;
+            const erpTierText = aiae.erp_score_tier || '🟡中性';
+            const _regimeNumeral = {1:'Ⅰ',2:'Ⅱ',3:'Ⅲ',4:'Ⅳ',5:'Ⅴ'};
+            const _statusTag = {1:'满配进攻',2:'标准建仓',3:'均衡持有',4:'系统减仓',5:'清仓防守'};
+            const _regimeCapColors = {1:'#10b981',2:'#3b82f6',3:'#eab308',4:'#f97316',5:'#ef4444'};
+            const numeral = _regimeNumeral[aiae.regime] || 'Ⅲ';
+            regimeCapEl.textContent = `${regimeEmoji[aiae.regime] || '🟡'}${numeral}${aiae.regime_cn || '中性均衡'} × ERP${erpTierText} → ${_statusTag[aiae.regime] || '均衡持有'} [Floor${aiae.regime_floor || '?'}%-Cap${g.regime_cap || 100}%]`;
+            regimeCapEl.style.color = _regimeCapColors[aiae.regime] || '#94a3b8';
         }
     }
 
-    // AIAE 主控状态徽章
+    // AIAE 主控状态徽章 (V2.0: 增加ERP联动标识)
     const aiaeBadge = document.getElementById('exec-aiae-badge');
     if (aiaeBadge && g.aiae) {
         const a = g.aiae;
         const regimeEmoji = {1:'🟢',2:'🔵',3:'🟡',4:'🟠',5:'🔴'};
-        aiaeBadge.textContent = `🌡️ AIAE ${regimeEmoji[a.regime]||''} ${a.regime_cn} · V1=${(a.aiae_value||0).toFixed(1)}% · Cap ${a.aiae_cap}%`;
+        const erpTierText = a.erp_score_tier || '🟡中性';
+        aiaeBadge.textContent = `🌡️ AIAE ${regimeEmoji[a.regime]||''} ${a.regime_cn} × ERP${erpTierText} · V1=${(a.aiae_value||0).toFixed(1)}% · Cap ${a.aiae_cap}%`;
         aiaeBadge.style.borderColor = a.regime <= 2 ? 'rgba(16,185,129,0.4)' : a.regime >= 4 ? 'rgba(239,68,68,0.4)' : 'rgba(245,158,11,0.4)';
     }
 
-    // 权重条动态更新 (如果有AIAE动态权重)
+    // 权重条动态更新 (V2.1: AIAE×ERP联合权重 → flex + tooltip + 百分比标签)
     const w = g.weights || {};
     if (w.mr !== undefined) {
         const gwMr = document.getElementById('gw-mr');
@@ -1069,13 +1090,21 @@ function renderExecutionDashboard(data, helpers) {
         const gwMom = document.getElementById('gw-mom');
         const gwErp = document.getElementById('gw-erp');
         const gwAiae = document.getElementById('gw-aiae');
-        if (gwMr) gwMr.style.flex = w.mr;
-        if (gwDiv) gwDiv.style.flex = w.div;
-        if (gwMom) gwMom.style.flex = w.mom;
-        if (gwErp) gwErp.style.flex = w.erp;
-        if (gwAiae) gwAiae.style.flex = w.aiae_etf || 0.25;
+        if (gwMr)   { gwMr.style.flex = w.mr;        gwMr.title = `均值回归 ${Math.round(w.mr*100)}%`; }
+        if (gwDiv)  { gwDiv.style.flex = w.div;       gwDiv.title = `红利趋势 ${Math.round(w.div*100)}%`; }
+        if (gwMom)  { gwMom.style.flex = w.mom;       gwMom.title = `行业动量 ${Math.round(w.mom*100)}%`; }
+        if (gwErp)  { gwErp.style.flex = w.erp;       gwErp.title = `ERP择时 ${Math.round(w.erp*100)}%`; }
+        if (gwAiae) { gwAiae.style.flex = w.aiae_etf || 0.25; gwAiae.title = `AIAE宏观 ${Math.round((w.aiae_etf||0.25)*100)}%`; }
+        // 更新权重百分比文本 (如存在)
+        const gwPctLabels = document.querySelectorAll('.gw-pct-label');
+        if (gwPctLabels.length >= 5) {
+            gwPctLabels[0].textContent = `${Math.round(w.mr*100)}%`;
+            gwPctLabels[1].textContent = `${Math.round(w.div*100)}%`;
+            gwPctLabels[2].textContent = `${Math.round(w.mom*100)}%`;
+            gwPctLabels[3].textContent = `${Math.round(w.erp*100)}%`;
+            gwPctLabels[4].textContent = `${Math.round((w.aiae_etf||0.25)*100)}%`;
+        }
     }
-
     // 权重条下方：各策略信心度 (5策略)
     const conf = g.confidence || {};
     const confLabels = document.querySelectorAll('.gw-conf-label');
@@ -1199,9 +1228,9 @@ function renderSmartAlert(g, risk, resonance) {
     if (g.regime === 'CRASH') {
         level = 'crash'; icon = '🚨'; title = '危机模式！建议空仓避险';
         sub = '市场处于极端下跌状态，所有策略信号均暂停。待市场稳定后重新评估。';
-    } else if (g.erp_cap_active) {
-        level = 'danger'; icon = '🛡️'; title = `宏观屏障激活：ERP评分 ${g.erp_score} ≤ 40，仓位上限压至30%`;
-        sub = 'ERP五维评分过低，表明宏观环境不利于权益配置。建议保守操作，等待评分回升至55+。';
+    } else if ((g.aiae?.erp_tier || '') === 'bear') {
+        level = 'danger'; icon = '🛡️'; title = `ERP看空(${g.erp_score}分) × AIAE联合调节：权重已切换至防御模式`;
+        sub = 'JOINT_WEIGHTS矩阵已自动增配红利+AIAE权重、削减MR/MOM，无需手动干预。待ERP≥55再恢复进攻。';
     } else if (g.consistency !== 'high') {
         level = 'warning'; icon = '⚠️'; title = '策略方向分歧，建议降低仓位或观望';
         sub = '多个策略对市场方向判断不一致。分歧时建议按单策略仓位上限执行，不叠加。';
@@ -1210,7 +1239,7 @@ function renderSmartAlert(g, risk, resonance) {
         sub = '30日年化波动率超过25%的标的较多。建议单只仓位不超过总仓的20%，避免集中风险。';
     } else {
         level = 'ok'; icon = '✅'; title = '市场环境正常，策略信号可执行';
-        sub = `4策略一致看${g.regime === 'BULL' ? '多' : '稳'}，共振标的 ${resonance.total_overlap || 0} 只。按评分优先级执行即可。`;
+        sub = `5策略一致看${g.regime === 'BULL' ? '多' : '稳'}，共振标的 ${resonance.total_overlap || 0} 只。按评分优先级执行即可。`;
     }
 
     el.style.display = 'block';
@@ -1226,7 +1255,7 @@ function renderSmartAlert(g, risk, resonance) {
 // ====== Top 行动信号渲染 ======
 function renderTopSignals(strategies, { safelySetHTML }) {
     const allSignals = [];
-    ['mr', 'div', 'mom', 'erp'].forEach(key => {
+    ['mr', 'div', 'mom', 'erp', 'aiae_etf'].forEach(key => {
         const sigs = strategies[key]?.signals || [];
         sigs.forEach(s => {
             if (s.signal === 'buy' || s.signal === 'sell' || s.signal === 'sell_half' || s.signal === 'sell_weak') {
@@ -1235,7 +1264,7 @@ function renderTopSignals(strategies, { safelySetHTML }) {
         });
     });
 
-    const sourceLabel = { mr: '均值回归', div: '红利趋势', mom: '动量轮动', erp: 'ERP择时' };
+    const sourceLabel = { mr: '均值回归', div: '红利趋势', mom: '动量轮动', erp: 'ERP择时', aiae_etf: 'AIAE标的' };
     const buys = allSignals.filter(s => s.signal === 'buy').sort((a, b) => (b.signal_score || 0) - (a.signal_score || 0)).slice(0, 3);
     const sells = allSignals.filter(s => s.signal !== 'buy').sort((a, b) => (a.signal_score || 100) - (b.signal_score || 100)).slice(0, 3);
 
@@ -1326,6 +1355,10 @@ function renderHeatmapTable(strategyKey, strategyData) {
         } else if (strategyKey === 'erp') {
             const m1cls = s.m1_yoy !== undefined ? (s.m1_yoy > 0 ? 'f-val-good' : 'f-val-danger') : '';
             factors = `<span class="f-key">ERP:</span><span class="f-val">${s.erp_abs !== undefined ? s.erp_abs.toFixed(2) + '%' : '-'}</span> <span class="f-key">分位:</span><span class="f-val">${s.erp_pct !== undefined ? s.erp_pct.toFixed(0) + '%' : '-'}</span> <span class="f-key">M1:</span><span class="f-val ${m1cls}">${s.m1_yoy !== undefined ? s.m1_yoy.toFixed(1) + '%' : '-'}</span>`;
+        } else if (strategyKey === 'aiae_etf') {
+            // V4.0: AIAE ETF专属因子展示
+            const regimeEmoji = {1:'🟢',2:'🔵',3:'🟡',4:'🟠',5:'🔴'};
+            factors = `<span class="f-key">档位:</span><span class="f-val">${regimeEmoji[s.aiae_regime] || ''} ${s.aiae_regime || '-'}</span> <span class="f-key">类型:</span><span class="f-val">${s.etf_type || s.style || '-'}</span> <span class="f-key">仓位:</span><span class="f-val" style="color:#fbbf24;font-weight:700;">${s.suggested_position || 0}%</span>`;
         } else {
             const momcls = s.momentum_20d !== undefined ? (s.momentum_20d > 5 ? 'f-val-good' : s.momentum_20d < -3 ? 'f-val-danger' : '') : '';
             const volcls = s.volume_ratio !== undefined ? (s.volume_ratio > 1.5 ? 'f-val-good' : s.volume_ratio < 0.7 ? 'f-val-warn' : '') : '';
@@ -1336,8 +1369,9 @@ function renderHeatmapTable(strategyKey, strategyData) {
             <td style="font-weight:600;color:#fff;">${s.name || '-'}</td>
             <td style="font-family:monospace;font-size:0.72rem;color:var(--text-muted);">${s.ts_code || s.code || '-'}</td>
             ${strategyKey === 'erp' ? `<td>${(() => { const styleMap = {'核心宽基':'erp-style-core','中盘成长':'erp-style-growth','防御红利':'erp-style-yield','港股宽基':'erp-style-hk'}; return `<span class="erp-style-tag ${styleMap[s.style] || 'erp-style-core'}">${s.style || '-'}</span>`; })()}</td>` : ''}
+            ${strategyKey === 'aiae_etf' ? `<td><span style="font-size:0.72rem;color:#fbbf24;">${s.etf_type || s.style || '-'}</span></td>` : ''}
             <td><span class="score-cell score-tier-${tier}">${score}</span></td>
-            <td class="factor-compact">${factors}</td>
+            ${strategyKey === 'aiae_etf' ? `<td><span style="font-size:0.72rem;color:var(--text-muted);">${s.style || '-'}</span></td>` : `<td class="factor-compact">${factors}</td>`}
             <td><span class="st-signal-tag ${tagClass}">${tagLabel}</span></td>
             <td style="font-weight:700;color:#fff;">${s.suggested_position || 0}%</td>
         </tr>`;
@@ -1378,6 +1412,7 @@ function renderResonancePanel(resonance, { safelySetHTML }) {
                 <span><span class="resonance-signal-dot ${dotFor(item.signals?.div)}"></span>DIV</span>
                 <span><span class="resonance-signal-dot ${dotFor(item.signals?.mom)}"></span>MOM</span>
                 <span><span class="resonance-signal-dot ${dotFor(item.signals?.erp)}"></span>ERP</span>
+                <span><span class="resonance-signal-dot ${dotFor(item.signals?.aiae)}" style="box-shadow:0 0 4px rgba(245,158,11,0.5);"></span>AIAE</span>
             </div>
             <div style="margin-top:8px;font-size:0.72rem;font-weight:600;color:${type === 'buy' ? '#10b981' : type === 'sell' ? '#ef4444' : '#f59e0b'};">${typeLabel}</div>
         </div>`;

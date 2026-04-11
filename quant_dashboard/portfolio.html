@@ -6,7 +6,7 @@
     <title>AlphaCore | 投资组合管理</title>
     <meta name="description" content="AlphaCore 机构级投资组合管理终端 — 实时估值、MCTR风险归因、净值曲线、交易执行">
     <link rel="stylesheet" href="./styles.css?v=3">
-    <link rel="stylesheet" href="./portfolio.css?v=20">
+    <link rel="stylesheet" href="./portfolio.css?v=21">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
     <script src="./echarts.min.js"></script>
 </head>
@@ -53,6 +53,8 @@
                 <span class="pf-live-badge" id="pf-live-badge">● LIVE</span>
                 <button class="btn btn-import" id="import-btn">📥 导入持仓 / Import</button>
                 <input type="file" id="import-file-input" accept=".txt,.csv,.xls" style="display:none;">
+                <button class="btn btn-sync" id="sync-btn">🔄 同步数据</button>
+                <button class="btn btn-reset" id="reset-btn">🗑️ 清零</button>
                 <button class="btn btn-primary" id="open-trade-btn" style="box-shadow: 0 0 20px rgba(59,130,246,0.3);">➕ 新增仓位 / Trade</button>
             </div>
         </header>
@@ -257,6 +259,26 @@
         </div>
     </div>
 
-    <script src="./portfolio_manager.js?v=21"></script>
+    <!-- ═══ 清零确认弹窗 ═══ -->
+    <div class="pf-modal-overlay" id="reset-modal">
+        <div class="pf-modal" style="width: 440px;">
+            <div class="pf-modal-header">
+                <h3 class="pf-modal-title">🗑️ 清零投资组合</h3>
+                <span class="pf-modal-badge" style="background:rgba(239,68,68,0.12);border-color:rgba(239,68,68,0.25);color:#f87171;">DANGER</span>
+            </div>
+            <div class="pf-reset-summary" id="reset-summary"></div>
+            <div class="pf-reset-warning">⚠️ 此操作将<strong>永久清除</strong>所有持仓和现金余额，不可撤销</div>
+            <div class="pf-reset-confirm-zone">
+                <label class="pf-reset-confirm-label">请输入 <strong>RESET</strong> 确认清零:</label>
+                <input type="text" id="reset-confirm-input" class="pf-input" placeholder="输入 RESET" autocomplete="off">
+            </div>
+            <div class="pf-modal-actions">
+                <button class="pf-btn-reset-exec" id="reset-exec-btn" disabled>🗑️ 确认清零</button>
+            </div>
+            <button class="pf-btn-cancel" id="reset-close-btn">取消并返回 CANCEL</button>
+        </div>
+    </div>
+
+    <script src="./portfolio_manager.js?v=22"></script>
 </body>
 </html>

@@ -88,14 +88,15 @@
             <div class="st-report active" id="st-aiae-global">
 
             <style>
-                .gaiae-hero-grid { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:10px; margin-bottom:14px; }
+                .gaiae-hero-grid { display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:10px; margin-bottom:14px; }
                 .gaiae-hero-card { background:linear-gradient(135deg,rgba(15,23,42,0.9),rgba(30,41,59,0.7)); border-radius:12px; padding:16px; text-align:center; border:1px solid rgba(100,116,139,0.2); transition:all 0.4s; }
                 .gaiae-hero-card:hover { transform:translateY(-2px); box-shadow:0 4px 20px rgba(0,0,0,0.3); }
                 .gaiae-hero-card.coldest-glow { border-color:rgba(16,185,129,0.4); box-shadow:0 0 20px rgba(16,185,129,0.12); }
                 .gaiae-hero-label { font-size:0.6rem; color:#64748b; margin-bottom:4px; }
                 .gaiae-hero-value { font-size:2rem; font-weight:900; letter-spacing:-1px; color:#f59e0b; }
                 .gaiae-hero-sub { font-size:0.6rem; color:#94a3b8; margin-top:3px; }
-                .gaiae-dual-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
+                .gaiae-dual-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; margin-bottom:14px; }
+                .gaiae-region-panel.hk { border-color:rgba(168,85,247,0.25); }
                 .gaiae-region-panel { background:rgba(15,23,42,0.6); border-radius:12px; padding:16px; border:1px solid rgba(100,116,139,0.15); }
                 .gaiae-region-panel.us { border-color:rgba(59,130,246,0.25); }
                 .gaiae-region-panel.jp { border-color:rgba(220,38,38,0.25); }
@@ -145,11 +146,12 @@
                 @keyframes gaiae-cell-breathe { 0%,100%{box-shadow:0 0 8px rgba(245,158,11,0.3)} 50%{box-shadow:0 0 16px rgba(245,158,11,0.5)} }
                 /* ③ 操作区合并 */
                 .gaiae-3way { background:rgba(15,23,42,0.6); border-radius:12px; padding:16px; border:1px solid rgba(100,116,139,0.15); margin-bottom:14px; }
-                .gaiae-3way-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:10px; }
+                .gaiae-3way-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:10px; }
                 .gaiae-3way-card { border-radius:10px; padding:14px; text-align:center; transition:all 0.4s; }
                 .gaiae-3way-card.cn { background:rgba(239,68,68,0.06); border:1px solid rgba(239,68,68,0.2); }
                 .gaiae-3way-card.us { background:rgba(59,130,246,0.06); border:1px solid rgba(59,130,246,0.2); }
                 .gaiae-3way-card.jp { background:rgba(220,38,38,0.06); border:1px solid rgba(220,38,38,0.15); }
+                .gaiae-3way-card.hk { background:rgba(168,85,247,0.06); border:1px solid rgba(168,85,247,0.2); }
                 .gaiae-3way-card.is-coldest { box-shadow:0 0 16px rgba(16,185,129,0.15); border-color:rgba(16,185,129,0.35) !important; }
                 .gaiae-3way-flag { font-size:1.8rem; margin-bottom:4px; }
                 .gaiae-3way-value { font-size:1.6rem; font-weight:900; }
@@ -157,7 +159,7 @@
                 .gaiae-3way-crown { display:inline-block; font-size:1rem; animation:crown-bounce 1s ease-in-out infinite alternate; }
                 @keyframes crown-bounce { 0%{transform:translateY(0)} 100%{transform:translateY(-3px)} }
                 .gaiae-recommendation { padding:10px 14px; border-radius:8px; background:rgba(245,158,11,0.06); border:1px solid rgba(245,158,11,0.2); font-size:0.72rem; color:#fbbf24; text-align:center; font-weight:600; }
-                .gaiae-action-zone { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:14px; }
+                .gaiae-action-zone { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:14px; }
                 .gaiae-az-card { border-radius:10px; padding:14px; transition:all 0.4s; }
                 .gaiae-az-card.az-buy { background:rgba(16,185,129,0.04); border:1px solid rgba(16,185,129,0.15); }
                 .gaiae-az-card.az-hold { background:rgba(234,179,8,0.04); border:1px solid rgba(234,179,8,0.15); }
@@ -197,8 +199,13 @@
                     <div class="gaiae-hero-value" id="gaiae-jp-value" style="color:#dc2626">--</div>
                     <div class="gaiae-hero-sub" id="gaiae-jp-regime">加载中...</div>
                 </div>
+                <div class="gaiae-hero-card">
+                    <div class="gaiae-hero-label">🇭🇰 HK AIAE</div>
+                    <div class="gaiae-hero-value" id="gaiae-hk-value" style="color:#a855f7">--</div>
+                    <div class="gaiae-hero-sub" id="gaiae-hk-regime">加载中...</div>
+                </div>
                 <div class="gaiae-hero-card" id="gaiae-coldest-card">
-                    <div class="gaiae-hero-label">📊 三地对比</div>
+                    <div class="gaiae-hero-label">📊 四地对比</div>
                     <div class="gaiae-hero-value" id="gaiae-coldest" style="color:#10b981;font-size:1.4rem">--</div>
                     <div class="gaiae-hero-sub" id="gaiae-coldest-label">最冷市场 · 超配优先</div>
                 </div>
@@ -279,6 +286,40 @@
                     </div>
                     <div class="gaiae-signal-list" id="gaiae-jp-signals"></div>
                 </div>
+                <!-- HK Panel -->
+                <div class="gaiae-region-panel hk">
+                    <div class="gaiae-region-title"><span>🇭🇰</span> <span style="color:#a855f7">港股 AIAE 宏观仓位</span></div>
+                    <div class="gaiae-gauge-container" id="gaiae-hk-gauge"></div>
+                    <div class="gaiae-gauge-label" id="gaiae-hk-gauge-val" style="color:#a855f7">--</div>
+                    <div class="gaiae-gauge-regime" id="gaiae-hk-gauge-regime">--</div>
+                    <!-- ⑤ 五档竖卡组 -->
+                    <div class="gaiae-regime-cards" id="gaiae-hk-regime-cards">
+                        <div class="gaiae-rc" data-regime="1" style="color:#10b981;background:rgba(16,185,129,0.08)"><div class="gaiae-rc-emoji">🟢</div><div class="gaiae-rc-name">Ⅰ 极度恐慌</div><div class="gaiae-rc-range">&lt;8%</div><div class="gaiae-rc-pos">90-95%</div><div class="gaiae-rc-tip">2008金融危机 · 南向抄底窗口</div></div>
+                        <div class="gaiae-rc" data-regime="2" style="color:#3b82f6;background:rgba(59,130,246,0.08)"><div class="gaiae-rc-emoji">🔵</div><div class="gaiae-rc-name">Ⅱ 低配置区</div><div class="gaiae-rc-range">8-12%</div><div class="gaiae-rc-pos">70-85%</div><div class="gaiae-rc-tip">2022Q4港股反转 · 超配窗口</div></div>
+                        <div class="gaiae-rc" data-regime="3" style="color:#eab308;background:rgba(234,179,8,0.08)"><div class="gaiae-rc-emoji">🟡</div><div class="gaiae-rc-name">Ⅲ 中性均衡</div><div class="gaiae-rc-range">12-18%</div><div class="gaiae-rc-pos">50-65%</div><div class="gaiae-rc-tip">常态区间 · 纪律持有</div></div>
+                        <div class="gaiae-rc" data-regime="4" style="color:#f97316;background:rgba(249,115,22,0.08)"><div class="gaiae-rc-emoji">🟠</div><div class="gaiae-rc-name">Ⅳ 偏热区域</div><div class="gaiae-rc-range">18-25%</div><div class="gaiae-rc-pos">25-40%</div><div class="gaiae-rc-tip">2021港股科技泡沫 · 系统减仓</div></div>
+                        <div class="gaiae-rc" data-regime="5" style="color:#ef4444;background:rgba(239,68,68,0.08)"><div class="gaiae-rc-emoji">🔴</div><div class="gaiae-rc-name">Ⅴ 极度过热</div><div class="gaiae-rc-range">&gt;25%</div><div class="gaiae-rc-pos">0-15%</div><div class="gaiae-rc-tip">2007H股泡沫 · 全面撤退</div></div>
+                    </div>
+                    <!-- ① 因子卡片 + hover 解释 -->
+                    <div class="gaiae-factor-grid">
+                        <div class="gaiae-factor-card"><div class="gaiae-factor-label">证券化率 (Core)</div><div class="gaiae-factor-value" id="gaiae-hk-core">--</div><div class="gaiae-factor-unit">HSI MktCap/M2 · 权重50%</div>
+                            <div class="gaiae-factor-explain"><span class="fe-weight">权重 50%</span> · 核心指标<br>恒指总市值 / (CN M2×0.15)<br><span class="fe-warn">警戒: &gt;25% 港股过热区</span><br><span class="fe-safe">&lt;10% = 历史底部区域</span><br>港股自由流通特殊性</div>
+                        </div>
+                        <div class="gaiae-factor-card"><div class="gaiae-factor-label">南向热度</div><div class="gaiae-factor-value" id="gaiae-hk-southbound">--</div><div class="gaiae-factor-unit">南向资金12M累计 · 权重20%</div>
+                            <div class="gaiae-factor-explain"><span class="fe-weight">权重 20%</span> · 内地资金温度计<br>港股通南向资金12个月累计<br><span class="fe-warn">警戒: 周净买&gt;200亿RMB 过热</span><br><span class="fe-safe">周净卖出 = 恐慌底部信号</span><br>手动更新 · 数据源:港交所</div>
+                        </div>
+                        <div class="gaiae-factor-card"><div class="gaiae-factor-label">AH溢价</div><div class="gaiae-factor-value" id="gaiae-hk-ahpremium">--</div><div class="gaiae-factor-unit">AH Premium Index · 权重30%</div>
+                            <div class="gaiae-factor-explain"><span class="fe-weight">权重 30%</span> · 估值偏差指标<br>恒生AH股溢价指数<br><span class="fe-warn">警戒: &gt;145 H股极度低估</span><br><span class="fe-safe">&lt;115 = AH收敛，港股偏贵</span><br>中性: 125-140</div>
+                        </div>
+                    </div>
+                    <!-- ② 警示指标面板 -->
+                    <div class="gaiae-warn-panel" id="gaiae-hk-warn-panel">
+                        <div class="gaiae-warn-card warn-ok" id="gaiae-hk-warn-sb"><div class="gaiae-warn-label">🔥 南向周净买</div><div class="gaiae-warn-value" id="gaiae-hk-warn-sb-val" style="color:#94a3b8">—</div><div class="gaiae-warn-threshold">警戒: &gt;200亿RMB</div><div class="gaiae-warn-bar"><div class="gaiae-warn-bar-fill" id="gaiae-hk-warn-sb-bar" style="width:0%;background:#10b981"></div></div></div>
+                        <div class="gaiae-warn-card warn-ok" id="gaiae-hk-warn-slope"><div class="gaiae-warn-label">📐 月斜率</div><div class="gaiae-warn-value" id="gaiae-hk-warn-slope-val" style="color:#94a3b8">—</div><div class="gaiae-warn-threshold">警戒: |±2.5|</div><div class="gaiae-warn-bar"><div class="gaiae-warn-bar-fill" id="gaiae-hk-warn-slope-bar" style="width:0%;background:#10b981"></div></div></div>
+                        <div class="gaiae-warn-card warn-ok" id="gaiae-hk-warn-ah"><div class="gaiae-warn-label">💱 AH溢价指数</div><div class="gaiae-warn-value" id="gaiae-hk-warn-ah-val" style="color:#94a3b8">—</div><div class="gaiae-warn-threshold">警戒: &gt;145</div><div class="gaiae-warn-bar"><div class="gaiae-warn-bar-fill" id="gaiae-hk-warn-ah-bar" style="width:0%;background:#10b981"></div></div></div>
+                    </div>
+                    <div class="gaiae-signal-list" id="gaiae-hk-signals"></div>
+                </div>
             </div>
 
             <!-- ===== AIAE × ERP Cross Validation Matrices ===== -->
@@ -311,11 +352,25 @@
                         </tbody>
                     </table>
                 </div>
+                <div class="gaiae-matrix-wrap">
+                    <div style="font-size:0.78rem;font-weight:700;color:#a855f7;margin-bottom:4px;">🇭🇰 HK AIAE × ERP 仓位矩阵</div>
+                    <div style="font-size:0.5rem;color:#475569;margin-bottom:6px;">📖 读法：先找AIAE档位(列) → 再找ERP区间(行) → 交叉格=建议仓位</div>
+                    <div id="gaiae-hk-cv-verdict" style="font-size:0.65rem;color:#94a3b8;margin-bottom:8px;"></div>
+                    <table class="gaiae-matrix-table" id="gaiae-hk-matrix">
+                        <thead><tr><th>ERP \ AIAE</th><th style="color:#10b981">Ⅰ</th><th style="color:#3b82f6">Ⅱ</th><th style="color:#eab308">Ⅲ</th><th style="color:#f97316">Ⅳ</th><th style="color:#ef4444">Ⅴ</th></tr></thead>
+                        <tbody>
+                            <tr><td style="color:#94a3b8;font-weight:600">ERP≥5%</td><td>95%</td><td>85%</td><td>70%</td><td>45%</td><td>20%</td></tr>
+                            <tr><td style="color:#94a3b8;font-weight:600">3-5%</td><td>90%</td><td>80%</td><td>65%</td><td>40%</td><td>15%</td></tr>
+                            <tr><td style="color:#94a3b8;font-weight:600">1-3%</td><td>85%</td><td>70%</td><td>55%</td><td>30%</td><td>10%</td></tr>
+                            <tr><td style="color:#94a3b8;font-weight:600">ERP&lt;1%</td><td>75%</td><td>60%</td><td>40%</td><td>20%</td><td>5%</td></tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
-            <!-- ===== 三地对比 ===== -->
+            <!-- ===== 四地对比 ===== -->
             <div class="gaiae-3way">
-                <div style="font-size:0.85rem;font-weight:700;color:#f59e0b;margin-bottom:12px;">🌍 全球AIAE三地对比 · 中/美/日 配置热度</div>
+                <div style="font-size:0.85rem;font-weight:700;color:#f59e0b;margin-bottom:12px;">🌍 全球AIAE四地对比 · 中/美/日/港 配置热度</div>
                 <div class="gaiae-3way-grid">
                     <div class="gaiae-3way-card cn" id="gaiae-3way-card-cn">
                         <div class="gaiae-3way-flag">🇨🇳</div>
@@ -331,6 +386,11 @@
                         <div class="gaiae-3way-flag">🇯🇵</div>
                         <div class="gaiae-3way-value" id="gaiae-3way-jp" style="color:#dc2626">--</div>
                         <div class="gaiae-3way-regime" id="gaiae-3way-jp-regime" style="color:#94a3b8">日股 AIAE</div>
+                    </div>
+                    <div class="gaiae-3way-card hk" id="gaiae-3way-card-hk">
+                        <div class="gaiae-3way-flag">🇭🇰</div>
+                        <div class="gaiae-3way-value" id="gaiae-3way-hk" style="color:#a855f7">--</div>
+                        <div class="gaiae-3way-regime" id="gaiae-3way-hk-regime" style="color:#94a3b8">港股 AIAE</div>
                     </div>
                 </div>
                 <div class="gaiae-recommendation" id="gaiae-recommendation">⏳ 加载中...</div>
@@ -471,9 +531,61 @@
                 </div>
             </div>
 
+            <!-- ===== V2.0: 港股手动数据更新面板 ===== -->
+            <div class="gaiae-accordion-trigger" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open');">
+                <span style="font-size:1rem;">🇭🇰</span>
+                <span class="acc-title">港股手动数据更新 · 南向资金 / AH溢价指数</span>
+                <span class="acc-arrow">›</span>
+            </div>
+            <div class="gaiae-accordion-body">
+                <div style="background:rgba(15,23,42,0.6);border-radius:12px;padding:20px;border:1px solid rgba(168,85,247,0.15);margin-bottom:14px;">
+                    <div style="font-size:0.72rem;color:#94a3b8;margin-bottom:14px;line-height:1.6;">
+                        💡 港股南向资金和AH溢价指数无法自动获取，需手动更新。<br>
+                        数据源: <a href="https://www.hkex.com.hk/Mutual-Market/Stock-Connect/Statistics" target="_blank" style="color:#a78bfa;">港交所·互联互通统计</a> / 
+                        <a href="https://www.wind.com.cn" target="_blank" style="color:#a78bfa;">Wind·AH溢价</a>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                        <!-- 南向资金 -->
+                        <div style="background:rgba(30,41,59,0.5);border-radius:10px;padding:14px;border:1px solid rgba(168,85,247,0.1);">
+                            <div style="font-size:0.78rem;font-weight:700;color:#a78bfa;margin-bottom:8px;">💰 南向资金流向</div>
+                            <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+                                <input type="number" id="hk-sb-input" step="10" placeholder="例: 150"
+                                    style="flex:1;background:rgba(15,23,42,0.8);border:1px solid rgba(100,116,139,0.3);border-radius:6px;padding:8px 12px;color:#e2e8f0;font-size:0.85rem;font-family:inherit;outline:none;" />
+                                <span style="font-size:0.72rem;color:#64748b;white-space:nowrap;">亿RMB/周</span>
+                            </div>
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <input type="number" id="hk-sb-month-input" step="10" placeholder="例: 600 (可选)"
+                                    style="flex:1;background:rgba(15,23,42,0.8);border:1px solid rgba(100,116,139,0.3);border-radius:6px;padding:8px 12px;color:#e2e8f0;font-size:0.75rem;font-family:inherit;outline:none;" />
+                                <span style="font-size:0.65rem;color:#475569;white-space:nowrap;">月累计</span>
+                            </div>
+                            <div style="font-size:0.55rem;color:#475569;margin-top:6px;">当前值: <span id="hk-sb-current" style="color:#94a3b8;">--</span></div>
+                            <button onclick="submitHKSouthbound()" id="hk-sb-btn"
+                                style="margin-top:10px;width:100%;background:rgba(168,85,247,0.12);color:#a78bfa;border:1px solid rgba(168,85,247,0.3);border-radius:6px;padding:6px;cursor:pointer;font-size:0.72rem;font-weight:600;font-family:inherit;transition:all 0.3s;">
+                                📤 更新南向资金
+                            </button>
+                        </div>
+                        <!-- AH溢价 -->
+                        <div style="background:rgba(30,41,59,0.5);border-radius:10px;padding:14px;border:1px solid rgba(168,85,247,0.1);">
+                            <div style="font-size:0.78rem;font-weight:700;color:#a78bfa;margin-bottom:8px;">💱 AH溢价指数</div>
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <input type="number" id="hk-ah-input" step="0.1" min="80" max="200" placeholder="例: 135.0"
+                                    style="flex:1;background:rgba(15,23,42,0.8);border:1px solid rgba(100,116,139,0.3);border-radius:6px;padding:8px 12px;color:#e2e8f0;font-size:0.85rem;font-family:inherit;outline:none;" />
+                                <span style="font-size:0.72rem;color:#64748b;white-space:nowrap;">指数点</span>
+                            </div>
+                            <div style="font-size:0.55rem;color:#475569;margin-top:6px;">当前值: <span id="hk-ah-current" style="color:#94a3b8;">--</span> | 中性: 125-140</div>
+                            <button onclick="submitHKAHPremium()" id="hk-ah-btn"
+                                style="margin-top:10px;width:100%;background:rgba(168,85,247,0.12);color:#a78bfa;border:1px solid rgba(168,85,247,0.3);border-radius:6px;padding:6px;cursor:pointer;font-size:0.72rem;font-weight:600;font-family:inherit;transition:all 0.3s;">
+                                📤 更新AH溢价
+                            </button>
+                        </div>
+                    </div>
+                    <div id="hk-update-status" style="margin-top:10px;font-size:0.65rem;color:#94a3b8;text-align:center;min-height:18px;"></div>
+                </div>
+            </div>
+
             <!-- 声明 -->
             <div style="margin-top:8px;padding:8px 14px;background:rgba(15,23,42,0.5);border-radius:8px;font-size:0.6rem;color:#475569;">
-                ⚠️ 数据源: FRED (Wilshire5000/M2/Nikkei225/日本M2) + AAII Sentiment + yfinance。信号仅供参考，不构成投资建议。
+                ⚠️ 数据源: FRED (Wilshire5000/M2/Nikkei225/日本M2) + AAII Sentiment + Finnhub + CNBC + 港交所。信号仅供参考，不构成投资建议。
             </div>
 
             </div><!-- /st-aiae-global -->
@@ -488,6 +600,7 @@
                 .erp-hero-card { position:relative; background:linear-gradient(135deg,rgba(15,23,42,0.9),rgba(30,41,59,0.7)); border-radius:12px; padding:20px; text-align:center; border:1px solid rgba(100,116,139,0.2); transition:all 0.4s; }
                 .erp-hero-card.us-active { border-color:rgba(59,130,246,0.4); box-shadow:0 0 24px rgba(59,130,246,0.12); }
                 .erp-hero-card.jp-active { border-color:rgba(220,38,38,0.4); box-shadow:0 0 24px rgba(220,38,38,0.12); }
+                .erp-hero-card.hk-active { border-color:rgba(168,85,247,0.4); box-shadow:0 0 24px rgba(168,85,247,0.12); }
                 .erp-hero-value { font-size:2.4rem; font-weight:900; letter-spacing:-1px; line-height:1; }
                 .erp-hero-label { font-size:0.65rem; color:#64748b; margin-top:4px; }
                 .erp-signal-banner { border-radius:10px; padding:10px 16px; display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; border:1px solid; transition:all 0.4s; }
@@ -522,7 +635,7 @@
                     <span style="font-size:2rem;filter:drop-shadow(0 0 8px rgba(217,119,6,0.3));">🌐</span>
                     <div>
                         <h2 style="margin:0;font-size:1.15rem;color:#f8fafc;">海外ERP择时引擎 <span style="color:#d97706;font-size:0.7rem;border:1px solid #d97706;padding:2px 8px;border-radius:4px;margin-left:6px;background:rgba(217,119,6,0.1);">V2.0</span></h2>
-                        <p style="margin:2px 0 0;font-size:0.7rem;color:#94a3b8;">🇺🇸 S&P500 × 🇯🇵 TOPIX | 五维信号 · FRED API · 三地对比决策矩阵</p>
+                        <p style="margin:2px 0 0;font-size:0.7rem;color:#94a3b8;">🇺🇸 S&P500 × 🇯🇵 TOPIX × 🇭🇰 HSI/HSTECH | 五维信号 · FRED API · 四地对比决策矩阵</p>
                     </div>
                 </div>
                 <div style="display:flex;align-items:center;gap:10px;position:relative;z-index:1;">
@@ -535,15 +648,17 @@
                     <span id="global-erp-update-time" style="font-size:0.62rem;color:#475569;"></span>
                     <div id="global-resonance-us" style="font-size:0.65rem;color:#94a3b8;padding:3px 10px;border-radius:12px;background:rgba(100,116,139,0.15);"></div>
                     <div id="global-resonance-jp" style="font-size:0.65rem;color:#94a3b8;padding:3px 10px;border-radius:12px;background:rgba(100,116,139,0.15);"></div>
+                    <div id="global-resonance-hk" style="font-size:0.65rem;color:#94a3b8;padding:3px 10px;border-radius:12px;background:rgba(100,116,139,0.15);"></div>
                 </div>
             </div>
 
             <!-- ZONE 0.5 · 警示横幅 -->
             <div id="global-alert-us" style="display:none;margin-top:8px;"></div>
             <div id="global-alert-jp" style="display:none;margin-top:4px;"></div>
+            <div id="global-alert-hk" style="display:none;margin-top:4px;"></div>
 
-            <!-- 双列面板: 美股 + 日本 V2.0 -->
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px;">
+            <!-- 三列面板: 美股 + 日本 + 港股 V2.0 -->
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:14px;">
 
                 <!-- ═══════ 🇺🇸 美股面板 V2.0 ═══════ -->
                 <div class="glass-panel" style="padding:16px;border:1px solid rgba(59,130,246,0.2);">
@@ -665,24 +780,88 @@
                     <div id="jp-erp-chart" style="width:100%;height:220px;"></div>
                 </div>
 
-            </div><!-- /双列 -->
+                <!-- ═══════ 🇭🇰 港股面板 V2.0 ═══════ -->
+                <div class="glass-panel" style="padding:16px;border:1px solid rgba(168,85,247,0.2);">
+                    <h3 style="margin:0 0 10px;font-size:0.88rem;color:#c084fc;display:flex;align-items:center;gap:8px;">
+                        <span>🇭🇰 港股 HSI (恒生指数)</span>
+                        <span id="hk-signal-badge" style="font-size:0.7rem;padding:2px 10px;border-radius:12px;"></span>
+                    </h3>
 
-            <!-- 诊断卡片 V2.0 (全宽2列) -->
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px;">
+                    <!-- Hero ERP Card -->
+                    <div class="erp-hero-card hk-active" id="hk-hero-card">
+                        <div class="erp-hero-label">Equity Risk Premium (1/PE − Blended Rf)</div>
+                        <div class="erp-hero-value" id="hk-val-erp" style="color:#a855f7;">--</div>
+                        <div id="hk-sub-pe" style="font-size:0.62rem;color:#64748b;margin-top:4px;">--</div>
+                    </div>
+
+                    <!-- Aux Metrics Row -->
+                    <div class="erp-aux-grid" style="margin-top:10px;">
+                        <div class="erp-aux-card"><div class="label">HSI PE</div><div class="value" id="hk-val-pe">--</div></div>
+                        <div class="erp-aux-card"><div class="label">混合Rf</div><div class="value" id="hk-val-yield">--</div><div class="sub">0.6×US+0.4×CN</div></div>
+                        <div class="erp-aux-card"><div class="label">南向资金</div><div class="value" id="hk-val-sb">--</div><div class="sub" id="hk-sub-sb">--</div></div>
+                        <div class="erp-aux-card"><div class="label">HSI波动率</div><div class="value" id="hk-val-vol">--</div><div class="sub" id="hk-sub-vol">--</div></div>
+                        <div class="erp-aux-card"><div class="label">港美利差</div><div class="value" id="hk-val-spread">--</div><div class="sub" id="hk-sub-spread">--</div></div>
+                    </div>
+
+                    <!-- Signal Decision Banner -->
+                    <div class="erp-signal-banner" id="hk-signal-banner" style="background:rgba(100,116,139,0.08);border-color:rgba(100,116,139,0.2);">
+                        <div class="signal-main">
+                            <div class="signal-score" id="hk-composite-score" style="color:#94a3b8;">--</div>
+                            <div>
+                                <div class="signal-text" id="hk-signal-label" style="color:#94a3b8;">加载中...</div>
+                                <div class="signal-pos" id="hk-signal-pos"></div>
+                            </div>
+                        </div>
+                        <div id="hk-signal-level-bar" style="display:flex;gap:3px;"></div>
+                    </div>
+
+                    <!-- Gauge + 五维评分 -->
+                    <div style="display:grid;grid-template-columns:1fr 160px;gap:10px;margin-bottom:12px;">
+                        <div style="background:rgba(15,23,42,0.5);border-radius:10px;padding:12px;">
+                            <div style="font-size:0.7rem;color:#94a3b8;margin-bottom:8px;">📊 五维评分</div>
+                            <div id="hk-dim-bars"></div>
+                        </div>
+                        <div style="background:rgba(15,23,42,0.5);border-radius:10px;padding:8px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+                            <div id="hk-gauge-chart" style="width:140px;height:105px;"></div>
+                        </div>
+                    </div>
+
+                    <!-- 买卖信号中枢 -->
+                    <div style="background:rgba(15,23,42,0.5);border-radius:10px;padding:12px;margin-bottom:12px;border:1px solid rgba(168,85,247,0.12);">
+                        <div style="font-size:0.72rem;color:#c084fc;font-weight:600;margin-bottom:8px;">🎯 买卖信号中枢</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+                            <div class="erp-trade-section"><div class="erp-trade-title" style="color:#94a3b8;">📦 ETF配置</div><div id="hk-etf-advice" style="font-size:0.68rem;color:#cbd5e1;line-height:1.7;"></div></div>
+                            <div class="erp-trade-section"><div class="erp-trade-title" style="color:#10b981;">📈 止盈规则</div><div id="hk-take-profit" style="font-size:0.68rem;color:#cbd5e1;line-height:1.7;"></div></div>
+                            <div class="erp-trade-section"><div class="erp-trade-title" style="color:#f59e0b;">🛡️ 逆向止损</div><div id="hk-stop-loss" style="font-size:0.68rem;color:#cbd5e1;line-height:1.7;"></div></div>
+                        </div>
+                    </div>
+
+                    <!-- ERP走势图 -->
+                    <div id="hk-erp-chart" style="width:100%;height:220px;"></div>
+                </div>
+
+            </div><!-- /三列 -->
+
+            <!-- 诊断卡片 V2.0 (全宽3列) -->
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:14px;">
                 <div class="glass-panel" style="padding:14px;border:1px solid rgba(59,130,246,0.15);">
                     <h4 style="margin:0 0 10px;font-size:0.78rem;color:#60a5fa;">🇺🇸 美股诊断</h4>
-                    <div id="us-diagnosis" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
+                    <div id="us-diagnosis" style="display:grid;grid-template-columns:1fr;gap:8px;"></div>
                 </div>
                 <div class="glass-panel" style="padding:14px;border:1px solid rgba(220,38,38,0.15);">
                     <h4 style="margin:0 0 10px;font-size:0.78rem;color:#f87171;">🇯🇵 日股诊断</h4>
-                    <div id="jp-diagnosis" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
+                    <div id="jp-diagnosis" style="display:grid;grid-template-columns:1fr;gap:8px;"></div>
+                </div>
+                <div class="glass-panel" style="padding:14px;border:1px solid rgba(168,85,247,0.15);">
+                    <h4 style="margin:0 0 10px;font-size:0.78rem;color:#c084fc;">🇭🇰 港股诊断</h4>
+                    <div id="hk-diagnosis" style="display:grid;grid-template-columns:1fr;gap:8px;"></div>
                 </div>
             </div>
 
             <!-- 规则百科 (可折叠) -->
             <div class="glass-panel" style="padding:14px;margin-top:14px;">
                 <h3 style="margin:0 0 8px;font-size:0.85rem;color:#94a3b8;cursor:pointer;" onclick="document.getElementById('global-encyclopedia-body').style.display=document.getElementById('global-encyclopedia-body').style.display==='none'?'grid':'none'">
-                    📖 指标百科 · 美股/日本 五维规则解读 <span style="font-size:0.65rem;color:#64748b;">▼ 点击展开</span>
+                    📖 指标百科 · 美股/日本/港股 五维规则解读 <span style="font-size:0.65rem;color:#64748b;">▼ 点击展开</span>
                 </h3>
                 <div id="global-encyclopedia-body" style="display:none;grid-template-columns:1fr 1fr;gap:10px;"></div>
             </div>
@@ -693,7 +872,7 @@
                     <span>🌍 全球ERP对比 · 跨市场配置决策矩阵</span>
                 </h3>
                 <!-- 三卡片 -->
-                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:16px;">
                     <div id="global-cn-card" class="erp-comparison-card" style="background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);">
                         <div id="global-cn-crown" style="position:absolute;top:8px;right:10px;display:none;"></div>
                         <div style="font-size:0.7rem;color:#94a3b8;margin-bottom:4px;">🇨🇳 China A-Shares</div>
@@ -718,6 +897,14 @@
                         <div id="global-jp-score" style="font-size:0.78rem;color:#94a3b8;margin-top:8px;">得分: --</div>
                         <div id="global-jp-signal" style="font-size:0.88rem;font-weight:700;margin-top:4px;">--</div>
                     </div>
+                    <div id="global-hk-card" class="erp-comparison-card" style="background:rgba(168,85,247,0.06);border:1px solid rgba(168,85,247,0.2);">
+                        <div id="global-hk-crown" style="position:absolute;top:8px;right:10px;display:none;"></div>
+                        <div style="font-size:0.7rem;color:#94a3b8;margin-bottom:4px;">🇭🇰 Hong Kong HSI</div>
+                        <div id="global-hk-erp" style="font-size:2rem;font-weight:900;color:#a855f7;">--</div>
+                        <div style="font-size:0.6rem;color:#475569;">ERP</div>
+                        <div id="global-hk-score" style="font-size:0.78rem;color:#94a3b8;margin-top:8px;">得分: --</div>
+                        <div id="global-hk-signal" style="font-size:0.88rem;font-weight:700;margin-top:4px;">--</div>
+                    </div>
                 </div>
                 <!-- 决策矩阵表格 -->
                 <div style="margin-top:16px;overflow-x:auto;">
@@ -727,13 +914,14 @@
                             <th style="text-align:center;padding:8px 12px;color:#ef4444;font-weight:600;">🇨🇳 A股</th>
                             <th style="text-align:center;padding:8px 12px;color:#3b82f6;font-weight:600;">🇺🇸 美股</th>
                             <th style="text-align:center;padding:8px 12px;color:#dc2626;font-weight:600;">🇯🇵 日股</th>
+                            <th style="text-align:center;padding:8px 12px;color:#a855f7;font-weight:600;">🇭🇰 港股</th>
                         </tr></thead>
                         <tbody id="global-matrix-body">
-                            <tr style="border-bottom:1px solid rgba(100,116,139,0.1);"><td style="padding:6px 12px;color:#94a3b8;">PE</td><td id="gm-cn-pe" style="text-align:center;color:#e2e8f0;">--</td><td id="gm-us-pe" style="text-align:center;color:#e2e8f0;">--</td><td id="gm-jp-pe" style="text-align:center;color:#e2e8f0;">--</td></tr>
-                            <tr style="border-bottom:1px solid rgba(100,116,139,0.1);"><td style="padding:6px 12px;color:#94a3b8;">无风险利率</td><td id="gm-cn-yield" style="text-align:center;color:#e2e8f0;">--</td><td id="gm-us-yield" style="text-align:center;color:#e2e8f0;">--</td><td id="gm-jp-yield" style="text-align:center;color:#e2e8f0;">--</td></tr>
-                            <tr style="border-bottom:1px solid rgba(100,116,139,0.1);"><td style="padding:6px 12px;color:#94a3b8;">ERP</td><td id="gm-cn-erp" style="text-align:center;font-weight:700;">--</td><td id="gm-us-erp" style="text-align:center;font-weight:700;">--</td><td id="gm-jp-erp" style="text-align:center;font-weight:700;">--</td></tr>
-                            <tr style="border-bottom:1px solid rgba(100,116,139,0.1);"><td style="padding:6px 12px;color:#94a3b8;">得分</td><td id="gm-cn-score" style="text-align:center;font-weight:700;">--</td><td id="gm-us-score" style="text-align:center;font-weight:700;">--</td><td id="gm-jp-score" style="text-align:center;font-weight:700;">--</td></tr>
-                            <tr><td style="padding:6px 12px;color:#94a3b8;">信号</td><td id="gm-cn-signal" style="text-align:center;font-weight:700;">--</td><td id="gm-us-signal" style="text-align:center;font-weight:700;">--</td><td id="gm-jp-signal" style="text-align:center;font-weight:700;">--</td></tr>
+                            <tr style="border-bottom:1px solid rgba(100,116,139,0.1);"><td style="padding:6px 12px;color:#94a3b8;">PE</td><td id="gm-cn-pe" style="text-align:center;color:#e2e8f0;">--</td><td id="gm-us-pe" style="text-align:center;color:#e2e8f0;">--</td><td id="gm-jp-pe" style="text-align:center;color:#e2e8f0;">--</td><td id="gm-hk-pe" style="text-align:center;color:#e2e8f0;">--</td></tr>
+                            <tr style="border-bottom:1px solid rgba(100,116,139,0.1);"><td style="padding:6px 12px;color:#94a3b8;">无风险利率</td><td id="gm-cn-yield" style="text-align:center;color:#e2e8f0;">--</td><td id="gm-us-yield" style="text-align:center;color:#e2e8f0;">--</td><td id="gm-jp-yield" style="text-align:center;color:#e2e8f0;">--</td><td id="gm-hk-yield" style="text-align:center;color:#e2e8f0;">--</td></tr>
+                            <tr style="border-bottom:1px solid rgba(100,116,139,0.1);"><td style="padding:6px 12px;color:#94a3b8;">ERP</td><td id="gm-cn-erp" style="text-align:center;font-weight:700;">--</td><td id="gm-us-erp" style="text-align:center;font-weight:700;">--</td><td id="gm-jp-erp" style="text-align:center;font-weight:700;">--</td><td id="gm-hk-erp" style="text-align:center;font-weight:700;">--</td></tr>
+                            <tr style="border-bottom:1px solid rgba(100,116,139,0.1);"><td style="padding:6px 12px;color:#94a3b8;">得分</td><td id="gm-cn-score" style="text-align:center;font-weight:700;">--</td><td id="gm-us-score" style="text-align:center;font-weight:700;">--</td><td id="gm-jp-score" style="text-align:center;font-weight:700;">--</td><td id="gm-hk-score" style="text-align:center;font-weight:700;">--</td></tr>
+                            <tr><td style="padding:6px 12px;color:#94a3b8;">信号</td><td id="gm-cn-signal" style="text-align:center;font-weight:700;">--</td><td id="gm-us-signal" style="text-align:center;font-weight:700;">--</td><td id="gm-jp-signal" style="text-align:center;font-weight:700;">--</td><td id="gm-hk-signal" style="text-align:center;font-weight:700;">--</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -893,7 +1081,7 @@
             </div><!-- /st-rates-strategy -->
 
             <footer class="st-footer">
-                <p>🌐 AlphaCore 海外策略终端 · 海外ERP择时（🇺🇸美股 + 🇯🇵日股）+ 🏦 利率择时 V1.5（US Treasury 五维信号）</p>
+                <p>🌐 AlphaCore 海外策略终端 · 海外ERP择时（🇺🇸美股 + 🇯🇵日股 + 🇭🇰港股）+ 🏦 利率择时 V1.5（US Treasury 五维信号）</p>
             </footer>
         </div>
     </main>
@@ -983,7 +1171,77 @@
         setTimeout(() => { if (el) el.textContent = ''; }, 5000);
     }
 
-    // Hook: 当AIAE数据加载后，填充JP当前值
+    // V2.0: HK手动数据更新
+    async function submitHKSouthbound() {
+        const input = document.getElementById('hk-sb-input');
+        const monthInput = document.getElementById('hk-sb-month-input');
+        const val = parseFloat(input.value);
+        if (isNaN(val)) {
+            _hkUpdateStatus('❌ 请输入有效的南向资金周净买入 (亿RMB)', '#ef4444');
+            return;
+        }
+        const body = {weekly_net_buy_billion_rmb: val};
+        const monthVal = parseFloat(monthInput.value);
+        if (!isNaN(monthVal)) body.monthly_net_buy_billion_rmb = monthVal;
+
+        const btn = document.getElementById('hk-sb-btn');
+        btn.disabled = true; btn.textContent = '⏳ 提交中...';
+        try {
+            const resp = await fetch('/api/v1/aiae_hk/update_southbound', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body)
+            });
+            const json = await resp.json();
+            if (json.status === 'success') {
+                _hkUpdateStatus('✅ ' + json.message, '#10b981');
+                input.value = ''; monthInput.value = '';
+                setTimeout(() => loadGlobalAIAE(true), 500);
+            } else {
+                _hkUpdateStatus('❌ ' + (json.message || '更新失败'), '#ef4444');
+            }
+        } catch(e) {
+            _hkUpdateStatus('❌ 网络错误: ' + e.message, '#ef4444');
+        }
+        btn.disabled = false; btn.textContent = '📤 更新南向资金';
+    }
+
+    async function submitHKAHPremium() {
+        const input = document.getElementById('hk-ah-input');
+        const val = parseFloat(input.value);
+        if (isNaN(val) || val < 80 || val > 200) {
+            _hkUpdateStatus('❌ 请输入有效的AH溢价指数 (80-200)', '#ef4444');
+            return;
+        }
+        const btn = document.getElementById('hk-ah-btn');
+        btn.disabled = true; btn.textContent = '⏳ 提交中...';
+        try {
+            const resp = await fetch('/api/v1/aiae_hk/update_ah_premium', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({index_value: val})
+            });
+            const json = await resp.json();
+            if (json.status === 'success') {
+                _hkUpdateStatus('✅ ' + json.message, '#10b981');
+                input.value = '';
+                setTimeout(() => loadGlobalAIAE(true), 500);
+            } else {
+                _hkUpdateStatus('❌ ' + (json.message || '更新失败'), '#ef4444');
+            }
+        } catch(e) {
+            _hkUpdateStatus('❌ 网络错误: ' + e.message, '#ef4444');
+        }
+        btn.disabled = false; btn.textContent = '📤 更新AH溢价';
+    }
+
+    function _hkUpdateStatus(msg, color) {
+        const el = document.getElementById('hk-update-status');
+        if (el) { el.textContent = msg; el.style.color = color; }
+        setTimeout(() => { if (el) el.textContent = ''; }, 5000);
+    }
+
+    // Hook: 当AIAE数据加载后，填充JP+HK当前值
     const _origRenderGlobalAIAE = typeof renderGlobalAIAE === 'function' ? renderGlobalAIAE : null;
     if (_origRenderGlobalAIAE) {
         window._origRenderGlobalAIAE = _origRenderGlobalAIAE;
@@ -993,14 +1251,23 @@
             try {
                 const jpData = json.jp || {};
                 const jpCurrent = jpData.current || {};
-                const margin = jpCurrent.margin_heat || 0;
-                const foreign = (jpCurrent.foreign_flow || {}).net_buy_billion_jpy || 0;
                 const marginRaw = (jpData.raw_data || {}).margin || {};
                 const foreignRaw = (jpData.raw_data || {}).foreign || {};
                 const $mc = document.getElementById('jp-margin-current');
                 const $fc = document.getElementById('jp-foreign-current');
-                if ($mc) $mc.textContent = (marginRaw.margin_buying_trillion_jpy || 0).toFixed(1) + '兆円 (' + marginRaw.date + ')';
-                if ($fc) $fc.textContent = (foreignRaw.net_buy_billion_jpy || 0) + '億円 (' + foreignRaw.date + ')';
+                if ($mc) $mc.textContent = (marginRaw.margin_buying_trillion_jpy || 0).toFixed(1) + '兆円 (' + (marginRaw.date||'--') + ')';
+                if ($fc) $fc.textContent = (foreignRaw.net_buy_billion_jpy || 0) + '億円 (' + (foreignRaw.date||'--') + ')';
+            } catch(e) {}
+            // 填充HK当前值
+            try {
+                const hkData = json.hk || {};
+                const hkCurrent = hkData.current || {};
+                const sbRaw = (hkData.raw_data || {}).southbound || {};
+                const ahRaw = (hkData.raw_data || {}).ah_premium || {};
+                const $sbC = document.getElementById('hk-sb-current');
+                const $ahC = document.getElementById('hk-ah-current');
+                if ($sbC) $sbC.textContent = (sbRaw.weekly_net_buy_billion_rmb || 0).toFixed(0) + '亿RMB (' + (sbRaw.date||'--') + ')';
+                if ($ahC) $ahC.textContent = (ahRaw.index_value || 0).toFixed(1) + ' (' + (ahRaw.date||'--') + ')';
             } catch(e) {}
         };
     }

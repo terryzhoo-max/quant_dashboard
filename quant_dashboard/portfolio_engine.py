@@ -175,11 +175,16 @@ class PortfolioEngine:
         new_amount = old_amount + amount
         new_cost = (old_amount * old_cost + cost_total) / new_amount if new_amount > 0 else 0.0
 
-        positions[ts_code] = {
+        # 保留导入时的 broker 数据 (不被交易覆盖)
+        updated_pos = {
             "amount": new_amount,
             "cost": safe_round(new_cost, 3),
             "name": name or pos.get("name", "")
         }
+        for broker_key in ("broker_price", "broker_market_value", "broker_pnl", "broker_pnl_pct", "import_date"):
+            if pos.get(broker_key) is not None:
+                updated_pos[broker_key] = pos[broker_key]
+        positions[ts_code] = updated_pos
         self.holdings["positions"] = positions
         self.holdings["cash"] = float(self.holdings.get("cash", 0)) - cost_total
         self._save_portfolio()
@@ -191,8 +196,7 @@ class PortfolioEngine:
         """卖出/减少持仓"""
         positions = self.holdings.get("positions", {})
         if ts_code not in positions:
-            name = positions.get(ts_code, {}).get("name", ts_code)
-            self._record_trade("sell", ts_code, name, amount, price, False, "未持有该股票")
+            self._record_trade("sell", ts_code, ts_code, amount, price, False, "未持有该股票")
             return False, "未持有该股票"
 
         pos = positions[ts_code]
@@ -267,21 +271,78 @@ class PortfolioEngine:
             
         return "其他"
 
+    def _pick_price(self, code: str, pos: dict):
+        """
+        智能价格选取 (当日优先 + 过期降级):
+
+          导入当日 (import_date == today):
+            1) broker_price (券商导入的「当前价」) — 最权威
+            2) Tushare 收盘价 — 回退
+            3) cost — 最终兜底
+
+          隔日 (import_date != today 或无 import_date):
+            1) Tushare 收盘价 — 优先
+            2) broker_price — 回退 (ETF/港股 Tushare 可能次日才更新)
+            3) cost — 最终兜底
+
+        Returns: (price: float, source: str)
+        """
+        broker_price = float(pos.get("broker_price", 0))
+        cost = float(pos.get("cost", 0))
+        import_date = pos.get("import_date", "")
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        is_same_day = (import_date == today_str)
+
+        # ── 导入当日: broker_price 绝对优先 ──
+        if is_same_day and broker_price > 0:
+            return broker_price, "broker"
+
+        # ── 隔日 (或当日无 broker): Tushare 优先 ──
+        try:
+            p_df = self.dm.get_price_payload(code)
+            if not p_df.empty:
+                tushare_price = float(p_df['close'].iloc[-1])
+                if tushare_price > 0:
+                    return tushare_price, "tushare"
+        except Exception:
+            pass
+
+        # Tushare 取不到 → 回退券商报价 (ETF/港股次日补数据前的过渡)
+        if broker_price > 0:
+            return broker_price, "broker"
+
+        # 最终兜底: 成本价
+        return cost if cost > 0 else 1.0, "cost"
+
     def get_valuation(self):
-        """获取当前组合估值 (含仓位权重)"""
+        """获取当前组合估值 (含仓位权重 + 价格来源标识)
+        
+        当日导入: 市值和浮动盈亏直接使用券商原始数据
+        隔日:     根据 Tushare/broker 价格重新计算
+        """
         total_market_value = 0.0
         details = []
+        today_str = datetime.now().strftime("%Y-%m-%d")
 
         positions = self.holdings.get("positions", {})
         for code, pos in positions.items():
-            p_df = self.dm.get_price_payload(code)
-            current_price = p_df['close'].iloc[-1] if not p_df.empty else float(pos.get("cost", 0))
+            current_price, price_source = self._pick_price(code, pos)
 
             amount = int(pos.get("amount", 0))
             cost = float(pos.get("cost", 0))
-            market_value = amount * current_price
-            pnl = market_value - (amount * cost)
-            pnl_pct = (pnl / (amount * cost) * 100) if cost > 0 else 0.0
+            import_date = pos.get("import_date", "")
+            is_same_day = (import_date == today_str)
+
+            # ── 当日导入: 市值和盈亏以券商数据为准 ──
+            if is_same_day and pos.get("broker_market_value", 0) > 0:
+                market_value = float(pos["broker_market_value"])
+                pnl = float(pos.get("broker_pnl", 0))
+                pnl_pct = float(pos.get("broker_pnl_pct", 0))
+            else:
+                # ── 隔日: 根据当前价格重新计算 ──
+                market_value = amount * current_price
+                pnl = market_value - (amount * cost)
+                pnl_pct = (pnl / (amount * cost) * 100) if cost > 0 else 0.0
 
             name = pos.get("name", "Unknown")
             industry = self.industry_map.get(code, "其他")
@@ -295,14 +356,39 @@ class PortfolioEngine:
                 "amount": amount,
                 "cost": cost,
                 "price": safe_round(current_price, 2),
+                "price_source": price_source,
                 "market_value": safe_round(market_value, 2),
                 "pnl": safe_round(pnl, 2),
                 "pnl_pct": safe_round(pnl_pct, 2)
             })
             total_market_value += market_value
 
-        # 计算仓位权重
-        total_asset = float(self.holdings.get("cash", 0)) + total_market_value
+        # 计算仓位权重 + 汇总盈亏
+        # V2.1: 当日导入时使用 broker 文件头的总资产 (最权威)
+        broker_total_asset_val = float(self.holdings.get("broker_total_asset", 0))
+        broker_import_date = self.holdings.get("import_date", "")
+        is_import_day = (broker_import_date == today_str)
+
+        if is_import_day and broker_total_asset_val > 0:
+            total_asset = broker_total_asset_val
+        else:
+            total_asset = float(self.holdings.get("cash", 0)) + total_market_value
+
+        total_pnl = sum(d["pnl"] for d in details)
+
+        # V2.1: 当日导入时使用 broker 文件头的盈亏 (已含所有持仓, 包括冻结标的)
+        broker_total_pnl_val = float(self.holdings.get("broker_total_pnl", 0))
+        if is_import_day and broker_total_pnl_val != 0:
+            total_pnl = broker_total_pnl_val
+
+        # 成本基: 市值 - 盈亏 (确保和 pnl 数据源一致, 无论是券商还是自算)
+        total_cost_basis = total_market_value - total_pnl
+        total_pnl_pct = (total_pnl / total_cost_basis * 100) if total_cost_basis > 0 else 0.0
+
+        # V2.1: 当日导入时, 市值也使用 broker 文件头的参考市值
+        broker_ref_mv = float(self.holdings.get("broker_ref_market_value", 0))
+        display_market_value = broker_ref_mv if (is_import_day and broker_ref_mv > 0) else total_market_value
+
         for d in details:
             d["weight"] = safe_round(d["market_value"] / total_asset * 100, 2) if total_asset > 0 else 0.0
 
@@ -311,8 +397,10 @@ class PortfolioEngine:
         return {
             "cash": safe_round(self.holdings.get("cash", 0), 2),
             "cash_weight": cash_weight,
-            "market_value": safe_round(total_market_value, 2),
+            "market_value": safe_round(display_market_value, 2),
             "total_asset": safe_round(total_asset, 2),
+            "total_pnl": safe_round(total_pnl, 2),
+            "total_pnl_pct": safe_round(total_pnl_pct, 2),
             "positions": details,
             "position_count": len(details)
         }
@@ -474,6 +562,95 @@ class PortfolioEngine:
         return list(reversed(records))  # 最新的在前
 
     # ──────────────────────────────────────
+    #  清零组合
+    # ──────────────────────────────────────
+
+    def reset_portfolio(self) -> dict:
+        """清零组合: 归零持仓 + 现金，交易记录保留"""
+        old_count = len(self.holdings.get("positions", {}))
+        old_cash = self.holdings.get("cash", 0)
+
+        self.holdings = {"cash": 0.0, "positions": {}}
+        self._save_portfolio()
+
+        self._record_trade(
+            action="reset",
+            ts_code="SYSTEM",
+            name=f"清零 {old_count} 只持仓",
+            amount=old_count,
+            price=0,
+            success=True,
+            msg=f"组合清零: 原 {old_count} 只持仓 + 现金 ¥{old_cash:,.2f} → 归零"
+        )
+
+        return {
+            "success": True,
+            "cleared_positions": old_count,
+            "cleared_cash": round(old_cash, 2)
+        }
+
+    # ──────────────────────────────────────
+    #  同步行情数据 (Tushare 增量拉取)
+    # ──────────────────────────────────────
+
+    def sync_prices(self) -> dict:
+        """
+        强制同步当前持仓的最新日线行情数据 (Tushare → data_lake)
+        用途: 导入当天是 broker_price 优先，次日点「同步数据」让 Tushare 接管
+
+        Returns:
+            {
+                success: bool,
+                synced: int,         # 成功同步的标的数
+                failed: int,         # 失败的标的数
+                total: int,          # 总持仓数
+                freshness: dict,     # 数据新鲜度
+                details: [...]       # 每只标的的同步结果
+            }
+        """
+        positions = self.holdings.get("positions", {})
+        if not positions:
+            return {"success": True, "synced": 0, "failed": 0, "total": 0,
+                    "freshness": {}, "details": [], "message": "无持仓可同步"}
+
+        ts_codes = list(positions.keys())
+        details = []
+        synced_count = 0
+        failed_count = 0
+
+        import time as _time
+        t0 = _time.time()
+
+        for i, code in enumerate(ts_codes):
+            name = positions[code].get("name", code)
+            try:
+                self.dm.sync_daily_prices([code])
+                synced_count += 1
+                details.append({"ts_code": code, "name": name, "status": "ok"})
+            except Exception as e:
+                failed_count += 1
+                details.append({"ts_code": code, "name": name, "status": "error", "error": str(e)})
+            # Tushare API 频率控制: 避免触发限流
+            if i < len(ts_codes) - 1:
+                _time.sleep(0.25)
+
+        elapsed = round(_time.time() - t0, 1)
+
+        # 同步后检查新鲜度
+        freshness = self.dm.check_data_freshness(ts_codes[:5])
+
+        return {
+            "success": True,
+            "synced": synced_count,
+            "failed": failed_count,
+            "total": len(ts_codes),
+            "elapsed_sec": elapsed,
+            "freshness": freshness,
+            "details": details,
+            "message": f"同步完成: {synced_count}/{len(ts_codes)} 只标的 ({elapsed}s)"
+        }
+
+    # ──────────────────────────────────────
     #  TXT 持仓导入 (券商导出文件)
     # ──────────────────────────────────────
 
@@ -569,20 +746,37 @@ class PortfolioEngine:
             result["errors"].append("文件内容不足，至少需要3行 (汇总行 + 列头 + 数据)")
             return result
 
-        # ── Step 1: 解析第一行汇总行，提取 可用 资金 ──
+        # ── Step 1: 解析第一行汇总行 ──
+        # V2.1: 提取「余额」(含冻结) 而非「可用」，因为冻结资金仍属账户资产
         header_line = lines[0]
-        cash_match = re.search(r'可用[:\s]*([0-9,.]+)', header_line)
+        balance_match = re.search(r'余额[:\s]*([0-9,.]+)', header_line)
         asset_match = re.search(r'资产[:\s]*([0-9,.]+)', header_line)
+        ref_mv_match = re.search(r'参考市值[:\s]*([0-9,.]+)', header_line)
+        pnl_match = re.search(r'盈亏[:\s]*(-?[0-9,.]+)', header_line)
 
-        if cash_match:
+        if balance_match:
             try:
-                result["cash"] = float(cash_match.group(1).replace(',', ''))
+                result["cash"] = float(balance_match.group(1).replace(',', ''))
             except ValueError:
-                result["errors"].append(f"无法解析可用资金: {cash_match.group(1)}")
+                result["errors"].append(f"无法解析余额: {balance_match.group(1)}")
 
         if asset_match:
             try:
                 result["total_asset"] = float(asset_match.group(1).replace(',', ''))
+            except ValueError:
+                pass
+
+        broker_ref_mv = 0.0
+        if ref_mv_match:
+            try:
+                broker_ref_mv = float(ref_mv_match.group(1).replace(',', ''))
+            except ValueError:
+                pass
+
+        broker_total_pnl = 0.0
+        if pnl_match:
+            try:
+                broker_total_pnl = float(pnl_match.group(1).replace(',', ''))
             except ValueError:
                 pass
 
@@ -656,12 +850,18 @@ class PortfolioEngine:
                 # 证券名称
                 name = parts[col_map.get('name', 1)].strip() if col_map.get('name', 1) < len(parts) else ''
 
-                # 数量 (优先 证券数量，退化到 库存数量)
-                amount_idx = col_map.get('amount', col_map.get('amount_alt', 2))
+                # 数量: V2.1 优先使用「库存数量」(含冻结/在途), 退化到「证券数量」
+                # 修复: 002916 等 "证券数量=0 但 库存数量=200" 的冻结持仓
+                amount_idx = col_map.get('amount_alt', col_map.get('amount', 2))
                 amount_str = parts[amount_idx] if amount_idx < len(parts) else '0'
                 amount = int(float(amount_str.replace(',', '')))
                 if amount <= 0:
-                    continue
+                    # 再尝试另一个数量列
+                    alt_idx = col_map.get('amount', col_map.get('amount_alt', 2))
+                    if alt_idx != amount_idx and alt_idx < len(parts):
+                        amount = int(float(parts[alt_idx].replace(',', '')))
+                    if amount <= 0:
+                        continue
 
                 # 成本价 (优先 买入均价，退化到 参考成本价)
                 cost_idx = col_map.get('cost', col_map.get('cost_alt', 5))
@@ -673,6 +873,37 @@ class PortfolioEngine:
                 price_str = parts[price_idx] if price_idx < len(parts) else '0'
                 price = float(price_str.replace(',', ''))
 
+                # 最新市值 (券商原始数据)
+                broker_mv = 0.0
+                if 'market_value' in col_map:
+                    mv_idx = col_map['market_value']
+                    if mv_idx < len(parts):
+                        try:
+                            broker_mv = float(parts[mv_idx].replace(',', ''))
+                        except ValueError:
+                            pass
+
+                # 参考浮动盈亏 (券商原始数据)
+                broker_pnl = 0.0
+                if 'pnl' in col_map:
+                    pnl_idx = col_map['pnl']
+                    if pnl_idx < len(parts):
+                        try:
+                            broker_pnl = float(parts[pnl_idx].replace(',', ''))
+                        except ValueError:
+                            pass
+
+                # 盈亏比例 (券商原始数据, 百分比)
+                broker_pnl_pct = 0.0
+                if 'pnl_pct' in col_map:
+                    pp_idx = col_map['pnl_pct']
+                    if pp_idx < len(parts):
+                        try:
+                            raw_pct = parts[pp_idx].replace(',', '').replace('%', '')
+                            broker_pnl_pct = float(raw_pct)
+                        except ValueError:
+                            pass
+
                 # 负成本处理 (新股/融券可能出现负值，用当前价替代)
                 if cost <= 0:
                     cost = price if price > 0 else 1.0
@@ -680,7 +911,12 @@ class PortfolioEngine:
                 new_positions[ts_code] = {
                     "amount": amount,
                     "cost": safe_round(cost, 3),
-                    "name": name
+                    "name": name,
+                    "broker_price": safe_round(price, 3) if price > 0 else 0.0,
+                    "broker_market_value": safe_round(broker_mv, 2) if broker_mv > 0 else 0.0,
+                    "broker_pnl": safe_round(broker_pnl, 2),
+                    "broker_pnl_pct": safe_round(broker_pnl_pct, 2),
+                    "import_date": datetime.now().strftime("%Y-%m-%d")
                 }
 
                 result["positions"].append({
@@ -701,9 +937,14 @@ class PortfolioEngine:
             return result
 
         # ── Step 5: 覆盖写入 portfolio_store.json ──
+        # V2.1: 同时存储 broker 文件头的参考市值/总资产/盈亏，供 get_valuation() 当日直接引用
         self.holdings = {
             "cash": result["cash"],
-            "positions": new_positions
+            "positions": new_positions,
+            "broker_ref_market_value": broker_ref_mv,
+            "broker_total_asset": result["total_asset"],
+            "broker_total_pnl": broker_total_pnl,
+            "import_date": datetime.now().strftime("%Y-%m-%d")
         }
         self._save_portfolio()
 

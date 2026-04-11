@@ -9,7 +9,7 @@ AlphaCore · 美股ERP择时引擎 V1.0
   D5: 信用利差 (HYG vs LQD ETF价差)            — 权重10%  [信用]
 
 ETF标的: SPY / QQQ / SCHD
-数据源: yfinance (免费) + FRED API (JGB/macro)
+数据源: Finnhub (美股ETF报价) + FRED API (宏观数据)
 """
 
 import pandas as pd
@@ -35,17 +35,14 @@ def _get_fred():
             print(f"[US-ERP] FRED init failed: {e}")
     return _fred_instance
 
-def _yf_safe(ticker_str, start, period=None):
-    """yfinance容错包装"""
+def _finnhub_quote(symbol: str) -> Optional[float]:
+    """Finnhub 美股报价 (替代 yfinance)"""
     try:
-        import yfinance as yf
-        t = yf.Ticker(ticker_str)
-        if period:
-            return t.history(period=period, timeout=8)
-        return t.history(start=start, timeout=8)
+        from finnhub_client import get_price
+        return get_price(symbol)
     except Exception as e:
-        print(f"[US-ERP] yfinance {ticker_str} failed: {e}")
-        return pd.DataFrame()
+        print(f"[US-ERP] Finnhub {symbol} failed: {e}")
+        return None
 
 # ===== TTL 缓存 (复用中国版架构) =====
 _us_cache = {}
@@ -134,29 +131,50 @@ class USERPTimingEngine:
     # ========== 数据获取层 ==========
 
     def _get_current_pe(self) -> float:
-        """三级PE获取策略: yfinance实时 → 磁盘缓存 → 智能估算"""
+        """三级PE获取策略: FRED SP500指数价格 → Finnhub SPY×10估算 → 磁盘缓存
+        
+        ⚠️ 关键: S&P500 EPS ($245) 是指数级别，必须用指数价格 (~6800) 计算
+                 不能用 SPY ETF价格 (~$680)，否则 PE 会偏低约 10 倍
+        """
+        import json
         pe_cache_file = os.path.join(CACHE_DIR, "erp_us_current_pe.json")
         
-        # Tier 1: yfinance 实时 (最准)
+        # 2025-26年 S&P500 Operating EPS 共识约 $240-260，取中位 $250
+        ESTIMATED_INDEX_EPS = 250.0
+        
+        # Tier 1 (推荐): FRED SP500 指数价格 — 与 EPS 同一尺度
         try:
-            import yfinance as yf
-            spy = yf.Ticker("SPY")
-            info = spy.info
-            pe = info.get("trailingPE") or info.get("forwardPE")
-            if pe and 10 < pe < 60:
-                # 持久化到磁盘，供后续fallback
-                import json
+            fred = _get_fred()
+            if fred:
+                sp500 = fred.get_series("SP500", observation_start=datetime.now() - timedelta(days=10))
+                if sp500 is not None and not sp500.empty:
+                    index_price = float(sp500.dropna().iloc[-1])
+                    pe = index_price / ESTIMATED_INDEX_EPS
+                    pe = max(12, min(45, pe))
+                    with open(pe_cache_file, "w") as f:
+                        json.dump({"pe": round(pe, 2), "source": "FRED/SP500", "ts": datetime.now().isoformat()}, f)
+                    print(f"[US-ERP] PE from FRED SP500: {pe:.1f}x (index={index_price:.0f}, est_EPS=${ESTIMATED_INDEX_EPS:.0f})")
+                    return float(pe)
+        except Exception as e:
+            print(f"[US-ERP] FRED SP500 PE failed: {e}")
+        
+        # Tier 2: Finnhub SPY ETF价格 × 10 估算指数 (SPY ≈ SP500/10)
+        try:
+            price = _finnhub_quote("SPY")
+            if price and price > 100:
+                approx_index = price * 10.0  # SPY tracks at ~1/10 of S&P500 index
+                pe = approx_index / ESTIMATED_INDEX_EPS
+                pe = max(12, min(45, pe))
                 with open(pe_cache_file, "w") as f:
-                    json.dump({"pe": round(pe, 2), "source": "yfinance", "ts": datetime.now().isoformat()}, f)
-                print(f"[US-ERP] PE from yfinance: {pe:.1f}x")
+                    json.dump({"pe": round(pe, 2), "source": "finnhub/SPY*10", "ts": datetime.now().isoformat()}, f)
+                print(f"[US-ERP] PE from Finnhub SPY: {pe:.1f}x (SPY=${price:.0f}*10={approx_index:.0f}, EPS=${ESTIMATED_INDEX_EPS:.0f})")
                 return float(pe)
         except Exception as e:
-            print(f"[US-ERP] yfinance PE failed: {e}")
+            print(f"[US-ERP] Finnhub PE failed: {e}")
         
-        # Tier 2: 磁盘缓存 (7天内有效)
+        # Tier 3: 磁盘缓存 (7天内有效)
         if os.path.exists(pe_cache_file):
             try:
-                import json
                 with open(pe_cache_file, "r") as f:
                     cached = json.load(f)
                 cached_ts = datetime.fromisoformat(cached["ts"])
@@ -167,25 +185,8 @@ class USERPTimingEngine:
             except:
                 pass
         
-        # Tier 3: 智能估算 — 用S&P500价格/历史均值Earnings Yield(4.2%)反推
-        # S&P500 长期Earnings Yield中位数 ≈ 4.0-4.5% → PE ≈ 22-25x
-        # 用 yfinance price history 拿最新价格，跟均值EY估算
-        try:
-            import yfinance as yf
-            spy_hist = yf.Ticker("SPY").history(period="5d")
-            if not spy_hist.empty:
-                price = float(spy_hist["Close"].iloc[-1])
-                # 2024-26年S&P500 EPS约 $230-260, 用$245中位估算
-                estimated_eps = 245.0
-                pe = price / estimated_eps
-                pe = max(15, min(40, pe))  # 合理区间保护
-                print(f"[US-ERP] PE estimated from price/EPS: {pe:.1f}x (price=${price:.0f}, est_EPS=$245)")
-                return float(pe)
-        except:
-            pass
-        
-        print("[US-ERP] PE fallback to 24.0x (all sources failed)")
-        return 24.0
+        print("[US-ERP] PE fallback to 27.0x (all sources failed)")
+        return 27.0
 
     def _fetch_spy_pe_history(self, years: int = 5) -> pd.DataFrame:
         """S&P500 PE历史序列 (FRED SP500价格 + 三级PE获取)"""

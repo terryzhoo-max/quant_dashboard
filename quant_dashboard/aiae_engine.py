@@ -162,15 +162,45 @@ AIAE_ETF_MATRIX = {
         "510880.SH":  8, "515180.SH":  5, "159905.SZ":  2},
 }
 
-# ===== run-all 动态权重矩阵 (五策略, AIAE驱动) =====
-# key: AIAE regime → value: 五策略权重 (总和=1.0)
-AIAE_RUN_ALL_WEIGHTS = {
-    1: {"mr": 0.35, "div": 0.15, "mom": 0.25, "erp": 0.10, "aiae_etf": 0.15},  # 恐慌→进攻
-    2: {"mr": 0.30, "div": 0.20, "mom": 0.20, "erp": 0.10, "aiae_etf": 0.20},  # 低估→建仓
-    3: {"mr": 0.20, "div": 0.25, "mom": 0.15, "erp": 0.15, "aiae_etf": 0.25},  # 中性→均衡
-    4: {"mr": 0.10, "div": 0.35, "mom": 0.05, "erp": 0.15, "aiae_etf": 0.35},  # 偏热→防御
-    5: {"mr": 0.00, "div": 0.45, "mom": 0.00, "erp": 0.10, "aiae_etf": 0.45},  # 过热→纯防御
+# ===== run-all 联合权重矩阵 V2.0 (五策略, AIAE×ERP 双维驱动) =====
+# 5×3 矩阵: AIAE regime(1-5) × ERP tier(bull/neutral/bear)
+# ERP档: bull(≥55) / neutral(40-55) / bear(<40)
+# 每行权重总和 = 1.0
+JOINT_WEIGHTS = {
+    # AIAE Ⅰ 恐慌
+    1: {
+        "bull":    {"mr": 0.35, "div": 0.10, "mom": 0.25, "erp": 0.10, "aiae_etf": 0.20},  # 极端贪婪
+        "neutral": {"mr": 0.25, "div": 0.20, "mom": 0.20, "erp": 0.10, "aiae_etf": 0.25},  # 温和进攻
+        "bear":    {"mr": 0.10, "div": 0.30, "mom": 0.10, "erp": 0.10, "aiae_etf": 0.40},  # 矛盾态防御优先
+    },
+    # AIAE Ⅱ 低估
+    2: {
+        "bull":    {"mr": 0.30, "div": 0.15, "mom": 0.20, "erp": 0.10, "aiae_etf": 0.25},
+        "neutral": {"mr": 0.20, "div": 0.25, "mom": 0.15, "erp": 0.10, "aiae_etf": 0.30},
+        "bear":    {"mr": 0.10, "div": 0.30, "mom": 0.05, "erp": 0.10, "aiae_etf": 0.45},
+    },
+    # AIAE Ⅲ 中性
+    3: {
+        "bull":    {"mr": 0.25, "div": 0.20, "mom": 0.20, "erp": 0.10, "aiae_etf": 0.25},
+        "neutral": {"mr": 0.15, "div": 0.30, "mom": 0.10, "erp": 0.15, "aiae_etf": 0.30},
+        "bear":    {"mr": 0.05, "div": 0.40, "mom": 0.05, "erp": 0.10, "aiae_etf": 0.40},
+    },
+    # AIAE Ⅳ 偏热
+    4: {
+        "bull":    {"mr": 0.15, "div": 0.30, "mom": 0.10, "erp": 0.10, "aiae_etf": 0.35},
+        "neutral": {"mr": 0.05, "div": 0.40, "mom": 0.05, "erp": 0.15, "aiae_etf": 0.35},
+        "bear":    {"mr": 0.00, "div": 0.45, "mom": 0.00, "erp": 0.10, "aiae_etf": 0.45},
+    },
+    # AIAE Ⅴ 过热 — 纯防御，MR/MOM归零
+    5: {
+        "bull":    {"mr": 0.00, "div": 0.40, "mom": 0.00, "erp": 0.10, "aiae_etf": 0.50},
+        "neutral": {"mr": 0.00, "div": 0.45, "mom": 0.00, "erp": 0.10, "aiae_etf": 0.45},
+        "bear":    {"mr": 0.00, "div": 0.50, "mom": 0.00, "erp": 0.05, "aiae_etf": 0.45},
+    },
 }
+
+# 向后兼容: 保留旧名称引用 (降级用)
+AIAE_RUN_ALL_WEIGHTS = {r: JOINT_WEIGHTS[r]["neutral"] for r in JOINT_WEIGHTS}
 
 
 # ===== 数据合理性断言阈值 =====
@@ -447,9 +477,28 @@ class AIAEEngine:
 
         return signals
 
-    def get_run_all_weights(self, regime: int) -> Dict:
-        """获取 AIAE 驱动的五策略动态权重"""
-        return AIAE_RUN_ALL_WEIGHTS.get(regime, AIAE_RUN_ALL_WEIGHTS[3])
+    def get_run_all_weights(self, regime: int, erp_score: float = None) -> Dict:
+        """获取 AIAE×ERP 联合驱动的五策略动态权重 (V2.0)
+        
+        Args:
+            regime: AIAE 五档 (1-5)
+            erp_score: ERP综合评分 (0-100), None时降级为neutral
+        Returns:
+            dict: 五策略权重 (mr, div, mom, erp, aiae_etf), 总和=1.0
+        """
+        # ERP score → tier
+        if erp_score is not None and erp_score >= 55:
+            tier = "bull"
+        elif erp_score is not None and erp_score < 40:
+            tier = "bear"
+        else:
+            tier = "neutral"  # 40-55 或 None
+        
+        regime_weights = JOINT_WEIGHTS.get(regime, JOINT_WEIGHTS[3])
+        weights = regime_weights.get(tier, regime_weights["neutral"])
+        
+        _log(f"权重查表: AIAE Regime={regime} × ERP Score={erp_score} → Tier={tier} | W={weights}")
+        return weights, tier
 
     # ========== 信号系统 ==========
 

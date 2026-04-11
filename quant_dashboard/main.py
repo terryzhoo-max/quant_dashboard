@@ -1183,35 +1183,67 @@ async def get_dashboard_data():
         
         erp_multiplier, valuation_label, erp_z = get_erp_multiplier()
         
-        # V6.0: 五因子科学仓位决策引擎 (替代旧版 100-temp 线性映射)
-        hub_result = compute_scientific_position(
-            total_temp=total_temp,
-            vix_analysis=vix_analysis,
-            total_money_z=total_money_z,
-            erp_z=erp_z,
-            mr_res=mr_res,
-            mom_res=mom_res,
-            div_res=div_res,
-            is_circuit_breaker=is_circuit_breaker
-        )
-        
-        final_pos_val = hub_result["position"]
-        pos_advice = hub_result["position_label"]
-        
-        # 温度定性标签
+        # V7.0 (V2.1 Joint Matrix): AIAE × ERP 双维驱动仓位矩阵 (替代五因子)
+        try:
+            _aiae_engine = get_aiae_engine()
+            # 获取ERP Tier
+            erp_score = min(100, max(0, (erp_val - 2.5) / (4.5 - 2.5) * 100))
+            weights_5, erp_tier = _aiae_engine.get_run_all_weights(aiae_regime, erp_score)
+        except Exception as e:
+            print(f"[Dashboard Matrix Error] {e}")
+            weights_5 = {"mr": 0.15, "div": 0.30, "mom": 0.10, "erp": 0.15, "aiae_etf": 0.30}
+            erp_tier = "neutral"
+
+        # V7.0: 矩阵式统一收口仓位上限 (前置已经由 aiae_report["position"]["matrix_position"] 注入到了 aiae_cap)
+        # 流动性熔断保护
         if is_circuit_breaker:
+            final_pos_val = min(aiae_cap, 10)
             status_label = "流动性熔断"
+            pos_advice = "0% (流动性熔断)"
         else:
-            status_label = "过热" if total_temp > 80 else ("偏冷" if total_temp < 30 else "温暖")
+            final_pos_val = aiae_cap
+            status_label = "过热" if aiae_regime >= 4 else ("偏冷" if aiae_regime <= 2 else "中性")
+            tier_cn = {"bull": "🟢看多", "neutral": "🟡中性均衡", "bear": "🔴看空"}.get(erp_tier, "🟡中性均衡")
+            pos_advice = f"ERP {tier_cn} (Cap {aiae_cap}%)"
+            
         temp_label = f"{status_label} | {valuation_label}"
         
-        # V7.0: 策略权重分配 (AIAE 五档驱动, 替代旧版温度驱动)
-        # 仍保留 regime_name 用于 banner 显示
-        _, regime_name = get_regime_allocation(total_temp)
-        regime_weights_5 = AIAE_RUN_ALL_WEIGHTS.get(aiae_regime, AIAE_RUN_ALL_WEIGHTS[3])
-        # apply_strategy_filters 只处理 3 策略, 对 ERP/AIAE 透传
+        # V7.0: AIAE regime → regime_name (替代旧版 get_regime_allocation)
+        _aiae_regime_name_map = {1: "极度恐慌", 2: "低配置区", 3: "中性均衡", 4: "偏热区域", 5: "极度过热"}
+        regime_name = _aiae_regime_name_map.get(aiae_regime, "中性均衡")
+        
+        # 覆写 dashboard-data 输出使用的 "综合得分" 做兼容
+        # V7.0: 以 AIAE 矩阵仓位替代旧版五因子合成, factors/signal_detail 保留空壳供前端兼容渲染
+        hub_result = {
+            "composite_score": aiae_cap,
+            "confidence": aiae_cap,
+            "position": final_pos_val,
+            "position_label": pos_advice,
+            "factors": {
+                "aiae_regime": {"score": round(max(10, 100 - (aiae_regime - 1) * 22.5), 1), "weight": 0.40, "label": aiae_regime_cn},
+                "erp_value":   {"score": round(erp_score, 1), "weight": 0.25, "label": valuation_label},
+                "vix_fear":    {"score": round(vix_score, 1), "weight": 0.15, "label": vix_analysis.get('label', '—')},
+                "capital_flow": {"score": round(liquidity_score, 1), "weight": 0.10, "label": "资金流" if total_money_z > 0.5 else ("资金流出" if total_money_z < -0.5 else "资金中性")},
+                "macro_temp":  {"score": round(100 - total_temp, 1), "weight": 0.10, "label": status_label},
+            },
+            "signal_detail": {
+                "buy_total": mr_overview.get('signal_count', {}).get('buy', 0) + mom_overview.get('buy_count', 0) + div_overview.get('buy_count', 0),
+                "sell_total": mr_overview.get('signal_count', {}).get('sell', 0),
+                "mr_buy": mr_overview.get('signal_count', {}).get('buy', 0),
+                "mr_sell": mr_overview.get('signal_count', {}).get('sell', 0),
+                "mom_buy": mom_overview.get('buy_count', 0),
+                "div_buy": div_overview.get('buy_count', 0),
+                "div_trend_up": div_overview.get('trend_up_count', 0),
+            }
+        }
+
+        # 策略权重分配
+        regime_weights_5 = weights_5
+        
+        # apply_strategy_filters 过滤器兼容 (仍保留对 mr/div/mom 子项调整)
         regime_weights_3 = {"div": regime_weights_5["div"], "mr": regime_weights_5["mr"], "mom": regime_weights_5["mom"]}
         filtered_3, strategy_filters = apply_strategy_filters(regime_weights_3)
+        
         # 合并回 5 策略权重
         regime_weights = {
             "mr": filtered_3["mr"], "div": filtered_3["div"], "mom": filtered_3["mom"],
@@ -1221,10 +1253,6 @@ async def get_dashboard_data():
         _wt = sum(regime_weights.values())
         if _wt > 0:
             regime_weights = {k: round(v / _wt, 3) for k, v in regime_weights.items()}
-
-        # V7.0: 双保险仓位 Cap — min(Hub仓位, AIAE Cap)
-        final_pos_val = min(final_pos_val, aiae_cap)
-        pos_advice = hub_result["position_label"]  # 刷新 label
 
         # 各策略名义仓位 (5策略)
         strategy_positions = {
@@ -1642,8 +1670,19 @@ def _run_aiae_strategy() -> dict:
         # 生成 ETF 信号
         signals = engine.generate_etf_signals(regime)
 
-        # 获取动态权重
-        run_all_weights = engine.get_run_all_weights(regime)
+        # 获取ERP评分 (用于联合权重)
+        erp_score_for_weights = None
+        try:
+            from erp_timing_engine import get_erp_engine
+            erp_eng = get_erp_engine()
+            erp_sig = erp_eng.compute_signal()
+            if erp_sig.get("status") == "success":
+                erp_score_for_weights = erp_sig["signal"].get("score", None)
+        except Exception:
+            pass
+
+        # 获取联合权重 V2.0 (AIAE×ERP双维)
+        run_all_weights, erp_tier = engine.get_run_all_weights(regime, erp_score_for_weights)
 
         buy_count = sum(1 for s in signals if s["signal"] == "buy")
         sell_count = sum(1 for s in signals if s["signal"] == "sell")
@@ -1661,8 +1700,11 @@ def _run_aiae_strategy() -> dict:
                     "buy_count": buy_count,
                     "sell_count": sell_count,
                     "composite_score": max(10, 100 - (regime - 1) * 20),
+                    "erp_score_for_weights": erp_score_for_weights,
+                    "erp_tier": erp_tier,
                 },
                 "run_all_weights": run_all_weights,
+                "erp_tier": erp_tier,
                 "aiae_report": report,  # 完整 AIAE 报告供前端展示
             },
         }
@@ -1683,7 +1725,7 @@ def _run_aiae_strategy() -> dict:
                         "matrix_position": 55, "buy_count": 5, "sell_count": 0,
                         "composite_score": 60,
                     },
-                    "run_all_weights": engine.get_run_all_weights(3),
+                    "run_all_weights": engine.get_run_all_weights(3, None)[0],
                 },
             }
         except:
@@ -1726,10 +1768,12 @@ def _extract_signals_normalized(strategy_type: str, raw_result) -> list:
     return []
 
 
-def _compute_resonance(mr_signals, div_signals, mom_signals, erp_signals=None):
-    """计算四策略信号共振：找到多策略一致看好/看空的重叠标的"""
+def _compute_resonance(mr_signals, div_signals, mom_signals, erp_signals=None, aiae_signals=None):
+    """计算五策略信号共振：找到多策略一致看好/看空的重叠标的 (V4.2: AIAE独立参与)"""
     if erp_signals is None:
         erp_signals = []
+    if aiae_signals is None:
+        aiae_signals = []
 
     def build_map(signals):
         m = {}
@@ -1748,8 +1792,9 @@ def _compute_resonance(mr_signals, div_signals, mom_signals, erp_signals=None):
     div_map = build_map(div_signals)
     mom_map = build_map(mom_signals)
     erp_map = build_map(erp_signals)
+    aiae_map = build_map(aiae_signals)
 
-    all_codes = set(list(mr_map.keys()) + list(div_map.keys()) + list(mom_map.keys()) + list(erp_map.keys()))
+    all_codes = set(list(mr_map.keys()) + list(div_map.keys()) + list(mom_map.keys()) + list(erp_map.keys()) + list(aiae_map.keys()))
 
     consensus_buy = []
     consensus_sell = []
@@ -1760,17 +1805,19 @@ def _compute_resonance(mr_signals, div_signals, mom_signals, erp_signals=None):
         div_s = div_map.get(code, {})
         mom_s = mom_map.get(code, {})
         erp_s = erp_map.get(code, {})
+        aiae_s = aiae_map.get(code, {})
 
-        present = sum([1 for s in [mr_s, div_s, mom_s, erp_s] if s])
+        present = sum([1 for s in [mr_s, div_s, mom_s, erp_s, aiae_s] if s])
         if present < 2:
             continue
 
-        name = mr_s.get("name") or div_s.get("name") or mom_s.get("name") or erp_s.get("name", code)
+        name = mr_s.get("name") or div_s.get("name") or mom_s.get("name") or erp_s.get("name") or aiae_s.get("name", code)
         signals = {
             "mr": mr_s.get("signal", "-"),
             "div": div_s.get("signal", "-"),
             "mom": mom_s.get("signal", "-"),
             "erp": erp_s.get("signal", "-"),
+            "aiae": aiae_s.get("signal", "-"),
         }
 
         buy_count = sum(1 for v in signals.values() if v == "buy")
@@ -1785,6 +1832,7 @@ def _compute_resonance(mr_signals, div_signals, mom_signals, erp_signals=None):
                 "div": div_s.get("score", 0),
                 "mom": mom_s.get("score", 0),
                 "erp": erp_s.get("score", 0),
+                "aiae": aiae_s.get("score", 0),
             },
         }
 
@@ -1891,8 +1939,8 @@ async def run_all_strategies(override_cap: int = None):
         erp_signals  = _extract_signals_normalized("erp", erp_result)
         aiae_signals = _extract_signals_normalized("aiae_etf", aiae_result)
 
-        # 五策略共振分析 (AIAE信号也参与共振)
-        resonance = _compute_resonance(mr_signals, div_signals, mom_signals, erp_signals + aiae_signals)
+        # 五策略共振分析 (AIAE独立参与共振 V4.2)
+        resonance = _compute_resonance(mr_signals, div_signals, mom_signals, erp_signals, aiae_signals)
 
         # 风险覆盖
         all_buy_signals = (
@@ -1931,14 +1979,24 @@ async def run_all_strategies(override_cap: int = None):
         erp_conf  = _avg_confidence(erp_signals)
         aiae_conf = _avg_confidence(aiae_signals)
 
-        # ── AIAE 驱动的动态权重 (替代固定 30/25/15/30) ──
+        # ── AIAE×ERP 联合权重 V2.0 (双维驱动) ──
         aiae_regime = aiae_ov.get("regime", 3)
+        erp_score = erp_ov.get("composite_score", 50)
+
+        # 从AIAE策略结果获取联合权重（已在_run_aiae_strategy中计算）
         aiae_weights = aiae_result.get("data", {}).get("run_all_weights", None)
+        erp_tier = aiae_result.get("data", {}).get("erp_tier", "neutral")
+
         if aiae_weights:
             w = aiae_weights
         else:
-            # 降级: 使用中性权重
-            w = {"mr": 0.20, "div": 0.25, "mom": 0.15, "erp": 0.15, "aiae_etf": 0.25}
+            # 降级: 重新查表
+            try:
+                engine = get_aiae_engine()
+                w, erp_tier = engine.get_run_all_weights(aiae_regime, erp_score)
+            except Exception:
+                w = {"mr": 0.15, "div": 0.30, "mom": 0.10, "erp": 0.15, "aiae_etf": 0.30}
+                erp_tier = "neutral"
 
         raw_pos = round(
             mr_conf   * w["mr"] +
@@ -1948,16 +2006,16 @@ async def run_all_strategies(override_cap: int = None):
             aiae_conf * w["aiae_etf"]
         )
 
-        # ── 双保险仓位 Cap: MA趋势(技术面) × AIAE(基本面) ──
-        # Layer A: MA 趋势 Cap
+        # ── 仓位Cap V2.0: POSITION_MATRIX(AIAE×ERP) + MA安全网 ──
+        # Layer A: POSITION_MATRIX 直查 (已包含ERP维度, 替代旧版ERP硬编码屏障)
+        aiae_cap = aiae_ov.get("matrix_position", 65)
+
+        # Layer B: MA 趋势安全网 (保留作为技术面辅助)
         ma_cap_map = {"BULL": 95, "RANGE": 70, "BEAR": 50, "CRASH": 20}
         ma_cap = ma_cap_map.get(mr_regime, 70)
 
-        # Layer B: AIAE 仓位矩阵 Cap
-        aiae_cap = aiae_ov.get("matrix_position", 65)
-
-        # 双保险: 取更保守值
-        cap = min(ma_cap, aiae_cap)
+        # 双保险: POSITION_MATRIX Cap + MA趋势安全网
+        cap = min(aiae_cap, ma_cap)
 
         # 手动覆盖选项 (PO 人工干预)
         override_active = False
@@ -1965,16 +2023,31 @@ async def run_all_strategies(override_cap: int = None):
         if override_cap is not None and 0 <= override_cap <= 100:
             cap = override_cap
             override_active = True
-            print(f"[RUN-ALL V4] 手动覆盖仓位Cap: {original_cap}% → {cap}%")
+            print(f"[RUN-ALL V5] 手动覆盖仓位Cap: {original_cap}% → {cap}%")
 
         avg_pos = min(raw_pos, cap)
 
-        # ERP 宏观屏障: ERP score <= 40 → 全局仓位上限压至30%
-        erp_score = erp_ov.get("composite_score", 50)
-        erp_cap_active = False
-        if erp_score <= 40 and not override_active:
-            avg_pos = min(avg_pos, 30)
-            erp_cap_active = True
+        # ── V2.1: 矩阵锚定地板 (Regime Position Floor) ──
+        # 问题: 当 MR/DIV 无 buy 信号时, 信心度=0, 加权仓位会被压到极低值(如15%),
+        #        与 AIAE×ERP 矩阵指示的目标区间(如 Regime Ⅲ: 50-65%)严重脱节。
+        # 方案: 使用 AIAE 五档的 pos_min 作为地板, ERP tier 微调。
+        #        信号驱动的仓位 (raw_pos) 在 [floor, cap] 区间内调节。
+        regime_info_for_floor = AIAE_REGIMES.get(aiae_regime, AIAE_REGIMES[3])
+        regime_floor = regime_info_for_floor.get("pos_min", 50)
+
+        # ERP tier 微调地板: bull +5 / bear -10
+        if erp_tier == "bull":
+            regime_floor = min(regime_floor + 5, cap)
+        elif erp_tier == "bear":
+            regime_floor = max(regime_floor - 10, 0)
+
+        # 仓位锚定: max(信号驱动, 矩阵地板) → 再受 Cap 限制
+        avg_pos = max(avg_pos, regime_floor)
+        print(f"[RUN-ALL V2.1] 矩阵锚定: raw={raw_pos}% floor={regime_floor}%(R{aiae_regime}/{erp_tier}) cap={cap}% → final={avg_pos}%")
+
+        # V2.0: ERP屏障已内嵌到JOINT_WEIGHTS+POSITION_MATRIX中，不再需要硬编码30%屏障
+        # 保留变量供前端展示用
+        erp_cap_active = False  # 矩阵已连续调节，无需二值屏障
 
         # 策略一致性评估 (增加 AIAE regime 参与)
         regimes = [mr_regime]
@@ -1982,9 +2055,9 @@ async def run_all_strategies(override_cap: int = None):
         regimes.append(div_regime)
         consistency = "high" if len(set(regimes)) == 1 else "low"
 
-        # 分歧降仓: 一致性低时再打8折 (手动覆盖时跳过)
+        # 分歧降仓: 一致性低时再打8折 (手动覆盖时跳过, 不低于矩阵地板)
         if consistency != "high" and not override_active:
-            avg_pos = round(avg_pos * 0.8)
+            avg_pos = max(round(avg_pos * 0.8), regime_floor)
 
         return {
             "status": "success",
@@ -2014,7 +2087,11 @@ async def run_all_strategies(override_cap: int = None):
                         "regime_cn": aiae_ov.get("regime_cn", "中性均衡"),
                         "aiae_value": aiae_ov.get("aiae_value", 22.0),
                         "aiae_cap": aiae_cap,
+                        "regime_floor": regime_floor,
+                        "raw_pos": raw_pos,
                         "ma_cap": ma_cap,
+                        "erp_tier": erp_tier,
+                        "erp_score_tier": {"bull": "🟢看多", "neutral": "🟡中性", "bear": "🔴看空"}.get(erp_tier, "🟡中性"),
                         "override_active": override_active,
                         "override_cap": override_cap if override_active else None,
                         "original_cap": original_cap,

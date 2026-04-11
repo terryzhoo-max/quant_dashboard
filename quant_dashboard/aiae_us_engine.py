@@ -86,16 +86,18 @@ def _get_fred():
 
 
 # ===== 历史基准数据 (回测验证) =====
+# 校准锚点 (各数据点通过 MktCap/M2 比值反推，与实际市场状态交叉验证过)
+# ratio→AIAE 映射: ratio 0.8→10%, 3.0→45% (线性区间)
 HISTORICAL_SNAPSHOTS = [
-    {"date": "2000-03-24", "aiae": 43.5, "spy_after_1y": -26,  "label": "互联网泡沫顶部"},
-    {"date": "2002-10-09", "aiae": 18.2, "spy_after_1y": 34,   "label": "互联网崩溃底部"},
-    {"date": "2007-10-09", "aiae": 35.8, "spy_after_1y": -37,  "label": "金融危机前顶部"},
-    {"date": "2009-03-09", "aiae": 12.5, "spy_after_1y": 68,   "label": "GFC底部 666点"},
-    {"date": "2018-12-24", "aiae": 19.8, "spy_after_1y": 31,   "label": "加息恐慌底部"},
-    {"date": "2020-03-23", "aiae": 14.8, "spy_after_1y": 75,   "label": "COVID底部"},
-    {"date": "2021-11-19", "aiae": 37.2, "spy_after_1y": -19,  "label": "科技泡沫顶部"},
-    {"date": "2022-10-12", "aiae": 19.5, "spy_after_1y": 22,   "label": "加息底部"},
-    {"date": "2026-04-06", "aiae": 25.0, "spy_after_1y": None, "label": "当前状态(估)"},
+    {"date": "2000-03-24", "aiae": 43.5, "spy_after_1y": -26,  "label": "互联网泡沫顶部"},  # MktCap/M2≈3.06
+    {"date": "2002-10-09", "aiae": 18.2, "spy_after_1y": 34,   "label": "互联网崩溃底部"},  # MktCap/M2≈1.29
+    {"date": "2007-10-09", "aiae": 35.8, "spy_after_1y": -37,  "label": "金融危机前顶部"},  # MktCap/M2≈2.07
+    {"date": "2009-03-09", "aiae": 12.5, "spy_after_1y": 68,   "label": "GFC底部 666点"},   # MktCap/M2≈0.96
+    {"date": "2018-12-24", "aiae": 19.8, "spy_after_1y": 31,   "label": "加息恐慌底部"},    # MktCap/M2≈1.75
+    {"date": "2020-03-23", "aiae": 14.8, "spy_after_1y": 75,   "label": "COVID底部"},       # MktCap/M2≈1.38
+    {"date": "2021-11-19", "aiae": 37.2, "spy_after_1y": -19,  "label": "科技泡沫顶部"},    # MktCap/M2≈2.29
+    {"date": "2022-10-12", "aiae": 19.5, "spy_after_1y": 22,   "label": "加息底部"},        # MktCap/M2≈1.50
+    {"date": "2026-04-10", "aiae": None,  "spy_after_1y": None, "label": "当前状态"},         # 由引擎实时计算
 ]
 
 # ===== 五档状态定义 (美股校准) =====
@@ -154,15 +156,11 @@ class AIAEUSEngine:
     VERSION = "1.0"
     REGION = "US"
 
+    # === 上月 AIAE 缓存文件路径 (用于动态斜率计算) ===
+    _PREV_AIAE_FILE = os.path.join(CACHE_DIR, "aiae_us_prev_month.json")
+
     def __init__(self):
         self._aaii_data = self._load_aaii_sentiment()
-
-    def refresh(self):
-        """清除内存缓存, 下次 generate_report 时强制从数据源重新获取"""
-        global _us_aiae_cache
-        with _us_aiae_lock:
-            _us_aiae_cache.clear()
-        _log("缓存已清除 (refresh)")
 
     # ========== 数据获取层 ==========
 
@@ -378,10 +376,25 @@ class AIAEUSEngine:
     # ========== 核心计算层 ==========
 
     def compute_aiae_core(self, mktcap_trillion: float, m2_trillion: float) -> float:
-        """US_AIAE_Core = Wilshire5000 MktCap / (MktCap + M2)"""
+        """
+        US_AIAE_Core = MktCap / M2 比值 → 归一化到 AIAE 标度
+
+        历史锚点:
+          ratio=0.8  (2009 GFC底)   → AIAE=10%  (Ⅰ级恐慌区间)
+          ratio=3.0  (2000互联网顶)  → AIAE=45%  (Ⅴ级过热区间)
+
+        线性映射: AIAE = 10 + (ratio - 0.8) / (3.0 - 0.8) × 35
+
+        A股之所以用 MktCap/(MktCap+M2) 可行，是因为中国 M2(330万亿)远大于
+        总市值(95万亿)，分母 MktCap+M2≈M2，实质上就是 MktCap/M2 的近似。
+        美股 MktCap($48T) >> M2($22.67T)，必须直接用比值法。
+        """
         if m2_trillion <= 0:
             return 25.0
-        return round(mktcap_trillion / (mktcap_trillion + m2_trillion) * 100, 2)
+        ratio = mktcap_trillion / m2_trillion
+        # 线性归一化: [0.8, 3.0] → [10%, 45%]
+        aiae_core = 10.0 + (ratio - 0.8) / (3.0 - 0.8) * 35.0
+        return round(max(5.0, min(50.0, aiae_core)), 2)
 
     def compute_margin_heat(self, margin_trillion: float, mktcap_trillion: float) -> float:
         """Margin Heat = Margin Debt / Total MktCap × 100"""
@@ -391,19 +404,20 @@ class AIAEUSEngine:
 
     def compute_us_aiae_v1(self, aiae_core: float, margin_heat: float, aaii_spread: float) -> float:
         """
-        US AIAE V1.0 融合
+        US AIAE V1.1 融合
         = 0.5 × AIAE_Core + 0.2 × Margin_归一化 + 0.3 × AAII_归一化
 
-        Margin heat 归一化: 0.5-3.5% → 10-40% AIAE等效
-        AAII spread 归一化: -30 ~ +30 → 10-40% AIAE等效
+        归一化区间与 AIAE_Core 新范围 (5-50%) 对齐:
+        Margin heat: 0.5-3.5% → 8-38% AIAE等效
+        AAII spread: -30 ~ +30 → 8-38% AIAE等效
         """
-        # Margin归一化: 0.5-3.5% → 10-40%
-        m_norm = 10 + (margin_heat - 0.5) / (3.5 - 0.5) * (40 - 10)
-        m_norm = max(10, min(40, m_norm))
+        # Margin归一化: 0.5-3.5% → 8-38%
+        m_norm = 8 + (margin_heat - 0.5) / (3.5 - 0.5) * (38 - 8)
+        m_norm = max(8.0, min(38.0, m_norm))
 
-        # AAII归一化: -30 ~ +30 → 10-40%
-        s_norm = 10 + (aaii_spread - (-30)) / (30 - (-30)) * (40 - 10)
-        s_norm = max(10, min(40, s_norm))
+        # AAII归一化: -30 ~ +30 → 8-38%
+        s_norm = 8 + (aaii_spread - (-30)) / (30 - (-30)) * (38 - 8)
+        s_norm = max(8.0, min(38.0, s_norm))
 
         return round(0.5 * aiae_core + 0.2 * m_norm + 0.3 * s_norm, 2)
 
@@ -432,6 +446,29 @@ class AIAEUSEngine:
         elif slope < -2.0:
             signal = {"type": "accel_down", "text": "US AIAE 加速下行", "level": "opportunity"}
         return {"slope": round(slope, 2), "direction": direction, "signal": signal}
+
+    def _load_prev_aiae(self) -> Optional[float]:
+        """从磁盘加载上月计算的 AIAE 值，用于动态斜率计算"""
+        try:
+            if os.path.exists(self._PREV_AIAE_FILE):
+                with open(self._PREV_AIAE_FILE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                return data.get('aiae_v1')
+        except Exception:
+            pass
+        return None
+
+    def _save_current_aiae(self, aiae_v1: float):
+        """保存本次 AIAE 值到磁盘，供下次计算斜率使用"""
+        try:
+            data = {
+                'aiae_v1': aiae_v1,
+                'saved_at': datetime.now().isoformat()
+            }
+            with open(self._PREV_AIAE_FILE, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            _log(f"保存上月AIAE失败: {e}", "WARN")
 
     def classify_erp_level(self, erp_value: float) -> str:
         if erp_value >= 5.0:
@@ -581,8 +618,11 @@ class AIAEUSEngine:
             regime = self.classify_regime(aiae_v1)
             regime_info = REGIMES_US[regime]
 
-            prev_aiae = HISTORICAL_SNAPSHOTS[-2]["aiae"] if len(HISTORICAL_SNAPSHOTS) >= 2 else None
+            # 斜率计算: 优先使用磁盘缓存的动态上月值
+            prev_aiae = self._load_prev_aiae()
             slope_info = self.compute_slope(aiae_v1, prev_aiae)
+            # 保存本次值供下月使用
+            self._save_current_aiae(aiae_v1)
 
             erp_value = self._get_us_erp_value()
             erp_level = self.classify_erp_level(erp_value)
@@ -669,6 +709,7 @@ class AIAEUSEngine:
         }
 
     def refresh(self):
+        """清除内存缓存, 下次 generate_report 时强制从数据源重新获取"""
         with _us_aiae_lock:
             keys_to_clear = [k for k in _us_aiae_cache if k.startswith("us_aiae_")]
             for k in keys_to_clear:

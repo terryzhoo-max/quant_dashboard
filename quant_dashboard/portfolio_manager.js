@@ -116,11 +116,14 @@ document.addEventListener('DOMContentLoaded', function () {
         const cashWeight = data.cash_weight != null ? data.cash_weight : (data.total_asset > 0 ? (data.cash / data.total_asset * 100) : 0);
         document.getElementById('cash-weight').textContent = cashWeight.toFixed(1);
 
-        // ROI
-        let totalROI = 0;
-        let originalCost = data.positions.reduce((acc, pos) => acc + (pos.amount * pos.cost), 0);
-        if (originalCost > 0) {
-            totalROI = ((data.market_value - originalCost) / originalCost) * 100;
+        // ROI — 使用后端统一计算的盈亏 (券商/Tushare 一致)
+        let totalROI = data.total_pnl_pct != null ? data.total_pnl_pct : 0;
+        // 向后兼容: 旧 API 可能无 total_pnl_pct 字段
+        if (data.total_pnl_pct == null) {
+            let originalCost = data.positions.reduce((acc, pos) => acc + (pos.amount * pos.cost), 0);
+            if (originalCost > 0) {
+                totalROI = ((data.market_value - originalCost) / originalCost) * 100;
+            }
         }
 
         const roiEl = document.getElementById('port-roi');
@@ -167,7 +170,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 </td>
                 <td class="pf-mono">${pos.amount.toLocaleString()}</td>
                 <td class="pf-mono pf-dim">¥${pos.cost.toFixed(2)}</td>
-                <td class="pf-mono">¥${pos.price.toFixed(2)}</td>
+                <td class="pf-mono">¥${pos.price.toFixed(2)}${pos.price_source === 'broker' ? '<span class="pf-src-tag pf-src-broker" title="券商导入报价 (当日优先)">券</span>' : pos.price_source === 'cost' ? '<span class="pf-src-tag pf-src-cost" title="使用成本价兜底">成本</span>' : '<span class="pf-src-tag pf-src-ts" title="Tushare 收盘价">TS</span>'}</td>
                 <td class="pf-mono pf-accent">¥${pos.market_value.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                 <td>
                     <div class="pf-weight-cell">
@@ -518,9 +521,14 @@ document.addEventListener('DOMContentLoaded', function () {
         container.innerHTML = records.map(r => {
             const isBuy = r.action === 'buy';
             const isImport = r.action === 'import';
+            const isReset = r.action === 'reset';
             let statusClass, icon, label;
 
-            if (isImport) {
+            if (isReset) {
+                statusClass = 'pf-hist-reset';
+                icon = '🗑️';
+                label = '清零';
+            } else if (isImport) {
                 statusClass = 'pf-hist-import';
                 icon = '📥';
                 label = '导入';
@@ -534,8 +542,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 label = isBuy ? '买入' : '卖出';
             }
 
-            const detailText = isImport
-                ? r.message || `导入 ${r.amount} 只持仓`
+            const detailText = (isImport || isReset)
+                ? r.message || `${label} ${r.amount} 只持仓`
                 : `${r.amount}股 × ¥${r.price.toFixed(2)} = ¥${r.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 
             return `<div class="pf-history-item ${statusClass}">
@@ -857,6 +865,131 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 
     // ════════════════════════════════════
+    //  清零组合功能
+    // ════════════════════════════════════
+
+    const resetBtn = document.getElementById('reset-btn');
+    const resetModal = document.getElementById('reset-modal');
+    const resetCloseBtn = document.getElementById('reset-close-btn');
+    const resetExecBtn = document.getElementById('reset-exec-btn');
+    const resetConfirmInput = document.getElementById('reset-confirm-input');
+    const resetSummary = document.getElementById('reset-summary');
+
+    // 打开弹窗: 展示当前持仓概要
+    resetBtn.onclick = async () => {
+        try {
+            const res = await fetch('/api/v1/portfolio/valuation');
+            const result = await res.json();
+            if (result.status === 'success') {
+                const d = result.data;
+                resetSummary.innerHTML = `
+                    <div class="pf-reset-stats">
+                        <div class="pf-reset-stat-row">
+                            <span class="pf-reset-stat-label">当前持仓</span>
+                            <span class="pf-reset-stat-value">${d.position_count || 0} 只</span>
+                        </div>
+                        <div class="pf-reset-stat-row">
+                            <span class="pf-reset-stat-label">持仓市值</span>
+                            <span class="pf-reset-stat-value pf-danger">¥${(d.market_value||0).toLocaleString(undefined,{minimumFractionDigits:2})}</span>
+                        </div>
+                        <div class="pf-reset-stat-row">
+                            <span class="pf-reset-stat-label">可用现金</span>
+                            <span class="pf-reset-stat-value pf-gold">¥${(d.cash||0).toLocaleString(undefined,{minimumFractionDigits:2})}</span>
+                        </div>
+                        <div class="pf-reset-stat-row">
+                            <span class="pf-reset-stat-label">总资产</span>
+                            <span class="pf-reset-stat-value" style="color:#ef4444;">¥${(d.total_asset||0).toLocaleString(undefined,{minimumFractionDigits:2})}</span>
+                        </div>
+                    </div>`;
+            } else {
+                resetSummary.innerHTML = '<div style="color:#64748b;text-align:center;padding:20px;">无法加载当前组合数据</div>';
+            }
+        } catch(e) {
+            resetSummary.innerHTML = '<div style="color:#64748b;text-align:center;padding:20px;">数据加载失败</div>';
+        }
+
+        resetConfirmInput.value = '';
+        resetExecBtn.disabled = true;
+        resetModal.style.display = 'flex';
+        setTimeout(() => resetConfirmInput.focus(), 100);
+    };
+
+    // 输入 RESET 激活按钮
+    resetConfirmInput.addEventListener('input', () => {
+        resetExecBtn.disabled = resetConfirmInput.value.trim().toUpperCase() !== 'RESET';
+    });
+
+    // 执行清零
+    resetExecBtn.onclick = async () => {
+        if (resetConfirmInput.value.trim().toUpperCase() !== 'RESET') return;
+
+        resetExecBtn.disabled = true;
+        resetExecBtn.textContent = '⏳ 清零中...';
+        try {
+            const res = await fetch('/api/v1/portfolio/reset', { method: 'POST' });
+            const result = await res.json();
+            if (result.status === 'success') {
+                resetModal.style.display = 'none';
+                showToast(`✅ 组合已清零: 共清除 ${result.data.cleared_positions} 只持仓`, 'success', 4000);
+                loadPortfolio();
+            } else {
+                showToast('清零失败: ' + (result.message || '未知错误'), 'error');
+            }
+        } catch(e) {
+            showToast('网络错误: ' + e.message, 'error');
+        } finally {
+            resetExecBtn.disabled = false;
+            resetExecBtn.textContent = '🗑️ 确认清零';
+        }
+    };
+
+    // 关闭弹窗
+    resetCloseBtn.onclick = () => resetModal.style.display = 'none';
+    resetModal.addEventListener('click', (e) => {
+        if (e.target === resetModal) resetModal.style.display = 'none';
+    });
+
+    // ════════════════════════════════════
+    //  同步行情数据
+    // ════════════════════════════════════
+
+    const syncBtn = document.getElementById('sync-btn');
+
+    syncBtn.onclick = async () => {
+        syncBtn.disabled = true;
+        syncBtn.textContent = '⏳ 同步中...';
+        syncBtn.classList.add('btn-sync-loading');
+
+        showToast('正在从 Tushare 拉取最新行情数据...', 'info', 4000);
+
+        try {
+            const res = await fetch('/api/v1/portfolio/sync', { method: 'POST' });
+            const result = await res.json();
+
+            if (result.status === 'success' && result.data.success) {
+                const d = result.data;
+                showToast(
+                    `✅ ${d.message}` +
+                    (d.failed > 0 ? ` · ${d.failed} 只失败` : '') +
+                    (d.freshness?.daily_latest ? ` · 最新: ${d.freshness.daily_latest}` : ''),
+                    d.failed > 0 ? 'warning' : 'success',
+                    5000
+                );
+                // 刷新全部数据
+                loadPortfolio();
+            } else {
+                showToast('同步失败: ' + (result.message || '未知错误'), 'error');
+            }
+        } catch (err) {
+            showToast('网络错误: ' + err.message, 'error');
+        } finally {
+            syncBtn.disabled = false;
+            syncBtn.textContent = '🔄 同步数据';
+            syncBtn.classList.remove('btn-sync-loading');
+        }
+    };
+
+    // ════════════════════════════════════
     //  事件绑定
     // ════════════════════════════════════
 
@@ -892,6 +1025,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (e.key === 'Escape') {
             if (tradeModal.style.display === 'flex') tradeModal.style.display = 'none';
             if (importModal.style.display === 'flex') importModal.style.display = 'none';
+            if (resetModal.style.display === 'flex') resetModal.style.display = 'none';
         }
     });
 

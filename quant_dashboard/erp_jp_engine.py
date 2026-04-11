@@ -14,7 +14,7 @@ AlphaCore · 日本ERP择时引擎 V1.0
   - 日元走弱 = BOJ宽松 = 出口利润↑ = 利好股市 (但USDJPY > 155 = 干预风险)
 
 ETF标的: 1306.T (TOPIX) / 1321.T (日经225) / 1577.T (高股息50)
-数据源: yfinance + FRED API (JGB 10Y)
+数据源: FRED API (JGB 10Y / NIKKEI225 / DEXJPUS)
 """
 
 import pandas as pd
@@ -125,27 +125,26 @@ class JPERPTimingEngine:
     # ========== 数据获取层 (FRED优先) ==========
 
     def _get_current_pe(self) -> float:
-        """三级PE获取策略: yfinance实时 → 磁盘缓存 → 智能估算"""
+        """三级PE获取策略: FRED NIKKEI225价格估算 → 磁盘缓存 → 硬编码"""
         import json
         pe_cache_file = os.path.join(CACHE_DIR, "erp_jp_current_pe.json")
 
-        # Tier 1: yfinance 拉取 1306.T (TOPIX ETF) 或 日経225
+        # Tier 1: FRED NIKKEI225 最新价格 + EPS估算 (取代yfinance)
         try:
-            import yfinance as yf
-            for ticker in ["1306.T", "^N225"]:
-                try:
-                    t = yf.Ticker(ticker)
-                    info = t.info
-                    pe = info.get("trailingPE") or info.get("forwardPE")
-                    if pe and 8 < pe < 40:
-                        with open(pe_cache_file, "w") as f:
-                            json.dump({"pe": round(pe, 2), "source": f"yfinance/{ticker}", "ts": datetime.now().isoformat()}, f)
-                        print(f"[JP-ERP] PE from yfinance ({ticker}): {pe:.1f}x")
-                        return float(pe)
-                except Exception:
-                    continue
+            fred = _get_jp_fred()
+            if fred:
+                nk = fred.get_series("NIKKEI225", observation_start=datetime.now() - timedelta(days=10))
+                if nk is not None and not nk.empty:
+                    price = float(nk.dropna().iloc[-1])
+                    estimated_eps = 2500.0  # 日经225 2025-26年EPS中位估算
+                    pe = price / estimated_eps
+                    pe = max(10, min(35, pe))
+                    with open(pe_cache_file, "w") as f:
+                        json.dump({"pe": round(pe, 2), "source": "FRED/NIKKEI225", "ts": datetime.now().isoformat()}, f)
+                    print(f"[JP-ERP] PE from FRED NIKKEI225: {pe:.1f}x (price=¥{price:.0f}, est_EPS=¥2500)")
+                    return float(pe)
         except Exception as e:
-            print(f"[JP-ERP] yfinance PE failed: {e}")
+            print(f"[JP-ERP] FRED PE failed: {e}")
 
         # Tier 2: 磁盘缓存 (7天内有效)
         if os.path.exists(pe_cache_file):
@@ -159,20 +158,6 @@ class JPERPTimingEngine:
                     return float(pe)
             except Exception:
                 pass
-
-        # Tier 3: 智能估算 — 日经225当前EPS约 ¥2400-2600，用 ¥2500 中位估算
-        try:
-            import yfinance as yf
-            nk_hist = yf.Ticker("^N225").history(period="5d")
-            if not nk_hist.empty:
-                price = float(nk_hist["Close"].iloc[-1])
-                estimated_eps = 2500.0  # 日经225 2025-26年EPS中位估算
-                pe = price / estimated_eps
-                pe = max(10, min(35, pe))  # 合理区间保护
-                print(f"[JP-ERP] PE estimated from price/EPS: {pe:.1f}x (price=¥{price:.0f}, est_EPS=¥2500)")
-                return float(pe)
-        except Exception:
-            pass
 
         print("[JP-ERP] PE fallback to 16.0x (all sources failed)")
         return 16.0

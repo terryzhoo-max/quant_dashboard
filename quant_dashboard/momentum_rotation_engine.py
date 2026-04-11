@@ -14,7 +14,7 @@ V3.0 升级：
 import pandas as pd
 import numpy as np
 import tushare as ts
-import yfinance as yf
+# yfinance removed — VIX via FRED/CNBC (see fetch_vix)
 from datetime import datetime, timedelta
 import traceback
 
@@ -181,16 +181,35 @@ def fetch_hs300_data(days: int = 150) -> pd.DataFrame:
 
 
 def fetch_vix() -> float:
-    """获取VIX恐慌指数"""
+    """获取VIX恐慌指数 (FRED VIXCLS → CNBC 爬虫 → 默认值)"""
+    # Tier 1: FRED VIXCLS
     try:
-        vix = yf.Ticker("^VIX")
-        hist = vix.history(period="5d")
-        if hist is not None and not hist.empty:
-            val = float(hist["Close"].iloc[-1])
-            print(f"  [OK] VIX: {val:.2f}")
+        from fredapi import Fred
+        fred = Fred(api_key="eadf412d4f0e8ccd2bb3993b357bdca6")
+        series = fred.get_series("VIXCLS", observation_start=(datetime.now() - timedelta(days=10)))
+        if series is not None and not series.empty:
+            val = float(series.dropna().iloc[-1])
+            print(f"  [OK] VIX from FRED: {val:.2f}")
             return val
     except Exception as e:
-        print(f"  [WARN] VIX获取失败: {e}, 使用默认值20")
+        print(f"  [WARN] FRED VIX failed: {e}")
+
+    # Tier 2: CNBC 爬虫
+    try:
+        import requests, re
+        url = "https://www.cnbc.com/quotes/.VIX"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        resp = requests.get(url, headers=headers, timeout=8)
+        if resp.status_code == 200:
+            match = re.search(r'"last":"([\d.]+)"', resp.text)
+            if match:
+                val = float(match.group(1))
+                print(f"  [OK] VIX from CNBC: {val:.2f}")
+                return val
+    except Exception as e:
+        print(f"  [WARN] CNBC VIX failed: {e}")
+
+    print(f"  [WARN] VIX全部失败, 使用默认值20")
     return 20.0  # 默认中性
 
 

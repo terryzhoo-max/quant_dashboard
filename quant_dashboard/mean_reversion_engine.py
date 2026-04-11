@@ -257,12 +257,13 @@ def detect_regime() -> dict:
 
 # ─── 核心策略计算 ─────────────────────────────────────────────────────────────
 
-def calculate_indicators(df: pd.DataFrame) -> dict:
+def calculate_indicators(df: pd.DataFrame, regime_info: dict = None) -> dict:
     close  = df["close"]
     volume = df["vol"] if "vol" in df.columns else df["volume"]
 
-    # V4.0：参数从文件动态读取
-    regime_info = detect_regime()
+    # V4.2: regime_info 可外部注入，避免循环内重复调用 API
+    if regime_info is None:
+        regime_info = detect_regime()
     p = regime_info["params"]
     N = p.get("N_trend", 90)
     rsi_p = p.get("rsi_period", 14)
@@ -503,6 +504,9 @@ def run_strategy(ts_codes: list = None, regime_override: str = None) -> list:
     end_date   = datetime.now().strftime("%Y%m%d")
     start_date = "20230101"
 
+    # V4.2: Regime 只识别一次，注入到每只 ETF 的计算中（原最35次API调用→现在1次）
+    regime_info = detect_regime()
+
     for code in pool:
         try:
             df = pro.fund_daily(ts_code=code, start_date=start_date, end_date=end_date)
@@ -510,7 +514,7 @@ def run_strategy(ts_codes: list = None, regime_override: str = None) -> list:
                 continue
             df = df.sort_values("trade_date").reset_index(drop=True)
 
-            indicators  = calculate_indicators(df)
+            indicators  = calculate_indicators(df, regime_info=regime_info)
             score_dict  = calculate_score(indicators)
             score       = score_dict["total"]
             breakdown   = score_dict["breakdown"]
