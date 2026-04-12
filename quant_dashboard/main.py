@@ -518,17 +518,48 @@ def get_ah_premium_adj(pro, date_str):
 
 # --- V3.6 机构级策略调控引擎 (Strategic Allocation Engine) ---
 
-def get_erp_multiplier():
+def get_real_erp_data():
     """
-    计算股债性价比 (ERP) 修正系数
-    逻辑: Z-Score 越高 (便宜), 系数越大
+    V8.0: 从真实 ERP 引擎获取估值数据
+    返回 dict: erp_val, erp_z, valuation_label, erp_score, signal_key, signal_label
+    降级: 引擎异常时返回中性默认值
     """
-    # 生产环境下应从 FactorDataManager 获取 10Y ERP Z-Score
-    # 此处模拟当前 A股 处于 3.5% (极度低估) -> Z-Score ≈ +1.8
-    erp_z = 1.8 
-    if erp_z > 1.5: return 1.2, "极度低估", erp_z
-    if erp_z < -1.5: return 0.7, "极度高估", erp_z
-    return 1.0, "估值合理", erp_z
+    try:
+        engine = get_erp_engine()
+        report = engine.compute_signal()
+        if report.get('status') in ('success', 'fallback'):
+            snap = report['current_snapshot']
+            sig = report['signal']
+            erp_val = snap['erp_value']
+            erp_pct = snap['erp_percentile']
+            erp_z = (erp_pct - 50) / 25
+            if erp_pct >= 80:
+                vlabel = "极度低估"
+            elif erp_pct >= 60:
+                vlabel = "偏低估"
+            elif erp_pct >= 40:
+                vlabel = "估值中性"
+            elif erp_pct >= 20:
+                vlabel = "偏高估"
+            else:
+                vlabel = "极度高估"
+            erp_score = min(100, max(0, erp_pct))
+            print(f"[ERP Real] ERP={erp_val:.2f}% Pct={erp_pct:.1f}% Z={erp_z:.2f} Label={vlabel} Signal={sig['label']}")
+            return {
+                'erp_val': round(erp_val, 2), 'erp_z': round(erp_z, 2),
+                'erp_pct': round(erp_pct, 1), 'valuation_label': vlabel,
+                'erp_score': round(erp_score, 1), 'signal_key': sig['key'],
+                'signal_label': sig['label'], 'composite_score': sig['score'],
+                'status': 'success'
+            }
+    except Exception as e:
+        print(f"[ERP Real] engine error, fallback: {e}")
+    return {
+        'erp_val': 4.5, 'erp_z': 0.0, 'erp_pct': 50.0,
+        'valuation_label': 'fallback', 'erp_score': 50.0,
+        'signal_key': 'hold', 'signal_label': 'hold(fallback)',
+        'composite_score': 50, 'status': 'fallback'
+    }
 
 def get_regime_allocation(temp: float) -> tuple[dict[str, float], str]:
     """V3.9 纠偏后的策略权重矩阵 (过热≠进攻)"""
@@ -827,12 +858,35 @@ def get_tomorrow_plan(vix_analysis, temp_score):
     else:
         framework = ["⚠️ 核心：战略防御，保留现金", "🥇 避险：关注黄金/避险资产", "🛑 熔断：拒绝一切左侧接盘"]
 
+    if v_val < 15:
+        scenarios = [
+            {"case": "VIX<15", "action": "持仓享受低波红利"},
+            {"case": "VIX>20", "action": "减仓10%高波标的"},
+            {"case": "VIX>30", "action": "启动止损协议"},
+        ]
+    elif v_val < 25:
+        scenarios = [
+            {"case": "VIX<18", "action": "加仓科技主线"},
+            {"case": "VIX 20-25", "action": "结构调仓维持均衡"},
+            {"case": "VIX>30", "action": "降仓至50%以下"},
+        ]
+    elif v_val < 35:
+        scenarios = [
+            {"case": "VIX<25", "action": "试探加仓核心资产"},
+            {"case": "VIX 25-35", "action": "保持防御不追涨"},
+            {"case": "VIX>40", "action": "清仓高波标的"},
+        ]
+    else:
+        scenarios = [
+            {"case": "VIX<30", "action": "分批恢复底仓"},
+            {"case": "VIX>35", "action": "现金为王观察"},
+            {"case": "VIX>50", "action": "绝对禁手等待企稳"},
+        ]
     return {
         "regime_matrix": matrix,
         "current_tactics": curr,
         "framework": framework,
-        "scenarios": [
-        ]
+        "scenarios": scenarios
     }
 
 def get_institutional_mindset(temp: float) -> str:
@@ -1093,6 +1147,7 @@ async def get_dashboard_data():
 
         # 5. HSGT & Liquidity Score (A+H 跨境流量共振引擎)
         total_money_z = 0.0 # 初始化中性流量
+        z_s = 0.0  # V8.0: 防御性初始化, 避免 HSGT 异常时 z_s 未定义
         try:
             df_hsgt = pro.moneyflow_hsgt(start_date='20250101', end_date=today_str, limit=30)
             if df_hsgt is not None and not df_hsgt.empty:
@@ -1146,11 +1201,15 @@ async def get_dashboard_data():
         # --- A股得分维度 (权重: 60%) ---
         margin_score = get_margin_risk_ratio(pro, today_str) # 25% (杠杆情绪)
         breadth_score = get_market_breadth(pro, today_str) # 20% (年线比例代理)
-        # ERP 动态计算 (3.0-4.0 为中枢)
-        erp_val = 3.5 + (liquidity_score - 50) / 20.0
-        erp_score = min(100, max(0, (erp_val - 2.5) / (4.5 - 2.5) * 100)) # 30% (估值底)
         turnover_score = 55.0 # 25% (筹码交换频率代理)
-        
+
+        # V8.0: 从真实 ERP 引擎获取估值数据 (替代硬编码 3.5%)
+        erp_data = get_real_erp_data()
+        erp_val = erp_data['erp_val']
+        erp_z = erp_data['erp_z']
+        valuation_label = erp_data['valuation_label']
+        erp_score = erp_data['erp_score']  # 0-100, 用于 AIAE x ERP 矩阵
+
         score_a = margin_score * 0.25 + turnover_score * 0.25 + erp_score * 0.30 + breadth_score * 0.20
         
         # --- 港股得分维度 (权重: 40%) ---
@@ -1181,20 +1240,16 @@ async def get_dashboard_data():
         panic_adj = min(1.0, 1.25 - (vix_p / 100.0)) # 线性压制因子
         total_temp = round(base_temp * panic_adj, 1)
         
-        erp_multiplier, valuation_label, erp_z = get_erp_multiplier()
-        
-        # V7.0 (V2.1 Joint Matrix): AIAE × ERP 双维驱动仓位矩阵 (替代五因子)
+        # V8.0 (Joint Matrix): AIAE x ERP 双维驱动仓位矩阵
+        # erp_val/erp_z/valuation_label/erp_score 已由上方 get_real_erp_data() 提供
         try:
             _aiae_engine = get_aiae_engine()
-            # 获取ERP Tier
-            erp_score = min(100, max(0, (erp_val - 2.5) / (4.5 - 2.5) * 100))
             weights_5, erp_tier = _aiae_engine.get_run_all_weights(aiae_regime, erp_score)
         except Exception as e:
             print(f"[Dashboard Matrix Error] {e}")
             weights_5 = {"mr": 0.15, "div": 0.30, "mom": 0.10, "erp": 0.15, "aiae_etf": 0.30}
             erp_tier = "neutral"
 
-        # V7.0: 矩阵式统一收口仓位上限 (前置已经由 aiae_report["position"]["matrix_position"] 注入到了 aiae_cap)
         # 流动性熔断保护
         if is_circuit_breaker:
             final_pos_val = min(aiae_cap, 10)

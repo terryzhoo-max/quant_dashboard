@@ -66,7 +66,7 @@ ENCYCLOPEDIA = {
     },
     "erp_pct": {
         "title": "ERP 历史分位",
-        "what": "过去5年中，有多少比例的交易日ERP比今天低。80%分位 → 过去80%时间股票比现在贵。",
+        "what": "过去4年中，有多少比例的交易日ERP比今天低。80%分位 → 过去80%时间股票比现在贵。",
         "why": "分位越高 → 当前估值越罕见地便宜 → 中长期赔率越好。",
         "alert": "分位 > 80% 是极度罕见的低估（历史级机会）。分位 < 20% 意味着高处不胜寒。",
         "history": "分位指标在2018/2022/2024年底均超过75%，之后市场都迎来了显著反弹。"
@@ -124,7 +124,7 @@ class ERPTimingEngine:
     }
 
     def __init__(self):
-        pass
+        self._prev_score = None  # P1 fix: 追踪上次综合得分，用于计算 Score 跌幅
 
     # ========== 数据获取层 (带TTL缓存+磁盘持久化) ==========
 
@@ -254,13 +254,14 @@ class ERPTimingEngine:
         return round(score, 1), desc
 
     def _score_d2_erp_percentile(self, erp_val: float, erp_series: pd.Series) -> tuple:
-        """D2: ERP历史分位 → 0-100"""
-        pct = (erp_series < erp_val).mean() * 100
-        if pct >= 80:   desc = f"近5年{pct:.1f}%分位 → 历史极度低估区间"
-        elif pct >= 60: desc = f"近5年{pct:.1f}%分位 → 偏低估区间"
-        elif pct >= 40: desc = f"近5年{pct:.1f}%分位 → 估值中性"
-        elif pct >= 20: desc = f"近5年{pct:.1f}%分位 → 偏高估区间"
-        else:           desc = f"近5年{pct:.1f}%分位 → 历史极度高估区间"
+        """D2: ERP历史分位 → 0-100 (V2.1: 窗口对齐回测参数1008日)"""
+        window = erp_series.tail(1008)  # 对齐回测优化参数: ~4年
+        pct = (window < erp_val).mean() * 100
+        if pct >= 80:   desc = f"近4年{pct:.1f}%分位 → 历史极度低估区间"
+        elif pct >= 60: desc = f"近4年{pct:.1f}%分位 → 偏低估区间"
+        elif pct >= 40: desc = f"近4年{pct:.1f}%分位 → 估值中性"
+        elif pct >= 20: desc = f"近4年{pct:.1f}%分位 → 偏高估区间"
+        else:           desc = f"近4年{pct:.1f}%分位 → 历史极度高估区间"
         return round(pct, 1), round(pct, 1), desc
 
     def _score_d3_m1_trend(self) -> tuple:
@@ -431,20 +432,52 @@ class ERPTimingEngine:
             ]
 
         # === 止盈规则 (逆向型: 不轻易止损，高位才止盈) ===
-        take_profit = []
-        if erp >= 5.0:
-            take_profit.append({"trigger": "ERP 回落至 4.0% 以下", "action": "减仓20%权益", "type": "valuation"})
-        if pct >= 60:
-            take_profit.append({"trigger": "分位跌破 30%", "action": "降至标配仓位", "type": "percentile"})
-        take_profit.append({"trigger": "综合得分从 ≥75 跌破 55", "action": "一次性降至50%", "type": "score_drop"})
-        take_profit.append({"trigger": "M1连续3月下滑且转负", "action": "减仓30%", "type": "liquidity"})
+        # V2.2: 动态触发标注 — 移除 gate 条件，让 triggered 可真正触发
+        take_profit = [
+            {
+                "trigger": "ERP 回落至 4.0% 以下", "action": "减仓20%权益", "type": "valuation",
+                "triggered": bool(erp < 4.0), "current": f"ERP={erp:.2f}%"
+            },
+            {
+                "trigger": "分位跌破 30%", "action": "降至标配仓位", "type": "percentile",
+                "triggered": bool(pct < 30), "current": f"分位={pct:.1f}%"
+            },
+            {
+                "trigger": "综合得分从 ≥75 跌破 55", "action": "一次性降至50%", "type": "score_drop",
+                "triggered": bool(score < 55), "current": f"Score={score:.1f}"
+            },
+        ]
+        m1_falling_3m = dims.get("m1_trend", {}).get("m1_info", {}).get("3m_direction") == "falling"
+        take_profit.append({
+            "trigger": "M1连续3月下滑且转负", "action": "减仓30%", "type": "liquidity",
+            "triggered": bool(m1_val < 0 and m1_falling_3m), "current": f"M1={m1_val:.1f}%"
+        })
 
         # === 止损规则 (逆向加仓型) ===
+        # V2.2: 动态触发标注 + Score 跌幅状态追踪
+        score_delta = round(score - self._prev_score, 1) if self._prev_score is not None else 0.0
+        score_drop_triggered = score_delta < -15
         stop_loss = [
-            {"trigger": "ERP ≥ 7% (极端低估)", "action": "逆向加仓10-20%，分批买入", "type": "contrarian_buy", "color": "#10b981"},
-            {"trigger": "Score单次跌幅 > 15分", "action": "不止损，观察1周后再决策", "type": "wait", "color": "#3b82f6"},
-            {"trigger": "ERP < 2.5% (极端高估)", "action": "唯一硬止损：清仓权益", "type": "hard_stop", "color": "#ef4444"},
-            {"trigger": "M1同比 < -5% (流动性危机)", "action": "降仓至20%以下", "type": "liquidity_crisis", "color": "#ef4444"},
+            {
+                "trigger": "ERP ≥ 7% (极端低估)", "action": "逆向加仓10-20%，分批买入",
+                "type": "contrarian_buy", "color": "#10b981",
+                "triggered": bool(erp >= 7.0), "current": f"ERP={erp:.2f}%"
+            },
+            {
+                "trigger": "Score单次跌幅 > 15分", "action": "不止损，观察1周后再决策",
+                "type": "wait", "color": "#3b82f6",
+                "triggered": bool(score_drop_triggered), "current": f"Score={score:.1f} (Δ{score_delta:+.1f})"
+            },
+            {
+                "trigger": "ERP < 2.5% (极端高估)", "action": "唯一硬止损：清仓权益",
+                "type": "hard_stop", "color": "#ef4444",
+                "triggered": bool(erp < 2.5), "current": f"ERP={erp:.2f}%"
+            },
+            {
+                "trigger": "M1同比 < -5% (流动性危机)", "action": "降仓至20%以下",
+                "type": "liquidity_crisis", "color": "#ef4444",
+                "triggered": bool(m1_val < -5), "current": f"M1={m1_val:.1f}%"
+            },
         ]
 
         return {
@@ -538,6 +571,7 @@ class ERPTimingEngine:
 
             # 买卖规则
             trade = self._generate_trade_rules(composite, dims, snap)
+            self._prev_score = composite  # P1 fix: 更新上次得分用于下次 delta 计算
 
             # 警示
             alerts = self._generate_alerts(composite, erp_val, d2_pct, m1_info, vol_info)
@@ -586,11 +620,11 @@ class ERPTimingEngine:
 
         # 2 — 分位
         if pct >= 70:
-            cards.append({"type": "success", "title": "历史分位 · 便宜", "text": f"ERP处于近5年{pct:.0f}%分位，历史上{100-pct:.0f}%的时间比现在更贵。赔率极佳。"})
+            cards.append({"type": "success", "title": "历史分位 · 便宜", "text": f"ERP处于近4年{pct:.0f}%分位，历史上{100-pct:.0f}%的时间比现在更贵。赔率极佳。"})
         elif pct >= 40:
-            cards.append({"type": "info", "title": "历史分位 · 中性", "text": f"ERP近5年{pct:.0f}%分位，处于中间位置。"})
+            cards.append({"type": "info", "title": "历史分位 · 中性", "text": f"ERP近4年{pct:.0f}%分位，处于中间位置。"})
         else:
-            cards.append({"type": "warning", "title": "历史分位 · 昂贵", "text": f"ERP近5年仅{pct:.0f}%分位，历史大部分时间比现在便宜。"})
+            cards.append({"type": "warning", "title": "历史分位 · 昂贵", "text": f"ERP近4年仅{pct:.0f}%分位，历史大部分时间比现在便宜。"})
 
         # 3 — 流动性
         if m1_val > 0 and m1.get("3m_direction") == "rising":
@@ -636,7 +670,7 @@ class ERPTimingEngine:
     # ========== 历史序列输出 ==========
 
     def get_erp_chart_data(self) -> dict:
-        """输出ERP历史走势图数据 + 买卖区间"""
+        """输出ERP历史走势图数据 + 买卖区间 + M1叠加 (V3.0 — 增强统计)"""
         try:
             erp_df = self._compute_erp_series()
             erp_sampled = erp_df.iloc[::3].copy()
@@ -646,21 +680,70 @@ class ERPTimingEngine:
             pe_vals = erp_sampled['pe_ttm'].round(2).tolist()
             yield_vals = erp_sampled['yield_10y'].round(2).tolist()
 
+            # V2.1: M1 同比叠加 (月频→日频, forward-fill)
+            m1_vals = [None] * len(dates)  # 默认空值
+            try:
+                m1_df = self._fetch_m1_history(months=60)
+                if not m1_df.empty:
+                    m1_df['month_date'] = pd.to_datetime(m1_df['month'], format='%Y%m') + pd.offsets.MonthEnd(0)
+                    m1_map = dict(zip(m1_df['month_date'].dt.strftime('%Y-%m'), m1_df['m1_yoy'].round(1)))
+                    m1_vals = []
+                    for d in dates:
+                        ym = d[:7]  # 'YYYY-MM'
+                        m1_vals.append(m1_map.get(ym, None))
+                    # Forward-fill None gaps
+                    last_v = None
+                    for i in range(len(m1_vals)):
+                        if m1_vals[i] is not None:
+                            last_v = m1_vals[i]
+                        else:
+                            m1_vals[i] = last_v
+            except Exception as e:
+                print(f"[ERP Chart] M1 overlay failed: {e}")
+
             erp_mean = float(erp_df['erp'].mean())
             erp_std = float(erp_df['erp'].std())
+            erp_current = float(erp_df['erp'].iloc[-1])
+            overweight = round(erp_mean + 0.5 * erp_std, 2)
+            underweight = round(erp_mean - 0.5 * erp_std, 2)
+            strong_buy = round(erp_mean + 1.0 * erp_std, 2)
+            danger = round(erp_mean - 1.0 * erp_std, 2)
+
+            # V3.0: 增强统计 — 区间停留比例 + 偏离度 + 极值点 + 年跨度
+            total_pts = len(erp_vals)
+            buy_count = sum(1 for v in erp_vals if v >= overweight)
+            sell_count = sum(1 for v in erp_vals if v <= underweight)
+            current_vs_mean = round((erp_current - erp_mean) / erp_mean * 100, 1) if erp_mean else 0
+
+            # 日期跨度 (年)
+            date_range_years = round((erp_df['trade_date'].iloc[-1] - erp_df['trade_date'].iloc[0]).days / 365.25, 1)
+
+            # 极值点 (用于 markPoint)
+            erp_max_val = float(erp_df['erp'].max())
+            erp_min_val = float(erp_df['erp'].min())
+            max_row = erp_df.loc[erp_df['erp'].idxmax()]
+            min_row = erp_df.loc[erp_df['erp'].idxmin()]
+            extremes = [
+                {"date": max_row['trade_date'].strftime('%Y-%m-%d'), "value": round(erp_max_val, 2), "type": "max"},
+                {"date": min_row['trade_date'].strftime('%Y-%m-%d'), "value": round(erp_min_val, 2), "type": "min"},
+            ]
 
             return {
                 "status": "success", "dates": dates,
                 "erp": erp_vals, "pe_ttm": pe_vals, "yield_10y": yield_vals,
+                "m1_yoy": m1_vals,
                 "stats": {
                     "mean": round(erp_mean, 2), "std": round(erp_std, 2),
-                    "overweight_line": round(erp_mean + 0.5 * erp_std, 2),
-                    "underweight_line": round(erp_mean - 0.5 * erp_std, 2),
-                    "strong_buy_line": round(erp_mean + 1.0 * erp_std, 2),
-                    "danger_line": round(erp_mean - 1.0 * erp_std, 2),
-                    "max": round(float(erp_df['erp'].max()), 2),
-                    "min": round(float(erp_df['erp'].min()), 2),
-                    "current": round(float(erp_df['erp'].iloc[-1]), 2)
+                    "overweight_line": overweight, "underweight_line": underweight,
+                    "strong_buy_line": strong_buy, "danger_line": danger,
+                    "max": round(erp_max_val, 2), "min": round(erp_min_val, 2),
+                    "current": round(erp_current, 2),
+                    # V3.0 新增
+                    "current_vs_mean": current_vs_mean,
+                    "buy_zone_pct": round(buy_count / total_pts * 100, 1) if total_pts else 0,
+                    "sell_zone_pct": round(sell_count / total_pts * 100, 1) if total_pts else 0,
+                    "date_range_years": date_range_years,
+                    "extremes": extremes,
                 }
             }
         except Exception as e:

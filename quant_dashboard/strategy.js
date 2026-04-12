@@ -2239,7 +2239,21 @@ async function loadERPTimingData() {
         const json = await resp.json();
         if (json.status !== 'success' || !json.data) { console.error('ERP API error:', json); return; }
         const data = json.data;
-        
+
+        // V2.1: 降级状态检测 — 引擎返回 fallback 时显示警告
+        const bar = document.getElementById('erp-identity-bar');
+        if (data.status === 'fallback') {
+            if (bar) {
+                bar.style.borderLeftColor = '#f59e0b';
+                bar.style.boxShadow = '0 0 20px rgba(245,158,11,0.3)';
+            }
+            const badge = document.getElementById('erp-resonance-badge');
+            if (badge) {
+                badge.textContent = '⚠️ 数据降级模式';
+                badge.style.background = 'rgba(245,158,11,0.15)';
+                badge.style.color = '#f59e0b';
+            }
+        }
         // P1: 变化高亮 (比较新旧快照)
         const newSnap = data.current_snapshot || {};
         highlightERPChanges(_erpPrevSnapshot, newSnap);
@@ -2250,7 +2264,7 @@ async function loadERPTimingData() {
         renderERPTradeHub(data.trade_rules || {});
         renderERPDimBars(data.dimensions, data.encyclopedia || {});
         renderERPGauge(data.signal, data.trade_rules);
-        if (data.chart && data.chart.status === 'success') renderERPHistoryChart(data.chart);
+        if (data.chart && data.chart.status === 'success') renderERPHistoryChart(data.chart, data);
         renderERPEncyclopedia(data.encyclopedia || {});
         renderERPDiagnosis(data.diagnosis || []);
         // 头部徽章
@@ -2297,7 +2311,7 @@ function renderERPSnapshot(data) {
     const erpEl = document.getElementById('erp-val-erp');
     erpEl.textContent = (snap.erp_value || '--') + '%';
     erpEl.style.color = snap.erp_value >= 5 ? '#10b981' : (snap.erp_value >= 3.5 ? '#f59e0b' : '#ef4444');
-    document.getElementById('erp-sub-erp').textContent = '\u8FD15\u5E74 ' + (snap.erp_percentile || '--') + '% \u5206\u4F4D';
+    document.getElementById('erp-sub-erp').textContent = '\u8FD14\u5E74 ' + (snap.erp_percentile || '--') + '% \u5206\u4F4D';
     const trendErp = document.getElementById('erp-trend-erp');
     if (snap.erp_value >= 5) { trendErp.textContent = '\u2191'; trendErp.style.color = '#10b981'; }
     else if (snap.erp_value < 3.5) { trendErp.textContent = '\u2193'; trendErp.style.color = '#ef4444'; }
@@ -2369,21 +2383,39 @@ function renderERPTradeHub(trade) {
                 '<div style="text-align:right;"><span style="font-size:0.8rem;font-weight:700;color:#f59e0b;">' + e.ratio + '</span><div style="font-size:0.55rem;color:#64748b;">' + e.reason + '</div></div></div>';
         }).join('');
     }
-    // 止盈
+    // 止盈 — V2.1: 动态触发标注 (与海外版对齐)
     const tpC = document.getElementById('erp-take-profit');
     if (tpC && trade.take_profit) {
-        tpC.innerHTML = trade.take_profit.map(r =>
-            '<div style="font-size:0.65rem;padding:4px 6px;background:rgba(16,185,129,0.08);border-radius:4px;border-left:2px solid #10b981;">' +
-            '<div style="color:#10b981;">' + r.trigger + '</div><div style="color:#94a3b8;margin-top:2px;">\u2192 ' + r.action + '</div></div>'
-        ).join('');
+        tpC.innerHTML = trade.take_profit.map(r => {
+            const triggered = r.triggered;
+            const bg = triggered
+                ? 'background:rgba(16,185,129,0.18);border-left:3px solid #10b981;box-shadow:0 0 8px rgba(16,185,129,0.15);'
+                : 'background:rgba(16,185,129,0.06);border-left:2px solid rgba(16,185,129,0.3);';
+            const currentTag = r.current
+                ? ' <span style="color:#64748b;font-size:0.58rem;margin-left:4px;">[' + r.current + ']</span>'
+                : '';
+            const statusIcon = triggered ? '✅ ' : '';
+            return '<div style="font-size:0.65rem;padding:5px 8px;border-radius:5px;' + bg + 'transition:all 0.3s;">' +
+                '<div style="color:' + (triggered ? '#10b981' : '#6ee7b7') + ';font-weight:' + (triggered ? '700' : '400') + ';">' + statusIcon + r.trigger + currentTag + '</div>' +
+                '<div style="color:#94a3b8;margin-top:2px;font-size:0.6rem;">\u2192 ' + r.action + '</div></div>';
+        }).join('');
     }
-    // 止损
+    // 止损 — V2.1: 动态触发标注
     const slC = document.getElementById('erp-stop-loss');
     if (slC && trade.stop_loss) {
         slC.innerHTML = trade.stop_loss.map(r => {
             const c = r.color || '#f59e0b';
-            return '<div style="font-size:0.65rem;padding:4px 6px;background:' + c + '10;border-radius:4px;border-left:2px solid ' + c + ';">' +
-                '<div style="color:' + c + ';">' + r.trigger + '</div><div style="color:#94a3b8;margin-top:2px;">\u2192 ' + r.action + '</div></div>';
+            const triggered = r.triggered;
+            const bg = triggered
+                ? 'background:' + c + '20;border-left:3px solid ' + c + ';box-shadow:0 0 8px ' + c + '25;'
+                : 'background:' + c + '08;border-left:2px solid ' + c + '40;';
+            const currentTag = r.current
+                ? ' <span style="color:#64748b;font-size:0.58rem;margin-left:4px;">[' + r.current + ']</span>'
+                : '';
+            const statusIcon = triggered ? '✅ ' : '';
+            return '<div style="font-size:0.65rem;padding:5px 8px;border-radius:5px;' + bg + 'transition:all 0.3s;">' +
+                '<div style="color:' + c + ';font-weight:' + (triggered ? '700' : '400') + ';">' + statusIcon + r.trigger + currentTag + '</div>' +
+                '<div style="color:#94a3b8;margin-top:2px;font-size:0.6rem;">\u2192 ' + r.action + '</div></div>';
         }).join('');
     }
 }
@@ -2456,65 +2488,210 @@ function renderERPGauge(signal, trade) {
     }
 }
 
-function renderERPHistoryChart(chart) {
+function renderERPHistoryChart(chart, signalData) {
     const dom = document.getElementById('erp-history-chart');
     if (!dom) return;
     if (_erpHistoryChart) _erpHistoryChart.dispose();
     _erpHistoryChart = echarts.init(dom);
     const stats = chart.stats || {};
-    // 买卖区间着色数据
-    const buyZone = chart.erp.map(v => v >= (stats.overweight_line || 99) ? v : null);
-    const sellZone = chart.erp.map(v => v <= (stats.underweight_line || -99) ? v : null);
+    const hasM1 = chart.m1_yoy && chart.m1_yoy.some(v => v != null);
+
+    // V3.0: 动态标题
+    const titleEl = document.getElementById('erp-chart-title');
+    if (titleEl) {
+        const yrs = stats.date_range_years || '?';
+        titleEl.textContent = '\u{1F4C8} ERP \u5386\u53F2\u8D70\u52BF (\u8FD1' + yrs + '\u5E74) \u00B7 \u56DB\u6863\u533A\u95F4\u53EF\u89C6\u5316';
+    }
+
+    // V3.0: KPI 卡片
+    renderERPChartKPIs(stats, signalData);
+
+    // V3.0: markArea 四档色带 (对标 AIAE History Chart 模式)
+    const markAreaData = [
+        [{ yAxis: stats.strong_buy_line, itemStyle: { color: 'rgba(16,185,129,0.08)' } }, { yAxis: (stats.max || 8) + 0.5 }],
+        [{ yAxis: stats.overweight_line, itemStyle: { color: 'rgba(16,185,129,0.03)' } }, { yAxis: stats.strong_buy_line }],
+        [{ yAxis: stats.underweight_line, itemStyle: { color: 'transparent' } }, { yAxis: stats.overweight_line }],
+        [{ yAxis: stats.danger_line, itemStyle: { color: 'rgba(239,68,68,0.04)' } }, { yAxis: stats.underweight_line }],
+        [{ yAxis: (stats.min || 2) - 0.5, itemStyle: { color: 'rgba(239,68,68,0.08)' } }, { yAxis: stats.danger_line }],
+    ];
+
+    // V3.0: markPoint — 当前值 + 历史极值
+    const markPointData = [];
+    const lastDate = chart.dates[chart.dates.length - 1];
+    if (stats.current != null) {
+        markPointData.push({
+            coord: [lastDate, stats.current],
+            name: '\u5F53\u524D', symbol: 'pin', symbolSize: 44,
+            itemStyle: { color: stats.current >= stats.overweight_line ? '#10b981' : (stats.current <= stats.underweight_line ? '#ef4444' : '#f59e0b') },
+            label: { formatter: '{@[1]}%', color: '#fff', fontSize: 10, fontWeight: 700 }
+        });
+    }
+    // 极值标注
+    const extremes = stats.extremes || [];
+    extremes.forEach(e => {
+        markPointData.push({
+            coord: [e.date, e.value],
+            name: e.type === 'max' ? '\u5386\u53F2\u6700\u9AD8' : '\u5386\u53F2\u6700\u4F4E',
+            symbol: e.type === 'max' ? 'triangle' : 'arrow',
+            symbolSize: 12, symbolRotate: e.type === 'min' ? 180 : 0,
+            itemStyle: { color: e.type === 'max' ? '#10b981' : '#ef4444' },
+            label: { show: true, formatter: e.value + '%', fontSize: 9, color: e.type === 'max' ? '#10b981' : '#ef4444', position: e.type === 'max' ? 'top' : 'bottom' }
+        });
+    });
+
+    // 区间判定函数
+    function getZoneLabel(v) {
+        if (v >= (stats.strong_buy_line || 99)) return '\uD83D\uDFE2 \u5F3A\u4E70\u533A';
+        if (v >= (stats.overweight_line || 99)) return '\uD83D\uDD35 \u8D85\u914D\u533A';
+        if (v >= (stats.underweight_line || -99)) return '\u26AA \u4E2D\u6027\u533A';
+        if (v >= (stats.danger_line || -99)) return '\uD83D\uDFE0 \u4F4E\u914D\u533A';
+        return '\uD83D\uDD34 \u5371\u9669\u533A';
+    }
+
+    const legendData = ['ERP', 'PE-TTM', '10Y\u56FD\u503A'];
+    if (hasM1) legendData.push('M1\u540C\u6BD4');
+
     _erpHistoryChart.setOption({
-        tooltip: { trigger: 'axis', backgroundColor: 'rgba(15,23,42,0.95)', borderColor: '#334155', textStyle: { fontSize: 11, color: '#e2e8f0' },
+        tooltip: {
+            trigger: 'axis', backgroundColor: 'rgba(15,23,42,0.95)', borderColor: '#334155',
+            textStyle: { fontSize: 11, color: '#e2e8f0' },
             formatter: function(params) {
                 let r = '<div style="font-size:0.7rem;color:#64748b;margin-bottom:4px;">' + params[0].axisValue + '</div>';
-                params.forEach(p => { if(p.value!=null) r += '<div>' + p.marker + ' ' + p.seriesName + ': <b>' + p.value + (p.seriesIndex <= 2 ? '%' : '') + '</b></div>'; });
+                params.forEach(p => {
+                    if (p.value != null) {
+                        const unit = p.seriesName === 'PE-TTM' ? 'x' : '%';
+                        r += '<div>' + p.marker + ' ' + p.seriesName + ': <b>' + p.value + unit + '</b></div>';
+                    }
+                });
+                // 找到 ERP 值并标注区间
+                const erpParam = params.find(p => p.seriesName === 'ERP');
+                if (erpParam && erpParam.value != null) {
+                    r += '<div style="margin-top:3px;padding-top:3px;border-top:1px solid rgba(255,255,255,0.1);font-size:10px;">' + getZoneLabel(erpParam.value) + '</div>';
+                }
                 return r;
             }
         },
-        legend: { data: ['ERP', '\u4E70\u5165\u533A', '\u5356\u51FA\u533A', 'PE-TTM', '10Y\u56FD\u503A'], top: 0, textStyle: { color: '#94a3b8', fontSize: 10 } },
-        grid: { top: 40, bottom: 30, left: 50, right: 50 },
-        xAxis: { type: 'category', data: chart.dates, axisLabel: { color: '#64748b', fontSize: 10, interval: Math.floor(chart.dates.length / 6) } },
-        yAxis: [
-            { type: 'value', name: 'ERP %', nameTextStyle: { color: '#64748b', fontSize: 10 }, axisLabel: { color: '#64748b', fontSize: 10, formatter: '{value}%' }, splitLine: { lineStyle: { color: 'rgba(100,116,139,0.1)' } } },
-            { type: 'value', name: 'PE-TTM', nameTextStyle: { color: '#64748b', fontSize: 10 }, axisLabel: { color: '#64748b', fontSize: 10 }, splitLine: { show: false } }
+        legend: {
+            data: legendData, top: 0,
+            textStyle: { color: '#94a3b8', fontSize: 10 },
+            selected: { '10Y\u56FD\u503A': false }
+        },
+        toolbox: {
+            right: 20, top: 0,
+            feature: {
+                saveAsImage: { title: '\u4FDD\u5B58', pixelRatio: 2, backgroundColor: '#0f172a' },
+                restore: { title: '\u91CD\u7F6E' }
+            },
+            iconStyle: { borderColor: '#64748b' }
+        },
+        grid: { top: 40, bottom: 55, left: 50, right: hasM1 ? 90 : 50 },
+        dataZoom: [
+            { type: 'inside', start: 65, end: 100 },
+            { type: 'slider', height: 16, bottom: 4, borderColor: 'rgba(255,255,255,0.06)',
+              fillerColor: 'rgba(245,158,11,0.12)', handleStyle: { color: '#f59e0b', borderColor: '#f59e0b' },
+              textStyle: { color: '#64748b', fontSize: 9 },
+              dataBackground: { lineStyle: { color: '#334155' }, areaStyle: { color: 'rgba(245,158,11,0.05)' } }
+            }
         ],
+        xAxis: {
+            type: 'category', data: chart.dates, boundaryGap: false,
+            axisLabel: { color: '#64748b', fontSize: 10, formatter: function(v) { return v.substring(0, 7); } },
+            axisLine: { lineStyle: { color: '#334155' } }
+        },
+        yAxis: [
+            { type: 'value', name: 'ERP %', nameTextStyle: { color: '#64748b', fontSize: 10 },
+              axisLabel: { color: '#64748b', fontSize: 10, formatter: '{value}%' },
+              splitLine: { lineStyle: { color: 'rgba(100,116,139,0.08)' } }
+            },
+            { type: 'value', name: 'PE-TTM', position: 'right',
+              nameTextStyle: { color: '#3b82f6', fontSize: 10 },
+              axisLabel: { color: '#3b82f680', fontSize: 9 },
+              splitLine: { show: false }
+            },
+            hasM1 ? {
+                type: 'value', name: 'M1%', nameTextStyle: { color: '#a78bfa', fontSize: 10 },
+                position: 'right', offset: 40,
+                axisLabel: { color: '#a78bfa', fontSize: 9, formatter: '{value}%' },
+                splitLine: { show: false }
+            } : null
+        ].filter(Boolean),
         series: [
             {
                 name: 'ERP', type: 'line', data: chart.erp, yAxisIndex: 0,
-                lineStyle: { color: '#f59e0b', width: 2 }, itemStyle: { color: '#f59e0b' },
+                lineStyle: { color: '#f59e0b', width: 2.5, shadowColor: 'rgba(245,158,11,0.2)', shadowBlur: 4 },
+                itemStyle: { color: '#f59e0b' },
                 symbol: 'none', z: 10,
+                areaStyle: {
+                    color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                        colorStops: [
+                            { offset: 0, color: 'rgba(245,158,11,0.12)' },
+                            { offset: 1, color: 'rgba(245,158,11,0)' }
+                        ]
+                    }
+                },
                 markLine: {
                     silent: true, symbol: 'none', lineStyle: { type: 'dashed', width: 1 },
                     data: [
                         { yAxis: stats.mean, label: { formatter: '\u5747\u503C ' + stats.mean + '%', color: '#94a3b8', fontSize: 9 }, lineStyle: { color: '#64748b' } },
-                        { yAxis: stats.overweight_line, label: { formatter: '\u8D85\u914D\u7EBF ' + stats.overweight_line + '%', color: '#10b981', fontSize: 9, position: 'insideEndTop' }, lineStyle: { color: '#10b981' } },
-                        { yAxis: stats.underweight_line, label: { formatter: '\u4F4E\u914D\u7EBF ' + stats.underweight_line + '%', color: '#ef4444', fontSize: 9, position: 'insideEndTop' }, lineStyle: { color: '#ef4444' } },
-                        { yAxis: stats.strong_buy_line, label: { formatter: '\u5F3A\u4E70\u7EBF ' + stats.strong_buy_line + '%', color: '#10b981', fontSize: 9, position: 'insideEndTop' }, lineStyle: { color: '#10b98180', type: 'dotted' } }
+                        { yAxis: stats.overweight_line, label: { formatter: '\u8D85\u914D ' + stats.overweight_line + '%', color: '#10b981', fontSize: 9, position: 'insideEndTop' }, lineStyle: { color: '#10b98166' } },
+                        { yAxis: stats.underweight_line, label: { formatter: '\u4F4E\u914D ' + stats.underweight_line + '%', color: '#ef4444', fontSize: 9, position: 'insideEndTop' }, lineStyle: { color: '#ef444466' } },
+                        { yAxis: stats.strong_buy_line, label: { formatter: '\u5F3A\u4E70 ' + stats.strong_buy_line + '%', color: '#10b981', fontSize: 9, position: 'insideEndTop' }, lineStyle: { color: '#10b98140', type: 'dotted' } },
+                        { yAxis: stats.danger_line, label: { formatter: '\u5371\u9669 ' + stats.danger_line + '%', color: '#ef4444', fontSize: 9, position: 'insideEndTop' }, lineStyle: { color: '#ef444440', type: 'dotted' } }
                     ]
+                },
+                markArea: { silent: true, data: markAreaData },
+                markPoint: {
+                    data: markPointData,
+                    animation: true, animationDuration: 600
                 }
             },
             {
-                name: '\u4E70\u5165\u533A', type: 'line', data: buyZone, yAxisIndex: 0,
-                lineStyle: { width: 0 }, itemStyle: { color: '#10b981' }, symbol: 'none',
-                areaStyle: { color: 'rgba(16,185,129,0.15)' }
-            },
-            {
-                name: '\u5356\u51FA\u533A', type: 'line', data: sellZone, yAxisIndex: 0,
-                lineStyle: { width: 0 }, itemStyle: { color: '#ef4444' }, symbol: 'none',
-                areaStyle: { color: 'rgba(239,68,68,0.15)' }
-            },
-            {
                 name: 'PE-TTM', type: 'line', data: chart.pe_ttm, yAxisIndex: 1,
-                lineStyle: { color: '#3b82f6', width: 1.5, type: 'dashed' }, itemStyle: { color: '#3b82f6' }, symbol: 'none'
+                lineStyle: { color: '#3b82f6', width: 1.5, type: 'dashed' },
+                itemStyle: { color: '#3b82f6' }, symbol: 'none'
             },
             {
                 name: '10Y\u56FD\u503A', type: 'line', data: chart.yield_10y, yAxisIndex: 0,
-                lineStyle: { color: '#ef4444', width: 1, type: 'dotted' }, itemStyle: { color: '#ef4444' }, symbol: 'none'
-            }
-        ]
+                lineStyle: { color: '#ef4444', width: 1, type: 'dotted' },
+                itemStyle: { color: '#ef4444' }, symbol: 'none'
+            },
+            hasM1 ? {
+                name: 'M1\u540C\u6BD4', type: 'line', data: chart.m1_yoy, yAxisIndex: 2,
+                lineStyle: { color: '#a78bfa', width: 2, type: 'solid' },
+                itemStyle: { color: '#a78bfa' },
+                symbol: 'none', smooth: true,
+                areaStyle: {
+                    color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                        colorStops: [{offset:0,color:'rgba(167,139,250,0.10)'},{offset:1,color:'rgba(167,139,250,0)'}]
+                    }
+                }
+            } : null
+        ].filter(Boolean)
     });
+    // V3.0: resize handler
+    window.addEventListener('resize', () => _erpHistoryChart && _erpHistoryChart.resize());
+}
+
+// V3.0: ERP 图表 KPI 统计卡片
+function renderERPChartKPIs(stats, signalData) {
+    const container = document.getElementById('erp-chart-kpis');
+    if (!container) return;
+    const sig = signalData || {};
+    const snap = sig.current_snapshot || {};
+    const pct = snap.erp_percentile || '--';
+    const deviation = stats.current_vs_mean;
+    const devColor = deviation > 0 ? '#10b981' : (deviation < -5 ? '#ef4444' : '#f59e0b');
+    const devSign = deviation > 0 ? '+' : '';
+
+    container.innerHTML = [
+        { label: '\u5F53\u524D ERP', value: (stats.current || '--') + '%', color: stats.current >= stats.overweight_line ? '#10b981' : (stats.current <= stats.underweight_line ? '#ef4444' : '#f59e0b') },
+        { label: '\u5747\u503C\u504F\u79BB', value: devSign + deviation + '%', color: devColor },
+        { label: '\u8FD14\u5E74\u5206\u4F4D', value: pct + '%', color: pct >= 70 ? '#10b981' : (pct <= 30 ? '#ef4444' : '#94a3b8') },
+        { label: '\u8D85\u914D\u533A\u5360\u6BD4', value: (stats.buy_zone_pct || '--') + '%', color: '#10b981' },
+    ].map(k => `<div style="flex:1;background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:8px 12px;text-align:center;">
+        <div style="font-size:0.65rem;color:#64748b;margin-bottom:3px;">${k.label}</div>
+        <div style="font-size:1.1rem;font-weight:800;color:${k.color};">${k.value}</div>
+    </div>`).join('');
 }
 
 function renderERPEncyclopedia(enc) {
