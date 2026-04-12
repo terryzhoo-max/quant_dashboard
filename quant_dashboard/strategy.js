@@ -2113,7 +2113,8 @@ let _erpLastFetchTime = 0;          // 上次拉取时间戳 (ms)
 let _erpCountdownTimer = null;      // P1: 倒计时定时器
 let _erpGaugeChart = null;
 let _erpHistoryChart = null;
-const ERP_COOLDOWN_MS = 5 * 60 * 1000;  // 5 分钟冷却
+const ERP_COOLDOWN_MS = 5 * 60 * 1000;  // 5 分钟刷新冷却
+const ERP_STALE_MS = 30 * 60 * 1000;    // C4 fix: 30 分钟数据过期阈值
 
 // P1: 注入变化高亮 CSS
 (function injectERPHighlightCSS() {
@@ -2226,7 +2227,8 @@ async function refreshERPData() {
 }
 
 async function loadERPTimingData() {
-    if (_erpLoaded) return;
+    // C4 fix: 数据超过30分钟自动刷新，而非永久缓存
+    if (_erpLoaded && (Date.now() - _erpLastFetchTime) < ERP_STALE_MS) return;
     
     // Loading 状态: 信号 Badge
     const sigLabel = document.getElementById('erp-signal-label');
@@ -2325,7 +2327,9 @@ function renderERPSnapshot(data) {
     const m1El = document.getElementById('erp-val-m1');
     m1El.textContent = (m1.current ?? '--') + '%';
     m1El.style.color = m1.current > 0 ? '#10b981' : '#ef4444';
-    document.getElementById('erp-sub-m1').textContent = 'M2 \u540C\u6BD4: ' + (m1.m2_yoy ?? '--') + '%';
+    // M1 fix: show data month to detect stale M1
+    const m1Month = m1.data_month ? m1.data_month.replace(/^(\d{4})(\d{2})$/, '$1-$2') : '';
+    document.getElementById('erp-sub-m1').textContent = 'M2: ' + (m1.m2_yoy ?? '--') + '%' + (m1Month ? ' \u00b7 \u622a\u81f3' + m1Month : '');
     const trendM1 = document.getElementById('erp-trend-m1');
     if (m1.direction === 'rising') { trendM1.textContent = '\u2191'; trendM1.style.color = '#10b981'; }
     else { trendM1.textContent = '\u2193'; trendM1.style.color = '#ef4444'; }
@@ -2668,8 +2672,7 @@ function renderERPHistoryChart(chart, signalData) {
             } : null
         ].filter(Boolean)
     });
-    // V3.0: resize handler
-    window.addEventListener('resize', () => _erpHistoryChart && _erpHistoryChart.resize());
+    // V3.0: resize 已由全局 handler (L2735) 统一处理，M4 fix: 移除重复注册
 }
 
 // V3.0: ERP 图表 KPI 统计卡片

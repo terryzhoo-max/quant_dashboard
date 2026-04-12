@@ -124,7 +124,9 @@ class ERPTimingEngine:
     }
 
     def __init__(self):
-        self._prev_score = None  # P1 fix: 追踪上次综合得分，用于计算 Score 跌幅
+        self._prev_score = None       # P1 fix: 追踪上次综合得分
+        self._prev_score_date = None  # C1 fix: 仅比较同日内的 Score 变化，防止跨天漂移
+        self._score_high_water = 0.0  # C2 fix: Score 历史高水位，用于止盈规则
 
     # ========== 数据获取层 (带TTL缓存+磁盘持久化) ==========
 
@@ -190,7 +192,7 @@ class ERPTimingEngine:
                 except Exception as e:
                     print(f"[ERP] yield batch {s_str}-{e_str}: {e}")
                 chunk_start = chunk_end + timedelta(days=1)
-                time.sleep(3.5)
+                time.sleep(2.0)  # M3 fix: Tushare yc_cb 限流约60次/分钟，2s足够且加速冷启动
             if all_dfs:
                 new_df = pd.concat(all_dfs, ignore_index=True)
                 new_df['trade_date'] = pd.to_datetime(new_df['trade_date'], format='%Y%m%d')
@@ -288,7 +290,8 @@ class ERPTimingEngine:
             "3m_ago": round(m1_3m, 1), "m2_yoy": round(m2_now, 1),
             "direction": "rising" if is_rising else "falling",
             "3m_direction": "rising" if is_3m_rising else "falling",
-            "scissor": round(m1_now - m2_now, 1)  # M1-M2剪刀差
+            "scissor": round(m1_now - m2_now, 1),  # M1-M2剪刀差
+            "data_month": str(latest['month']),     # M1 fix: 数据所属月份 (如 '202603')
         }
 
         if is_positive and is_3m_rising:
@@ -444,7 +447,8 @@ class ERPTimingEngine:
             },
             {
                 "trigger": "综合得分从 ≥75 跌破 55", "action": "一次性降至50%", "type": "score_drop",
-                "triggered": bool(score < 55), "current": f"Score={score:.1f}"
+                "triggered": bool(self._score_high_water >= 75 and score < 55),
+                "current": f"Score={score:.1f} (HW={self._score_high_water:.0f})"
             },
         ]
         m1_falling_3m = dims.get("m1_trend", {}).get("m1_info", {}).get("3m_direction") == "falling"
@@ -454,8 +458,12 @@ class ERPTimingEngine:
         })
 
         # === 止损规则 (逆向加仓型) ===
-        # V2.2: 动态触发标注 + Score 跌幅状态追踪
-        score_delta = round(score - self._prev_score, 1) if self._prev_score is not None else 0.0
+        # V2.3: Score 跌幅仅比较同日内变化，防止跨天漂移误触发
+        today = datetime.now().date()
+        if self._prev_score is not None and self._prev_score_date == today:
+            score_delta = round(score - self._prev_score, 1)
+        else:
+            score_delta = 0.0  # 首次/跨天 = 无跌幅
         score_drop_triggered = score_delta < -15
         stop_loss = [
             {
@@ -571,7 +579,10 @@ class ERPTimingEngine:
 
             # 买卖规则
             trade = self._generate_trade_rules(composite, dims, snap)
-            self._prev_score = composite  # P1 fix: 更新上次得分用于下次 delta 计算
+            # C1+C2 fix: 更新 Score 追踪状态
+            self._prev_score = composite
+            self._prev_score_date = datetime.now().date()
+            self._score_high_water = max(self._score_high_water, composite)
 
             # 警示
             alerts = self._generate_alerts(composite, erp_val, d2_pct, m1_info, vol_info)
@@ -674,6 +685,9 @@ class ERPTimingEngine:
         try:
             erp_df = self._compute_erp_series()
             erp_sampled = erp_df.iloc[::3].copy()
+            # C3 fix: 确保采样后最后一行始终是原始序列的最新日期
+            if len(erp_df) > 0 and (len(erp_sampled) == 0 or erp_sampled.index[-1] != erp_df.index[-1]):
+                erp_sampled = pd.concat([erp_sampled, erp_df.iloc[[-1]]]).drop_duplicates(subset='trade_date', keep='last')
 
             dates = erp_sampled['trade_date'].dt.strftime('%Y-%m-%d').tolist()
             erp_vals = erp_sampled['erp'].round(2).tolist()
