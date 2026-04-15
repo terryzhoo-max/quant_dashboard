@@ -350,5 +350,27 @@
         "total": 0.0,
         "success": true,
         "message": "从券商TXT文件覆盖导入 20 只持仓，可用资金 ¥1,033.31"
+    },
+    {
+        "timestamp": "2026-04-13 16:13:38",
+        "action": "import",
+        "ts_code": "SYSTEM",
+        "name": "TXT导入 20 只持仓",
+        "amount": 20,
+        "price": 0,
+        "total": 0.0,
+        "success": true,
+        "message": "从券商TXT文件覆盖导入 20 只持仓，可用资金 ¥131.42"
+    },
+    {
+        "timestamp": "2026-04-14 15:28:38",
+        "action": "import",
+        "ts_code": "SYSTEM",
+        "name": "TXT导入 21 只持仓",
+        "amount": 21,
+        "price": 0,
+        "total": 0.0,
+        "success": true,
+        "message": "从券商TXT文件覆盖导入 21 只持仓，可用资金 ¥131.61"
     }
 ]
