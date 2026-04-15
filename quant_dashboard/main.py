@@ -1,4 +1,25 @@
+# ── Windows 控制台 UTF-8 编码修复 (必须最先执行) ──
+import sys, io
+if sys.stdout and hasattr(sys.stdout, 'buffer'):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace', line_buffering=True)
+if sys.stderr and hasattr(sys.stderr, 'buffer'):
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace', line_buffering=True)
+
+# ── 全局噪音抑制 (必须在所有第三方库 import 之前) ──
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning,
+                        message=".*fillna with 'method' is deprecated.*")
+
+import logging
+# 抑制 Windows ProactorEventLoop 的 ConnectionResetError 无害噪音 (WinError 10054)
+_proactor_logger = logging.getLogger("asyncio")
+class _SuppressConnectionReset(logging.Filter):
+    def filter(self, record):
+        return "ConnectionResetError" not in record.getMessage()
+_proactor_logger.addFilter(_SuppressConnectionReset())
+
 from fastapi import FastAPI, UploadFile, File
+from contextlib import asynccontextmanager
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -17,6 +38,7 @@ import traceback
 import threading
 import copy
 from datetime import datetime, timedelta
+from config import TUSHARE_TOKEN
 from mean_reversion_engine import run_strategy, detect_regime, get_all_regime_params, load_regime_params, needs_reoptimize
 from dividend_trend_engine import run_dividend_strategy
 from audit_engine import run_full_audit
@@ -30,6 +52,7 @@ from erp_hk_engine import get_hk_erp_engine
 from aiae_hk_engine import get_hk_aiae_engine
 from data_manager import FactorDataManager
 from industry_engine import IndustryEngine
+from core_etf_config import CORE_ETFS, CORE_ETF_CODES, CORE_ETF_NAME_MAP, ETF_CONSTITUENTS, FALLBACK_MOMENTUM
 from portfolio_engine import PortfolioEngine
 from backtest_engine import AlphaBacktester
 from factor_analyzer import FactorAnalyzer
@@ -48,11 +71,35 @@ class TradeRequest(BaseModel):
     price: float
     name: str = ""
     action: str # "buy" or "sell"
+
 import numpy as np
 
 executor = ThreadPoolExecutor(max_workers=10)
 
-app = FastAPI(title="AlphaCore Quant API", description="AlphaCore量化终端底层数据接口")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """V2.0 Lifespan: 替代 deprecated @app.on_event('startup')"""
+    # ── Startup ──
+    threading.Thread(target=_warmup_erp_cache, daemon=True).start()
+    threading.Thread(target=_warmup_rates_cache, daemon=True).start()
+    threading.Thread(target=lambda: get_aiae_engine().generate_report(), daemon=True).start()
+    _schedule_daily_warmup()
+    _schedule_morning_warmup()
+    _schedule_fred_daily_refresh()
+    _schedule_us_aiae_warmup()
+    _schedule_jp_aiae_warmup()
+    _schedule_aaii_weekly_crawl()
+    threading.Thread(target=_warmup_global_aiae_cache, daemon=True).start()
+    threading.Thread(target=lambda: _warmup_hk_erp_cache(), daemon=True).start()
+    threading.Thread(target=lambda: _warmup_hk_aiae_cache(), daemon=True).start()
+    print("[Startup] AlphaCore 服务启动完成 · 引擎常驻预热就绪 · 调度器(06:30US/08:30CN/15:30JP/16:30HK/15:35A/18:30FRED/周五AAII)已激活")
+    yield
+    # ── Shutdown ──
+    print("[Shutdown] AlphaCore 服务关闭")
+
+
+app = FastAPI(title="AlphaCore Quant API", description="AlphaCore量化终端底层数据接口", lifespan=lifespan)
 
 # 配置 CORS 跨域
 app.add_middleware(
@@ -187,12 +234,35 @@ def _schedule_morning_warmup():
     timer.daemon = True
     timer.start()
 
+def _warmup_industry_tracking():
+    """V6.0: 产业追踪自动预热 — 同步12只核心ETF日线 + 预计算指标写入缓存"""
+    from data_manager import FactorDataManager
+    mgr = FactorDataManager()
+    # Step 1: 同步最新日线数据 (Tushare asset='E')
+    mgr.sync_daily_prices(CORE_ETF_CODES, asset='E')
+    print(f"[Industry Warmup] 12只核心ETF日线同步完成")
+    # Step 2: 主动触发一次 tracking 指标计算，填充 latest 缓存
+    #         通过 HTTP 内部调用太重，直接复用 run_ind_analysis 的核心逻辑
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        # 用 None date 触发 latest 路径
+        from main import get_industry_tracking
+        result = loop.run_until_complete(get_industry_tracking(date=None))
+        loop.close()
+        cached_count = len(result.get('data', {}).get('sector_heatmap', []))
+        print(f"[Industry Warmup] 预热完成 · {cached_count} 只ETF指标已写入 latest 缓存")
+    except Exception as e:
+        print(f"[Industry Warmup] 指标预计算失败 (数据已同步): {e}")
+
 def _morning_warmup_callback():
     """盘前数据补偿拉取"""
     print(f"==================================================")
     print(f"[Scheduler] 🌅 早间数据补偿流水线 @ {datetime.now().strftime('%H:%M:%S')}")
     # 强制破防 L1 缓存以拉取最新融资数据
     with_retry(_warmup_aiae_cache, "AIAE_Morning_Warmup", 3, 300)
+    # V6.0: 产业追踪ETF同步 + 指标预计算
+    with_retry(_warmup_industry_tracking, "Industry_Morning_Warmup", 2, 120)
     # 更新数据后再同步更新大总览 Dashboard
     with_retry(_warmup_dashboard_cache, "Dashboard_Morning_Warmup", 3, 300)
     _schedule_morning_warmup()
@@ -250,6 +320,8 @@ def _daily_warmup_callback():
     # 阶梯式重试
     with_retry(_warmup_erp_cache, "ERP_Warmup", 3, 300)
     with_retry(_warmup_aiae_cache, "AIAE_Warmup", 3, 300)
+    # V6.0: 产业追踪ETF收盘同步 + 指标预热 (必须在 Dashboard 前，因为 Dashboard 可能读取)
+    with_retry(_warmup_industry_tracking, "Industry_Warmup", 2, 120)
     with_retry(_warmup_dashboard_cache, "Dashboard_Warmup", 3, 300)
     with_retry(_warmup_factor_data, "Factor_Sync", 3, 300)
     
@@ -424,31 +496,8 @@ def _aaii_crawl_callback():
     with_retry(_warmup_aaii_sentiment, "AAII_Crawl", 2, 600)
     _schedule_aaii_weekly_crawl()
 
-@app.on_event("startup")
-async def startup_event():
-    """服务启动: 后台预热 ERP + 利率 + AIAE + 注册每日定时任务"""
-    # 异步预热 (不阻塞启动)
-    threading.Thread(target=_warmup_erp_cache, daemon=True).start()
-    threading.Thread(target=_warmup_rates_cache, daemon=True).start()  # V1.5: 利率预热
-    threading.Thread(target=lambda: get_aiae_engine().generate_report(), daemon=True).start()  # AIAE预热
-    
-    # 注册收盘后定时预热 (15:35 A股)
-    _schedule_daily_warmup()
-    # 注册开盘前补偿预热 (08:30 A股)
-    _schedule_morning_warmup()
-    # 注册 FRED 利率刷新 (18:30 = 美东6:30AM)
-    _schedule_fred_daily_refresh()
-    # V1.1: 海外AIAE定时预热
-    _schedule_us_aiae_warmup()      # 北京06:30 美股FRED数据更新
-    _schedule_jp_aiae_warmup()      # 北京15:30 日股收盘后
-    _schedule_aaii_weekly_crawl()    # 每周五09:00 散户情绪
-    # V1.1: 后台预热海外AIAE (L3磁盘缓存->L1内存)
-    threading.Thread(target=_warmup_global_aiae_cache, daemon=True).start()
-    # V2.0: 后台预热 HK ERP + AIAE
-    threading.Thread(target=lambda: _warmup_hk_erp_cache(), daemon=True).start()
-    threading.Thread(target=lambda: _warmup_hk_aiae_cache(), daemon=True).start()
-    
-    print("[Startup] AlphaCore 服务启动完成 · 引擎常驻预热就绪 · 调度器(06:30US/08:30CN/15:30JP/16:30HK/15:35A/18:30FRED/周五AAII)已激活")
+# [DEPRECATED] @app.on_event("startup") 已迁移至 lifespan context manager (L57-79)
+# 删除时间: 2026-04-15  原因: FastAPI deprecated on_event, 使用 lifespan 替代
 
 
 # --- AlphaCore DMSO Sub-Engines (V3.3 机构级) ---
@@ -476,16 +525,57 @@ def get_margin_risk_ratio(pro, date_str):
         # 阈值建模：0.07 (冰点) -> 0.12 (亢奋)
         percentile = min(100, max(0, (ratio - 0.07) / (0.12 - 0.07) * 100))
         return round(percentile, 1)
-    except:
+    except Exception as e:
+        print(f"[Margin] 融资数据异常, 降级中性: {e}")
         return 50.0
 
 def get_market_breadth(pro, date_str):
     """
-    A股股价高于年线占比 (% Stocks > 250MA)
+    V11.0: 沪深300成分股高于250MA占比 (真实统计, 替代原硬编码 62.5)
     权重: A股 20%
+    逻辑: 拉取沪深300最新成分股列表 → 批量拉取各股最新收盘价与250MA → 统计占比
+    降级: Tushare 异常时返回 50.0 (中性)
     """
-    # 生产环境下应从个股全样本计算，此处采用宽基指数均值代理
-    return 62.5 # 模拟：多数核心资产已站回年线
+    try:
+        # Step 1: 获取沪深300成分股列表
+        df_cons = pro.index_weight(index_code='399300.SZ', start_date=date_str, end_date=date_str)
+        if df_cons is None or df_cons.empty:
+            # 尝试回退到最近一个月的成分股
+            _start = (datetime.strptime(date_str, '%Y%m%d') - timedelta(days=30)).strftime('%Y%m%d')
+            df_cons = pro.index_weight(index_code='399300.SZ', start_date=_start, end_date=date_str)
+        if df_cons is None or df_cons.empty:
+            print(f"[Breadth] 沪深300成分股数据缺失, 降级50.0")
+            return 50.0
+        codes = df_cons['con_code'].unique().tolist()
+        
+        # Step 2: 批量拉取日线 (最近 260 个交易日, 确保 250MA 可计算)
+        above_count = 0
+        valid_count = 0
+        for code in codes[:50]:  # 取前50只代表性成分股 (性能平衡)
+            try:
+                df_daily = ts.pro_bar(ts_code=code, adj='qfq', start_date=
+                    (datetime.strptime(date_str, '%Y%m%d') - timedelta(days=400)).strftime('%Y%m%d'),
+                    end_date=date_str)
+                if df_daily is not None and len(df_daily) >= 250:
+                    df_daily = df_daily.sort_values('trade_date')
+                    ma250 = df_daily['close'].rolling(250).mean().iloc[-1]
+                    close = df_daily['close'].iloc[-1]
+                    valid_count += 1
+                    if close > ma250:
+                        above_count += 1
+            except Exception:
+                continue
+        
+        if valid_count < 10:
+            print(f"[Breadth] 有效样本不足({valid_count}只), 降级50.0")
+            return 50.0
+        
+        breadth = round(above_count / valid_count * 100, 1)
+        print(f"[Breadth] 沪深300采样 {valid_count}只, 站上250MA: {above_count}只 ({breadth}%)")
+        return breadth
+    except Exception as e:
+        print(f"[Breadth] 市场宽度计算异常, 降级中性: {e}")
+        return 50.0
 
 def get_liquidity_crisis_signal(pro, today_str):
     """
@@ -499,7 +589,8 @@ def get_liquidity_crisis_signal(pro, today_str):
         limit_down = len(df[df['pct_chg'] <= -9.8])
         ratio = limit_down / len(df)
         return ratio > 0.10
-    except:
+    except Exception as e:
+        print(f"[LiqCrisis] 跌停监控异常: {e}")
         return False
 
 def get_ah_premium_adj(pro, date_str):
@@ -513,16 +604,59 @@ def get_ah_premium_adj(pro, date_str):
         if latest_val > 145: return 1.15
         if latest_val < 125: return 0.85
         return 1.0
-    except:
+    except Exception as e:
+        print(f"[AH Premium] 溢价数据异常: {e}")
         return 1.0
+
+
+def get_real_turnover_score(pro, date_str):
+    """
+    V11.0: 全市场换手率分位分数 (替代原硬编码 55.0)
+    逻辑: 拉取当日全市场日线 → 取换手率中位数 → 与近20日滚动中位数比较
+    高换手 = 情绪亢奋 = 分数高; 低换手 = 冷清 = 分数低
+    """
+    try:
+        df = pro.daily(trade_date=date_str)
+        if df is None or df.empty:
+            return 50.0
+        
+        today_median_turnover = df['turnover_rate'].median()
+        
+        # 拉取近 20 个交易日的数据做比较基准
+        _end = date_str
+        _start = (datetime.strptime(date_str, '%Y%m%d') - timedelta(days=35)).strftime('%Y%m%d')
+        df_idx = pro.index_daily(ts_code='000001.SH', start_date=_start, end_date=_end)
+        if df_idx is not None and len(df_idx) >= 10:
+            df_idx = df_idx.sort_values('trade_date')
+            # 用上证指数近20日成交量变化做代理
+            vol_series = df_idx['vol'].tail(20)
+            vol_mean = vol_series.mean()
+            vol_std = vol_series.std() if vol_series.std() > 0 else 1
+            latest_vol = vol_series.iloc[-1]
+            z = (latest_vol - vol_mean) / vol_std
+            # Z-score → 分位: z=0 → 50, z=2 → 90, z=-2 → 10
+            score = min(100, max(0, 50 + z * 20))
+        else:
+            # 降级: 基于换手率绝对值 (A股日均换手率约 1-3%)
+            score = min(100, max(0, (today_median_turnover - 0.5) / 3.0 * 100))
+        
+        print(f"[Turnover] 当日换手率中位数: {today_median_turnover:.2f}% → score={score:.1f}")
+        return round(score, 1)
+    except Exception as e:
+        print(f"[Turnover] 换手率计算异常, 降级中性: {e}")
+        return 50.0
 
 # --- V3.6 机构级策略调控引擎 (Strategic Allocation Engine) ---
 
 def get_real_erp_data():
     """
-    V8.0: 从真实 ERP 引擎获取估值数据
+    V8.1: 从真实 ERP 引擎获取估值数据 (双维度标签修正版)
     返回 dict: erp_val, erp_z, valuation_label, erp_score, signal_key, signal_label
-    降级: 引擎异常时返回中性默认值
+    
+    V8.1 修正: 标签体系从纯分位制 → 绝对值+分位双维度
+      - 绝对值: ERP >= 5% 本身是正面信号 (股票比债券有显著溢价)
+      - 分位制: 近4年中的相对位置 (反映历史比较)
+      - 最终标签: 综合两者, 避免 "5.22% + 极度高估" 的认知矛盾
     """
     try:
         engine = get_erp_engine()
@@ -533,21 +667,61 @@ def get_real_erp_data():
             erp_val = snap['erp_value']
             erp_pct = snap['erp_percentile']
             erp_z = (erp_pct - 50) / 25
+
+            # --- V8.1 双维度标签逻辑 ---
+            # 维度1: ERP 绝对值判定
+            if erp_val >= 6.0:
+                abs_label = "极度低估"
+                abs_tier = 5
+            elif erp_val >= 5.0:
+                abs_label = "偏低估"
+                abs_tier = 4
+            elif erp_val >= 4.0:
+                abs_label = "估值中性"
+                abs_tier = 3
+            elif erp_val >= 3.0:
+                abs_label = "偏高估"
+                abs_tier = 2
+            else:
+                abs_label = "极度高估"
+                abs_tier = 1
+
+            # 维度2: 近4年分位判定
             if erp_pct >= 80:
-                vlabel = "极度低估"
+                pct_label = "历史极低估"
+                pct_tier = 5
             elif erp_pct >= 60:
-                vlabel = "偏低估"
+                pct_label = "分位偏低"
+                pct_tier = 4
             elif erp_pct >= 40:
-                vlabel = "估值中性"
+                pct_label = "分位中性"
+                pct_tier = 3
             elif erp_pct >= 20:
+                pct_label = "分位偏高"
+                pct_tier = 2
+            else:
+                pct_label = "历史极高估"
+                pct_tier = 1
+
+            # 综合标签: 加权 (绝对值60% + 分位40%), 避免纯分位制的认知矛盾
+            blended_tier = abs_tier * 0.6 + pct_tier * 0.4
+            if blended_tier >= 4.2:
+                vlabel = "极度低估"
+            elif blended_tier >= 3.4:
+                vlabel = "偏低估"
+            elif blended_tier >= 2.6:
+                vlabel = "估值中性"
+            elif blended_tier >= 1.8:
                 vlabel = "偏高估"
             else:
                 vlabel = "极度高估"
+
             erp_score = min(100, max(0, erp_pct))
-            print(f"[ERP Real] ERP={erp_val:.2f}% Pct={erp_pct:.1f}% Z={erp_z:.2f} Label={vlabel} Signal={sig['label']}")
+            print(f"[ERP Real] ERP={erp_val:.2f}% Pct={erp_pct:.1f}% AbsTier={abs_tier} PctTier={pct_tier} Blended={blended_tier:.1f} Label={vlabel} Signal={sig['label']}")
             return {
                 'erp_val': round(erp_val, 2), 'erp_z': round(erp_z, 2),
                 'erp_pct': round(erp_pct, 1), 'valuation_label': vlabel,
+                'abs_label': abs_label, 'pct_label': pct_label,
                 'erp_score': round(erp_score, 1), 'signal_key': sig['key'],
                 'signal_label': sig['label'], 'composite_score': sig['score'],
                 'status': 'success'
@@ -556,7 +730,8 @@ def get_real_erp_data():
         print(f"[ERP Real] engine error, fallback: {e}")
     return {
         'erp_val': 4.5, 'erp_z': 0.0, 'erp_pct': 50.0,
-        'valuation_label': 'fallback', 'erp_score': 50.0,
+        'valuation_label': 'fallback', 'abs_label': '降级', 'pct_label': '降级',
+        'erp_score': 50.0,
         'signal_key': 'hold', 'signal_label': 'hold(fallback)',
         'composite_score': 50, 'status': 'fallback'
     }
@@ -610,132 +785,11 @@ def apply_strategy_filters(regime_weights: dict, mom_crowding: float = 60.0,
     return adjusted, filters
 
 
-# --- V6.0 五因子科学仓位决策引擎 (Scientific Position Engine) ---
 
-def compute_scientific_position(
-    total_temp: float,
-    vix_analysis: dict,
-    total_money_z: float,
-    erp_z: float,
-    mr_res: dict,
-    mom_res: dict,
-    div_res: dict,
-    is_circuit_breaker: bool
-) -> dict:
-    """
-    AlphaCore V6.0: 五因子加权合成仓位引擎
-    权重依据: 信息层级原则 (风险 > 资金流 > 宽度 > 估值 > 策略反馈)
-    
-    因子权重:
-      VIX 恐慌指数    30%  — 前瞻性最强，期权隐含波动率
-      资金流向 Z-Score 20%  — 机构级日频信号，smart money 定位
-      宏观温度         20%  — 复合宽度指标，降权避免 double-counting
-      ERP 估值         15%  — 慢变量战略锚，股债性价比
-      策略信号共振     15%  — 自下而上反馈，三引擎买卖信号密度
-    """
-    # === 1. 各因子独立评分 (0-100, 越高越利于加仓) ===
-    
-    # 因子A: VIX 恐慌 (反向映射 — VIX 越低越利于加仓)
-    vix_p = vix_analysis.get('percentile', 50)
-    vix_score = max(0, min(100, 100 - vix_p))
-    vix_label = "恐慌低位" if vix_score >= 70 else ("恐慌中性" if vix_score >= 40 else "恐慌高位")
-    
-    # 因子B: 资金流向 (Z-Score → 0-100 映射)
-    # Z ∈ [-3, +3] → Score ∈ [0, 100], 中性=50
-    capital_score = max(0, min(100, 50 + total_money_z * 16.67))
-    capital_label = "资金强流入" if capital_score >= 70 else ("资金中性" if capital_score >= 40 else "资金流出")
-    
-    # 因子C: 宏观温度 (反向 — 温度越低越利于建仓)
-    temp_score = max(0, min(100, 100 - total_temp))
-    temp_label = "宏观偏冷" if temp_score >= 60 else ("宏观中性" if temp_score >= 40 else "宏观偏热")
-    
-    # 因子D: ERP 估值 (Z-Score → 0-100, Z 越高越便宜越利于加仓)
-    # Z ∈ [-2, +2] → Score ∈ [0, 100]
-    erp_score = max(0, min(100, 50 + erp_z * 25))
-    erp_label = "极度低估" if erp_score >= 80 else ("估值合理" if erp_score >= 40 else "估值偏高")
-    
-    # 因子E: 策略信号共振度
-    mr_overview = mr_res.get("data", {}).get("market_overview", {})
-    mom_overview = mom_res.get("data", {}).get("market_overview", {})
-    div_overview = div_res.get("data", {}).get("market_overview", {})
-    
-    mr_buy = mr_overview.get("signal_count", {}).get("buy", 0)
-    mr_sell = mr_overview.get("signal_count", {}).get("sell", 0)
-    mom_buy = mom_overview.get("buy_count", 0)
-    div_buy = div_overview.get("buy_count", 0)
-    div_trend_up = div_overview.get("trend_up_count", 0)
-    
-    total_buy = mr_buy + mom_buy + div_buy
-    total_sell = mr_sell
-    signal_denominator = max(total_buy + total_sell, 1)
-    signal_ratio = total_buy / signal_denominator
-    # 加入红利趋势方向作为修正 (trend_up_count / 8)
-    trend_bonus = (div_trend_up / 8.0) * 20  # 最多+20分
-    signal_score = max(0, min(100, signal_ratio * 80 + trend_bonus))
-    signal_label = "策略共振" if signal_score >= 65 else ("策略分歧" if signal_score >= 35 else "策略空头")
-    
-    # === 2. 五因子加权合成 ===
-    W = {"vix": 0.30, "capital": 0.20, "temp": 0.20, "erp": 0.15, "signal": 0.15}
-    scores = {
-        "vix": vix_score,
-        "capital": capital_score,
-        "temp": temp_score,
-        "erp": erp_score,
-        "signal": signal_score
-    }
-    
-    composite_score = sum(scores[k] * W[k] for k in W)
-    
-    # === 3. 仓位映射 (非线性 S-Curve) ===
-    # composite ∈ [0,100] → position ∈ [10%, 95%]
-    # 使用 S 形曲线使中间区段更敏感、两端钝化
-    import math
-    x = (composite_score - 50) / 15  # 标准化到 ~[-3, +3]
-    sigmoid = 1 / (1 + math.exp(-x))
-    raw_position = 10 + sigmoid * 85  # 映射到 [10, 95]
-    
-    # === 4. 安全边际 ===
-    # 流动性熔断保护
-    if is_circuit_breaker:
-        final_position = min(raw_position, 10)
-        position_label = "0% (流动性熔断)"
-    elif total_temp > 90:
-        final_position = min(raw_position, 15)
-        position_label = f"{int(final_position)}% (极度过热)"
-    else:
-        final_position = round(raw_position, 1)
-        position_label = get_tactical_label(final_position, total_temp, erp_z, False)
-    
-    # === 5. 决策置信度 (因子一致性) ===
-    # 如果 5 个因子方向一致（都高或都低），置信度高
-    scores_list = list(scores.values())
-    mean_s = sum(scores_list) / len(scores_list)
-    variance = sum((s - mean_s) ** 2 for s in scores_list) / len(scores_list)
-    std_dev = variance ** 0.5
-    # 标准差越小 → 因子一致性越高 → 置信度越高
-    # std_dev ∈ [0, ~35] → confidence ∈ [100, 30]
-    confidence = max(30, min(100, int(100 - std_dev * 2)))
-    
-    return {
-        "position": round(final_position, 1),
-        "position_label": position_label,
-        "composite_score": round(composite_score, 1),
-        "confidence": confidence,
-        "factors": {
-            "vix_fear":     {"score": round(vix_score, 1),     "weight": W["vix"],     "label": vix_label},
-            "capital_flow": {"score": round(capital_score, 1), "weight": W["capital"], "label": capital_label},
-            "macro_temp":   {"score": round(temp_score, 1),    "weight": W["temp"],    "label": temp_label},
-            "erp_value":    {"score": round(erp_score, 1),     "weight": W["erp"],     "label": erp_label},
-            "signal_sync":  {"score": round(signal_score, 1),  "weight": W["signal"],  "label": signal_label}
-        },
-        "signal_detail": {
-            "buy_total": total_buy,
-            "sell_total": total_sell,
-            "mr_buy": mr_buy, "mr_sell": mr_sell,
-            "mom_buy": mom_buy, "div_buy": div_buy,
-            "div_trend_up": div_trend_up
-        }
-    }
+# --- [DEPRECATED V7.0] compute_scientific_position() 已删除 ---
+# 原五因子仓位引擎 (VIX/资金/温度/ERP/信号) 已由 AIAE×ERP 联合矩阵取代。
+# 当前仓位决策入口: aiae_hk_engine.get_run_all_weights() → main.py L1247
+# 删除时间: 2026-04-12  删除原因: dead code + 权重注释与现行系统矛盾
 
 
 def get_vix_analysis(vix_val: float):
@@ -803,91 +857,235 @@ def get_position_path(current_pos: float, vix_analysis: dict) -> list[float]:
         path.append(round(max(10, min(100, step_pos)), 1))
     return path
 
-def get_tomorrow_plan(vix_analysis, temp_score):
-    """Generate Tomorrow's Operation Framework based on VIX & Temperature (V4.4)"""
-    v_val = vix_analysis['vix_val']
+def _synthesize_directives(aiae_ctx, vix_analysis):
+    """V2.0 三因子决策树 → 3行可执行指令"""
+    regime = aiae_ctx["regime"]
+    cap = aiae_ctx["cap"]
+    erp_tier = aiae_ctx.get("erp_tier", "neutral")
+    vix_val = vix_analysis.get("vix_val", 20)
+    regime_info = aiae_ctx["regime_info"]
+
+    # Line 1: AIAE 主指令 (永远来自 regime)
+    d1 = {
+        "priority": "primary", "icon": "🎯",
+        "text": f"AIAE {regime_info['emoji']} {regime_info['cn']} Cap{cap}% → {regime_info['action']}",
+        "color": regime_info["color"],
+    }
+
+    # Line 2: ERP 验证 (确认 or 警告)
+    erp_confirms = (erp_tier == "bull" and regime <= 3) or \
+                   (erp_tier == "bear" and regime >= 4)
+    if erp_confirms:
+        d2_text = f"ERP {aiae_ctx.get('erp_val', '--')}% {aiae_ctx.get('erp_label', '--')} → 验证主轴方向"
+        d2_color = "#10b981"
+        d2_icon = "✅"
+    elif erp_tier == "bull" and regime >= 4:
+        d2_text = f"ERP {aiae_ctx.get('erp_val', '--')}% {aiae_ctx.get('erp_label', '--')} → ⚠ 矛盾! 估值低但AIAE偏热"
+        d2_color = "#f59e0b"
+        d2_icon = "⚠️"
+    else:
+        d2_text = f"ERP {aiae_ctx.get('erp_val', '--')}% {aiae_ctx.get('erp_label', '--')} → 中性参考"
+        d2_color = "#94a3b8"
+        d2_icon = "📊"
+    d2 = {"priority": "confirm", "icon": d2_icon, "text": d2_text, "color": d2_color}
+
+    # Line 3: VIX 风控 (通过 or 警报)
+    if vix_val >= 35:
+        d3 = {"priority": "risk", "icon": "🚨",
+              "text": f"VIX {vix_val} 极端恐慌 → 风控降级Cap×0.5, 停手观望",
+              "color": "#ef4444"}
+    elif vix_val >= 25:
+        d3 = {"priority": "risk", "icon": "⚠️",
+              "text": f"VIX {vix_val} 高度紧张 → 风控边际Cap×0.75, 增配红利",
+              "color": "#f97316"}
+    else:
+        d3 = {"priority": "risk", "icon": "🛡️",
+              "text": f"VIX {vix_val} 正常 → 风控不触发",
+              "color": "#94a3b8"}
+
+    return [d1, d2, d3]
+
+
+def _compute_signal_consensus(mr_overview, mom_overview, div_overview, erp_z, aiae_regime):
+    """
+    V11.0: 五策略共振计算器 (提取自内联 Lambda, 确保一致性)
+    返回: (ups, downs, consensus_str, consensus_label, directions_list)
+    """
+    mr_buy = mr_overview.get('signal_count', {}).get('buy', 0)
+    mr_sell = mr_overview.get('signal_count', {}).get('sell', 0)
     
-    # 定义 4 阶战术矩阵 (Institutional Protocol)
-    matrix = [
-        {
-            "id": "calm",
-            "regime": "🟢 极度活跃",
-            "vix_range": "< 15",
-            "tactics": "进攻：主攻低位AI/算力",
-            "pos": "85-100%",
-            "defense": "🚀 五日线持有",
-            "active": v_val < 15
-        },
-        {
-            "id": "normal",
-            "regime": "🟡 常态回归",
-            "vix_range": "15-25",
-            "tactics": "稳健：20日线择时对焦",
-            "pos": "60-85%",
-            "defense": "📈 均线多头对焦",
-            "active": 15 <= v_val < 25
-        },
-        {
-            "id": "alert",
-            "regime": "🔴 高度警觉",
-            "vix_range": "25-35",
-            "tactics": "防御：增配红利/低波",
-            "pos": "35-60%",
-            "defense": "🛡️ 20日线防守",
-            "active": 25 <= v_val < 35
-        },
-        {
-            "id": "crisis",
-            "regime": "🔴🔴 极端恐慌",
-            "vix_range": "> 35",
-            "tactics": "熔断：现金为王，观察",
-            "pos": "10-35%",
-            "defense": "⚠️ 强制离场/回避",
-            "active": v_val >= 35
-        }
+    # 统一方向判定 (计算一次, 复用结果)
+    directions = [
+        'up' if mr_buy > mr_sell else ('down' if mr_sell > mr_buy else 'neutral'),
+        'up' if mom_overview.get('buy_count', 0) > 0 else 'neutral',
+        'up' if div_overview.get('trend_up_count', 0) >= 4 else ('down' if div_overview.get('trend_up_count', 0) <= 2 else 'neutral'),
+        'up' if erp_z > 0.5 else ('down' if erp_z < -0.5 else 'neutral'),
+        'up' if aiae_regime <= 2 else ('down' if aiae_regime >= 4 else 'neutral'),
     ]
     
-    # 核心对策（当前状态）
-    curr = next((m for m in matrix if m['active']), matrix[1])
+    ups = sum(1 for d in directions if d == 'up')
+    downs = sum(1 for d in directions if d == 'down')
     
-    # 场景分流建议 (V4.4 优化为 Priority 模式)
+    consensus_str = f"{ups}/5 看多"
+    
+    if ups >= 4:
+        label = "强势共振"
+    elif ups >= 3:
+        label = "偏多共振"
+    elif downs >= 3:
+        label = "偏空共振"
+    elif downs >= 2:
+        label = "多空分歧"
+    else:
+        label = "中性均衡"
+    
+    return ups, downs, consensus_str, label, directions
+
+
+def get_tomorrow_plan(vix_analysis, temp_score, aiae_ctx=None):
+    """V2.0: 明日交易计划 · AIAE五档主轴 + ERP/VIX 验证
+    
+    当 aiae_ctx 传入时, 使用 AIAE×ERP×VIX 三因子决策树; 否则降级为旧版 VIX 4阶查表。
+    """
+    v_val = vix_analysis.get('vix_val', 20)
+
+    # ========== 新版 V2.0 逻辑 ==========
+    if aiae_ctx and aiae_ctx.get("regime"):
+        regime = aiae_ctx["regime"]
+        regime_info = aiae_ctx["regime_info"]
+        cap = aiae_ctx["cap"]
+
+        # 1. primary_regime: 决策锚
+        primary_regime = {
+            "tier": regime,
+            "emoji": regime_info["emoji"],
+            "cn": regime_info["cn"],
+            "aiae_v1": aiae_ctx.get("aiae_v1", 0),
+            "cap": cap,
+            "cap_range": regime_info.get("position", "50-65%"),
+            "action": regime_info["action"],
+            "action_detail": regime_info.get("desc", ""),
+        }
+
+        # 2. validators: ERP + VIX 验证维度
+        erp_tier = aiae_ctx.get("erp_tier", "neutral")
+        erp_confirms = (erp_tier == "bull" and regime <= 3) or \
+                       (erp_tier == "bear" and regime >= 4)
+        risk_override = v_val >= 30
+        vix_mult = vix_analysis.get("multiplier", 1.0)
+        validators = {
+            "erp": {
+                "value": aiae_ctx.get("erp_val", 0),
+                "label": aiae_ctx.get("erp_label", "--"),
+                "erp_tier": erp_tier,
+                "confirms": erp_confirms,
+            },
+            "vix": {
+                "value": v_val,
+                "label": vix_analysis.get("label", ""),
+                "risk_override": risk_override,
+                "multiplier": vix_mult,
+            },
+        }
+
+        # 3. regime_matrix: 五档操作矩阵
+        _vix_cross = {
+            1: "VIX>30时分批介入", 2: "VIX<20加速建仓", 3: "VIX>30启动减仓",
+            4: "VIX<15警惕拥挤", 5: "任何VIX都清仓"
+        }
+        regime_matrix = []
+        for t in range(1, 6):
+            ri = AIAE_REGIMES.get(t, AIAE_REGIMES[3])
+            regime_matrix.append({
+                "tier": t,
+                "emoji": ri["emoji"],
+                "cn": ri["cn"],
+                "range": ri["range"],
+                "cap_range": ri["position"],
+                "action": f"{ri['action']} · {ri['desc']}",
+                "vix_cross": _vix_cross.get(t, ""),
+                "active": t == regime,
+            })
+
+        # 4. directives: 三因子指令合成
+        directives = _synthesize_directives(aiae_ctx, vix_analysis)
+
+        # 5. scenarios: AIAE+VIX+ERP 三轴情景预判
+        scenarios = [
+            {"condition": f"AIAE上行至{'Ⅴ' if regime == 4 else 'Ⅳ'}级" if regime <= 4 else "AIAE维持Ⅴ级",
+             "action": "启动系统减仓至40%以下" if regime <= 3 else ("3天清仓无例外" if regime >= 5 else "继续每周减仓5%"),
+             "type": "aiae_upgrade"},
+            {"condition": "VIX突破30+",
+             "action": f"风控降级Cap×0.75 + 增配红利" if v_val < 30 else "维持风控降级状态",
+             "type": "vix_alert"},
+            {"condition": "ERP跌破3%",
+             "action": "估值吸引力下降·降低进攻权重",
+             "type": "erp_shift"},
+        ]
+
+        # 6. risk_panel: 三大预警
+        margin_heat_val = aiae_ctx.get("margin_heat", 2.0)
+        slope_val = aiae_ctx.get("slope", 0)
+        fund_pos_val = aiae_ctx.get("fund_position", 80)
+        risk_panel = {
+            "margin_heat": {
+                "value": margin_heat_val,
+                "threshold": 3.5,
+                "status": "danger" if margin_heat_val > 3.5 else ("warning" if margin_heat_val > 2.5 else "safe"),
+            },
+            "slope": {
+                "value": slope_val,
+                "threshold": 1.5,
+                "status": "danger" if abs(slope_val) > 1.5 else "safe",
+                "direction": aiae_ctx.get("slope_direction", "flat"),
+            },
+            "fund_position": {
+                "value": fund_pos_val,
+                "threshold": 90,
+                "status": "danger" if fund_pos_val > 90 else ("warning" if fund_pos_val > 85 else "safe"),
+            },
+            "overall_risk": "high" if margin_heat_val > 3.5 or abs(slope_val) > 1.5 else (
+                "medium" if margin_heat_val > 2.5 or fund_pos_val > 85 else "low"
+            ),
+        }
+
+        # 7. 兼容旧字段
+        framework_compat = [d["text"] for d in directives]
+        tactics_compat = {"regime": f"{regime_info['emoji']} Ⅲ级 {regime_info['cn']}" if regime == 3 else f"{regime_info['emoji']} {'Ⅰ' if regime==1 else 'Ⅱ' if regime==2 else 'Ⅲ' if regime==3 else 'Ⅳ' if regime==4 else 'Ⅴ'}级 {regime_info['cn']}"}
+        scenarios_compat = [{"case": s["condition"], "action": s["action"]} for s in scenarios]
+
+        return {
+            "primary_regime": primary_regime,
+            "validators": validators,
+            "regime_matrix": regime_matrix,
+            "directives": directives,
+            "scenarios": scenarios,
+            "risk_panel": risk_panel,
+            # 兼容旧字段
+            "framework": framework_compat,
+            "current_tactics": tactics_compat,
+        }
+
+    # ========== 旧版降级: VIX 4阶查表 (无 aiae_ctx) ==========
+    matrix = [
+        {"id": "calm", "regime": "🟢 极度活跃", "vix_range": "< 15",
+         "tactics": "进攻：主攻低位AI/算力", "pos": "85-100%", "active": v_val < 15},
+        {"id": "normal", "regime": "🟡 常态回归", "vix_range": "15-25",
+         "tactics": "稳健：20日线择时对焦", "pos": "60-85%", "active": 15 <= v_val < 25},
+        {"id": "alert", "regime": "🔴 高度警觉", "vix_range": "25-35",
+         "tactics": "防御：增配红利/低波", "pos": "35-60%", "active": 25 <= v_val < 35},
+        {"id": "crisis", "regime": "🔴🔴 极端恐慌", "vix_range": "> 35",
+         "tactics": "熔断：现金为王，观察", "pos": "10-35%", "active": v_val >= 35},
+    ]
+    curr = next((m for m in matrix if m['active']), matrix[1])
     if v_val < 25:
         framework = ["🔥 优先：适度加仓硬科技龙头", "💎 持有：算力/AI 核心资产", "📊 布局：科创50/创业板ETF"]
     elif v_val < 35:
         framework = ["🛡️ 优先：严格执行20日止损线", "🌊 避险：增配中字头红利", "⚖️ 调仓：卖出高波非核心标的"]
     else:
         framework = ["⚠️ 核心：战略防御，保留现金", "🥇 避险：关注黄金/避险资产", "🛑 熔断：拒绝一切左侧接盘"]
-
-    if v_val < 15:
-        scenarios = [
-            {"case": "VIX<15", "action": "持仓享受低波红利"},
-            {"case": "VIX>20", "action": "减仓10%高波标的"},
-            {"case": "VIX>30", "action": "启动止损协议"},
-        ]
-    elif v_val < 25:
-        scenarios = [
-            {"case": "VIX<18", "action": "加仓科技主线"},
-            {"case": "VIX 20-25", "action": "结构调仓维持均衡"},
-            {"case": "VIX>30", "action": "降仓至50%以下"},
-        ]
-    elif v_val < 35:
-        scenarios = [
-            {"case": "VIX<25", "action": "试探加仓核心资产"},
-            {"case": "VIX 25-35", "action": "保持防御不追涨"},
-            {"case": "VIX>40", "action": "清仓高波标的"},
-        ]
-    else:
-        scenarios = [
-            {"case": "VIX<30", "action": "分批恢复底仓"},
-            {"case": "VIX>35", "action": "现金为王观察"},
-            {"case": "VIX>50", "action": "绝对禁手等待企稳"},
-        ]
-    return {
-        "regime_matrix": matrix,
-        "current_tactics": curr,
-        "framework": framework,
-        "scenarios": scenarios
-    }
+    scenarios = [{"case": "VIX<18", "action": "加仓科技主线"}, {"case": "VIX>30", "action": "降仓至50%以下"}]
+    return {"regime_matrix": matrix, "current_tactics": curr, "framework": framework, "scenarios": scenarios}
 
 def get_institutional_mindset(temp: float) -> str:
     """实战对策心态矩阵 (V3.8) - 严格映射统一阶梯"""
@@ -938,7 +1136,8 @@ def _fetch_vix_for_dashboard():
     """FRED VIXCLS → CNBC → 默认值 (返回 (latest, prev) 元组)"""
     try:
         from fredapi import Fred
-        fred = Fred(api_key="eadf412d4f0e8ccd2bb3993b357bdca6")
+        _fred_key = getattr(__import__('config'), 'FRED_API_KEY', 'eadf412d4f0e8ccd2bb3993b357bdca6')
+        fred = Fred(api_key=_fred_key)
         s = fred.get_series("VIXCLS", observation_start=(datetime.now() - timedelta(days=10)))
         if s is not None and not s.empty:
             s = s.dropna()
@@ -966,153 +1165,109 @@ def _fetch_cny_for_dashboard():
 @app.get("/api/v1/dashboard-data")
 async def get_dashboard_data():
     """
-    核心数据拉取接口：集成三大策略引擎真实数据 + 缓存机制
+    V12.0 核心数据拉取接口 — 子模块编排器
+    原 640 行内联代码 → 7 个子模块 (Issue #14)
     """
+    from dashboard_modules.fetch_macro import fetch_vix_for_dashboard, fetch_cny_for_dashboard, fetch_macro_data
+    from dashboard_modules.run_strategies import run_all_strategies, wrap_mr_results
+    from dashboard_modules.capital_flow import compute_capital_flow
+    from dashboard_modules.market_temp import compute_market_temperature
+    from dashboard_modules.sector_heatmap import compute_sector_heatmap
+    from dashboard_modules.assemble_response import assemble_dashboard_response
+
     current_time = time.time()
     ttl = _get_cache_ttl()
 
-    # 检查缓存是否存在且未过期
+    # ── 缓存命中 ──
     if STRATEGY_CACHE["last_update"] and (current_time - STRATEGY_CACHE["last_update"] < ttl):
         age = int(current_time - STRATEGY_CACHE["last_update"])
         ttl_type = "盘中5min" if ttl == 300 else ("周末24h" if ttl == 86400 else "盘后1h")
         print(f"[{datetime.now().strftime('%H:%M:%S')}] Dashboard Cache Hit [{ttl_type}] ({age}s ago).")
         return STRATEGY_CACHE["dashboard_data"]
 
-    # ─── 盘中热刷新: 只刷 VIX/CNY, 策略引擎不重跑 ───
+    # ── 盘中热刷新: 只刷 VIX/CNY ──
     now_dt = datetime.now()
     is_trading_hours = now_dt.weekday() < 5 and ((now_dt.hour == 9 and now_dt.minute >= 30) or (10 <= now_dt.hour < 15))
     has_strategy_cache = STRATEGY_CACHE["dashboard_data"] is not None
 
     if is_trading_hours and has_strategy_cache:
-        # 盘中: 只拉 VIX + CNY (约 2 秒), 合并旧策略数据
         print(f"[{now_dt.strftime('%H:%M:%S')}] [HOT] Trading-hours refresh: VIX/CNY only, skip strategy engine")
         try:
             loop = asyncio.get_event_loop()
-
             vix_result, cny_result = await asyncio.gather(
-                loop.run_in_executor(executor, _fetch_vix_for_dashboard),
-                loop.run_in_executor(executor, _fetch_cny_for_dashboard)
+                loop.run_in_executor(executor, fetch_vix_for_dashboard),
+                loop.run_in_executor(executor, fetch_cny_for_dashboard)
             )
-
-            # 解析 VIX
             hot_vix, prev_vix = vix_result
             hot_vix_change = ((hot_vix - prev_vix) / prev_vix * 100) if prev_vix > 0 else 0
             hot_vix_status = "down" if hot_vix_change < 0 else "up"
-
-            # CNY
-            hot_cny = cny_result
-
-            # VIX 分析
             hot_vix_analysis = get_vix_analysis(hot_vix)
 
-            # 复制旧缓存, 只更新 VIX/CNY 相关字段
             hot_data = copy.deepcopy(STRATEGY_CACHE["dashboard_data"])
             mc = hot_data["data"]["macro_cards"]
             mc["vix"] = {
-                "value": round(hot_vix, 2),
-                "trend": f"{round(hot_vix_change, 1)}%",
-                "status": hot_vix_status,
-                "regime": hot_vix_analysis["label"],
-                "class": hot_vix_analysis["class"],
-                "desc": hot_vix_analysis.get("desc", ""),
+                "value": round(hot_vix, 2), "trend": f"{round(hot_vix_change, 1)}%",
+                "status": hot_vix_status, "regime": hot_vix_analysis["label"],
+                "class": hot_vix_analysis["class"], "desc": hot_vix_analysis.get("desc", ""),
                 "percentile": hot_vix_analysis.get("percentile", 0)
             }
-            # 更新决策矩阵中的 VIX 相关字段
             if mc.get("regime_banner"):
                 mc["regime_banner"]["vix"] = round(hot_vix, 2)
                 mc["regime_banner"]["vix_label"] = hot_vix_analysis.get("label", "—")
             if mc.get("market_temp"):
                 mc["market_temp"]["market_vix_multiplier"] = hot_vix_analysis["multiplier"]
-            # 更新明日决策矩阵
-            mc["tomorrow_plan"] = get_tomorrow_plan(hot_vix_analysis, mc.get("market_temp", {}).get("value", 50))
+            _rb = mc.get("regime_banner", {})
+            _at = mc.get("aiae_thermometer", {})
+            _hot_aiae_ctx = {
+                "regime": _rb.get("aiae_regime", 3),
+                "regime_cn": _rb.get("aiae_regime_cn", "中性均衡"),
+                "regime_info": AIAE_REGIMES.get(_rb.get("aiae_regime", 3), AIAE_REGIMES[3]),
+                "cap": _rb.get("aiae_cap", 65),
+                "aiae_v1": _rb.get("aiae_v1", 0),
+                "slope": _at.get("slope", 0),
+                "slope_direction": _at.get("slope_direction", "flat"),
+                "erp_val": _at.get("erp_value", 0),
+                "erp_label": mc.get("erp", {}).get("trend", "--"),
+                "erp_tier": "neutral",
+                "margin_heat": _at.get("margin_heat", 2.0),
+                "fund_position": _at.get("fund_position", 80),
+            } if _rb.get("aiae_regime") is not None else None
+            mc["tomorrow_plan"] = get_tomorrow_plan(hot_vix_analysis, mc.get("market_temp", {}).get("value", 50), _hot_aiae_ctx)
             hot_data["timestamp"] = now_dt.isoformat()
 
-            # 更新缓存
             STRATEGY_CACHE["last_update"] = current_time
             STRATEGY_CACHE["dashboard_data"] = hot_data
-            print(f"[{now_dt.strftime('%H:%M:%S')}] [HOT] Refresh done: VIX={hot_vix:.2f} CNY={hot_cny:.4f}")
+            print(f"[{now_dt.strftime('%H:%M:%S')}] [HOT] Refresh done: VIX={hot_vix:.2f} CNY={cny_result:.4f}")
             return hot_data
         except Exception as e:
             print(f"[Hot Refresh] 降级到全量刷新: {e}")
-            # fall through to full refresh below
 
-
-    # 默认值初始化
-    capital_value, capital_trend, capital_status = "---", "数据提取中", "up"
-    total_temp, temp_label, pos_advice = 50.0, "数据加载中", "50% (中性参考)"
-    buy_list, sell_list = [], []
+    # ── 全量刷新: 子模块编排 ──
     latest_vix, vix_change, vix_status = 18.25, -1.5, "down"
     latest_cny = 7.23
 
     try:
-        # 1. 抓取真实的 VIX 恐慌/避险情绪指数
+        # Step 1: 宏观数据 (VIX / CNY)
         try:
-            loop = asyncio.get_event_loop()
-            vix_result = await loop.run_in_executor(executor, _fetch_vix_for_dashboard)
-            latest_vix, prev_vix = vix_result
+            latest_vix, prev_vix, latest_cny = await fetch_macro_data(executor)
             vix_change = ((latest_vix - prev_vix) / prev_vix * 100) if prev_vix > 0 else 0
             vix_status = "down" if vix_change < 0 else "up"
         except Exception as e:
-            print(f"Warning: VIX fetch failed: {e}")
+            print(f"Warning: Macro fetch partial failure: {e}")
 
-        # 1.1 抓取离岸人民币汇率 (USD/CNY)
-        try:
-            loop = asyncio.get_event_loop()
-            latest_cny = await loop.run_in_executor(executor, _fetch_cny_for_dashboard)
-        except Exception as e:
-            print(f"Warning: CNY fetch failed: {e}")
-
-        # Tushare 准备
-        ts.set_token("5334333c2cb73c9b9987fb6e89da29a3cbd0f442622fbcbfd7bd40b6")
+        # Step 2: 三大策略引擎并行
+        ts.set_token(TUSHARE_TOKEN)
         pro = ts.pro_api()
         today_str = datetime.now().strftime('%Y%m%d')
 
-        # 2. 并行运行三大策略引擎 (Real-time Execution)
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] Starting Real-time Strategy Engines...")
-        loop = asyncio.get_event_loop()
-        mr_future = loop.run_in_executor(executor, run_strategy)
-        div_future = loop.run_in_executor(executor, run_dividend_strategy)
-        mom_future = loop.run_in_executor(executor, run_momentum_strategy)
-        
-        mr_res, div_res, mom_res = await asyncio.gather(mr_future, div_future, mom_future)
-        
-        # 包装MR裸list为标准结构
-        if isinstance(mr_res, list):
-            mr_res = _wrap_mr_results(mr_res)
-
-        # 存储到缓存中供单独接口调用
+        mr_res, div_res, mom_res = await run_all_strategies(executor)
         STRATEGY_CACHE["strategy_results"] = {"mr": mr_res, "div": div_res, "mom": mom_res}
 
-        # 3. 解析策略信号用于仪表盘
-        # --- 均值回归 MR ---
-        mr_overview = mr_res.get("data", {}).get("market_overview", {})
-        mr_status = {
-            "status_text": f"发现 {mr_overview.get('signal_count', {}).get('buy', 0)} 只猎物",
-            "status_class": "active" if mr_overview.get('signal_count', {}).get('buy', 0) > 0 else "dormant",
-            "metric1": f"{mr_overview.get('above_3pct', 0)}只偏离",
-            "metric2": f"{mr_overview.get('total_suggested_position', 0)}% 建议"
-        }
-        
-        # --- 动量轮动 MOM ---
-        mom_overview = mom_res.get("data", {}).get("market_overview", {})
-        mom_status = {
-            "status_text": f"动能主线: {mom_overview.get('top1_name', '---')}",
-            "status_class": "active" if mom_overview.get('buy_count', 0) > 0 else "warning",
-            "metric1": f"{mom_overview.get('avg_momentum', 0)}% 均动量",
-            "metric2": f"满仓位:{mom_overview.get('position_cap', 0)}%"
-        }
-        
-        # --- 红利防线 DIV ---
-        div_overview = div_res.get("data", {}).get("market_overview", {})
-        div_status = {
-            "status_text": f"趋势向上: {div_overview.get('trend_up_count', 0)}/8",
-            "status_class": "active" if div_overview.get('trend_up_count', 0) >= 4 else "dormant",
-            "metric1": f"买入信号: {div_overview.get('buy_count', 0)}",
-            "metric2": f"建议 {div_overview.get('total_suggested_pos', 0)}%"
-        }
+        # Step 3: HSGT 资金流
+        capital_a, capital_h, liquidity_score, total_money_z, z_s = compute_capital_flow(pro, today_str)
 
-        # --- V7.0: AIAE 引擎注入 (dashboard-data 级) ---
-        aiae_regime = 3  # 默认 Ⅲ级 中性均衡
+        # Step 4: AIAE 引擎注入
+        aiae_regime = 3
         aiae_cap = 65
         aiae_v1_value = 0.0
         aiae_regime_cn = "中性均衡"
@@ -1131,396 +1286,36 @@ async def get_dashboard_data():
         except Exception as e:
             print(f"[Dashboard] AIAE引擎异常,降级Ⅲ级: {e}")
 
-        # 4. 汇总买入/卖出区 (Buy/Danger Zone Synchronization)
-        vetted_buy = []
-        # 从 MR 选 Top 2
-        for s in mr_res.get("data", {}).get("buy_signals", [])[:2]:
-            vetted_buy.append({"name": s.get('name',''), "code": s.get('ts_code', s.get('code','')), "score": s.get('signal_score', s.get('score',0)), "pe": round(s.get('close', 0)/max(s.get('ma20', 1), 0.01), 2), "badge": "均值回归", "badgeClass": "buy"})
-        # 从 MOM 选 Top 1
-        for s in mom_res.get("data", {}).get("buy_signals", [])[:1]:
-            vetted_buy.append({"name": s.get('name',''), "code": s.get('ts_code', s.get('code','')), "score": s.get('signal_score', 85), "metric": f"动量:{s.get('momentum_pct',0)}%", "badge": "动量爆发", "badgeClass": "buy"})
-        
-        vetted_sell = []
-        # 从 MR 选 Top 2 卖出
-        for s in mr_res.get("data", {}).get("sell_signals", [])[:2]:
-            vetted_sell.append({"name": s.get('name',''), "code": s.get('ts_code', s.get('code','')), "score": s.get('signal_score', s.get('score',0)), "pe": "超买", "badge": "偏离过大", "badgeClass": "sell"})
-
-        # 5. HSGT & Liquidity Score (A+H 跨境流量共振引擎)
-        total_money_z = 0.0 # 初始化中性流量
-        z_s = 0.0  # V8.0: 防御性初始化, 避免 HSGT 异常时 z_s 未定义
-        try:
-            df_hsgt = pro.moneyflow_hsgt(start_date='20250101', end_date=today_str, limit=30)
-            if df_hsgt is not None and not df_hsgt.empty:
-                df_hsgt_sorted = df_hsgt.sort_values('trade_date', ascending=True)
-                
-                # A股 (北向资金)
-                df_hsgt_sorted['cum_5d_n'] = df_hsgt_sorted['north_money'].rolling(window=5).sum()
-                latest_5d_n = float(df_hsgt_sorted['cum_5d_n'].iloc[-1])
-                hist_5d_n = df_hsgt_sorted['cum_5d_n'].dropna().tail(20)
-                mean_n, std_n = hist_5d_n.mean(), hist_5d_n.std() if hist_5d_n.std() > 0 else 1.0
-                z_n = (latest_5d_n - mean_n) / std_n
-                
-                # 港股 (南向资金)
-                df_hsgt_sorted['cum_5d_s'] = df_hsgt_sorted['south_money'].rolling(window=5).sum()
-                latest_5d_s = float(df_hsgt_sorted['cum_5d_s'].iloc[-1])
-                hist_5d_s = df_hsgt_sorted['cum_5d_s'].dropna().tail(20)
-                mean_s, std_s = hist_5d_s.mean(), hist_5d_s.std() if hist_5d_s.std() > 0 else 1.0
-                z_s = (latest_5d_s - mean_s) / std_s
-                
-                total_money_z = z_n + z_s
-                
-                capital_a = {
-                    "value": f"A: {round(latest_5d_n/10000.0, 1)} 亿",
-                    "trend": "北向稳步流入" if z_n > 0.5 else ("北向抛投中" if z_n < -0.5 else "北向博弈均衡"),
-                    "status": "up" if z_n > 0.5 else ("down" if z_n < -0.5 else "neutral")
-                }
-                capital_h = {
-                    "value": f"H: {round(latest_5d_s/10000.0, 1)} 亿",
-                    "trend": "南向抢筹中" if z_s > 0.5 else ("南向撤退中" if z_s < -0.5 else "南向博弈均衡"),
-                    "status": "up" if z_s > 0.5 else ("down" if z_s < -0.5 else "neutral")
-                }
-                liquidity_score = max(0, min(100, 50 + total_money_z * 12))
-            else:
-                capital_a = {"value": "A: --", "trend": "数据缺失", "status": "neutral"}
-                capital_h = {"value": "H: --", "trend": "数据缺失", "status": "neutral"}
-                liquidity_score = 50.0
-        except Exception as e:
-            print(f"HSGT Logic Error: {e}")
-            capital_a, capital_h = {"value": "A: ERR", "trend": "异常", "status": "down"}, {"value": "H: ERR", "trend": "异常", "status": "down"}
-            liquidity_score = 50.0
-
-        # 6. 计算市场温度 V6.0 (三维决策引擎)
-        # 宽基宽度(30%) + 流动性(30%) + 宏观VIX/CNY(40%)
-        # 为了生产速度，这里复用 V5.0 的一些基础统计
-        low_pe_score = 65.0 # 简化为固定基准或从 MR 结果推导
-        vix_score = max(0, min(100, 100 - (latest_vix - 10) * 3))
-        cny_score = max(0, min(100, 100 - (latest_cny - 7.0) * 100))
-        total_temp = round(low_pe_score * 0.3 + liquidity_score * 0.3 + (vix_score + cny_score) * 0.2, 1) # Keep for market temp display
-        
-        # 6. DMSO 核心策略引擎 (V3.3 机构级)
-        # --- A股得分维度 (权重: 60%) ---
-        margin_score = get_margin_risk_ratio(pro, today_str) # 25% (杠杆情绪)
-        breadth_score = get_market_breadth(pro, today_str) # 20% (年线比例代理)
-        turnover_score = 55.0 # 25% (筹码交换频率代理)
-
-        # V8.0: 从真实 ERP 引擎获取估值数据 (替代硬编码 3.5%)
-        erp_data = get_real_erp_data()
-        erp_val = erp_data['erp_val']
-        erp_z = erp_data['erp_z']
-        valuation_label = erp_data['valuation_label']
-        erp_score = erp_data['erp_score']  # 0-100, 用于 AIAE x ERP 矩阵
-
-        score_a = margin_score * 0.25 + turnover_score * 0.25 + erp_score * 0.30 + breadth_score * 0.20
-        
-        # --- 港股得分维度 (权重: 40%) ---
-        hsi_pe_score = 65.0 # 40% (5年PE分位)
-        # 港股外资/内资流动性代理 (由 HSGT Z-Score 映射)
-        epfr_proxy = 50 + (z_s * 10) # 30% 外资动向
-        sb_flow_score = min(100, max(0, 50 + z_s * 15)) # 30% 南向内资
-        
-        score_hk = hsi_pe_score * 0.40 + epfr_proxy * 0.30 + sb_flow_score * 0.30
-        
-        # AH 溢价调节 (±15% H股吸引力修正)
-        ah_adj = get_ah_premium_adj(pro, today_str)
-        score_hk = min(100, score_hk * ah_adj)
-        
-        # --- 全局流动性熔断监控 ---
-        is_circuit_breaker = get_liquidity_crisis_signal(pro, today_str)
-        
-        # V4.0/V4.5 VIX 全局风控 (Institutional Risk Overlay)
-        # 获取 VIX 分析以便后续进行“恐慌修正温度 (PAT)”与“仓位路径预判”
+        # Step 5: VIX 分析
         vix_analysis = get_vix_analysis(latest_vix)
 
-        # --- 最终合成与温度定性 (V3.6) ---
-        base_temp = round(score_a * 0.6 + score_hk * 0.4, 1)
-        
-        # V4.5 PAT: VIX 恐慌修正 (Panic-Adjusted Temperature)
-        # 权重映射：VIX 百分位 > 50% 时，开始压制温度得分，反映避险溢价
-        vix_p = vix_analysis.get('percentile', 50)
-        panic_adj = min(1.0, 1.25 - (vix_p / 100.0)) # 线性压制因子
-        total_temp = round(base_temp * panic_adj, 1)
-        
-        # V8.0 (Joint Matrix): AIAE x ERP 双维驱动仓位矩阵
-        # erp_val/erp_z/valuation_label/erp_score 已由上方 get_real_erp_data() 提供
-        try:
-            _aiae_engine = get_aiae_engine()
-            weights_5, erp_tier = _aiae_engine.get_run_all_weights(aiae_regime, erp_score)
-        except Exception as e:
-            print(f"[Dashboard Matrix Error] {e}")
-            weights_5 = {"mr": 0.15, "div": 0.30, "mom": 0.10, "erp": 0.15, "aiae_etf": 0.30}
-            erp_tier = "neutral"
+        # Step 6: 市场温度 + DMSO + 策略过滤 (Issue #5 + #15)
+        temp_data = compute_market_temperature(
+            pro, today_str, latest_vix, latest_cny, liquidity_score, z_s,
+            aiae_regime, aiae_cap, aiae_v1_value, aiae_regime_cn, aiae_report, vix_analysis
+        )
 
-        # 流动性熔断保护
-        if is_circuit_breaker:
-            final_pos_val = min(aiae_cap, 10)
-            status_label = "流动性熔断"
-            pos_advice = "0% (流动性熔断)"
-        else:
-            final_pos_val = aiae_cap
-            status_label = "过热" if aiae_regime >= 4 else ("偏冷" if aiae_regime <= 2 else "中性")
-            tier_cn = {"bull": "🟢看多", "neutral": "🟡中性均衡", "bear": "🔴看空"}.get(erp_tier, "🟡中性均衡")
-            pos_advice = f"ERP {tier_cn} (Cap {aiae_cap}%)"
-            
-        temp_label = f"{status_label} | {valuation_label}"
-        
-        # V7.0: AIAE regime → regime_name (替代旧版 get_regime_allocation)
-        _aiae_regime_name_map = {1: "极度恐慌", 2: "低配置区", 3: "中性均衡", 4: "偏热区域", 5: "极度过热"}
-        regime_name = _aiae_regime_name_map.get(aiae_regime, "中性均衡")
-        
-        # 覆写 dashboard-data 输出使用的 "综合得分" 做兼容
-        # V7.0: 以 AIAE 矩阵仓位替代旧版五因子合成, factors/signal_detail 保留空壳供前端兼容渲染
-        hub_result = {
-            "composite_score": aiae_cap,
-            "confidence": aiae_cap,
-            "position": final_pos_val,
-            "position_label": pos_advice,
-            "factors": {
-                "aiae_regime": {"score": round(max(10, 100 - (aiae_regime - 1) * 22.5), 1), "weight": 0.40, "label": aiae_regime_cn},
-                "erp_value":   {"score": round(erp_score, 1), "weight": 0.25, "label": valuation_label},
-                "vix_fear":    {"score": round(vix_score, 1), "weight": 0.15, "label": vix_analysis.get('label', '—')},
-                "capital_flow": {"score": round(liquidity_score, 1), "weight": 0.10, "label": "资金流" if total_money_z > 0.5 else ("资金流出" if total_money_z < -0.5 else "资金中性")},
-                "macro_temp":  {"score": round(100 - total_temp, 1), "weight": 0.10, "label": status_label},
-            },
-            "signal_detail": {
-                "buy_total": mr_overview.get('signal_count', {}).get('buy', 0) + mom_overview.get('buy_count', 0) + div_overview.get('buy_count', 0),
-                "sell_total": mr_overview.get('signal_count', {}).get('sell', 0),
-                "mr_buy": mr_overview.get('signal_count', {}).get('buy', 0),
-                "mr_sell": mr_overview.get('signal_count', {}).get('sell', 0),
-                "mom_buy": mom_overview.get('buy_count', 0),
-                "div_buy": div_overview.get('buy_count', 0),
-                "div_trend_up": div_overview.get('trend_up_count', 0),
-            }
-        }
+        # Step 7: 行业热力图
+        sector_heatmap = await compute_sector_heatmap(executor, mr_res, mom_res)
 
-        # 策略权重分配
-        regime_weights_5 = weights_5
-        
-        # apply_strategy_filters 过滤器兼容 (仍保留对 mr/div/mom 子项调整)
-        regime_weights_3 = {"div": regime_weights_5["div"], "mr": regime_weights_5["mr"], "mom": regime_weights_5["mom"]}
-        filtered_3, strategy_filters = apply_strategy_filters(regime_weights_3)
-        
-        # 合并回 5 策略权重
-        regime_weights = {
-            "mr": filtered_3["mr"], "div": filtered_3["div"], "mom": filtered_3["mom"],
-            "erp": regime_weights_5["erp"], "aiae_etf": regime_weights_5["aiae_etf"]
-        }
-        # 归一化
-        _wt = sum(regime_weights.values())
-        if _wt > 0:
-            regime_weights = {k: round(v / _wt, 3) for k, v in regime_weights.items()}
+        # Step 8: 组装最终响应
+        final_data = assemble_dashboard_response(
+            latest_vix=latest_vix, vix_change=vix_change,
+            vix_status=vix_status, vix_analysis=vix_analysis,
+            capital_a=capital_a, capital_h=capital_h,
+            total_money_z=total_money_z,
+            temp_data=temp_data,
+            mr_res=mr_res, div_res=div_res, mom_res=mom_res,
+            aiae_regime=aiae_regime, aiae_cap=aiae_cap,
+            aiae_v1_value=aiae_v1_value, aiae_regime_cn=aiae_regime_cn,
+            aiae_report=aiae_report,
+            sector_heatmap=sector_heatmap,
+            get_tomorrow_plan_fn=get_tomorrow_plan,
+            get_position_path_fn=get_position_path,
+            get_institutional_mindset_fn=get_institutional_mindset,
+            liquidity_score=liquidity_score,
+        )
 
-        # 各策略名义仓位 (5策略)
-        strategy_positions = {
-            "mr_pos":  round(final_pos_val * regime_weights["mr"], 1),
-            "mom_pos": round(final_pos_val * regime_weights["mom"], 1),
-            "div_pos": round(final_pos_val * regime_weights["div"], 1),
-            "erp_pos": round(final_pos_val * regime_weights["erp"], 1),
-            "aiae_pos": round(final_pos_val * regime_weights["aiae_etf"], 1),
-            "total":   round(final_pos_val, 1)
-        }
-
-        # V7.0: ERP择时 策略卡片数据 (此处 valuation_label/erp_z 已可用)
-        erp_status = {
-            "status_text": f"ERP {valuation_label}",
-            "status_class": "active" if erp_z > 0.5 else ("warning" if erp_z < -0.5 else "dormant"),
-            "metric1": f"ERP {round(erp_val, 2)}%",
-            "metric2": f"Z-Score {round(erp_z, 2)}"
-        }
-
-        # V7.0: AIAE宏观仓位 策略卡片数据
-        aiae_regime_info = AIAE_REGIMES.get(aiae_regime, AIAE_REGIMES[3])
-        aiae_status = {
-            "status_text": f"{aiae_regime_info['emoji']} {aiae_regime_cn}",
-            "status_class": "active" if aiae_regime <= 2 else ("warning" if aiae_regime >= 4 else "dormant"),
-            "metric1": f"AIAE {round(aiae_v1_value, 1)}%",
-            "metric2": f"Cap {aiae_cap}%"
-        }
-
-        # 7. 行业热力全景图 V4.0 (Sector Rotation Heatmap with RPS)
-        # 扩展至 12 个核心行业 ETF，覆盖 A 股主要赛道。采用 ETF 代理确保极速与稳定。
-        sector_map = {
-            "512660.SH": "军工龙头",
-            "512010.SH": "医药生物",
-            "512690.SH": "酒/自选消费",
-            "512760.SH": "半导体/芯片",
-            "512720.SH": "计算机/AI",
-            "512880.SH": "证券/非银",
-            "512800.SH": "银行/金融",
-            "515030.SH": "新能源车",
-            "512100.SH": "中证传媒",
-            "512400.SH": "有色金属",
-            "510180.SH": "上证180/主板",
-            "159915.SZ": "创业板/成长"
-        }
-        
-        sector_heatmap = []
-        try:
-            loop = asyncio.get_event_loop()
-            
-            def fetch_etf_history(code):
-                try:
-                    # 优先使用 Tushare 专业接口计算 20D RPS 和 5D Trend
-                    # asset='FD' (基金/ETF), adj='qfq' (前复权)
-                    df = ts.pro_bar(ts_code=code, asset='FD', start_date='20250101', adj='qfq')
-                    if df is not None and not df.empty:
-                        return df.sort_values('trade_date', ascending=True)
-                    return pd.DataFrame()
-                except Exception as e:
-                    print(f"Fetch Error {code}: {e}")
-                    return pd.DataFrame()
-
-            # V4.7 并行加速: 使用 asyncio.gather 同时拉取 12 个 ETF
-            tasks = [loop.run_in_executor(executor, fetch_etf_history, code) for code in sector_map.keys()]
-            results = await asyncio.gather(*tasks)
-            
-            raw_data = {}
-            for i, (code, name) in enumerate(sector_map.items()):
-                df = results[i]
-                if not df.empty and len(df) >= 20:
-                    raw_data[code] = {"name": name, "df": df}
-
-            # 计算指标
-            comparison_list = []
-            for code, info in raw_data.items():
-                df = info["df"]
-                p_now = float(df['close'].iloc[-1])
-                p_5d = float(df['close'].iloc[-5])
-                p_20d = float(df['close'].iloc[-20])
-                
-                chg_1d = float(df['pct_chg'].iloc[-1])
-                trend_5d = (p_now / p_5d - 1) * 100
-                ret_20d = (p_now / p_20d - 1) * 100
-                
-                comparison_list.append({
-                    "code": code,
-                    "name": info["name"],
-                    "change": round(chg_1d, 2),
-                    "trend_5d": round(trend_5d, 2),
-                    "ret_20d": ret_20d,
-                    "status": "up" if chg_1d >= 0 else "down"
-                })
-
-            # 计算 RPS (基于 20D 收益率的横向排名)
-            comparison_list.sort(key=lambda x: x['ret_20d'])
-            for i, item in enumerate(comparison_list):
-                # RPS = (当前排名 / 总数) * 100
-                item["rps"] = int(((i + 1) / len(comparison_list)) * 100)
-            
-            # 最终按 5D Trend 降序排列 (满足用户对“5天当前排名”的要求)
-            comparison_list.sort(key=lambda x: x['trend_5d'], reverse=True)
-            # V5.0: 交叉标注策略信号
-            _mr_sigs = {s.get('ts_code',''): s.get('signal','') for s in mr_res.get("data",{}).get("signals",[])}
-            _mom_sigs = {s.get('ts_code',''): s.get('signal','') for s in mom_res.get("data",{}).get("signals",[])}
-            for _item in comparison_list:
-                _c = _item["code"]
-                _item["mr_signal"] = _mr_sigs.get(_c, "")
-                _item["mom_signal"] = _mom_sigs.get(_c, "")
-            sector_heatmap = comparison_list
-
-        except Exception as e:
-            print(f"Heatmap V4.0 Logic Error: {e}")
-            
-        # 兜底逻辑：如果接口全线崩溃
-        if not sector_heatmap:
-            sector_heatmap = [
-                {"name": "半导体/芯片", "code": "512760.SH", "change": 2.35, "trend_5d": 6.8, "rps": 95, "status": "up"},
-                {"name": "计算机/AI", "code": "512720.SH", "change": 1.15, "trend_5d": 3.4, "rps": 88, "status": "up"},
-                {"name": "新能源车", "code": "515030.SH", "change": 0.85, "trend_5d": 2.1, "rps": 82, "status": "up"},
-                {"name": "证券/非银", "code": "512880.SH", "change": 0.45, "trend_5d": 1.2, "rps": 62, "status": "up"},
-                {"name": "医药生物", "code": "512010.SH", "change": -1.2, "trend_5d": -3.5, "rps": 35, "status": "down"}
-            ]
-
-        final_data = {
-            "status": "success",
-            "timestamp": datetime.now().isoformat(),
-            "data": {
-                "macro_cards": {
-                    "vix": {
-                        "value": round(latest_vix, 2), 
-                        "trend": f"{round(vix_change, 1)}%", 
-                        "status": vix_status,
-                        "regime": vix_analysis["label"],
-                        "class": vix_analysis["class"],
-                        "desc": vix_analysis.get("desc", ""),
-                        "percentile": vix_analysis.get("percentile", 0)
-                    },
-                    "tomorrow_plan": get_tomorrow_plan(vix_analysis, total_temp),
-                    "capital_a": capital_a,
-                    "capital_h": capital_h,
-                    "signal": {
-                        "value": f"MR {mr_overview.get('signal_count',{}).get('buy',0)}买/{mr_overview.get('signal_count',{}).get('sell',0)}卖 · ERP {valuation_label}",
-                        "trend": f"DT {div_overview.get('trend_up_count',0)}/8趋 · AIAE {aiae_regime_cn} · MOM {mom_overview.get('top1_name','—')}",
-                        "status": "up" if (mr_overview.get('signal_count',{}).get('buy',0) + div_overview.get('buy_count',0)) > 0 else "neutral"
-                    },
-                    "regime_banner": {
-                        "regime": regime_name,
-                        "temp": total_temp,
-                        "advice": pos_advice,
-                        "vix": round(latest_vix, 2),
-                        "vix_label": vix_analysis.get('label','—'),
-                        "z_capital": round(total_money_z, 2),
-                        "aiae_regime": aiae_regime,
-                        "aiae_regime_cn": aiae_regime_cn,
-                        "aiae_cap": aiae_cap,
-                        "aiae_v1": round(aiae_v1_value, 1)
-                    },
-                    "aiae_thermometer": (lambda r: {
-                        "aiae_v1": r.get("current", {}).get("aiae_v1", aiae_v1_value),
-                        "regime": r.get("current", {}).get("regime", aiae_regime),
-                        "regime_cn": r.get("current", {}).get("regime_info", {}).get("cn", aiae_regime_cn),
-                        "regime_emoji": r.get("current", {}).get("regime_info", {}).get("emoji", "🟡"),
-                        "regime_color": r.get("current", {}).get("regime_info", {}).get("color", "#eab308"),
-                        "regime_name": r.get("current", {}).get("regime_info", {}).get("name", "Regime III"),
-                        "cap": r.get("position", {}).get("matrix_position", aiae_cap),
-                        "slope": r.get("current", {}).get("slope", {}).get("slope", 0),
-                        "slope_direction": r.get("current", {}).get("slope", {}).get("direction", "flat"),
-                        "margin_heat": r.get("current", {}).get("margin_heat", 0),
-                        "fund_position": r.get("current", {}).get("fund_position", 0),
-                        "aiae_simple": r.get("current", {}).get("aiae_simple", 0),
-                        "erp_value": r.get("position", {}).get("erp_value", 0),
-                        "status": r.get("status", "fallback"),
-                    })(aiae_report) if aiae_report else {
-                        "aiae_v1": aiae_v1_value, "regime": aiae_regime, "regime_cn": aiae_regime_cn,
-                        "regime_emoji": "🟡", "regime_color": "#eab308", "regime_name": "Regime III",
-                        "cap": aiae_cap, "slope": 0, "slope_direction": "flat",
-                        "margin_heat": 0, "fund_position": 0, "aiae_simple": 0,
-                        "erp_value": 0, "status": "fallback",
-                    },
-                    "market_temp": {
-                        "value": total_temp, 
-                        "label": temp_label, 
-                        "advice": pos_advice,
-                        "score_a": int(score_a),
-                        "score_hk": int(score_hk),
-                        "erp_z": erp_z,
-                        "regime_name": regime_name,
-                        "regime_weights": regime_weights,
-                        "strategy_positions": strategy_positions,
-                        "market_vix_multiplier": vix_analysis["multiplier"],
-                        "strategy_filters": strategy_filters,
-                        "pos_path": get_position_path(final_pos_val, vix_analysis),
-                        "mindset": get_institutional_mindset(total_temp),
-                        "holding_cycle_a": "5-8 个交易日",
-                        "holding_cycle_hk": "15-22 个交易日",
-                        # V7.0: 第6因子(AIAE温度)仅供前端条形图展示, 不参与 compute_scientific_position() 的 composite 计算
-                        "hub_factors": {**hub_result["factors"], "aiae_temp": {"score": round(max(10, 100 - (aiae_regime - 1) * 22.5), 1), "weight": 0.15, "label": aiae_regime_cn}},
-                        "hub_confidence": hub_result["confidence"],
-                        "hub_composite": hub_result["composite_score"],
-                        "hub_signal_detail": hub_result["signal_detail"],
-                        "z_capital": round(total_money_z, 2)
-                    },
-                    "erp": {
-                        "value": f"{round(erp_val, 2)}%",
-                        "trend": valuation_label,
-                        "status": "up" if erp_z > 0.5 else ("down" if erp_z < -0.5 else "neutral")
-                    }
-                },
-                "sector_heatmap": sector_heatmap,
-                "strategy_status": {"mr": mr_status, "mom": mom_status, "div": div_status, "erp": erp_status, "aiae": aiae_status},
-                "execution_lists": {"buy_zone": vetted_buy, "danger_zone": vetted_sell}
-            }
-        }
-        
         # 更新缓存
         STRATEGY_CACHE["last_update"] = current_time
         STRATEGY_CACHE["dashboard_data"] = final_data
@@ -1783,7 +1578,7 @@ def _run_aiae_strategy() -> dict:
                     "run_all_weights": engine.get_run_all_weights(3, None)[0],
                 },
             }
-        except:
+        except Exception as e:
             return {"status": "error", "message": str(e)}
 
 
@@ -2172,22 +1967,8 @@ async def run_all_strategies(override_cap: int = None):
 # --- V4.8 Industry Deep-Dive Engine (Value-Flow Synergy) ---
 
 def get_etf_constituents(ts_code):
-    """Hardcoded Top 5 Constituents for the 12 Core ETFs (Institutional Proxy)"""
-    mapping = {
-        "512660.SH": [{"name": "中航沈飞", "weight": "12%"}, {"name": "航发动力", "weight": "10%"}, {"name": "中航西飞", "weight": "8%"}, {"name": "中航光电", "weight": "7%"}, {"name": "内蒙一机", "weight": "5%"}],
-        "512010.SH": [{"name": "恒瑞医药", "weight": "15%"}, {"name": "药明康德", "weight": "12%"}, {"name": "迈瑞医疗", "weight": "10%"}, {"name": "片仔癀", "weight": "8%"}, {"name": "爱尔眼科", "weight": "7%"}],
-        "512690.SH": [{"name": "贵州茅台", "weight": "18%"}, {"name": "五粮液", "weight": "14%"}, {"name": "泸州老窖", "weight": "10%"}, {"name": "山西汾酒", "weight": "8%"}, {"name": "伊利股份", "weight": "7%"}],
-        "512760.SH": [{"name": "北方华创", "weight": "14%"}, {"name": "中芯国际", "weight": "12%"}, {"name": "韦尔股份", "weight": "10%"}, {"name": "海光信息", "weight": "9%"}, {"name": "紫光国微", "weight": "7%"}],
-        "512720.SH": [{"name": "金山办公", "weight": "13%"}, {"name": "科大讯飞", "weight": "11%"}, {"name": "中科曙光", "weight": "10%"}, {"name": "浪潮信息", "weight": "8%"}, {"name": "宝信软件", "weight": "7%"}],
-        "512880.SH": [{"name": "中信证券", "weight": "16%"}, {"name": "东方财富", "weight": "14%"}, {"name": "华泰证券", "weight": "10%"}, {"name": "海通证券", "weight": "8%"}, {"name": "招商证券", "weight": "7%"}],
-        "512800.SH": [{"name": "招商银行", "weight": "17%"}, {"name": "工商银行", "weight": "13%"}, {"name": "建设银行", "weight": "11%"}, {"name": "兴业银行", "weight": "9%"}, {"name": "农业银行", "weight": "8%"}],
-        "515030.SH": [{"name": "宁德时代", "weight": "20%"}, {"name": "比亚迪", "weight": "15%"}, {"name": "亿纬锂能", "weight": "10%"}, {"name": "赣锋锂业", "weight": "8%"}, {"name": "天齐锂业", "weight": "7%"}],
-        "512100.SH": [{"name": "分众传媒", "weight": "14%"}, {"name": "完美世界", "weight": "10%"}, {"name": "芒果超媒", "weight": "9%"}, {"name": "万达电影", "weight": "8%"}, {"name": "光线传媒", "weight": "7%"}],
-        "512400.SH": [{"name": "紫金矿业", "weight": "16%"}, {"name": "洛阳钼业", "weight": "12%"}, {"name": "山东黄金", "weight": "10%"}, {"name": "北方稀土", "weight": "9%"}, {"name": "天山铝业", "weight": "7%"}],
-        "510180.SH": [{"name": "中国平安", "weight": "14%"}, {"name": "贵州茅台", "weight": "12%"}, {"name": "招商银行", "weight": "10%"}, {"name": "中信证券", "weight": "8%"}, {"name": "长江电力", "weight": "7%"}],
-        "159915.SZ": [{"name": "宁德时代", "weight": "18%"}, {"name": "东方财富", "weight": "12%"}, {"name": "迈瑞医疗", "weight": "10%"}, {"name": "汇川技术", "weight": "9%"}, {"name": "阳光电源", "weight": "8%"}]
-    }
-    return mapping.get(ts_code, [])
+    """V5.1 Fix P0#2: 统一引用 core_etf_config.ETF_CONSTITUENTS (Single Source of Truth)"""
+    return ETF_CONSTITUENTS.get(ts_code, [])
 
 
 # ─────────────────────────────────────────────
@@ -2369,10 +2150,10 @@ async def get_industry_detail(code: str):
     """
     try:
         def fetch_data():
-            # V4.0: 优先从tracking缓存取指标数据
-            cached = _TRACKING_CACHE.get("data")
+            # V6.0: 只从 "latest" 命名空间读取实时缓存，杜绝历史数据污染
+            cached, cached_ts, cache_valid = _tracking_cache_get("latest")
             cached_item = None
-            if cached:
+            if cached and cache_valid:
                 cached_item = next((d for d in cached if (d.get('ts_code') or d.get('code')) == code), None)
 
             # 获取图表用价格数据
@@ -2386,8 +2167,8 @@ async def get_industry_detail(code: str):
                     if df_live is not None and not df_live.empty:
                         p_df = df_live.sort_values('trade_date')
                         p_df['trade_date'] = p_df['trade_date'].astype(str)
-                except:
-                    pass
+                except Exception as e:
+                    print(f"[industry-detail] Tushare fallback failed for {code}: {e}")
 
             if p_df.empty:
                 return {"code": code, "metrics": {"rps": 50, "pe_percentile": 50, "crowding": 1.0,
@@ -2782,8 +2563,51 @@ async def get_market_regime():
 
 # --- Industry Tracking API V4.0 (Data-Honest Engine) ---
 
-# V4.0 Tracking数据缓存 (detail API 复用)
-_TRACKING_CACHE = {"data": None, "timestamp": None}
+# V6.0 Tracking 多级缓存 (日期隔离 + 智能TTL)
+# 结构: {"latest": {data, timestamp}, "2024-01-01": {data, timestamp}, ...}
+# 核心规则: industry-detail 只从 "latest" 读取，历史查询绝不污染实时数据
+_TRACKING_CACHE: Dict[str, dict] = {}
+_TRACKING_CACHE_MAX_HISTORY = 5  # 最多保留5个历史日期缓存（LRU淘汰）
+_TRACKING_LOCK = threading.Lock()
+
+def _get_tracking_ttl() -> int:
+    """产业追踪缓存 TTL (智能跟随盘口状态)
+    盘中: 5分钟 (高频刷新)
+    盘后: 1小时 (无新数据)
+    周末: 24小时 (绝对静默)
+    """
+    return _get_cache_ttl()  # 复用全局智能 TTL 函数
+
+def _tracking_cache_get(cache_key: str = "latest") -> tuple:
+    """线程安全读取指定日期的缓存 → (data_list, timestamp_str, is_valid)"""
+    with _TRACKING_LOCK:
+        slot = _TRACKING_CACHE.get(cache_key)
+        if not slot:
+            return None, None, False
+        data = slot.get("data")
+        ts = slot.get("timestamp")
+    if not data or not ts:
+        return data, ts, False
+    try:
+        age = (datetime.now() - datetime.fromisoformat(ts)).total_seconds()
+        ttl = _get_tracking_ttl()
+        return data, ts, age < ttl
+    except Exception:
+        return data, ts, False
+
+def _tracking_cache_set(cache_key: str, sector_data: list):
+    """线程安全写入指定日期的缓存 + LRU 淘汰"""
+    with _TRACKING_LOCK:
+        _TRACKING_CACHE[cache_key] = {
+            "data": sector_data,
+            "timestamp": datetime.now().isoformat()
+        }
+        # LRU 淘汰: 超出限额时删除最旧的历史缓存 (保留 latest)
+        history_keys = [k for k in _TRACKING_CACHE if k != "latest"]
+        if len(history_keys) > _TRACKING_CACHE_MAX_HISTORY:
+            oldest = sorted(history_keys, key=lambda k: _TRACKING_CACHE[k].get("timestamp", ""))[:len(history_keys) - _TRACKING_CACHE_MAX_HISTORY]
+            for k in oldest:
+                del _TRACKING_CACHE[k]
 
 def compute_price_percentile(p_df, lookback_days: int = 1250) -> float:
     """
@@ -2807,8 +2631,12 @@ def compute_dynamic_rps(sector_data: list, code: str) -> float:
     """
     V4.0 动态RPS (Relative Price Strength)
     基于12个ETF的20D收益率，计算当前ETF在池内的排名百分位
+    V5.1 Fix P2#10: 当 ret_20d 全为 0 时返回中性 50，避免随机排名误导
     """
     if not sector_data:
+        return 50.0
+    # Fix P2#10: 全0检测 — 数据未就绪时所有 ETF 均为中性
+    if all(d.get('ret_20d', 0) == 0 for d in sector_data):
         return 50.0
     # 按 ret_20d 排序
     sorted_data = sorted(sector_data, key=lambda x: x.get('ret_20d', 0))
@@ -3121,20 +2949,8 @@ async def get_industry_tracking(date: Optional[str] = None):
             dm = FactorDataManager()
             target_dt = pd.to_datetime(date) if date else pd.Timestamp.now().normalize()
 
-            etf_list = [
-                {"code": "512760.SH", "name": "半导体/芯片"},
-                {"code": "512720.SH", "name": "计算机/AI"},
-                {"code": "515030.SH", "name": "新能源车"},
-                {"code": "512010.SH", "name": "医药生物"},
-                {"code": "512690.SH", "name": "酒/自选消费"},
-                {"code": "512880.SH", "name": "证券/非银"},
-                {"code": "512800.SH", "name": "银行/金融"},
-                {"code": "512660.SH", "name": "军工龙头"},
-                {"code": "512100.SH", "name": "中证传媒"},
-                {"code": "512400.SH", "name": "有色金属"},
-                {"code": "510180.SH", "name": "上证180/主板"},
-                {"code": "159915.SZ", "name": "创业板/成长"}
-            ]
+            # V5.1 Fix P0#2: 统一引用 core_etf_config (Single Source of Truth)
+            etf_list = CORE_ETFS
 
             sector_data = []
             # V4.0: 保存每个ETF的price_df用于detail API复用
@@ -3231,12 +3047,8 @@ async def get_industry_tracking(date: Optional[str] = None):
 
             # 影子排序数据兜底 (如果同步未就绪)
             if all(r['trend_5d'] == 0.0 for r in sector_data):
-                fallback = {
-                    "512760.SH": 2.1, "512720.SH": 1.8, "515030.SH": 1.5,
-                    "512400.SH": 1.2, "512880.SH": 0.9, "159915.SZ": 0.7,
-                    "512100.SH": 0.4, "512660.SH": -0.2, "512010.SH": -0.5,
-                    "512690.SH": -0.8, "510180.SH": -1.2, "512800.SH": -1.5
-                }
+                # V5.1 Fix P0#2: 统一引用 core_etf_config.FALLBACK_MOMENTUM
+                fallback = FALLBACK_MOMENTUM
                 for r in sector_data:
                     r['trend_5d'] = fallback.get(r['ts_code'], 0.0)
                     heat = compute_sector_heat_score(pd.DataFrame(), r['trend_5d'])
@@ -3273,7 +3085,8 @@ async def get_industry_tracking(date: Optional[str] = None):
             try:
                 engine = IndustryEngine()
                 rotation = engine.get_industry_rotation(base_date=date)
-            except:
+            except Exception as e:
+                print(f"[industry-tracking] Rotation matrix error: {e}")
                 rotation = {}
 
             result = {
@@ -3283,16 +3096,31 @@ async def get_industry_tracking(date: Optional[str] = None):
                 "last_update": datetime.now().strftime("%Y%m%d")
             }
 
-            # V4.0: 缓存tracking数据供detail API复用
-            _TRACKING_CACHE["data"] = sector_data
-            _TRACKING_CACHE["timestamp"] = datetime.now().isoformat()
+            # V6.0: 日期隔离缓存写入
+            # 仅当请求 latest (date=None 或 date=today) 时写入 "latest" 命名空间
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            request_date_str = str(date) if date else today_str
+            is_latest = (date is None) or (request_date_str == today_str)
+
+            if is_latest:
+                _tracking_cache_set("latest", sector_data)
+            else:
+                # 历史查询: 存入对应日期的独立命名空间，绝不碰 latest
+                _tracking_cache_set(request_date_str, sector_data)
 
             return result
 
         loop = asyncio.get_event_loop()
         results = await loop.run_in_executor(executor, run_ind_analysis)
 
-        return {"status": "success", "data": results}
+        # V6.0: freshness 从 latest 缓存读取
+        _, latest_ts, _ = _tracking_cache_get("latest")
+        return {"status": "success", "data": results,
+                "data_freshness": {
+                    "last_calc": latest_ts or "--",
+                    "etf_count": len(results.get("sector_heatmap", [])),
+                    "cache_ttl_sec": _get_tracking_ttl()
+                }}
     except Exception as e:
         print(f"Industry Analysis Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
@@ -3301,12 +3129,8 @@ async def get_industry_tracking(date: Optional[str] = None):
 async def sync_industry_data():
     """手动触发行业数据同步 (同步 12 个核心 ETF 及相关成分股)"""
     try:
-        # V4.9 核心同步列表: 12 个行业 ETF
-        etf_codes = [
-            "512660.SH", "512010.SH", "512690.SH", "512760.SH", 
-            "512720.SH", "512880.SH", "512800.SH", "515030.SH", 
-            "512100.SH", "512400.SH", "510180.SH", "159915.SZ"
-        ]
+        # V5.1 Fix P0#2: 统一引用 core_etf_config (Single Source of Truth)
+        etf_codes = CORE_ETF_CODES
         
         def do_sync():
             mgr = FactorDataManager()
@@ -3583,6 +3407,28 @@ async def refresh_aiae():
         engine.refresh()
         report = await loop.run_in_executor(executor, engine.generate_report)
         return {"status": "success", "data": report, "timestamp": datetime.now().isoformat()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+class FundPositionUpdate(BaseModel):
+    value: float       # 偏股型基金仓位 (60-100%)
+    date: str          # 对应季报截止日 (如 "2026-03-31")
+
+@app.post("/api/v1/aiae/update_fund_position")
+async def update_fund_position(req: FundPositionUpdate):
+    """手动更新基金仓位数据 (C1: 季报发布后调用)
+    
+    Example: POST {"value": 80.5, "date": "2026-03-31"}
+    """
+    try:
+        engine = get_aiae_engine()
+        result = engine.update_fund_position(req.value, req.date)
+        if result["success"]:
+            engine.refresh()  # 清缓存触发重算
+            return {"status": "success", **result}
+        else:
+            return {"status": "error", "message": result["message"]}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

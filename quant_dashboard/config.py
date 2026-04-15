@@ -9,6 +9,9 @@ V5.0: 将所有引擎中的分散常量统一管理
 # ── Tushare API ──
 TUSHARE_TOKEN = "5334333c2cb73c9b9987fb6e89da29a3cbd0f442622fbcbfd7bd40b6"
 
+# ── FRED API (VIX / 国债收益率 / M1 / 美股宏观) ──
+FRED_API_KEY = "eadf412d4f0e8ccd2bb3993b357bdca6"
+
 # ── 数据缓存 TTL ──
 CACHE_TTL_INTRADAY    = 300       # 盘中5分钟（09:30-15:00 工作日）
 CACHE_TTL_AFTERHOURS  = 3600      # 盘后1小时
