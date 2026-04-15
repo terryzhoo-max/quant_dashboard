@@ -95,6 +95,31 @@ HISTORICAL_SNAPSHOTS = [
     {"date": "2026-04-06", "aiae": 22.3, "csi300_after_1y": None, "label": "当前状态(估)"},
 ]
 
+# ===== 季报发布日历 (证监会规定: 季末后1个月内披露, +7天缓冲) =====
+FUND_REPORT_SCHEDULE = {
+    "Q1": {"cutoff_md": "03-31", "deadline_md": "05-07", "label": "一季报"},
+    "Q2": {"cutoff_md": "06-30", "deadline_md": "08-07", "label": "中报/二季报"},
+    "Q3": {"cutoff_md": "09-30", "deadline_md": "11-07", "label": "三季报"},
+    "Q4": {"cutoff_md": "12-31", "deadline_md": "02-07", "label": "年报/四季报"},
+}
+
+# ===== 基金仓位手动更新查阅指引 =====
+FUND_UPDATE_GUIDE = {
+    "title": "偏股型基金仓位数据查阅方案",
+    "steps": [
+        "① 天天基金网 → 基金数据 → 基金仓位测算 (fund.eastmoney.com/data/fundposition.html)",
+        "② 搜索 '偏股型基金仓位' → 查看最新季度的中位数仓位",
+        "③ 或使用 Wind/Choice 终端 → 基金仓位指标 → 偏股混合型基金股票仓位中位数",
+        "④ 记录数值 (通常在 60-95% 之间) 和对应季报截止日 (如 2026-03-31)",
+        "⑤ 通过下方表单提交，或调用 API: POST /api/v1/aiae/update_fund_position {value: 80.5, date: '2026-03-31'}",
+    ],
+    "sources": [
+        {"name": "天天基金-仓位测算", "url": "https://fund.eastmoney.com/data/fundposition.html"},
+        {"name": "好买基金-仓位指数", "url": "https://www.howbuy.com/fund/cangwei/"},
+    ],
+    "frequency": "每季度更新一次 (Q1→4月底, Q2→7月底, Q3→10月底, Q4→次年1月底)",
+}
+
 # ===== 五档状态定义 =====
 REGIMES = {
     1: {"name": "Ⅰ级 · EXTREME FEAR", "cn": "极度恐慌", "range": "<12%",
@@ -147,19 +172,22 @@ AIAE_ETF_POOL = [
     {"ts_code": "159905.SZ", "name": "深红利ETF",  "style": "深市红利", "group": "dividend"},
 ]
 
-# ===== AIAE 五档 × ETF 仓位矩阵 (每只 ETF 在不同档位的建议仓位%) =====
+# ===== AIAE 五档 × ETF 仓位矩阵 (同档内各 ETF 相对权重占比) =====
+# 注意: 各档数值为"相对权重"而非绝对仓位百分比。
+# 实际仓位 = matrix_position × (etf_weight / sum_of_row_weights)
+# 例: Ⅰ级总和=110 → 沪深300ETF 实际占比 = 25/110 = 22.7% (× 仓位上限)
 AIAE_ETF_MATRIX = {
-    #                300   50  500  创业 1000 红利 低波 深红
+    #                300   50  500  创业 1000 红利 低波 深红  (和)
     1: {"510300.SH": 25, "510050.SH": 20, "510500.SH": 20, "159915.SZ": 15, "512100.SH": 10,
-        "510880.SH": 10, "515180.SH":  5, "159905.SZ":  5},
+        "510880.SH": 10, "515180.SH":  5, "159905.SZ":  5},  # 110
     2: {"510300.SH": 25, "510050.SH": 20, "510500.SH": 15, "159915.SZ":  5, "512100.SH":  0,
-        "510880.SH": 10, "515180.SH":  8, "159905.SZ":  7},
+        "510880.SH": 10, "515180.SH":  8, "159905.SZ":  7},  # 90
     3: {"510300.SH": 15, "510050.SH": 10, "510500.SH":  5, "159915.SZ":  0, "512100.SH":  0,
-        "510880.SH": 15, "515180.SH": 10, "159905.SZ": 10},
+        "510880.SH": 15, "515180.SH": 10, "159905.SZ": 10},  # 65
     4: {"510300.SH":  5, "510050.SH":  5, "510500.SH":  0, "159915.SZ":  0, "512100.SH":  0,
-        "510880.SH": 15, "515180.SH": 10, "159905.SZ":  5},
+        "510880.SH": 15, "515180.SH": 10, "159905.SZ":  5},  # 40
     5: {"510300.SH":  0, "510050.SH":  0, "510500.SH":  0, "159915.SZ":  0, "512100.SH":  0,
-        "510880.SH":  8, "515180.SH":  5, "159905.SZ":  2},
+        "510880.SH":  8, "515180.SH":  5, "159905.SZ":  2},  # 15
 }
 
 # ===== run-all 联合权重矩阵 V2.0 (五策略, AIAE×ERP 双维驱动) =====
@@ -214,8 +242,195 @@ class AIAEEngine:
     VERSION = "2.0"
 
     def __init__(self):
-        self._fund_position = 82.0  # 公募偏股基金仓位 (手动配置, 2025Q4)
-        self._fund_position_date = "2025-12-31"
+        # C1: 基金仓位从持久化文件加载，降级为硬编码默认值
+        fp_data = self._load_fund_position()
+        self._fund_position = fp_data["value"]
+        self._fund_position_date = fp_data["date"]
+
+        # V2.1: 引擎初始化时预填月度历史 (冷启动修复)
+        # 用最新历史快照估算值做种子, 避免首次 generate_report 前斜率为 flat
+        try:
+            seed_aiae = HISTORICAL_SNAPSHOTS[-1]["aiae"]  # 当前估算 22.3%
+            seed_regime = self.classify_regime(seed_aiae)
+            self._seed_monthly_history_if_needed(seed_aiae, seed_regime)
+        except Exception as e:
+            _log(f"__init__ 月度历史预填跳过: {e}", "WARN")
+
+    @staticmethod
+    def _load_fund_position() -> Dict:
+        """从 data_lake/aiae_fund_position.json 加载基金仓位
+        V2.1: 首次启动自动创建种子文件，避免永久使用硬编码降级值
+        """
+        fp_file = os.path.join(CACHE_DIR, "aiae_fund_position.json")
+        if os.path.exists(fp_file):
+            try:
+                with open(fp_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                _log(f"基金仓位已从文件加载: {data['value']}% ({data['date']})")
+                return data
+            except Exception as e:
+                _log(f"基金仓位文件读取失败: {e}", "WARN")
+
+        # 首次启动: 自动创建种子文件 (2025Q4 估算值)
+        seed_data = {
+            "value": 82.0,
+            "date": "2025-12-31",
+            "source": "initial_seed",
+            "updated_at": datetime.now().isoformat(),
+            "note": "首次启动自动创建，请通过 API 或前端表单更新为最新季报数据",
+            "history": [
+                {"quarter": "2025Q4", "value": 82.0, "date": "2025-12-31", "source": "seed"}
+            ]
+        }
+        try:
+            with open(fp_file, 'w', encoding='utf-8') as f:
+                json.dump(seed_data, f, ensure_ascii=False, indent=2)
+            _log("基金仓位种子文件已创建 (82.0% 2025-12-31)，请尽快更新")
+        except Exception as e:
+            _log(f"种子文件创建失败: {e}", "WARN")
+        return seed_data
+
+    def update_fund_position(self, value: float, date: str) -> Dict:
+        """C1: 手动更新基金仓位 + 持久化存储
+        
+        Args:
+            value: 偏股型基金仓位 (60-100%)
+            date: 对应的季报截止日 (如 "2026-03-31")
+        Returns:
+            更新结果
+        """
+        if not (50 <= value <= 100):
+            return {"success": False, "message": f"基金仓位 {value}% 不在合理范围 [50, 100]"}
+        
+        old_value = self._fund_position
+        self._fund_position = value
+        self._fund_position_date = date
+        
+        # 加载现有文件以保留 history
+        fp_file = os.path.join(CACHE_DIR, "aiae_fund_position.json")
+        existing = {}
+        if os.path.exists(fp_file):
+            try:
+                with open(fp_file, 'r', encoding='utf-8') as f:
+                    existing = json.load(f)
+            except Exception:
+                pass
+        history = existing.get("history", [])
+        # 推断季度标签
+        month = int(date.split("-")[1]) if "-" in date else 1
+        q_label = f"{date.split('-')[0]}Q{(month - 1) // 3 + 1}"
+        history.append({"quarter": q_label, "value": value, "date": date,
+                        "updated_at": datetime.now().isoformat()})
+
+        data = {
+            "value": value,
+            "date": date,
+            "updated_at": datetime.now().isoformat(),
+            "previous_value": old_value,
+            "source": "manual_update",
+            "history": history,
+        }
+        with open(fp_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        
+        _log(f"基金仓位已更新: {old_value}% → {value}% (截至 {date})")
+        return {"success": True, "message": f"基金仓位已更新为 {value}% (截至 {date})", "data": data}
+
+    def _get_fund_position_stale_warning(self) -> Optional[Dict]:
+        """V2.1: 季度感知智能提醒
+        
+        逻辑:
+        1. 判断当前日期应该已经有哪个季度的数据
+        2. 对比基金仓位截止日判断是否过期
+        3. 如果已过了某季报 publish_deadline 但仓位数据还是旧季度 → action_required
+        """
+        try:
+            fp_date = datetime.strptime(self._fund_position_date, "%Y-%m-%d")
+            days_stale = (datetime.now() - fp_date).days
+            now = datetime.now()
+
+            # 判断当前应更新到哪个季度
+            expected_quarter, deadline_info = self._get_expected_quarter(now)
+            if expected_quarter is None:
+                # 无法确定 → 按传统天数判断
+                if days_stale > 60:
+                    return {
+                        "type": "fund_position_stale",
+                        "severity": "critical" if days_stale > 120 else "warning",
+                        "message": f"基金仓位数据滞后 {days_stale} 天 (截至 {self._fund_position_date})，占 AIAE_V1 权重 30%，建议尽快更新",
+                        "days_stale": days_stale,
+                        "current_value": self._fund_position,
+                        "current_date": self._fund_position_date,
+                    }
+                return None
+
+            # 判断已有数据是否覆盖了 expected_quarter
+            expected_cutoff = datetime.strptime(expected_quarter, "%Y-%m-%d")
+            if fp_date >= expected_cutoff:
+                return None  # 数据足够新
+
+            # 数据过期 → 生成季度感知告警
+            is_overdue = deadline_info.get("overdue", False)
+            return {
+                "type": "fund_update_due",
+                "severity": "critical" if is_overdue else "warning",
+                "message": f"{deadline_info['label']}已发布，请更新基金仓位数据 (当前: {self._fund_position}% 截至 {self._fund_position_date})",
+                "days_stale": days_stale,
+                "current_value": self._fund_position,
+                "current_date": self._fund_position_date,
+                "expected_quarter": expected_quarter,
+                "expected_label": deadline_info["label"],
+                "action_required": True,
+                "update_guide": FUND_UPDATE_GUIDE,
+            }
+        except Exception as e:
+            _log(f"基金仓位过期检查异常: {e}", "WARN")
+        return None
+
+    @staticmethod
+    def _get_expected_quarter(now: datetime) -> Tuple[Optional[str], Dict]:
+        """根据当前日期，判断应该已经有哪个季度的基金仓位数据
+        
+        Returns:
+            (expected_cutoff_date_str, deadline_info) or (None, {})
+        """
+        year = now.year
+        month = now.month
+        day = now.day
+
+        # 遍历季报日历，从最近的季度向前检查
+        # Q1(3/31) → deadline 5/7, Q2(6/30) → 8/7, Q3(9/30) → 11/7, Q4(12/31) → 次年2/7
+        candidates = []
+        for q_key, q_info in FUND_REPORT_SCHEDULE.items():
+            cutoff_md = q_info["cutoff_md"]
+            deadline_md = q_info["deadline_md"]
+
+            # Q4 的 deadline 在次年
+            if q_key == "Q4":
+                cutoff_date = datetime(year - 1, 12, 31)
+                dl_month, dl_day = map(int, deadline_md.split("-"))
+                deadline_date = datetime(year, dl_month, dl_day)
+            else:
+                c_month, c_day = map(int, cutoff_md.split("-"))
+                cutoff_date = datetime(year, c_month, c_day)
+                dl_month, dl_day = map(int, deadline_md.split("-"))
+                deadline_date = datetime(year, dl_month, dl_day)
+
+            # 只考虑 deadline 已过的季度
+            if now >= deadline_date:
+                candidates.append({
+                    "cutoff": cutoff_date.strftime("%Y-%m-%d"),
+                    "deadline": deadline_date,
+                    "label": f"{cutoff_date.year}年{q_info['label']}",
+                    "overdue": (now - deadline_date).days > 14,  # 超过deadline 14天 → critical
+                })
+
+        if not candidates:
+            return None, {}
+
+        # 取最近的 (deadline 最大的)
+        latest = max(candidates, key=lambda c: c["deadline"])
+        return latest["cutoff"], latest
 
     # ========== 数据获取层 ==========
 
@@ -309,7 +524,10 @@ class AIAEEngine:
                 "is_fallback": True
             }
 
-        return _cached("aiae_m2", 7 * 86400, _fetch)  # V8.1: M2是月频数据，缓存调至7天
+        # M4: M2 TTL 从 7天→3天, 每月10-18号(M2发布窗口)缩短至12小时
+        day = datetime.now().day
+        ttl = 12 * 3600 if 10 <= day <= 18 else 3 * 86400
+        return _cached("aiae_m2", ttl, _fetch)
 
     def _fetch_margin_data(self) -> Dict:
         """获取融资融券数据 (margin)"""
@@ -530,14 +748,79 @@ class AIAEEngine:
 
         return signals
 
+    # ========== 月度历史管理 (C2) ==========
+
+    def _get_monthly_history_file(self) -> str:
+        return os.path.join(CACHE_DIR, "aiae_monthly_history.json")
+
+    def _load_monthly_history(self) -> List[Dict]:
+        """C2: 加载月度 AIAE 历史记录"""
+        fp = self._get_monthly_history_file()
+        if os.path.exists(fp):
+            try:
+                with open(fp, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return []
+
+    def _append_monthly_history(self, aiae_v1: float, regime: int):
+        """C2: 如果本月尚未记录，追加当月 AIAE 值"""
+        history = self._load_monthly_history()
+        current_month = datetime.now().strftime("%Y-%m")
+        
+        # 检查本月是否已有记录
+        if history and history[-1].get("month") == current_month:
+            # 更新本月记录 (取最新值)
+            history[-1]["aiae_v1"] = aiae_v1
+            history[-1]["regime"] = regime
+            history[-1]["updated_at"] = datetime.now().isoformat()
+        else:
+            history.append({
+                "month": current_month,
+                "aiae_v1": aiae_v1,
+                "regime": regime,
+                "recorded_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+            })
+        
+        fp = self._get_monthly_history_file()
+        with open(fp, 'w', encoding='utf-8') as f:
+            json.dump(history, f, ensure_ascii=False, indent=2)
+
+    def _get_prev_month_aiae(self) -> Optional[float]:
+        """C2: 获取上个月的 AIAE 值 (用于斜率计算)
+        V2.1: 冷启动时不再降级到 HISTORICAL_SNAPSHOTS (2024年数据会导致 +7.67 误报)
+        只有月度历史中有真实上月记录时才返回值, 否则返回 None → slope=0/flat
+        """
+        history = self._load_monthly_history()
+        current_month = datetime.now().strftime("%Y-%m")
+        
+        # 查找上个月 (排除本月)
+        for entry in reversed(history):
+            if entry["month"] != current_month:
+                return entry["aiae_v1"]
+        
+        # V2.1: 冷启动 → 返回 None, compute_slope 会输出 flat (不再误报)
+        _log("月度历史不足: 斜率计算将输出 flat (无上月对比数据)", "WARN")
+        return None
+
     # ========== 历史走势数据 ==========
 
-    def get_chart_data(self) -> Dict:
-        """输出历史 AIAE 走势 (静态+当前点)"""
+    def get_chart_data(self, live_aiae: float = None) -> Dict:
+        """输出历史 AIAE 走势 (静态+当前点)
+        H3: 如果提供 live_aiae, 自动替换末尾估算点为实时值
+        """
         # V1.0: 使用预设历史关键节点
         dates = [s["date"] for s in HISTORICAL_SNAPSHOTS]
         values = [s["aiae"] for s in HISTORICAL_SNAPSHOTS]
         labels = [s["label"] for s in HISTORICAL_SNAPSHOTS]
+
+        # H3: 替换末尾 "当前状态(估)" 为实时计算值
+        if live_aiae is not None and values:
+            values[-1] = round(live_aiae, 1)
+            dates[-1] = datetime.now().strftime("%Y-%m-%d")
+            labels[-1] = "当前状态(实时)"
 
         # 五档区间线
         bands = [
@@ -556,10 +839,49 @@ class AIAEEngine:
             }
         }
 
+    # ========== 月度历史预填 (V2.1 冷启动修复) ==========
+
+    def _seed_monthly_history_if_needed(self, current_aiae: float, current_regime: int):
+        """V2.1: 如果月度历史为空或只有本月, 用近似值预填最近3个月
+        避免斜率计算因无上月对比而永远为 flat
+        """
+        history = self._load_monthly_history()
+        current_month = datetime.now().strftime("%Y-%m")
+        
+        # 如果已有2条以上记录 → 无需预填
+        non_current = [h for h in history if h["month"] != current_month]
+        if len(non_current) >= 1:
+            return  # 已有上月数据
+        
+        # 预填最近3个月 (用当前值±小幅波动估算)
+        seed_entries = []
+        for i in range(3, 0, -1):
+            seed_date = datetime.now() - timedelta(days=30 * i)
+            seed_month = seed_date.strftime("%Y-%m")
+            if seed_month == current_month:
+                continue
+            # 微调 ±0.3 避免完全相同
+            seed_val = round(current_aiae + (i - 2) * 0.3, 2)
+            seed_entries.append({
+                "month": seed_month,
+                "aiae_v1": seed_val,
+                "regime": current_regime,
+                "recorded_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+                "source": "seed_estimate",
+            })
+        
+        if seed_entries:
+            history = seed_entries + history
+            fp = self._get_monthly_history_file()
+            with open(fp, 'w', encoding='utf-8') as f:
+                json.dump(history, f, ensure_ascii=False, indent=2)
+            _log(f"月度历史已预填 {len(seed_entries)} 条估算记录 (冷启动修复)")
+
     # ========== 完整报告 ==========
 
     def generate_report(self) -> Dict:
-        """生成 AIAE 完整报告 (V2.0: 并行数据获取)"""
+        """生成 AIAE 完整报告 (V2.1: 并行数据获取 + 季度提醒 + 冷启动修复)"""
         t0 = time.time()
         try:
             # 1. 并行获取三个数据源 (ThreadPoolExecutor)
@@ -585,8 +907,14 @@ class AIAEEngine:
             regime = self.classify_regime(aiae_v1)
             regime_info = REGIMES[regime]
 
-            # 4. 斜率 (与上一个快照对比)
-            prev_aiae = HISTORICAL_SNAPSHOTS[-2]["aiae"] if len(HISTORICAL_SNAPSHOTS) >= 2 else None
+            # V2.1: 月度历史冷启动修复
+            try:
+                self._seed_monthly_history_if_needed(aiae_v1, regime)
+            except Exception as e:
+                _log(f"月度历史预填失败 (non-fatal): {e}", "WARN")
+
+            # 4. 斜率 (C2: 与上月同口径值对比)
+            prev_aiae = self._get_prev_month_aiae()
             slope_info = self.compute_slope(aiae_v1, prev_aiae)
 
             # 5. ERP 交叉 (尝试从 ERP 引擎获取)
@@ -600,13 +928,33 @@ class AIAEEngine:
             # 7. 信号
             signals = self.generate_signals(aiae_v1, regime, slope_info, margin_heat)
 
-            # 8. 图表数据
-            chart_data = self.get_chart_data()
+            # 8. 图表数据 (H3: 传入实时 AIAE 值替换末尾估算点)
+            chart_data = self.get_chart_data(live_aiae=aiae_v1)
+
+            # C2: 追加月度历史记录
+            try:
+                self._append_monthly_history(aiae_v1, regime)
+            except Exception as e:
+                _log(f"月度历史记录写入失败: {e}", "WARN")
 
             # 9. ERP交叉验证
             cross_validation = self._cross_validate(regime, erp_value)
 
             _log(f"报告生成完成 ({time.time()-t0:.1f}s) | AIAE={aiae_v1}% Regime={regime} Pos={matrix_position}%")
+
+            # C1: 收集数据过期告警
+            stale_warnings = []
+            fund_stale = self._get_fund_position_stale_warning()
+            if fund_stale:
+                stale_warnings.append(fund_stale)
+            # 检查数据源降级
+            for src_name, src_data in [("市值", mv_data), ("M2", m2_data), ("融资", margin_data)]:
+                if src_data.get("is_fallback"):
+                    stale_warnings.append({
+                        "type": f"{src_name}_fallback",
+                        "severity": "warning",
+                        "message": f"{src_name}数据使用降级值，非实时",
+                    })
 
             return {
                 "status": "success",
@@ -640,6 +988,8 @@ class AIAEEngine:
                 "cross_validation": cross_validation,
                 "chart": chart_data,
                 "regimes": REGIMES,
+                "stale_data_warnings": stale_warnings,
+                "fund_update_guide": FUND_UPDATE_GUIDE,
 
                 "raw_data": {
                     "mv": mv_data,
