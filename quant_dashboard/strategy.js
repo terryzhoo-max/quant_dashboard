@@ -3196,9 +3196,23 @@ async function loadRatesStrategy() {
             if (t) t.textContent = '更新: ' + new Date().toLocaleTimeString('zh-CN');
         } else {
             console.error('[Rates] Error:', json.message || json);
+            _ratesShowError(json.message || '数据返回异常');
         }
-    } catch (e) { console.error('[Rates] Fetch failed:', e); }
+    } catch (e) {
+        console.error('[Rates] Fetch failed:', e);
+        _ratesShowError(e.message || '网络连接失败');
+    }
     if (btn) { btn.disabled = false; btn.innerHTML = '🔄 刷新利率数据'; }
+}
+
+function _ratesShowError(msg) {
+    const zone = document.getElementById('rates-decision-zone');
+    if (zone) {
+        zone.style.display = 'block';
+        zone.innerHTML = '<div style="text-align:center;padding:24px;color:#ef4444;font-size:0.82rem;">' +
+            '❌ 利率数据加载失败: ' + msg +
+            '<br><span style="font-size:0.65rem;color:#64748b;margin-top:6px;display:inline-block;">请检查 FRED API 连接或稍后重试</span></div>';
+    }
 }
 
 function renderRatesPanel(data) {
@@ -3414,20 +3428,45 @@ function renderRatesEncyclopedia(enc) {
     // V1.5: 百科已改为tooltip模式，此函数保留但不渲染
 }
 
-// === V1.5: 买卖决策汇总区 ===
+// === V2.0: 买卖决策汇总区 (含迷你分位条 + 分位数上下文) ===
 function renderRatesDecisionZone(bsz) {
     const el = document.getElementById('rates-decision-zone');
     if (!el || !bsz) return;
     el.style.display = 'block';
 
+    const pct = bsz.percentile_stats || {};
+
+    // 迷你分位条: 显示当前值在5年分布中的位置
+    const miniPctBar = (item) => {
+        if (!item.pct && item.pct !== 0) return '';
+        const p = Math.max(0, Math.min(100, item.pct));
+        const barColor = p >= 75 ? '#10b981' : p >= 25 ? '#f59e0b' : '#ef4444';
+        return '<div style="width:48px;height:4px;background:rgba(30,41,59,0.8);border-radius:2px;overflow:hidden;flex-shrink:0;" title="5Y分位:'+p.toFixed(0)+'%">' +
+            '<div style="width:'+p+'%;height:100%;background:'+barColor+';border-radius:2px;transition:width 0.6s;"></div></div>' +
+            '<span style="font-size:0.5rem;color:#64748b;flex-shrink:0;">P'+p.toFixed(0)+'</span>';
+    };
+
     const renderConds = (items, color) => items.map(c => {
         const icon = c.met ? '<span style="color:#10b981;">✅</span>' : '<span style="color:#475569;">❌</span>';
         const valStyle = c.met ? 'color:#fbbf24;font-weight:600;' : 'color:#64748b;';
-        return '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;">' +
-            icon + '<span style="color:#cbd5e1;font-size:0.68rem;">' + c.cond + '</span>' +
-            '<span style="'+valStyle+'font-size:0.65rem;margin-left:auto;">' + c.val + '</span>' +
-            '<span style="font-size:0.55rem;color:#64748b;">' + c.why + '</span></div>';
+        return '<div style="display:flex;align-items:center;gap:5px;padding:3px 0;">' +
+            icon + '<span style="color:#cbd5e1;font-size:0.66rem;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + c.cond + '</span>' +
+            miniPctBar(c) +
+            '<span style="'+valStyle+'font-size:0.63rem;flex-shrink:0;">' + c.val + '</span>' +
+            '<span style="font-size:0.52rem;color:#64748b;flex-shrink:0;">' + c.why + '</span></div>';
     }).join('');
+
+    // V2.0: 分位数上下文 footer
+    const pctFooter = pct.current_zone_label
+        ? '<div style="margin-top:10px;padding:8px 12px;background:rgba(192,132,252,0.04);border:1px solid rgba(192,132,252,0.12);border-radius:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
+          '<span style="font-size:0.62rem;color:#c084fc;font-weight:600;">📐 5Y分位数</span>' +
+          '<span style="font-size:0.58rem;color:#64748b;">P25='+pct.p25+'%</span>' +
+          '<span style="font-size:0.58rem;color:#64748b;">P50='+pct.p50+'%</span>' +
+          '<span style="font-size:0.58rem;color:#64748b;">P75='+pct.p75+'%</span>' +
+          '<span style="font-size:0.58rem;color:#64748b;">σ='+pct.std+'</span>' +
+          '<span style="font-size:0.62rem;color:'+(pct.current_zone_color||'#94a3b8')+';font-weight:600;margin-left:auto;">当前: '+(pct.current||'--')+'% · '+pct.current_zone_label+' (P'+(pct.current_pct||50).toFixed(0)+')</span>' +
+          '</div>'
+        : '';
 
     el.innerHTML = 
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">' +
@@ -3446,7 +3485,8 @@ function renderRatesDecisionZone(bsz) {
         '<div style="background:rgba(239,68,68,0.04);border:1px solid rgba(239,68,68,0.15);border-radius:8px;padding:10px;">' +
         '<div style="font-size:0.7rem;font-weight:600;color:#ef4444;margin-bottom:6px;">🔴 避险防御区 <span style="font-size:0.6rem;color:#64748b;">'+bsz.defense_met+'/'+bsz.defense.length+'</span></div>' +
         renderConds(bsz.defense, '#ef4444') + '</div>' +
-        '</div>';
+        '</div>' +
+        pctFooter;
 }
 
 // === V1.5: 卡片Tooltip ===
@@ -3466,8 +3506,8 @@ function setupRatesTooltips(tips) {
             document.getElementById('rates-tip-alert').textContent = tip.alert || '';
             document.getElementById('rates-tip-history').textContent = tip.history ? '📊 ' + tip.history : '';
             const rect = this.getBoundingClientRect();
-            popup.style.left = Math.min(rect.left, window.innerWidth - 300) + 'px';
-            popup.style.top = (rect.bottom + 8) + 'px';
+            popup.style.left = Math.min(rect.left + window.scrollX, window.innerWidth - 300) + 'px';
+            popup.style.top = (rect.bottom + window.scrollY + 8) + 'px';
             popup.style.display = 'block';
         });
         card.addEventListener('mouseleave', function() {
@@ -3483,12 +3523,41 @@ function renderRatesChart(chart) {
     if (_ratesMainChart) _ratesMainChart.dispose();
     _ratesMainChart = echarts.init(el);
     const lines = chart.lines || {};
+    const markAreas = chart.mark_areas || [];
+    const pctStats = chart.percentile_stats || {};
 
+    // V2.0: 构建 ECharts markArea 数据 — 渐变色带
+    const echartsMarkAreaData = markAreas.map(area => [
+        { yAxis: area.y_from, name: area.label,
+          itemStyle: { color: area.color } },
+        { yAxis: area.y_to }
+    ]);
+
+    // 主10Y曲线 + markArea色带
     const series = [
         { name:'10Y Yield', type:'line', data:chart.yields_10y, smooth:true,
           lineStyle:{color:'#c084fc',width:2},
           areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'#c084fc33'},{offset:1,color:'#c084fc05'}]}},
-          itemStyle:{color:'#c084fc'}, symbol:'none', yAxisIndex:0 },
+          itemStyle:{color:'#c084fc'}, symbol:'none', yAxisIndex:0,
+          markArea: {
+              silent: true,
+              label: { show: true, position: 'insideRight', fontSize: 8, color: '#64748b', distance: 4 },
+              data: echartsMarkAreaData
+          },
+          markLine: {
+              silent: true, symbol: 'none',
+              label: { show: true, position: 'end', fontSize: 8, formatter: '{b}' },
+              lineStyle: { width: 1 },
+              data: [
+                  { yAxis: lines.high_zone, name: '超配>'+(lines.high_zone||'')+'%',
+                    lineStyle: {color:'#10b981',type:'dashed'}, label:{color:'#10b981'} },
+                  { yAxis: lines.neutral, name: 'P50='+(lines.neutral||'')+'%',
+                    lineStyle: {color:'#94a3b8',type:'dotted'}, label:{color:'#94a3b8'} },
+                  { yAxis: lines.low_zone, name: '全股票<'+(lines.low_zone||'')+'%',
+                    lineStyle: {color:'#ef4444',type:'dashed'}, label:{color:'#ef4444'} },
+              ]
+          }
+        },
     ];
 
     // 利差曲线 (第二Y轴)
@@ -3500,20 +3569,6 @@ function renderRatesChart(chart) {
         });
     }
 
-    // 参考线 (带文字标注)
-    if (lines.high_zone) {
-        series.push({ name:'超配债券区('+lines.high_zone+'%)', type:'line', data:chart.dates.map(()=>lines.high_zone),
-            lineStyle:{color:'#10b981',type:'dashed',width:1}, symbol:'none', itemStyle:{color:'#10b981'}, yAxisIndex:0 });
-    }
-    if (lines.neutral) {
-        series.push({ name:'中性区('+lines.neutral+'%)', type:'line', data:chart.dates.map(()=>lines.neutral),
-            lineStyle:{color:'#94a3b8',type:'dotted',width:1}, symbol:'none', itemStyle:{color:'#94a3b8'}, yAxisIndex:0 });
-    }
-    if (lines.low_zone) {
-        series.push({ name:'全股票区('+lines.low_zone+'%)', type:'line', data:chart.dates.map(()=>lines.low_zone),
-            lineStyle:{color:'#ef4444',type:'dashed',width:1}, symbol:'none', itemStyle:{color:'#ef4444'}, yAxisIndex:0 });
-    }
-
     const yAxes = [
         { type:'value', name:'Yield(%)', position:'left', axisLabel:{color:'#64748b',fontSize:9,formatter:'{value}%'}, splitLine:{lineStyle:{color:'#1e293b'}}, nameTextStyle:{color:'#64748b',fontSize:9} }
     ];
@@ -3521,19 +3576,36 @@ function renderRatesChart(chart) {
         yAxes.push({ type:'value', name:'Spread(%)', position:'right', axisLabel:{color:'#64748b',fontSize:9,formatter:'{value}%'}, splitLine:{show:false}, nameTextStyle:{color:'#64748b',fontSize:9} });
     }
 
+    // V2.0: tooltip 追加当前区间标签
+    const zoneLbl = pctStats.current_zone_label || '';
+    const zoneClr = pctStats.current_zone_color || '#94a3b8';
+
     _ratesMainChart.setOption({
         backgroundColor: 'transparent',
         grid: { top: 32, right: chart.spreads ? 55 : 10, bottom: 28, left: 45 },
-        legend: { top: 0, textStyle:{color:'#94a3b8',fontSize:9}, itemWidth:14, itemHeight:8 },
+        legend: { top: 0, textStyle:{color:'#94a3b8',fontSize:9}, itemWidth:14, itemHeight:8,
+                  data: ['10Y Yield', '10Y-2Y利差'] },
         tooltip: { trigger:'axis', backgroundColor:'rgba(15,23,42,0.95)', borderColor:'#c084fc44',
             textStyle:{color:'#e2e8f0',fontSize:10},
-            formatter: function(p) { if (!p.length) return ''; let s='<b>'+p[0].axisValue+'</b><br/>'; p.forEach(i => { if (i.value !== undefined) s+='<span style="color:'+i.color+'">●</span> '+i.seriesName+': <b>'+i.value+'%</b><br/>'; }); return s; }
+            formatter: function(p) {
+                if (!p.length) return '';
+                let s='<b>'+p[0].axisValue+'</b><br/>';
+                p.forEach(i => { if (i.value !== undefined) s+='<span style="color:'+i.color+'">●</span> '+i.seriesName+': <b>'+i.value+'%</b><br/>'; });
+                if (zoneLbl) s += '<span style="color:'+zoneClr+';font-size:10px;">◆ 当前区间: '+zoneLbl+' (P'+(pctStats.current_pct||50).toFixed(0)+')</span>';
+                return s;
+            }
         },
         xAxis: { type:'category', data:chart.dates, axisLabel:{color:'#64748b',fontSize:8,formatter:v=>v.substring(2,7)}, axisLine:{lineStyle:{color:'#334155'}} },
         yAxis: yAxes,
         series: series,
     });
 }
+
+// P3-12: ECharts resize 监听 — 浏览器窗口变化时自适应
+window.addEventListener('resize', function() {
+    if (_ratesGaugeChart) _ratesGaugeChart.resize();
+    if (_ratesMainChart) _ratesMainChart.resize();
+});
 
 // ====================================================================
 //  AIAE 宏观仓位管控模块 V2.0

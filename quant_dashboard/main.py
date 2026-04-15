@@ -63,14 +63,6 @@ from strategies_backtest import (
     erp_timing_strategy_vectorized
 )
 from erp_backtest_data import prepare_erp_backtest_data
-from pydantic import BaseModel
-
-class TradeRequest(BaseModel):
-    ts_code: str
-    amount: int
-    price: float
-    name: str = ""
-    action: str # "buy" or "sell"
 
 import numpy as np
 
@@ -110,9 +102,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 # 全局缓存结构 (In-Memory Cache for Production Stability)
+_STRATEGY_LOCK = threading.Lock()  # P0-2: 线程安全保护
 STRATEGY_CACHE = {
     "last_update": None,
     "dashboard_data": None,
+    "aiae_ctx": None,  # P0-1: 全量刷新时存储原始 aiae_ctx，Hot-Refresh 直接复用
     "strategy_results": {
         "mr": None,
         "mom": None,
@@ -121,6 +115,7 @@ STRATEGY_CACHE = {
 }
 
 # 海外 AIAE 全局缓存 (V1.1: L1 API结果级缓存)
+_AIAE_GLOBAL_LOCK = threading.Lock()  # P0-2: 线程安全保护
 AIAE_GLOBAL_CACHE = {
     "last_update": None,
     "report_data": None
@@ -428,8 +423,9 @@ def _warmup_global_aiae_cache():
                 'recommendation': recommendation,
             }
         }
-        AIAE_GLOBAL_CACHE['last_update'] = time.time()
-        AIAE_GLOBAL_CACHE['report_data'] = data
+        with _AIAE_GLOBAL_LOCK:
+            AIAE_GLOBAL_CACHE['last_update'] = time.time()
+            AIAE_GLOBAL_CACHE['report_data'] = data
         print(f"[Global AIAE Warmup] L1缓存预热完成 · US={us_v1:.1f}% JP={jp_v1:.1f}% HK={hk_v1:.1f}% CN={cn_aiae_v1:.1f}% · 最冷={region_names[coldest]}")
     except Exception as e:
         print(f"[Global AIAE Warmup] 预热失败 (non-fatal): {e}")
@@ -500,291 +496,13 @@ def _aaii_crawl_callback():
 # 删除时间: 2026-04-15  原因: FastAPI deprecated on_event, 使用 lifespan 替代
 
 
-# --- AlphaCore DMSO Sub-Engines (V3.3 机构级) ---
-
-def get_margin_risk_ratio(pro, date_str):
-    """
-    计算融资买入占比分位 (Margin Buying Ratio Percentile)
-    权重: A股 25%
-    """
-    try:
-        df = pro.margin_detail(trade_date=date_str)
-        if df.empty: 
-            # 尝试获取最近一个交易日
-            return 50.0
-        
-        # 获取当日上证指数成交额作为分母基准
-        df_index = pro.index_daily(ts_code='000001.SH', start_date=date_str, end_date=date_str)
-        if df_index.empty: return 50.0
-        
-        total_margin_buy = df['rzmre'].sum()
-        total_mkt_vol = df_index['amount'].iloc[0] * 1000 # Tushare amount 默认单位为千
-        
-        ratio = total_margin_buy / total_mkt_vol if total_mkt_vol > 0 else 0
-        
-        # 阈值建模：0.07 (冰点) -> 0.12 (亢奋)
-        percentile = min(100, max(0, (ratio - 0.07) / (0.12 - 0.07) * 100))
-        return round(percentile, 1)
-    except Exception as e:
-        print(f"[Margin] 融资数据异常, 降级中性: {e}")
-        return 50.0
-
-def get_market_breadth(pro, date_str):
-    """
-    V11.0: 沪深300成分股高于250MA占比 (真实统计, 替代原硬编码 62.5)
-    权重: A股 20%
-    逻辑: 拉取沪深300最新成分股列表 → 批量拉取各股最新收盘价与250MA → 统计占比
-    降级: Tushare 异常时返回 50.0 (中性)
-    """
-    try:
-        # Step 1: 获取沪深300成分股列表
-        df_cons = pro.index_weight(index_code='399300.SZ', start_date=date_str, end_date=date_str)
-        if df_cons is None or df_cons.empty:
-            # 尝试回退到最近一个月的成分股
-            _start = (datetime.strptime(date_str, '%Y%m%d') - timedelta(days=30)).strftime('%Y%m%d')
-            df_cons = pro.index_weight(index_code='399300.SZ', start_date=_start, end_date=date_str)
-        if df_cons is None or df_cons.empty:
-            print(f"[Breadth] 沪深300成分股数据缺失, 降级50.0")
-            return 50.0
-        codes = df_cons['con_code'].unique().tolist()
-        
-        # Step 2: 批量拉取日线 (最近 260 个交易日, 确保 250MA 可计算)
-        above_count = 0
-        valid_count = 0
-        for code in codes[:50]:  # 取前50只代表性成分股 (性能平衡)
-            try:
-                df_daily = ts.pro_bar(ts_code=code, adj='qfq', start_date=
-                    (datetime.strptime(date_str, '%Y%m%d') - timedelta(days=400)).strftime('%Y%m%d'),
-                    end_date=date_str)
-                if df_daily is not None and len(df_daily) >= 250:
-                    df_daily = df_daily.sort_values('trade_date')
-                    ma250 = df_daily['close'].rolling(250).mean().iloc[-1]
-                    close = df_daily['close'].iloc[-1]
-                    valid_count += 1
-                    if close > ma250:
-                        above_count += 1
-            except Exception:
-                continue
-        
-        if valid_count < 10:
-            print(f"[Breadth] 有效样本不足({valid_count}只), 降级50.0")
-            return 50.0
-        
-        breadth = round(above_count / valid_count * 100, 1)
-        print(f"[Breadth] 沪深300采样 {valid_count}只, 站上250MA: {above_count}只 ({breadth}%)")
-        return breadth
-    except Exception as e:
-        print(f"[Breadth] 市场宽度计算异常, 降级中性: {e}")
-        return 50.0
-
-def get_liquidity_crisis_signal(pro, today_str):
-    """
-    监控流动性危机：个股跌停占比 > 10%
-    返回 True 则触发熔断禁买
-    """
-    try:
-        df = pro.daily(trade_date=today_str)
-        if df.empty: return False
-        
-        limit_down = len(df[df['pct_chg'] <= -9.8])
-        ratio = limit_down / len(df)
-        return ratio > 0.10
-    except Exception as e:
-        print(f"[LiqCrisis] 跌停监控异常: {e}")
-        return False
-
-def get_ah_premium_adj(pro, date_str):
-    """
-    AH 溢价调节因子 (H股吸引力乘数)
-    """
-    try:
-        df = pro.index_daily(ts_code='HSAHP.HI', start_date='20240101', end_date=date_str)
-        if df.empty: return 1.0
-        latest_val = df.sort_values('trade_date').iloc[-1]['close']
-        if latest_val > 145: return 1.15
-        if latest_val < 125: return 0.85
-        return 1.0
-    except Exception as e:
-        print(f"[AH Premium] 溢价数据异常: {e}")
-        return 1.0
-
-
-def get_real_turnover_score(pro, date_str):
-    """
-    V11.0: 全市场换手率分位分数 (替代原硬编码 55.0)
-    逻辑: 拉取当日全市场日线 → 取换手率中位数 → 与近20日滚动中位数比较
-    高换手 = 情绪亢奋 = 分数高; 低换手 = 冷清 = 分数低
-    """
-    try:
-        df = pro.daily(trade_date=date_str)
-        if df is None or df.empty:
-            return 50.0
-        
-        today_median_turnover = df['turnover_rate'].median()
-        
-        # 拉取近 20 个交易日的数据做比较基准
-        _end = date_str
-        _start = (datetime.strptime(date_str, '%Y%m%d') - timedelta(days=35)).strftime('%Y%m%d')
-        df_idx = pro.index_daily(ts_code='000001.SH', start_date=_start, end_date=_end)
-        if df_idx is not None and len(df_idx) >= 10:
-            df_idx = df_idx.sort_values('trade_date')
-            # 用上证指数近20日成交量变化做代理
-            vol_series = df_idx['vol'].tail(20)
-            vol_mean = vol_series.mean()
-            vol_std = vol_series.std() if vol_series.std() > 0 else 1
-            latest_vol = vol_series.iloc[-1]
-            z = (latest_vol - vol_mean) / vol_std
-            # Z-score → 分位: z=0 → 50, z=2 → 90, z=-2 → 10
-            score = min(100, max(0, 50 + z * 20))
-        else:
-            # 降级: 基于换手率绝对值 (A股日均换手率约 1-3%)
-            score = min(100, max(0, (today_median_turnover - 0.5) / 3.0 * 100))
-        
-        print(f"[Turnover] 当日换手率中位数: {today_median_turnover:.2f}% → score={score:.1f}")
-        return round(score, 1)
-    except Exception as e:
-        print(f"[Turnover] 换手率计算异常, 降级中性: {e}")
-        return 50.0
-
-# --- V3.6 机构级策略调控引擎 (Strategic Allocation Engine) ---
-
-def get_real_erp_data():
-    """
-    V8.1: 从真实 ERP 引擎获取估值数据 (双维度标签修正版)
-    返回 dict: erp_val, erp_z, valuation_label, erp_score, signal_key, signal_label
-    
-    V8.1 修正: 标签体系从纯分位制 → 绝对值+分位双维度
-      - 绝对值: ERP >= 5% 本身是正面信号 (股票比债券有显著溢价)
-      - 分位制: 近4年中的相对位置 (反映历史比较)
-      - 最终标签: 综合两者, 避免 "5.22% + 极度高估" 的认知矛盾
-    """
-    try:
-        engine = get_erp_engine()
-        report = engine.compute_signal()
-        if report.get('status') in ('success', 'fallback'):
-            snap = report['current_snapshot']
-            sig = report['signal']
-            erp_val = snap['erp_value']
-            erp_pct = snap['erp_percentile']
-            erp_z = (erp_pct - 50) / 25
-
-            # --- V8.1 双维度标签逻辑 ---
-            # 维度1: ERP 绝对值判定
-            if erp_val >= 6.0:
-                abs_label = "极度低估"
-                abs_tier = 5
-            elif erp_val >= 5.0:
-                abs_label = "偏低估"
-                abs_tier = 4
-            elif erp_val >= 4.0:
-                abs_label = "估值中性"
-                abs_tier = 3
-            elif erp_val >= 3.0:
-                abs_label = "偏高估"
-                abs_tier = 2
-            else:
-                abs_label = "极度高估"
-                abs_tier = 1
-
-            # 维度2: 近4年分位判定
-            if erp_pct >= 80:
-                pct_label = "历史极低估"
-                pct_tier = 5
-            elif erp_pct >= 60:
-                pct_label = "分位偏低"
-                pct_tier = 4
-            elif erp_pct >= 40:
-                pct_label = "分位中性"
-                pct_tier = 3
-            elif erp_pct >= 20:
-                pct_label = "分位偏高"
-                pct_tier = 2
-            else:
-                pct_label = "历史极高估"
-                pct_tier = 1
-
-            # 综合标签: 加权 (绝对值60% + 分位40%), 避免纯分位制的认知矛盾
-            blended_tier = abs_tier * 0.6 + pct_tier * 0.4
-            if blended_tier >= 4.2:
-                vlabel = "极度低估"
-            elif blended_tier >= 3.4:
-                vlabel = "偏低估"
-            elif blended_tier >= 2.6:
-                vlabel = "估值中性"
-            elif blended_tier >= 1.8:
-                vlabel = "偏高估"
-            else:
-                vlabel = "极度高估"
-
-            erp_score = min(100, max(0, erp_pct))
-            print(f"[ERP Real] ERP={erp_val:.2f}% Pct={erp_pct:.1f}% AbsTier={abs_tier} PctTier={pct_tier} Blended={blended_tier:.1f} Label={vlabel} Signal={sig['label']}")
-            return {
-                'erp_val': round(erp_val, 2), 'erp_z': round(erp_z, 2),
-                'erp_pct': round(erp_pct, 1), 'valuation_label': vlabel,
-                'abs_label': abs_label, 'pct_label': pct_label,
-                'erp_score': round(erp_score, 1), 'signal_key': sig['key'],
-                'signal_label': sig['label'], 'composite_score': sig['score'],
-                'status': 'success'
-            }
-    except Exception as e:
-        print(f"[ERP Real] engine error, fallback: {e}")
-    return {
-        'erp_val': 4.5, 'erp_z': 0.0, 'erp_pct': 50.0,
-        'valuation_label': 'fallback', 'abs_label': '降级', 'pct_label': '降级',
-        'erp_score': 50.0,
-        'signal_key': 'hold', 'signal_label': 'hold(fallback)',
-        'composite_score': 50, 'status': 'fallback'
-    }
-
-def get_regime_allocation(temp: float) -> tuple[dict[str, float], str]:
-    """V3.9 纠偏后的策略权重矩阵 (过热≠进攻)"""
-    if temp >= 85:
-        return {"div": 0.55, "mr": 0.30, "mom": 0.15}, "过热模式"
-    if temp >= 65:
-        return {"div": 0.20, "mr": 0.35, "mom": 0.45}, "进攻模式"
-    if temp >= 45:
-        return {"div": 0.35, "mr": 0.40, "mom": 0.25}, "平衡模式"
-    if temp >= 25:
-        return {"div": 0.50, "mr": 0.35, "mom": 0.15}, "防御模式"
-    return {"div": 0.55, "mr": 0.35, "mom": 0.10}, "极限冰点"
-
-def apply_strategy_filters(regime_weights: dict, mom_crowding: float = 60.0,
-                           div_yield_gap: float = 1.7, mr_atr_ratio: float = 1.0) -> tuple[dict, dict]:
-    """
-    V3.9 策略级风险过滤器
-    mom_crowding: 动量拥挤度分位 (0-100), 默认60 (偏中性)
-    div_yield_gap: 红利股息率 - 10Y国债 (百分点), 默认1.7
-    mr_atr_ratio: 当前ATR / 20D均值ATR, 默认1.0
-    返回: (调整后权重, 过滤器状态)
-    """
-    adjusted = dict(regime_weights)
-    filters = {"mom": "正常", "div": "正常", "mr": "正常"}
-
-    # 动量拥挤过滤: 换手率分位 > 80 时逐步削减
-    if mom_crowding > 80:
-        penalty = min(0.5, (mom_crowding - 80) / 40)
-        adjusted["mom"] *= (1 - penalty)
-        filters["mom"] = f"⚠️ 拥挤 P{int(mom_crowding)}"
-
-    # 红利溢价不足: Yield Gap < 1.0% 时削减
-    if div_yield_gap < 1.0:
-        adjusted["div"] *= max(0.5, div_yield_gap / 1.0)
-        filters["div"] = f"⚠️ 溢价不足 {div_yield_gap:.1f}%"
-
-    # 均值回归高波门控: ATR > 1.5倍均值时削减
-    if mr_atr_ratio > 1.5:
-        adjusted["mr"] *= max(0.5, 1.5 / mr_atr_ratio)
-        filters["mr"] = f"⚠️ 高波 ATR×{mr_atr_ratio:.1f}"
-
-    # 归一化
-    total = sum(adjusted.values())
-    if total > 0:
-        for k in adjusted:
-            adjusted[k] = round(adjusted[k] / total, 2)
-
-    return adjusted, filters
-
-
+# --- [DEPRECATED V12.0] AlphaCore DMSO Sub-Engines ---
+# 以下函数已迁移至 dashboard_modules/market_temp.py (Issue #14):
+#   get_margin_risk_ratio, get_market_breadth, get_liquidity_crisis_signal,
+#   get_ah_premium_adj, get_real_turnover_score, get_real_erp_data
+# 以下函数已被 AIAE×ERP 联合矩阵完全替代 (V12.0):
+#   get_regime_allocation, apply_strategy_filters (旧版3参)
+# 删除时间: 2026-04-15  原因: dashboard_modules 拆分后的残留死代码
 
 # --- [DEPRECATED V7.0] compute_scientific_position() 已删除 ---
 # 原五因子仓位引擎 (VIX/资金/温度/ERP/信号) 已由 AIAE×ERP 联合矩阵取代。
@@ -906,40 +624,6 @@ def _synthesize_directives(aiae_ctx, vix_analysis):
     return [d1, d2, d3]
 
 
-def _compute_signal_consensus(mr_overview, mom_overview, div_overview, erp_z, aiae_regime):
-    """
-    V11.0: 五策略共振计算器 (提取自内联 Lambda, 确保一致性)
-    返回: (ups, downs, consensus_str, consensus_label, directions_list)
-    """
-    mr_buy = mr_overview.get('signal_count', {}).get('buy', 0)
-    mr_sell = mr_overview.get('signal_count', {}).get('sell', 0)
-    
-    # 统一方向判定 (计算一次, 复用结果)
-    directions = [
-        'up' if mr_buy > mr_sell else ('down' if mr_sell > mr_buy else 'neutral'),
-        'up' if mom_overview.get('buy_count', 0) > 0 else 'neutral',
-        'up' if div_overview.get('trend_up_count', 0) >= 4 else ('down' if div_overview.get('trend_up_count', 0) <= 2 else 'neutral'),
-        'up' if erp_z > 0.5 else ('down' if erp_z < -0.5 else 'neutral'),
-        'up' if aiae_regime <= 2 else ('down' if aiae_regime >= 4 else 'neutral'),
-    ]
-    
-    ups = sum(1 for d in directions if d == 'up')
-    downs = sum(1 for d in directions if d == 'down')
-    
-    consensus_str = f"{ups}/5 看多"
-    
-    if ups >= 4:
-        label = "强势共振"
-    elif ups >= 3:
-        label = "偏多共振"
-    elif downs >= 3:
-        label = "偏空共振"
-    elif downs >= 2:
-        label = "多空分歧"
-    else:
-        label = "中性均衡"
-    
-    return ups, downs, consensus_str, label, directions
 
 
 def get_tomorrow_plan(vix_analysis, temp_score, aiae_ctx=None):
@@ -1111,55 +795,8 @@ def get_tactical_label(final_pos, temp, erp_z, crisis):
     if final_pos >= 15: return f"{int(final_pos)}% (风险预警)"
     return f"{int(final_pos)}% (极端亢奋)"
     
-def fetch_vix_realtime():
-    """
-    AlphaCore V4.3: Real-time VIX fetcher (CNBC Scraper)
-    Resolves yfinance latency and SSL/API structure instability.
-    """
-    url = "https://www.cnbc.com/quotes/.VIX"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-    }
-    try:
-        response = requests.get(url, headers=headers, timeout=5)
-        if response.status_code == 200:
-            # CNBC uses JSON-LD with "last":"XX.XX"
-            match = re.search(r'"last":"([\d.]+)"', response.text)
-            if match:
-                return float(match.group(1))
-    except Exception as e:
-        print(f"SCRAPER ERROR: {e}")
-    return None
-
-
-def _fetch_vix_for_dashboard():
-    """FRED VIXCLS → CNBC → 默认值 (返回 (latest, prev) 元组)"""
-    try:
-        from fredapi import Fred
-        _fred_key = getattr(__import__('config'), 'FRED_API_KEY', 'eadf412d4f0e8ccd2bb3993b357bdca6')
-        fred = Fred(api_key=_fred_key)
-        s = fred.get_series("VIXCLS", observation_start=(datetime.now() - timedelta(days=10)))
-        if s is not None and not s.empty:
-            s = s.dropna()
-            if len(s) >= 2:
-                return float(s.iloc[-1]), float(s.iloc[-2])
-            return float(s.iloc[-1]), float(s.iloc[-1])
-    except Exception:
-        pass
-    # CNBC fallback
-    rt = fetch_vix_realtime()
-    return (rt, rt) if rt else (18.25, 18.25)
-
-
-def _fetch_cny_for_dashboard():
-    """CNBC USD/CNY → 默认值"""
-    try:
-        url = "https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=USD/CNY&requestMethod=itv&noCache=1&partnerId=2&fund=1&exthrs=1&output=json&events=1"
-        r = requests.get(url, timeout=8, headers={'User-Agent': 'Mozilla/5.0'})
-        quote = r.json().get('FormattedQuoteResult', {}).get('FormattedQuote', [{}])[0]
-        return float(quote.get('last', '7.23').replace(',', ''))
-    except Exception:
-        return 7.23
+# --- [DEPRECATED V12.0] fetch_vix_realtime / _fetch_vix_for_dashboard / _fetch_cny_for_dashboard ---
+# 已迁移至 dashboard_modules/fetch_macro.py · 删除时间: 2026-04-15
 
 
 @app.get("/api/v1/dashboard-data")
@@ -1179,16 +816,20 @@ async def get_dashboard_data():
     ttl = _get_cache_ttl()
 
     # ── 缓存命中 ──
-    if STRATEGY_CACHE["last_update"] and (current_time - STRATEGY_CACHE["last_update"] < ttl):
-        age = int(current_time - STRATEGY_CACHE["last_update"])
+    with _STRATEGY_LOCK:
+        _cached_ts = STRATEGY_CACHE["last_update"]
+        _cached_data = STRATEGY_CACHE["dashboard_data"]
+    if _cached_ts and (current_time - _cached_ts < ttl):
+        age = int(current_time - _cached_ts)
         ttl_type = "盘中5min" if ttl == 300 else ("周末24h" if ttl == 86400 else "盘后1h")
         print(f"[{datetime.now().strftime('%H:%M:%S')}] Dashboard Cache Hit [{ttl_type}] ({age}s ago).")
-        return STRATEGY_CACHE["dashboard_data"]
+        return _cached_data
 
     # ── 盘中热刷新: 只刷 VIX/CNY ──
     now_dt = datetime.now()
     is_trading_hours = now_dt.weekday() < 5 and ((now_dt.hour == 9 and now_dt.minute >= 30) or (10 <= now_dt.hour < 15))
-    has_strategy_cache = STRATEGY_CACHE["dashboard_data"] is not None
+    with _STRATEGY_LOCK:
+        has_strategy_cache = STRATEGY_CACHE["dashboard_data"] is not None
 
     if is_trading_hours and has_strategy_cache:
         print(f"[{now_dt.strftime('%H:%M:%S')}] [HOT] Trading-hours refresh: VIX/CNY only, skip strategy engine")
@@ -1216,27 +857,15 @@ async def get_dashboard_data():
                 mc["regime_banner"]["vix_label"] = hot_vix_analysis.get("label", "—")
             if mc.get("market_temp"):
                 mc["market_temp"]["market_vix_multiplier"] = hot_vix_analysis["multiplier"]
-            _rb = mc.get("regime_banner", {})
-            _at = mc.get("aiae_thermometer", {})
-            _hot_aiae_ctx = {
-                "regime": _rb.get("aiae_regime", 3),
-                "regime_cn": _rb.get("aiae_regime_cn", "中性均衡"),
-                "regime_info": AIAE_REGIMES.get(_rb.get("aiae_regime", 3), AIAE_REGIMES[3]),
-                "cap": _rb.get("aiae_cap", 65),
-                "aiae_v1": _rb.get("aiae_v1", 0),
-                "slope": _at.get("slope", 0),
-                "slope_direction": _at.get("slope_direction", "flat"),
-                "erp_val": _at.get("erp_value", 0),
-                "erp_label": mc.get("erp", {}).get("trend", "--"),
-                "erp_tier": "neutral",
-                "margin_heat": _at.get("margin_heat", 2.0),
-                "fund_position": _at.get("fund_position", 80),
-            } if _rb.get("aiae_regime") is not None else None
+            # P0-1: 直接复用全量刷新时存储的原始 aiae_ctx (不再反向构造)
+            with _STRATEGY_LOCK:
+                _hot_aiae_ctx = STRATEGY_CACHE.get("aiae_ctx")
             mc["tomorrow_plan"] = get_tomorrow_plan(hot_vix_analysis, mc.get("market_temp", {}).get("value", 50), _hot_aiae_ctx)
             hot_data["timestamp"] = now_dt.isoformat()
 
-            STRATEGY_CACHE["last_update"] = current_time
-            STRATEGY_CACHE["dashboard_data"] = hot_data
+            with _STRATEGY_LOCK:
+                STRATEGY_CACHE["last_update"] = current_time
+                STRATEGY_CACHE["dashboard_data"] = hot_data
             print(f"[{now_dt.strftime('%H:%M:%S')}] [HOT] Refresh done: VIX={hot_vix:.2f} CNY={cny_result:.4f}")
             return hot_data
         except Exception as e:
@@ -1316,9 +945,27 @@ async def get_dashboard_data():
             liquidity_score=liquidity_score,
         )
 
-        # 更新缓存
-        STRATEGY_CACHE["last_update"] = current_time
-        STRATEGY_CACHE["dashboard_data"] = final_data
+        # P0-1: 构建并缓存原始 aiae_ctx (供 Hot-Refresh 复用)
+        _full_aiae_ctx = {
+            "regime": aiae_regime,
+            "regime_cn": aiae_regime_cn,
+            "regime_info": AIAE_REGIMES.get(aiae_regime, AIAE_REGIMES[3]),
+            "cap": aiae_cap,
+            "aiae_v1": round(aiae_v1_value, 1),
+            "slope": aiae_report.get("current", {}).get("slope", {}).get("slope", 0),
+            "slope_direction": aiae_report.get("current", {}).get("slope", {}).get("direction", "flat"),
+            "erp_val": round(temp_data["erp_val"], 2),
+            "erp_label": temp_data["valuation_label"],
+            "erp_tier": temp_data["erp_tier"],
+            "margin_heat": aiae_report.get("current", {}).get("margin_heat", 2.0),
+            "fund_position": aiae_report.get("current", {}).get("fund_position", 80),
+        }
+
+        # 更新缓存 (P0-2: 原子写入)
+        with _STRATEGY_LOCK:
+            STRATEGY_CACHE["last_update"] = current_time
+            STRATEGY_CACHE["dashboard_data"] = final_data
+            STRATEGY_CACHE["aiae_ctx"] = _full_aiae_ctx
         return final_data
 
     except Exception as e:
@@ -1328,70 +975,18 @@ async def get_dashboard_data():
 @app.get("/api/v1/strategy")
 async def get_strategy():
     """均值回归策略详情 — V4.2 包装层"""
+    from dashboard_modules.run_strategies import wrap_mr_results
     if STRATEGY_CACHE["strategy_results"]["mr"]:
         cached = STRATEGY_CACHE["strategy_results"]["mr"]
         # 如果缓存已经是包装格式就直接返回
         if isinstance(cached, dict) and "status" in cached:
             return cached
         # 否则包装裸list
-        return _wrap_mr_results(cached)
+        return wrap_mr_results(cached)
     raw = await asyncio.get_event_loop().run_in_executor(executor, run_strategy)
-    wrapped = _wrap_mr_results(raw)
+    wrapped = wrap_mr_results(raw)
     STRATEGY_CACHE["strategy_results"]["mr"] = wrapped
     return wrapped
-
-
-def _wrap_mr_results(signals_list: list) -> dict:
-    """把 run_strategy() 返回的裸 list 包装成前端期望的标准结构"""
-    from datetime import datetime as _dt
-
-    # 补算 suggested_position（MR引擎不输出该字段）
-    for s in signals_list:
-        if "suggested_position" not in s:
-            sig = s.get("signal", "hold")
-            score = s.get("signal_score", 0)
-            if sig == "buy":
-                s["suggested_position"] = 15 if score >= 85 else (10 if score >= 70 else 5)
-            elif sig in ("sell", "sell_half", "sell_weak", "stop_loss", "no_entry"):
-                s["suggested_position"] = 0
-            else:
-                s["suggested_position"] = 0
-
-    valid = [s for s in signals_list if s.get("signal") != "error"]
-    errors = [s for s in signals_list if s.get("signal") == "error"]
-    buy_signals = [s for s in valid if s.get("signal") == "buy"]
-    sell_signals = [s for s in valid if s.get("signal") in ("sell", "sell_half", "sell_weak")]
-
-    # 计算 market_overview
-    biases = [abs(s.get("bias", 0)) for s in valid]
-    max_dev_item = max(valid, key=lambda x: abs(x.get("bias", 0)), default={})
-    above_3 = sum(1 for s in valid if abs(s.get("bias", 0)) >= 3)
-    total_pos = sum(s.get("suggested_position", 0) for s in buy_signals)
-    divergence = "偏离中" if above_3 > 3 else "正常"
-
-    overview = {
-        "avg_deviation": round(sum(biases) / len(biases), 2) if biases else 0,
-        "max_deviation": {
-            "name": max_dev_item.get("name", "—"),
-            "value": round(abs(max_dev_item.get("bias", 0)), 2),
-        },
-        "signal_count": {"buy": len(buy_signals), "sell": len(sell_signals)},
-        "total_suggested_position": total_pos,
-        "above_3pct": above_3,
-        "market_divergence": divergence,
-    }
-
-    return {
-        "status": "success",
-        "timestamp": _dt.now().isoformat(),
-        "data": {
-            "signals": valid,
-            "market_overview": overview,
-            "buy_signals": buy_signals,
-            "sell_signals": sell_signals,
-            "errors": errors,
-        },
-    }
 
 @app.get("/api/v1/dividend_strategy")
 async def get_dividend_strategy(regime: str = None):
@@ -1771,7 +1366,8 @@ async def run_all_strategies(override_cap: int = None):
         )
 
         # 包装结果
-        mr_result = _wrap_mr_results(mr_raw) if isinstance(mr_raw, list) else mr_raw
+        from dashboard_modules.run_strategies import wrap_mr_results
+        mr_result = wrap_mr_results(mr_raw) if isinstance(mr_raw, list) else mr_raw
         div_result = div_raw
         mom_result = mom_raw
         erp_result = erp_raw
@@ -3441,11 +3037,14 @@ async def get_aiae_global_report():
     # V1.1: L1缓存命中检查
     current_time = time.time()
     ttl = _get_global_aiae_ttl()
-    if AIAE_GLOBAL_CACHE["last_update"] and (current_time - AIAE_GLOBAL_CACHE["last_update"] < ttl):
-        age = int(current_time - AIAE_GLOBAL_CACHE["last_update"])
+    with _AIAE_GLOBAL_LOCK:
+        _aiae_g_ts = AIAE_GLOBAL_CACHE["last_update"]
+        _aiae_g_data = AIAE_GLOBAL_CACHE["report_data"]
+    if _aiae_g_ts and (current_time - _aiae_g_ts < ttl):
+        age = int(current_time - _aiae_g_ts)
         ttl_label = "美股盘中30min" if ttl == 1800 else ("周末24h" if ttl == 86400 else "盘后4h")
         print(f"[{datetime.now().strftime('%H:%M:%S')}] Global AIAE Cache Hit [{ttl_label}] ({age}s ago)")
-        return AIAE_GLOBAL_CACHE["report_data"]
+        return _aiae_g_data
 
     try:
         loop = asyncio.get_event_loop()
@@ -3502,8 +3101,9 @@ async def get_aiae_global_report():
         }
 
         # V1.1: 写入 L1 缓存
-        AIAE_GLOBAL_CACHE["last_update"] = current_time
-        AIAE_GLOBAL_CACHE["report_data"] = data
+        with _AIAE_GLOBAL_LOCK:
+            AIAE_GLOBAL_CACHE["last_update"] = current_time
+            AIAE_GLOBAL_CACHE["report_data"] = data
         print(f"[{datetime.now().strftime('%H:%M:%S')}] Global AIAE Cache Miss -> 已重建 (US={us_v1:.1f}% JP={jp_v1:.1f}% HK={hk_v1:.1f}%)")
 
         return data

@@ -16,32 +16,41 @@ import pandas as pd
 import numpy as np
 import os
 import json
+import logging
+import threading
 from datetime import datetime, timedelta
 from typing import Optional
 
-FRED_API_KEY = "eadf412d4f0e8ccd2bb3993b357bdca6"
+logger = logging.getLogger("alphacore.rates")
+
+# FRED API Key: 优先从环境变量读取，fallback 到内置默认值
+FRED_API_KEY = os.environ.get("FRED_API_KEY", "eadf412d4f0e8ccd2bb3993b357bdca6")
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 # FRED 初始化 (复用 erp_us_engine 的模式)
 _fred_instance = None
+_fred_lock = threading.Lock()
 def _get_fred():
     global _fred_instance
     if _fred_instance is None:
-        try:
-            from fredapi import Fred
-            _fred_instance = Fred(api_key=FRED_API_KEY)
-        except Exception as e:
-            print(f"[RATES] FRED init failed: {e}")
+        with _fred_lock:
+            if _fred_instance is None:  # double-check
+                try:
+                    from fredapi import Fred
+                    _fred_instance = Fred(api_key=FRED_API_KEY)
+                except Exception as e:
+                    logger.warning(f"FRED init failed: {e}")
     return _fred_instance
 
-# ===== 智能缓存系统 =====
+# ===== 智能缓存系统 (线程安全) =====
 # FRED国债数据每日更新一次(美东6AM):
 #   - 同一日数据命中 → 直接返回内存缓存, 不调API
 #   - 跨日 → 重新拉取
 #   - FRED不可达 → fallback磁盘缓存
 
 _rates_cache = {}  # {key: (timestamp, last_data_date, DataFrame)}
+_rates_cache_lock = threading.Lock()
 
 def _is_same_trading_day(cached_ts):
     """判断缓存时间是否在同一个FRED交易日内
@@ -64,30 +73,34 @@ def _is_same_trading_day(cached_ts):
     return fred_day(cached_dt) == fred_day(now_dt)
 
 def _rates_cached(key, fetcher):
-    """智能缓存: 同一FRED日命中直接返回, 跨日拉API"""
+    """智能缓存: 同一FRED日命中直接返回, 跨日拉API (线程安全)"""
     import time
     now = time.time()
-    if key in _rates_cache:
-        ts_cached, last_date, data = _rates_cache[key]
-        if _is_same_trading_day(ts_cached):
-            return data
-        print(f"[RATES] cache expired (跨日), refreshing {key}")
+    with _rates_cache_lock:
+        if key in _rates_cache:
+            ts_cached, last_date, data = _rates_cache[key]
+            if _is_same_trading_day(ts_cached):
+                return data
+            logger.info(f"cache expired (跨日), refreshing {key}")
     try:
         data = fetcher()
-        _rates_cache[key] = (now, datetime.now().strftime('%Y-%m-%d'), data)
+        with _rates_cache_lock:
+            _rates_cache[key] = (now, datetime.now().strftime('%Y-%m-%d'), data)
         return data
     except Exception as e:
-        print(f"[RATES] cache fail ({key}): {e}")
-        if key in _rates_cache:
-            print(f"[RATES] using stale memory cache for {key}")
-            return _rates_cache[key][2]
+        logger.warning(f"cache fail ({key}): {e}")
+        with _rates_cache_lock:
+            if key in _rates_cache:
+                logger.info(f"using stale memory cache for {key}")
+                return _rates_cache[key][2]
         raise
 
 def _force_refresh_cache():
     """强制清除所有内存缓存, 下次访问时重拉FRED"""
     global _rates_cache
-    _rates_cache = {}
-    print(f"[RATES] 内存缓存已全部清除")
+    with _rates_cache_lock:
+        _rates_cache = {}
+    logger.info("内存缓存已全部清除")
 
 
 # ===== Regime 中文映射 =====
@@ -244,22 +257,30 @@ class RatesStrategyEngine:
     # ========== 数据获取层 ==========
 
     def _fetch_fred_series(self, series_id: str, cache_key: str, col_name: str, years: int = 5) -> pd.DataFrame:
-        """通用FRED序列获取 (智能日级缓存)"""
+        """通用FRED序列获取 (智能日级缓存, 工作日感知)"""
         def _fetch():
             cache_file = os.path.join(CACHE_DIR, f"rates_{cache_key}.parquet")
-            # 1. 先检查磁盘缓存是否是今天的数据
+            # 1. 先检查磁盘缓存是否是当前工作日的数据
             if os.path.exists(cache_file):
                 try:
                     disk_df = pd.read_parquet(cache_file)
                     if not disk_df.empty:
                         last_date = pd.Timestamp(disk_df['trade_date'].iloc[-1]).date()
                         today = datetime.now().date()
-                        # FRED数据延迟1天, 所以昨天的数据就是最新的
-                        if (today - last_date).days <= 1:
-                            print(f"[RATES] {series_id}: disk cache fresh (latest={last_date})")
-                            return disk_df
-                except Exception:
-                    pass
+                        # P1-4: 工作日感知 — FRED 周末/假日不更新
+                        # 生成最近2个工作日，取上一个工作日作为"最新可用数据日"
+                        try:
+                            bdays = pd.bdate_range(end=today, periods=2)
+                            prev_bday = bdays[0].date()
+                            if last_date >= prev_bday:
+                                logger.debug(f"{series_id}: disk cache fresh (latest={last_date}, prev_bday={prev_bday})")
+                                return disk_df
+                        except Exception:
+                            # bdate_range 降级: 原始逻辑
+                            if (today - last_date).days <= 1:
+                                return disk_df
+                except Exception as e:
+                    logger.warning(f"{series_id}: disk cache read error: {e}")
             # 2. 磁盘缓存过期或不存在, 从FRED拉取
             fred = _get_fred()
             if fred:
@@ -273,13 +294,13 @@ class RatesStrategyEngine:
                             col_name: series.values.astype(float),
                         })
                         df.to_parquet(cache_file)
-                        print(f"[RATES] {series_id} (FRED API): {len(df)} rows, latest={df[col_name].iloc[-1]:.3f}")
+                        logger.info(f"{series_id} (FRED API): {len(df)} rows, latest={df[col_name].iloc[-1]:.3f}")
                         return df
                 except Exception as e:
-                    print(f"[RATES] FRED {series_id} error: {e}")
+                    logger.warning(f"FRED {series_id} error: {e}")
             # 3. FRED不可达, fallback磁盘缓存(即使过期也用)
             if os.path.exists(cache_file):
-                print(f"[RATES] {series_id}: fallback to stale disk cache")
+                logger.info(f"{series_id}: fallback to stale disk cache")
                 return pd.read_parquet(cache_file)
             raise ValueError(f"{series_id} data unavailable")
         return _rates_cached(f"rates_{cache_key}", _fetch)
@@ -350,15 +371,27 @@ class RatesStrategyEngine:
         return round(score, 1), info, desc
 
     def _score_d2_yield_momentum(self) -> tuple:
-        """D2: 利率动量 → 0-100 (利率下行=高分=债券牛市)"""
+        """D2: 利率动量 → 0-100 (利率下行=高分=债券牛市)
+        P1-5: 使用日期回溯而非固定索引偏移，避免非交易日导致的窗口漂移
+        """
         df = self._fetch_10y()
         if df.empty or len(df) < 63:
             return 50.0, {}, "数据不足"
 
         current = float(df["yield_10y"].iloc[-1])
-        prev_1m = float(df["yield_10y"].iloc[-22]) if len(df) >= 22 else current
-        prev_3m = float(df["yield_10y"].iloc[-63]) if len(df) >= 63 else current
-        prev_6m = float(df["yield_10y"].iloc[-126]) if len(df) >= 126 else current
+        latest_date = pd.Timestamp(df["trade_date"].iloc[-1])
+
+        def _lookback(days):
+            """按日期回溯，找到目标日期之前最近的数据点"""
+            target = latest_date - pd.Timedelta(days=days)
+            mask = df["trade_date"] <= target
+            if mask.any():
+                return float(df.loc[mask, "yield_10y"].iloc[-1])
+            return current
+
+        prev_1m = _lookback(30)
+        prev_3m = _lookback(91)
+        prev_6m = _lookback(182)
 
         chg_1m = current - prev_1m  # 正值=利率上行
         chg_3m = current - prev_3m
@@ -404,7 +437,8 @@ class RatesStrategyEngine:
         try:
             df_10y = self._fetch_10y()
             df_2y = self._fetch_2y()
-        except:
+        except Exception as e:
+            logger.warning(f"D3 curve_shape data error: {e}")
             return 50.0, {}, "数据缺失"
 
         if df_10y.empty or df_2y.empty:
@@ -463,7 +497,8 @@ class RatesStrategyEngine:
         """D4: 实际利率 (TIPS 10Y) → 0-100 (高实际利率=高分=债券有吸引力)"""
         try:
             df = self._fetch_real_yield()
-        except:
+        except Exception as e:
+            logger.warning(f"D4 real_yield data error: {e}")
             return 50.0, {}, "TIPS数据缺失"
 
         if df.empty:
@@ -476,7 +511,8 @@ class RatesStrategyEngine:
         try:
             bei_df = self._fetch_breakeven()
             bei = float(bei_df["breakeven"].iloc[-1]) if not bei_df.empty else 0
-        except:
+        except Exception as e:
+            logger.debug(f"BEI data unavailable: {e}")
             bei = 0
 
         if current >= 2.5:
@@ -510,7 +546,8 @@ class RatesStrategyEngine:
         """D5: Fed政策方向 (3M T-Bill) → 0-100 (降息=高分)"""
         try:
             df = self._fetch_tbill_3m()
-        except:
+        except Exception as e:
+            logger.warning(f"D5 fed_policy data error: {e}")
             return 50.0, {}, "3M T-Bill数据缺失"
 
         if df.empty or len(df) < 22:
@@ -643,10 +680,85 @@ class RatesStrategyEngine:
             "stop_loss": stop_loss,
         }
 
+    # ========== 分位数统计 ==========
+
+    def _compute_yield_percentiles(self) -> dict:
+        """基于5年10Y数据计算滚动分位数和统计量
+        用于动态区间划分，替代硬编码阈值。
+        科学依据:
+          - P75+0.5σ ≈ P87 (高利率 → 超配债券区)
+          - P75       (偏高 → 标配偏债区)
+          - P50       (中位数 → 中性)
+          - P25       (偏低 → 标配偏股区)
+          - P25-0.5σ ≈ P13 (极低利率 → 全股票区)
+        优势: 低波动期阈值收紧(更灵敏), 高波动期阈值放宽(防假信号)
+        """
+        df = self._fetch_10y()
+        if df.empty:
+            # fallback到硬编码值
+            return {"p75": 4.5, "p50": 3.5, "p25": 2.5, "std": 0.5,
+                    "bond_overweight": 4.5, "bond_tilt": 4.0,
+                    "stock_tilt": 2.5, "full_equity": 2.0,
+                    "current_pct": 50.0, "mean": 3.5}
+
+        vals = df["yield_10y"].dropna()
+        p75 = float(np.percentile(vals, 75))
+        p50 = float(np.percentile(vals, 50))
+        p25 = float(np.percentile(vals, 25))
+        std = float(vals.std())
+        mean = float(vals.mean())
+        current = float(vals.iloc[-1])
+        current_pct = float((vals < current).mean() * 100)
+
+        # 动态区间线
+        bond_overweight = round(p75 + 0.5 * std, 3)  # ~P87 超配债券
+        bond_tilt       = round(p75, 3)               # P75 标配偏债
+        stock_tilt      = round(p25, 3)               # P25 标配偏股
+        full_equity     = round(max(p25 - 0.5 * std, 0.5), 3)  # ~P13 全股票 (下限0.5%)
+
+        stats = {
+            "p75": round(p75, 3), "p50": round(p50, 3), "p25": round(p25, 3),
+            "std": round(std, 3), "mean": round(mean, 3),
+            "bond_overweight": bond_overweight,
+            "bond_tilt": bond_tilt,
+            "stock_tilt": stock_tilt,
+            "full_equity": full_equity,
+            "current": round(current, 3),
+            "current_pct": round(current_pct, 1),
+        }
+
+        # 当前所处区间
+        if current >= bond_overweight:
+            stats["current_zone"] = "bond_overweight"
+            stats["current_zone_label"] = "超配债券区"
+            stats["current_zone_color"] = "#10b981"
+        elif current >= bond_tilt:
+            stats["current_zone"] = "bond_tilt"
+            stats["current_zone_label"] = "标配偏债区"
+            stats["current_zone_color"] = "#3b82f6"
+        elif current > stock_tilt:
+            stats["current_zone"] = "neutral"
+            stats["current_zone_label"] = "中性区"
+            stats["current_zone_color"] = "#94a3b8"
+        elif current > full_equity:
+            stats["current_zone"] = "stock_tilt"
+            stats["current_zone_label"] = "标配偏股区"
+            stats["current_zone_color"] = "#f97316"
+        else:
+            stats["current_zone"] = "full_equity"
+            stats["current_zone_label"] = "全股票区"
+            stats["current_zone_color"] = "#ef4444"
+
+        logger.debug(f"Yield percentiles: P25={p25:.2f} P50={p50:.2f} P75={p75:.2f} σ={std:.2f} "
+                     f"→ 超配>{bond_overweight:.2f} 全股票<{full_equity:.2f} 当前={current:.2f}({stats['current_zone_label']})")
+        return stats
+
     # ========== 买卖决策区 ==========
 
-    def _generate_buy_sell_zones(self, dims, snap, signal) -> dict:
-        """生成买入/卖出/避险条件汇总 — 10条核心条件"""
+    def _generate_buy_sell_zones(self, dims, snap, signal, pct_stats=None) -> dict:
+        """生成买入/卖出/避险条件汇总 — 自适应分位数阈值
+        V2.0: 利率水平条件从硬编码改为5年滚动分位数自适应
+        """
         y10 = snap.get("yield_10y", 4.0)
         spread_bps = dims.get("curve_shape", {}).get("curve_info", {}).get("spread_bps", 50)
         real_yield = dims.get("real_yield", {}).get("real_info", {}).get("current", 1.0)
@@ -654,40 +766,62 @@ class RatesStrategyEngine:
         bei = snap.get("breakeven", 2.0)
         fed_dir = dims.get("fed_policy", {}).get("fed_info", {}).get("direction", "hold")
 
+        # V2.0: 自适应分位数阈值
+        if pct_stats is None:
+            pct_stats = self._compute_yield_percentiles()
+
+        bond_thresh = pct_stats["bond_tilt"]       # P75 → 债券买入门槛
+        stock_thresh = pct_stats["stock_tilt"]     # P25 → 股票超配门槛
+        y10_pct = pct_stats.get("current_pct", 50)
+
         bond_buy = [
-            {"cond": "10Y > 4.0%", "met": bool(y10 > 4.0), "val": f"{y10:.2f}%", "why": "高票息锁定收益"},
-            {"cond": "实际利率 > 1.5%", "met": bool(real_yield > 1.5), "val": f"{real_yield:.2f}%", "why": "TIPS/长债配置价值"},
-            {"cond": "Fed在降息", "met": fed_dir in ("fast_easing","easing","mild_easing"), "val": _regime_cn(fed_dir), "why": "降息→债牛"},
-            {"cond": "利率3M下行>30bps", "met": bool(chg_3m_bps < -30), "val": f"{chg_3m_bps:+.0f}bps", "why": "动量确认宽松"},
-            {"cond": "曲线倒挂(<0bps)", "met": bool(spread_bps < 0), "val": f"{spread_bps:+.0f}bps", "why": "降息预期→债牛在即"},
+            {"cond": f"10Y > P75({bond_thresh:.1f}%)", "met": bool(y10 > bond_thresh),
+             "val": f"{y10:.2f}%", "why": "高于5年75%分位", "pct": round(y10_pct, 1)},
+            {"cond": "实际利率 > 1.5%", "met": bool(real_yield > 1.5),
+             "val": f"{real_yield:.2f}%", "why": "TIPS/长债配置价值"},
+            {"cond": "Fed在降息", "met": fed_dir in ("fast_easing","easing","mild_easing"),
+             "val": _regime_cn(fed_dir), "why": "降息→债牛"},
+            {"cond": "利率3M下行>30bps", "met": bool(chg_3m_bps < -30),
+             "val": f"{chg_3m_bps:+.0f}bps", "why": "动量确认宽松"},
+            {"cond": "曲线倒挂(<0bps)", "met": bool(spread_bps < 0),
+             "val": f"{spread_bps:+.0f}bps", "why": "降息预期→债牛在即"},
         ]
         stock_buy = [
-            {"cond": "10Y < 2.0%", "met": bool(y10 < 2.0), "val": f"{y10:.2f}%", "why": "TINA效应驱动股市"},
-            {"cond": "实际利率 < 0%", "met": bool(real_yield < 0), "val": f"{real_yield:.2f}%", "why": "负利率→资产泡沫"},
-            {"cond": "曲线陡峭化(>50bps)", "met": bool(spread_bps > 50), "val": f"{spread_bps:+.0f}bps", "why": "经济复苏信号"},
+            {"cond": f"10Y < P25({stock_thresh:.1f}%)", "met": bool(y10 < stock_thresh),
+             "val": f"{y10:.2f}%", "why": "低于5年25%分位", "pct": round(y10_pct, 1)},
+            {"cond": "实际利率 < 0%", "met": bool(real_yield < 0),
+             "val": f"{real_yield:.2f}%", "why": "负利率→资产泡沫"},
+            {"cond": "曲线陡峭化(>50bps)", "met": bool(spread_bps > 50),
+             "val": f"{spread_bps:+.0f}bps", "why": "经济复苏信号"},
         ]
         defense = [
-            {"cond": "曲线深度倒挂(<-50bps)", "met": bool(spread_bps < -50), "val": f"{spread_bps:+.0f}bps", "why": "衰退在即→长债锁定"},
-            {"cond": "3M利率骤变>60bps", "met": bool(abs(chg_3m_bps) > 60), "val": f"{chg_3m_bps:+.0f}bps", "why": "市场剧烈波动"},
-            {"cond": "通胀预期>2.5%", "met": bool(bei > 2.5), "val": f"{bei:.2f}%", "why": "通胀焦虑，利空"},
+            {"cond": "曲线深度倒挂(<-50bps)", "met": bool(spread_bps < -50),
+             "val": f"{spread_bps:+.0f}bps", "why": "衰退在即→长债锁定"},
+            {"cond": "3M利率骤变>60bps", "met": bool(abs(chg_3m_bps) > 60),
+             "val": f"{chg_3m_bps:+.0f}bps", "why": "市场剧烈波动"},
+            {"cond": "通胀预期>2.5%", "met": bool(bei > 2.5),
+             "val": f"{bei:.2f}%", "why": "通胀焦虑，利空"},
         ]
 
         bond_met = sum(1 for c in bond_buy if c["met"])
         stock_met = sum(1 for c in stock_buy if c["met"])
         defense_met = sum(1 for c in defense if c["met"])
 
-        # 决策文字
+        # 综合得分 (用于决策badge)
+        composite_score = signal.get("score", 0)
+
+        # 决策文字 (V2.0: 追加得分)
         if defense_met >= 2:
-            conclusion = f"🔴 避险模式 · 防御信号{defense_met}条触发 · {signal.get('position','')}"
+            conclusion = f"🔴 避险模式 · 防御{defense_met}条触发 · 得分{composite_score} · {signal.get('position','')}"
             conclusion_color = "#ef4444"
         elif bond_met >= 3:
-            conclusion = f"🟢 债券买入窗口 · {bond_met}/{len(bond_buy)}条满足 · {signal.get('position','')}"
+            conclusion = f"🟢 债券买入窗口 · {bond_met}/{len(bond_buy)}条 · 得分{composite_score} · {signal.get('position','')}"
             conclusion_color = "#10b981"
         elif stock_met >= 2:
-            conclusion = f"🟠 股票超配区 · {stock_met}/3条满足 · {signal.get('position','')}"
+            conclusion = f"🟠 股票超配区 · {stock_met}/3条 · 得分{composite_score} · {signal.get('position','')}"
             conclusion_color = "#f97316"
         else:
-            conclusion = f"⚪ 均衡配置 · 无极端信号 · {signal.get('position','')}"
+            conclusion = f"⚪ 均衡配置 · 无极端信号 · 得分{composite_score} · {signal.get('position','')}"
             conclusion_color = "#94a3b8"
 
         return {
@@ -700,6 +834,7 @@ class RatesStrategyEngine:
             "conclusion": conclusion,
             "conclusion_color": conclusion_color,
             "regime_label": f"{_regime_cn(dims.get('yield_level',{}).get('yield_info',{}).get('regime',''))}利率·{signal.get('label','')}",
+            "percentile_stats": pct_stats,  # V2.0: 前端可展示分位数上下文
         }
 
     # ========== 警示系统 ==========
@@ -776,16 +911,24 @@ class RatesStrategyEngine:
 
     # ========== 走势图 ==========
 
-    def _build_chart_data(self) -> dict:
+    def _build_chart_data(self, pct_stats=None) -> dict:
+        """P2-10: 图表数据裁剪到最近2年(~500点) + V2.0动态分位数区间"""
         try:
             df_10y = self._fetch_10y()
             df_2y = self._fetch_2y()
-        except:
+        except Exception as e:
+            logger.warning(f"chart data error: {e}")
             return {"status": "error"}
 
         if df_10y.empty:
             return {"status": "error"}
 
+        # V2.0: 分位数统计 (复用已计算结果避免重复)
+        if pct_stats is None:
+            pct_stats = self._compute_yield_percentiles()
+
+        # P2-10: 只取最近2年数据 (~500个交易日) 减少前端ECharts渲染负担
+        df_10y = df_10y.tail(500)
         dates = df_10y["trade_date"].dt.strftime("%Y-%m-%d").tolist()
         yields_10y = [round(float(v), 3) for v in df_10y["yield_10y"].values]
 
@@ -799,16 +942,41 @@ class RatesStrategyEngine:
             )
             spreads = [round(float(a - b), 3) for a, b in zip(merged["yield_10y"], merged["yield_2y"])]
 
+        # V2.0: 动态区间线 (替代硬编码 4.5/3.0/2.0)
+        lines = {
+            "high_zone": pct_stats["bond_overweight"],    # P75+0.5σ
+            "high_tilt": pct_stats["bond_tilt"],          # P75
+            "neutral":   pct_stats["p50"],                # P50 中位数
+            "low_tilt":  pct_stats["stock_tilt"],         # P25
+            "low_zone":  pct_stats["full_equity"],        # P25-0.5σ
+        }
+
+        # V2.0: markArea 渐变色带数据 (前端ECharts直接使用)
+        y_max = max(yields_10y) + 0.5 if yields_10y else 6.0
+        y_min = max(min(yields_10y) - 0.3, 0) if yields_10y else 0.0
+        mark_areas = [
+            {"name": "超配债券区", "y_from": lines["high_zone"], "y_to": y_max,
+             "color": "rgba(16,185,129,0.08)", "border": "#10b981",
+             "label": f"超配债券 >{lines['high_zone']:.1f}%"},
+            {"name": "标配偏债区", "y_from": lines["high_tilt"], "y_to": lines["high_zone"],
+             "color": "rgba(59,130,246,0.05)", "border": "#3b82f6",
+             "label": f"偏债 {lines['high_tilt']:.1f}-{lines['high_zone']:.1f}%"},
+            {"name": "标配偏股区", "y_from": lines["low_zone"], "y_to": lines["low_tilt"],
+             "color": "rgba(249,115,22,0.06)", "border": "#f97316",
+             "label": f"偏股 {lines['low_zone']:.1f}-{lines['low_tilt']:.1f}%"},
+            {"name": "全股票区", "y_from": y_min, "y_to": lines["low_zone"],
+             "color": "rgba(239,68,68,0.06)", "border": "#ef4444",
+             "label": f"全股票 <{lines['low_zone']:.1f}%"},
+        ]
+
         return {
             "status": "success",
             "dates": dates,
             "yields_10y": yields_10y,
             "spreads": spreads if spreads else None,
-            "lines": {
-                "high_zone": 4.5,
-                "neutral": 3.0,
-                "low_zone": 2.0,
-            }
+            "lines": lines,
+            "mark_areas": mark_areas,
+            "percentile_stats": pct_stats,
         }
 
     # ========== 主报告 ==========
@@ -857,8 +1025,11 @@ class RatesStrategyEngine:
             # 买卖规则
             trade = self._generate_trade_rules(composite, dims, snap)
 
-            # 买卖决策区
-            buy_sell_zones = self._generate_buy_sell_zones(dims, snap, signal)
+            # V2.0: 分位数统计 (在图表和决策区之间共享, 避免重复计算)
+            pct_stats = self._compute_yield_percentiles()
+
+            # 买卖决策区 (传入分位数)
+            buy_sell_zones = self._generate_buy_sell_zones(dims, snap, signal, pct_stats)
 
             # 警示
             alerts = self._generate_alerts(dims, snap)
@@ -866,8 +1037,8 @@ class RatesStrategyEngine:
             # 诊断
             diagnosis = self._generate_diagnosis(dims, signal)
 
-            # 走势图
-            chart = self._build_chart_data()
+            # 走势图 (传入分位数, 避免重复计算)
+            chart = self._build_chart_data(pct_stats)
 
             return {
                 "version": self.VERSION,
@@ -885,7 +1056,7 @@ class RatesStrategyEngine:
             }
         except Exception as e:
             import traceback
-            print(f"[RATES] Report error: {traceback.format_exc()}")
+            logger.error(f"Report error: {traceback.format_exc()}")
             return {"version": self.VERSION, "error": str(e)}
 
     def warmup(self):
@@ -905,10 +1076,10 @@ class RatesStrategyEngine:
             y10 = report.get('current_snapshot',{}).get('yield_10y', '?')
             score = report.get('signal',{}).get('score', '?')
             elapsed = time.time() - t0
-            print(f"[RATES Warmup] \u5b8c\u6210 | 10Y={y10}% | \u5f97\u5206={score} | {elapsed:.1f}s")
+            logger.info(f"Warmup 完成 | 10Y={y10}% | 得分={score} | {elapsed:.1f}s")
             return True
         except Exception as e:
-            print(f"[RATES Warmup] \u5931\u8d25: {e}")
+            logger.error(f"Warmup 失败: {e}")
             return False
 
 

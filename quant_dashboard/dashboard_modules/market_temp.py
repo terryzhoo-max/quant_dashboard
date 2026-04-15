@@ -300,16 +300,26 @@ def compute_market_temperature(pro, today_str, latest_vix, latest_cny, liquidity
       - final_pos_val, regime_name, erp_tier
       - hub_result, vix_score, cny_score
       - is_circuit_breaker
+      - temp_confidence ('high'/'medium'/'low'), degraded_modules (list)
     """
     # 温度初始化
     low_pe_score = 65.0
     vix_score = max(0, min(100, 100 - (latest_vix - 10) * 3))
     cny_score = max(0, min(100, 100 - (latest_cny - 7.0) * 100))
 
+    # P2-1: 降级追踪器 — 统计子模块降级情况
+    _degraded = []
+
     # A股得分维度 (权重: 60%)
     margin_score = get_margin_risk_ratio(pro, today_str)
+    if margin_score == 50.0:
+        _degraded.append("margin")
     breadth_score = get_market_breadth(pro, today_str)
+    if breadth_score == 50.0:
+        _degraded.append("breadth")
     turnover_score = get_real_turnover_score(pro, today_str)
+    if turnover_score == 50.0:
+        _degraded.append("turnover")
 
     # V8.0: 真实 ERP 引擎
     erp_data = get_real_erp_data()
@@ -317,22 +327,38 @@ def compute_market_temperature(pro, today_str, latest_vix, latest_cny, liquidity
     erp_z = erp_data['erp_z']
     valuation_label = erp_data['valuation_label']
     erp_score = erp_data['erp_score']
+    if erp_data.get('status') == 'fallback':
+        _degraded.append("erp")
 
     score_a = margin_score * 0.25 + turnover_score * 0.25 + erp_score * 0.30 + breadth_score * 0.20
 
     # ── 港股得分维度 (权重: 40%) ──
     # Issue #5: 用 HK ERP 引擎替换硬编码 65.0
     hsi_pe_score = get_hk_erp_score()
+    if hsi_pe_score == 50.0:
+        _degraded.append("hk_erp")
     epfr_proxy = 50 + (z_s * 10)
     sb_flow_score = min(100, max(0, 50 + z_s * 15))
     score_hk = hsi_pe_score * 0.40 + epfr_proxy * 0.30 + sb_flow_score * 0.30
 
     # AH 溢价调节 (±15%)
     ah_adj = get_ah_premium_adj(pro, today_str)
+    if ah_adj == 1.0:
+        _degraded.append("ah_premium")
     score_hk = min(100, score_hk * ah_adj)
 
     # 流动性熔断
     is_circuit_breaker = get_liquidity_crisis_signal(pro, today_str)
+
+    # P2-1: 降级置信度评估
+    _deg_count = len(_degraded)
+    if _deg_count >= 3:
+        temp_confidence = "low"
+        print(f"[MarketTemp] ⚠️ {_deg_count}/6 子模块降级 ({', '.join(_degraded)}) → temp_confidence=LOW")
+    elif _deg_count >= 1:
+        temp_confidence = "medium"
+    else:
+        temp_confidence = "high"
 
     # 最终合成温度 + PAT
     base_temp = round(score_a * 0.6 + score_hk * 0.4, 1)
@@ -426,4 +452,7 @@ def compute_market_temperature(pro, today_str, latest_vix, latest_cny, liquidity
         "cny_score": cny_score,
         "is_circuit_breaker": is_circuit_breaker,
         "weights_5_raw": weights_5,
+        "temp_confidence": temp_confidence,  # P2-1: 'high'/'medium'/'low'
+        "degraded_modules": _degraded,       # P2-1: list of degraded module names
     }
+
