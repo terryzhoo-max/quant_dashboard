@@ -1,9 +1,13 @@
 import pandas as pd
 import numpy as np
 import os
+import logging
 from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 from data_manager import FactorDataManager
+from core_etf_config import CORE_ETFS, FALLBACK_MOMENTUM
+
+logger = logging.getLogger(__name__)
 
 class IndustryEngine:
     def __init__(self):
@@ -21,26 +25,13 @@ class IndustryEngine:
 
     def get_sector_performance(self, days: int = 5, base_date: Optional[str] = None):
         """计算 12 个核心行业 ETF 在 base_date 这一天的近 5 日表现"""
-        # 统一日期格式为 Timestamp 为后面过滤做准备
+        # V5.0: 统一日期格式为 Timestamp，消除 str vs Timestamp 比较隐患
         if base_date:
-            target_dt = pd.to_datetime(base_date)
+            target_dt = pd.to_datetime(str(base_date).replace('-', ''))
         else:
             target_dt = pd.Timestamp.now().normalize()
 
-        etf_list = [
-            {"code": "512760.SH", "name": "半导体/芯片"},
-            {"code": "512720.SH", "name": "计算机/AI"},
-            {"code": "515030.SH", "name": "新能源车"},
-            {"code": "512010.SH", "name": "医药生物"},
-            {"code": "512690.SH", "name": "酒/自选消费"},
-            {"code": "512880.SH", "name": "证券/非银"},
-            {"code": "512800.SH", "name": "银行/金融"},
-            {"code": "512660.SH", "name": "军工龙头"},
-            {"code": "512100.SH", "name": "中证传媒"},
-            {"code": "512400.SH", "name": "有色金属"},
-            {"code": "510180.SH", "name": "上证180/主板"},
-            {"code": "159915.SZ", "name": "创业板/成长"}
-        ]
+        etf_list = CORE_ETFS
         
         results = []
         for etf in etf_list:
@@ -65,16 +56,14 @@ class IndustryEngine:
                 v_start = p_df['close'].iloc[-days]
                 ret = (v_end / v_start - 1)
                 trend = round(float(ret) * 100, 2) if np.isfinite(ret) else 0.0
-                with open("debug_industry_engine.log", "a", encoding="utf-8") as f:
-                    f.write(f"{datetime.now()} | {code} | v_start={v_start:.2f}, v_end={v_end:.2f}, ret={trend}%\n")
+                logger.debug(f"{code} | v_start={v_start:.2f}, v_end={v_end:.2f}, ret={trend}%")
                 results.append({
                     "ts_code": code, 
                     "name": etf['name'], 
                     "trend_5d": trend
                 })
             except Exception as e:
-                with open("debug_industry_engine.log", "a", encoding="utf-8") as f:
-                    f.write(f"{datetime.now()} | {code} | ERROR: {e}\n")
+                logger.warning(f"{code} | sector perf calc error: {e}")
                 results.append({"ts_code": code, "name": etf['name'], "trend_5d": 0.0})
             
         # --- 专家优化: 数据兜底排序 (Scientific Fallback) ---
@@ -82,12 +71,7 @@ class IndustryEngine:
         if all(r['trend_5d'] == 0.0 for r in results):
             # 基于行业近期的基准动量进行“影子排序”
             # 这里的权重大致模拟了近期市场的活跃度 (半导体/AI > 电车 > 医药)
-            momentum_weights = {
-                "512760.SH": 2.1, "512720.SH": 1.8, "515030.SH": 1.5,
-                "512400.SH": 1.2, "512880.SH": 0.9, "159915.SZ": 0.7,
-                "512100.SH": 0.4, "512660.SH": -0.2, "512010.SH": -0.5,
-                "512690.SH": -0.8, "510180.SH": -1.2, "512800.SH": -1.5
-            }
+            momentum_weights = FALLBACK_MOMENTUM
             for r in results:
                 r['trend_5d'] = momentum_weights.get(r['ts_code'], 0.0)
             
@@ -95,10 +79,11 @@ class IndustryEngine:
 
     def get_industry_rotation(self, lookback: int = 20, base_date: Optional[str] = None):
         """计算行业轮动矩阵 (在 base_date 时刻的近 20 日累计收益路径)"""
+        # V5.0: 统一为 pd.Timestamp，与 get_price_payload 返回的 trade_date 类型一致
         if base_date:
-            base_date = base_date.replace("-", "")
+            base_dt = pd.to_datetime(str(base_date).replace("-", ""))
         else:
-            base_date = datetime.now().strftime("%Y%m%d")
+            base_dt = pd.Timestamp.now().normalize()
 
         stocks = self._get_industry_stocks()
         industries = stocks['industry'].value_counts().head(10).index.tolist()
@@ -113,15 +98,15 @@ class IndustryEngine:
                 if p_df.empty: continue
                 
                 # 过滤至 base_date
-                p_df = p_df[p_df['trade_date'] <= base_date]
+                p_df = p_df[p_df['trade_date'] <= base_dt]
                 if p_df.empty: continue
 
-                single_ret = p_df['close'].pct_change().fillna(0)
+                single_ret = p_df['close'].pct_change().fillna(0).values  # Fix P1#5: 从一开始就用 ndarray
                 if rets_path is None:
                     rets_path = single_ret
                 else:
                     common_len = min(len(rets_path), len(single_ret))
-                    rets_path = rets_path.tail(common_len).values + single_ret.tail(common_len).values
+                    rets_path = rets_path[-common_len:] + single_ret[-common_len:]  # Fix P1#5: ndarray 切片而非 .tail()
             
             if rets_path is not None:
                 # 行业平均收益路径 (累计)

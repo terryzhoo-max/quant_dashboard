@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AlphaCore | 产业深研终端 V4.0</title>
-    <meta name="description" content="AlphaCore 产业追踪深研终端 - 12大核心行业ETF实时Alpha Score综合评分、动态RPS排名、真实价格百分位、买入止盈策略建议与风险警示">
+    <title>AlphaCore | 产业深研终端 V5.0</title>
+    <meta name="description" content="AlphaCore 产业追踪深研终端 - 12大前沿产业ETF实时Alpha Score综合评分、动态RPS排名、真实价格百分位、买入止盈策略建议与风险警示 (覆盖半导体/AI/卫星互联/算力基建/新能源车/军工/有色等核心赛道)">
     <link rel="stylesheet" href="./styles.css?v=6">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
     <script src="./echarts.min.js"></script>
@@ -204,7 +204,7 @@
             grid-template-columns: 420px 1fr;
             gap: 20px;
         }
-        @media (max-width: 1200px) { .main-two-col { grid-template-columns: 1fr; } }
+        /* V5.1 Fix P2#13: 合并到 L433 的统一 @media 块 */
 
         /* --- 综合评分排行榜 (左栏) --- */
         .alpha-ranking { padding: 20px; max-height: calc(100vh - 300px); overflow-y: auto; }
@@ -402,7 +402,35 @@
             z-index: 1000; flex-direction: column; gap: 20px;
         }
 
-        /* 响应式 */
+        /* Fix6: Skeleton Loading 骨架屏动画 */
+        @keyframes skeletonShimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+        .skeleton-loading {
+            position: relative;
+            pointer-events: none;
+        }
+        .skeleton-loading::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(
+                90deg,
+                transparent 25%,
+                rgba(255,255,255,0.04) 50%,
+                transparent 75%
+            );
+            background-size: 200% 100%;
+            animation: skeletonShimmer 1.5s ease-in-out infinite;
+            border-radius: inherit;
+            z-index: 2;
+        }
+        .skeleton-loading .label,
+        .skeleton-loading .stat-desc,
+        .skeleton-loading .metric-threshold { opacity: 0.3; }
+
+        /* 响应式 (已与 L207 的 @media 合并) */
         @media (max-width: 1200px) {
             .main-two-col { grid-template-columns: 1fr; }
             .chart-constituents-row { grid-template-columns: 1fr; }
@@ -467,7 +495,7 @@
     <main class="dashboard">
         <header class="topbar">
             <div class="welcome-box" style="margin:0">
-                <h2 style="font-size: 1.5rem">产业深研终端 <span class="badge-beta">V4.0</span></h2>
+                <h2 style="font-size: 1.5rem">产业深研终端 <span class="badge-beta">V5.0</span></h2>
             </div>
             <div class="actions" style="display: flex; align-items: center; gap: 15px;">
                 <div class="date-picker-wrapper" style="display: flex; align-items: center; gap: 8px; background: rgba(59, 130, 246, 0.08); padding: 5px 12px; border-radius: 8px; border: 1px solid rgba(59, 130, 246, 0.2);">
@@ -571,7 +599,7 @@
 
             <!-- V4.0: 热力矩阵 (替代雷达图) -->
             <div class="heatmap-section glass-panel">
-                <h3 style="font-size: 1rem; margin-bottom: 16px;">🔥 行业多维热力矩阵 (Alpha × Heat × Momentum × Valuation)</h3>
+                <h3 style="font-size: 1rem; margin-bottom: 16px;">🔥 行业多维热力矩阵 (Alpha × Heat × Momentum × Valuation × Trend)</h3>
                 <div id="heatmap-chart" style="height: 280px;"></div>
             </div>
         </div>
@@ -579,9 +607,9 @@
 
     <div class="loading-overlay" id="loading-overlay">
         <div class="spinner"></div>
-        <p style="color: #fff; font-weight: 500; margin-top: 20px;">AlphaCore V4.0 正在计算 Alpha Score 综合评分矩阵...</p>
+        <p style="color: #fff; font-weight: 500; margin-top: 20px;">AlphaCore V5.0 正在计算 Alpha Score 综合评分矩阵...</p>
     </div>
 
-    <script src="./industry.js?v=5"></script>
+    <script src="./industry.js?v=6"></script>
 </body>
 </html>

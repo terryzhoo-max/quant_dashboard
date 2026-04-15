@@ -11,15 +11,15 @@ document.addEventListener('DOMContentLoaded', function() {
     const SECTORS = [
         { code: "512760.SH", name: "半导体/芯片" },
         { code: "512720.SH", name: "计算机/AI" },
+        { code: "515880.SH", name: "通信设备/卫星互联" },
+        { code: "562030.SH", name: "算力/AI基建" },
         { code: "515030.SH", name: "新能源车" },
         { code: "512010.SH", name: "医药生物" },
         { code: "512690.SH", name: "酒/自选消费" },
         { code: "512880.SH", name: "证券/非银" },
         { code: "512800.SH", name: "银行/金融" },
         { code: "512660.SH", name: "军工龙头" },
-        { code: "512100.SH", name: "中证传媒" },
         { code: "512400.SH", name: "有色金属" },
-        { code: "510180.SH", name: "上证180/主板" },
         { code: "159915.SZ", name: "创业板/成长" }
     ];
 
@@ -50,8 +50,9 @@ document.addEventListener('DOMContentLoaded', function() {
         initCharts();
         renderGlossary();
         initGlossaryToggle();
-        loadRegimeBanner();
+        // V5.1 Fix P1#7: 先 loadRotationMatrix 获取 _lastFreshness，再 loadRegimeBanner
         await loadRotationMatrix();
+        loadRegimeBanner();
         if (currentCode) loadIndustryDetail(currentCode);
     }
 
@@ -63,7 +64,9 @@ document.addEventListener('DOMContentLoaded', function() {
         charts.heatmap = echarts.init(document.getElementById('heatmap-chart'));
     }
 
-    // === V4.0 Regime Banner ===
+    // === V4.0 Regime Banner + V5.0 Data Freshness Badge (Fix5) ===
+    let _lastFreshness = null;  // Fix5: 缓存 freshness 数据供 banner 使用
+
     async function loadRegimeBanner() {
         try {
             const res = await fetch('/api/v1/market/regime');
@@ -77,11 +80,25 @@ document.addEventListener('DOMContentLoaded', function() {
                 const bc = colorMap[r.regime] || '#94a3b8';
                 banner.style.borderColor = bc;
                 banner.style.background = bgMap[r.regime] || 'rgba(148,163,184,0.05)';
+
+                // Fix5: 数据新鲜度 badge
+                let freshBadge = '';
+                if (_lastFreshness && _lastFreshness.last_calc) {
+                    const calcTime = new Date(_lastFreshness.last_calc);
+                    const ageMin = Math.round((Date.now() - calcTime.getTime()) / 60000);
+                    const isStale = ageMin > 30;
+                    const freshColor = isStale ? '#f59e0b' : '#10b981';
+                    const freshIcon = isStale ? '⚠️' : '✅';
+                    const ageText = ageMin < 1 ? '刚刚' : (ageMin < 60 ? `${ageMin}分钟前` : `${Math.round(ageMin/60)}小时前`);
+                    freshBadge = `<span style="font-size:0.72rem; padding:2px 10px; border-radius:6px; background:rgba(${isStale ? '245,158,11' : '16,185,129'},0.1); color:${freshColor}; font-weight:600; margin-left:auto;">${freshIcon} 数据 ${ageText}</span>`;
+                }
+
                 banner.innerHTML = `
                     <span style="font-weight:800; color:${bc}; font-size:0.9rem;">${r.regime_icon || '🟡'} ${r.regime_cn || r.regime}</span>
                     <span style="color:#94a3b8; font-size:0.82rem;">CSI300 <b style="color:#e2e8f0">${r.csi300}</b> · MA120 ${r.ma120}</span>
                     <span style="color:#94a3b8; font-size:0.82rem;">VIX <b style="color:${r.layer2_vix > 25 ? '#f87171':'#e2e8f0'}">${r.ret5d !== undefined ? r.ret5d + '%' : '--'}</b> 5D</span>
                     <span style="font-size:0.78rem; padding:3px 10px; border-radius:6px; background:${bgMap[r.regime]}; color:${bc}; font-weight:600;">建议仓位 ${r.pos_cap}%</span>
+                    ${freshBadge}
                 `;
             }
         } catch(e) { console.log('Regime banner skipped:', e); }
@@ -161,7 +178,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <span class="tile-trend" style="color:${tc};">${trend > 0 ? '+' : ''}${trend.toFixed(1)}%</span>
                         <span class="tile-heat-label"><span class="tile-heat-dot"></span>${heat.toFixed(0)}</span>
                     </div>
-                    <div class="tile-heat-bar"><div class="tile-heat-fill" style="width:${alpha}%; background:${gc};"></div></div>
+                    <div class="tile-heat-bar"><div class="tile-heat-fill" style="width:${Math.min(100, alpha)}%; background:${gc};"></div></div>
                 </div>
             `;
         }).join('');
@@ -367,15 +384,28 @@ document.addEventListener('DOMContentLoaded', function() {
         `;
     }
 
-    // === V4.0 热力矩阵 (替代雷达图) ===
+    // === V5.0 热力矩阵 (5维: +趋势强度) — Fix4 ===
     function renderHeatmapChart(data) {
         if (!data || data.length === 0) return;
         const names = data.map(d => d.name);
-        const dims = ['Alpha', '热度', '动量', '估值安全'];
+        const dims = ['Alpha', '热度', '动量', '估值安全', '趋势强度'];
+        const gradeLabels = { 0: '极弱', 20: '弱', 40: '偏弱', 50: '中性', 60: '偏强', 75: '强', 90: '极强' };
         const heatData = [];
 
+        function getGradeLabel(val) {
+            const thresholds = [90, 75, 60, 50, 40, 20, 0];
+            for (const t of thresholds) { if (val >= t) return gradeLabels[t]; }
+            return '极弱';
+        }
+
         data.forEach((d, xi) => {
-            const scores = [d.alpha_score || 0, d.heat_score || 0, d.f_momentum || 50, d.f_valuation || 50];
+            const scores = [
+                d.alpha_score || 0,
+                d.heat_score || 0,
+                d.f_momentum || 50,
+                d.f_valuation || 50,
+                d.f_trend || 0    // Fix4: 新增趋势强度维度
+            ];
             scores.forEach((val, yi) => {
                 heatData.push([xi, yi, Math.round(val)]);
             });
@@ -387,7 +417,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 backgroundColor: 'rgba(10, 10, 10, 0.92)',
                 borderColor: 'rgba(255,255,255,0.1)',
                 textStyle: { color: '#fff', fontSize: 12 },
-                formatter: p => `<b>${names[p.data[0]]}</b><br/>${dims[p.data[1]]}: <b>${p.data[2]}</b>`
+                formatter: p => {
+                    const val = p.data[2];
+                    const grade = getGradeLabel(val);
+                    return `<b>${names[p.data[0]]}</b><br/>${dims[p.data[1]]}: <b>${val}</b> <span style="opacity:0.6">(${grade})</span>`;
+                }
             },
             grid: { top: 10, bottom: 60, left: 80, right: 20 },
             xAxis: {
@@ -528,8 +562,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     color: '#64748b',
                     fontSize: 8,
                     fontFamily: 'Outfit',
+                    // Fix2: 容差匹配，解决浮点精度导致轴标签消失的问题
                     formatter: function(val) {
-                        return profile.labels[val] || '';
+                        const keys = Object.keys(profile.labels).map(Number);
+                        for (let i = 0; i < keys.length; i++) {
+                            if (Math.abs(val - keys[i]) < 0.01) return profile.labels[keys[i]];
+                        }
+                        return '';
                     }
                 },
                 detail: {
@@ -548,8 +587,29 @@ document.addEventListener('DOMContentLoaded', function() {
         };
     }
 
-    // === V4.0 加载行业详情 (适配新数据结构) ===
+    // === V5.0 加载行业详情 (Fix6: skeleton loading + 适配新数据结构) ===
+    function showDetailSkeleton() {
+        // Fix6: 在 fetch 前显示骨架屏，避免旧数据→新数据的跳变
+        document.querySelectorAll('.metric-row .metric-card').forEach(card => {
+            card.classList.add('skeleton-loading');
+        });
+        const rsChart = document.getElementById('rs-line-chart');
+        if (rsChart) rsChart.style.opacity = '0.3';
+        const listEl = document.getElementById('list-constituents');
+        if (listEl) listEl.style.opacity = '0.3';
+    }
+    function hideDetailSkeleton() {
+        document.querySelectorAll('.metric-row .metric-card').forEach(card => {
+            card.classList.remove('skeleton-loading');
+        });
+        const rsChart = document.getElementById('rs-line-chart');
+        if (rsChart) rsChart.style.opacity = '1';
+        const listEl = document.getElementById('list-constituents');
+        if (listEl) listEl.style.opacity = '1';
+    }
+
     async function loadIndustryDetail(code) {
+        showDetailSkeleton();  // Fix6: 进入 loading 态
         try {
             const res = await fetch(`/api/v1/industry-detail?code=${code}`);
             const result = await res.json();
@@ -623,15 +683,24 @@ document.addEventListener('DOMContentLoaded', function() {
                 `).join('');
             }
         } catch (err) { console.error('Detail load error:', err); }
+        finally { hideDetailSkeleton(); }  // Fix6: 无论成功失败都移除骨架屏
     }
 
-    // === 加载轮动矩阵 + Alpha 排行 ===
+    // === 加载轮动矩阵 + Alpha 排行 (Fix5: 抓取 freshness) ===
     async function loadRotationMatrix() {
         try {
-            const res = await fetch('/api/v1/industry-tracking');
+            // V5.1 Fix P1#14: 将日期选择器的值传递到 API
+            const dateParam = datePicker.value ? `?date=${datePicker.value}` : '';
+            const res = await fetch(`/api/v1/industry-tracking${dateParam}`);
             const result = await res.json();
             if (result.status === 'success') {
                 allSectorData = result.data.sector_heatmap;
+
+                // Fix5: 缓存 freshness 供 regime banner 使用
+                if (result.data_freshness) {
+                    _lastFreshness = result.data_freshness;
+                    loadRegimeBanner();  // 刷新 banner 以显示最新 freshness
+                }
 
                 // V4.0: 渲染四大组件
                 renderSectorNav(allSectorData);
