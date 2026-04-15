@@ -165,45 +165,96 @@ class AIAEUSEngine:
     # ========== 数据获取层 ==========
 
     def _fetch_wilshire5000_market_cap(self) -> Dict:
-        """获取 Wilshire 5000 指数值 (代理美股总市值, FRED)"""
+        """获取 Wilshire 5000 指数值 (代理美股总市值)
+
+        ⚠️ FRED 于 2024-06-03 永久移除所有 Wilshire 指数数据 (WILL5000INDFC / WILL5000PR)
+        三级降级链:
+          Tier 1: yfinance ^W5000 (直接数据, 最准, 但 Yahoo 偶尔封IP)
+          Tier 2: FRED SP500 × 8.0 乘数估算 (日频, ~5-10%误差, 对AIAE影响<1.5pp)
+          Tier 3: 磁盘缓存 (30天内有效)
+          Tier 4: 硬编码兜底 (2026年校准)
+
+        转换公式: Wilshire5000 指数值 / 1000 ≈ 美股总市值(万亿美元)
+        """
         def _fetch():
             cache_file = os.path.join(CACHE_DIR, "aiae_us_wilshire.json")
-            fred = _get_fred()
-            if fred:
-                try:
-                    start_dt = datetime.now() - timedelta(days=90)
-                    series = fred.get_series("WILL5000INDFC", observation_start=start_dt)
-                    if series is not None and not series.empty:
-                        series = series.dropna()
-                        latest_val = float(series.iloc[-1])
-                        latest_date = series.index[-1]
-                        # Wilshire 5000 Full Cap: 指数值 ≈ 总市值(十亿美元)
-                        # 实际上 Wilshire5000 以 1980.12.31 = 1,404.6 为基准
-                        # 2026年约 55,000 → 代理约 55 万亿美元
+
+            # ── Tier 1: yfinance Wilshire 5000 (最准确) ──
+            try:
+                import yfinance as yf
+                w5k = yf.download("^W5000", period="5d", progress=False, timeout=10)
+                if w5k is not None and not w5k.empty:
+                    close_col = w5k["Close"]
+                    if hasattr(close_col, "columns"):
+                        close_col = close_col.iloc[:, 0]
+                    close_col = close_col.dropna()
+                    if not close_col.empty:
+                        latest_val = float(close_col.iloc[-1])
+                        latest_date = close_col.index[-1]
                         market_cap_trillion = round(latest_val / 1000, 2)
                         result = {
                             "trade_date": latest_date.strftime("%Y-%m-%d"),
                             "wilshire_index": round(latest_val, 2),
                             "market_cap_trillion_usd": market_cap_trillion,
+                            "source": "yfinance/W5000",
                             "fetched_at": datetime.now().isoformat()
                         }
                         with open(cache_file, 'w', encoding='utf-8') as f:
                             json.dump(result, f, ensure_ascii=False, indent=2)
-                        _log(f"Wilshire5000: {latest_val:.0f} (≈${market_cap_trillion}T)")
+                        _log(f"Wilshire5000 (yfinance): {latest_val:.0f} (≈${market_cap_trillion}T)")
+                        return result
+            except Exception as e:
+                _log(f"yfinance W5000 failed (切换FRED推算): {e}", "WARN")
+
+            # ── Tier 2: FRED SP500 × 8.0 乘数估算 ──
+            # SP500 指数 ≈ Wilshire5000 × 0.125 (历史稳定比率)
+            # 即: Wilshire ≈ SP500 × 8.0, 误差 ~5-10%, 对 AIAE 影响 <1.5pp
+            fred = _get_fred()
+            if fred:
+                try:
+                    start_dt = datetime.now() - timedelta(days=10)
+                    sp500 = fred.get_series("SP500", observation_start=start_dt)
+                    if sp500 is not None and not sp500.empty:
+                        sp500 = sp500.dropna()
+                        sp500_val = float(sp500.iloc[-1])
+                        latest_date = sp500.index[-1]
+                        # SP500 → 估算 Wilshire5000
+                        SP500_TO_W5K_RATIO = 8.0
+                        estimated_wilshire = sp500_val * SP500_TO_W5K_RATIO
+                        market_cap_trillion = round(estimated_wilshire / 1000, 2)
+                        result = {
+                            "trade_date": latest_date.strftime("%Y-%m-%d"),
+                            "wilshire_index": round(estimated_wilshire, 2),
+                            "market_cap_trillion_usd": market_cap_trillion,
+                            "source": f"FRED/SP500×{SP500_TO_W5K_RATIO}",
+                            "sp500_index": round(sp500_val, 2),
+                            "fetched_at": datetime.now().isoformat(),
+                            "is_estimated": True,
+                        }
+                        with open(cache_file, 'w', encoding='utf-8') as f:
+                            json.dump(result, f, ensure_ascii=False, indent=2)
+                        _log(f"Wilshire5000 (SP500推算): SP500={sp500_val:.0f} → W5K≈{estimated_wilshire:.0f} (≈${market_cap_trillion}T)")
                         return result
                 except Exception as e:
-                    _log(f"FRED WILL5000PR error: {e}", "WARN")
+                    _log(f"FRED SP500 estimation failed: {e}", "WARN")
 
+            # ── Tier 3: 磁盘缓存 ──
             if os.path.exists(cache_file):
-                with open(cache_file, 'r', encoding='utf-8') as f:
-                    _log("Wilshire: 使用磁盘缓存", "WARN")
-                    return json.load(f)
+                try:
+                    with open(cache_file, 'r', encoding='utf-8') as f:
+                        cached = json.load(f)
+                    _log(f"Wilshire: 使用磁盘缓存 (source={cached.get('source', 'disk')})", "WARN")
+                    return cached
+                except Exception:
+                    pass
 
-            _log("Wilshire: 硬编码估算", "ERROR")
+            # ── Tier 4: 硬编码兜底 (2026Q1 校准) ──
+            _log("Wilshire: 硬编码估算 ($55T, 2026Q1)", "ERROR")
             return {
                 "trade_date": datetime.now().strftime("%Y-%m-%d"),
-                "wilshire_index": 48000,
-                "market_cap_trillion_usd": 48.0,
+                "wilshire_index": 55000,
+                "market_cap_trillion_usd": 55.0,
+                "source": "hardcoded/2026Q1",
                 "fetched_at": datetime.now().isoformat(),
                 "is_fallback": True
             }
