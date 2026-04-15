@@ -1917,6 +1917,14 @@
 }
 
 /* ── 子策略配额卡片 V2.0 (渐变边框 + 圆环暗示) ── */
+.aiae-alloc-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+.aiae-alloc-card-featured {
+    grid-column: 1 / -1;
+}
 .aiae-alloc-card {
     background: rgba(0,0,0,0.22);
     border: 1px solid rgba(255,255,255,0.06);
@@ -1937,6 +1945,12 @@
 .aiae-alloc-card[data-strategy="div"]::before { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
 .aiae-alloc-card[data-strategy="mom"]::before { background: linear-gradient(90deg, #f97316, #fb923c); }
 .aiae-alloc-card[data-strategy="erp"]::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+.aiae-alloc-card[data-strategy="aiae_etf"]::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+.aiae-alloc-card[data-strategy="aiae_etf"] {
+    border-color: rgba(245,158,11,0.35);
+    background: rgba(245,158,11,0.04);
+}
+.aiae-alloc-card[data-strategy="aiae_etf"] .aiae-ac-pct { color: #f59e0b; }
 
 .aiae-alloc-card:hover {
     transform: translateY(-3px);
@@ -1974,6 +1988,7 @@
 .aiae-bar-purple { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
 .aiae-bar-orange { background: linear-gradient(90deg, #f97316, #fb923c); }
 .aiae-bar-amber { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+.aiae-bar-gold { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
 
 /* ── 信号卡片 V2.0 (脉冲边框 + 等级色带) ── */
 .aiae-signal-card {

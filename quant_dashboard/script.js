@@ -2,6 +2,9 @@
 // 后端 API 地址
 const API_URL = '/api/v1/dashboard-data';
 
+// 全局 DOM 查询工具 (消除各渲染函数重复声明)
+const el = (id) => document.getElementById(id);
+
 // 格式化函数
 const formatTrend = (change, isInverse = false) => {
     // 对于某些指标（如资金流入），下跌可能判定为 down。对于 VIX，上涨代表恐慌。
@@ -28,18 +31,251 @@ const updateCardUI = (cardId, valId, trendId, dataItem) => {
     // Dynamically set highlight color based on status (up = green, down = red, neutral = gray etc)
     const cardEl = cardId ? document.getElementById(cardId) : null;
     if (dataItem.status === 'up') {
-        valEl.className = 'stat-value highlight-up';
+        valEl.classList.remove('highlight-down', 'highlight-neutral');
+        valEl.classList.add('stat-value', 'highlight-up');
         if (cardEl) cardEl.classList.add('active-glow');
     } else if (dataItem.status === 'down') {
-        valEl.className = 'stat-value highlight-down';
+        valEl.classList.remove('highlight-up', 'highlight-neutral');
+        valEl.classList.add('stat-value', 'highlight-down');
         if (cardEl) cardEl.classList.remove('active-glow');
     } else {
-        valEl.className = 'stat-value highlight-neutral';
+        valEl.classList.remove('highlight-up', 'highlight-down');
+        valEl.classList.add('stat-value', 'highlight-neutral');
         if (cardEl) cardEl.classList.remove('active-glow');
     }
 };
 
-// 核心拉取数据的逻辑
+/**
+ * V9.0: 五策略信号矩阵渲染器
+ * 替代通用 updateCardUI()，为信号卡片提供专用结构化渲染
+ */
+function renderSignalCard(signalData) {
+    if (!signalData) return;
+
+    const cardEl = el('card-signal');
+    const consensusCountEl = el('signal-consensus-count');
+    const consensusLabelEl = el('signal-consensus-label');
+    const matrixEl = el('signal-matrix');
+    const descEl = el('desc-signal');
+
+    // V9.0: 新结构化数据 (有 strategies 数组)
+    if (signalData.strategies && Array.isArray(signalData.strategies)) {
+        // 共振摘要
+        if (consensusCountEl) consensusCountEl.textContent = signalData.consensus || '--';
+        if (consensusLabelEl) {
+            const label = signalData.consensus_label || '同步中';
+            consensusLabelEl.textContent = label;
+            // 状态色
+            const ups = (signalData.consensus || '').match(/(\d+)\/5/);
+            const upCount = ups ? parseInt(ups[1], 10) : 0;
+            consensusLabelEl.className = 'signal-consensus-label ' +
+                (upCount >= 4 ? 'sig-bull' : (upCount >= 3 ? 'sig-mild-bull' : (upCount <= 1 ? 'sig-bear' : 'sig-neutral')));
+        }
+
+        // 整体卡片光晕
+        if (cardEl) {
+            const st = signalData.status;
+            if (st === 'up') cardEl.classList.add('active-glow');
+            else cardEl.classList.remove('active-glow');
+        }
+
+        // 五行策略矩阵
+        if (matrixEl) {
+            matrixEl.innerHTML = signalData.strategies.map(s => {
+                const dirClass = s.direction === 'up' ? 'sig-dir-up' :
+                                 s.direction === 'down' ? 'sig-dir-down' :
+                                 s.direction === 'mixed' ? 'sig-dir-mixed' : 'sig-dir-neutral';
+                return `<div class="signal-row ${dirClass}">
+                    <span class="sig-icon">${s.icon}</span>
+                    <span class="sig-name">${s.name}</span>
+                    <span class="sig-signal">${s.signal}</span>
+                    <span class="sig-metric">${s.metric}</span>
+                    <span class="sig-dot ${dirClass}"></span>
+                </div>`;
+            }).join('');
+        }
+
+        // 描述行: 共振摘要
+        if (descEl) {
+            descEl.textContent = `${signalData.consensus} · ${signalData.consensus_label}`;
+        }
+    } else {
+        // 降级: 旧格式 (value/trend/status) 兼容渲染
+        if (consensusCountEl) consensusCountEl.textContent = signalData.value || '--';
+        if (consensusLabelEl) {
+            consensusLabelEl.textContent = '';
+            consensusLabelEl.className = 'signal-consensus-label';
+        }
+        if (matrixEl) matrixEl.innerHTML = '';
+        if (descEl) descEl.textContent = signalData.trend || '监控五大策略共振情况';
+        if (cardEl) {
+            if (signalData.status === 'up') cardEl.classList.add('active-glow');
+            else cardEl.classList.remove('active-glow');
+        }
+    }
+}
+
+/**
+ * V8.2: ERP 卡片专用渲染器
+ * 修正语义: ERP ↑ = 股票便宜 = 利好 (绿色), ERP ↓ = 股票贵 = 利空 (红色)
+ * 数据源字段: value, trend, desc, status, erp_pct, signal_label
+ */
+function renderErpCard(erpData) {
+    if (!erpData) return;
+
+    const valEl = el('val-erp');
+    const trendEl = el('trend-erp');
+    const descEl = el('desc-erp');
+    const absLabel = el('erp-abs-label');
+    const pctLabel = el('erp-pct-label');
+    const pctBar = el('bar-erp-pct');
+    const signalPill = el('erp-signal-pill');
+    const cardEl = el('card-erp');
+
+    // 1. 主值 + Trend Badge
+    if (valEl) {
+        valEl.innerHTML = `${erpData.value} <span class="trend" id="trend-erp">${erpData.trend || '--'}</span>`;
+        // ERP 语义色: up=股票有吸引力=绿, down=股票贵=红
+        const erpVal = parseFloat(erpData.value) || 0;
+        let colorClass = 'erp-neutral';
+        if (erpVal >= 5.0) colorClass = 'erp-bullish';
+        else if (erpVal < 3.5) colorClass = 'erp-bearish';
+        valEl.className = `stat-value ${colorClass}`;
+    }
+
+    // 2. 双维度标签
+    if (absLabel && erpData.desc) {
+        // desc 格式: "偏低估 · 4Y分位10.8%"
+        const parts = (erpData.desc || '').split('·').map(s => s.trim());
+        const absText = parts[0] || '--';
+        absLabel.textContent = absText;
+        // 颜色: 根据绝对值标签判定
+        absLabel.className = 'erp-abs-label';
+        if (/低估|极度低估/.test(absText)) absLabel.classList.add('erp-val-bull');
+        else if (/高估|极度高估/.test(absText)) absLabel.classList.add('erp-val-bear');
+    }
+
+    // 3. 分位标签 + 进度条
+    const pctVal = erpData.erp_pct != null ? erpData.erp_pct : 50;
+    if (pctLabel) {
+        pctLabel.textContent = `4Y分位 ${typeof pctVal === 'number' ? pctVal.toFixed(1) : pctVal}%`;
+    }
+    if (pctBar) {
+        pctBar.style.width = `${Math.min(100, Math.max(0, pctVal))}%`;
+    }
+
+    // 4. 信号 Pill (标配持有 / 超配 / 减配)
+    if (signalPill) {
+        const sig = erpData.signal_label || '--';
+        signalPill.textContent = sig;
+        signalPill.className = 'erp-signal-pill';
+        if (/超配|加仓|满配/.test(sig)) signalPill.classList.add('sig-bull');
+        else if (/减配|清仓|观望/.test(sig)) signalPill.classList.add('sig-bear');
+        else signalPill.classList.add('sig-neutral');
+    }
+
+    // 5. 描述行
+    if (descEl) {
+        descEl.textContent = `股债溢价 ${erpData.value || '--'} · 信号: ${erpData.signal_label || '--'}`;
+    }
+
+    // 6. 卡片光晕: ERP >= 5% 且 status='up' 时点亮
+    if (cardEl) {
+        if (erpData.status === 'up') cardEl.classList.add('active-glow');
+        else cardEl.classList.remove('active-glow');
+    }
+}
+
+/**
+ * V10.0: 主力动向 (A+H 跨境监控) 专用渲染器
+ * 目标 DOM IDs:
+ *   val-capital-a-compact / trend-capital-a-compact  (北向数值+趋势)
+ *   val-capital-h-compact / trend-capital-h-compact  (南向数值+趋势)
+ *   cap-dir-a / cap-dir-h                            (方向指示灯)
+ *   cap-resonance-pill                               (共振标签)
+ *   bar-cap-z / cap-z-val                            (Z合力条+数值)
+ *   desc-capital                                     (卡片底部描述)
+ *   card-capital                                     (卡片光晕)
+ *
+ * 后端数据结构 (capital_a):
+ *   value: "A: 151.4 亿", trend: "北向稳步流入", status: "up",
+ *   z_score: 0.85, raw_5d: 151.4,
+ *   resonance: "双多共振", resonance_status: "bull", z_composite: 1.65
+ */
+function renderCapitalCard(capA, capH) {
+    // === 北向 ===
+    if (capA) {
+        const valA = el('val-capital-a-compact');
+        const trendA = el('trend-capital-a-compact');
+        const dirA = el('cap-dir-a');
+        if (valA) valA.textContent = capA.value || '--';
+        if (trendA) {
+            trendA.textContent = capA.z_score != null ? `Z:${capA.z_score > 0 ? '+' : ''}${capA.z_score}` : (capA.trend || '--');
+            trendA.className = 'cap-flow-trend ' +
+                (capA.status === 'up' ? 'flow-up' : capA.status === 'down' ? 'flow-down' : 'flow-neutral');
+        }
+        if (dirA) {
+            dirA.className = 'cap-flow-dir ' +
+                (capA.status === 'up' ? 'dir-up' : capA.status === 'down' ? 'dir-down' : 'dir-neutral');
+        }
+
+        // 共振标签 pill
+        const pillEl = el('cap-resonance-pill');
+        if (pillEl) {
+            const resonance = capA.resonance || '—';
+            const rStatus = capA.resonance_status || 'neutral';
+            pillEl.textContent = resonance;
+            pillEl.className = 'cap-resonance-pill res-' + rStatus;
+        }
+
+        // Z 合力条
+        const zComposite = capA.z_composite != null ? capA.z_composite : 0;
+        const zBarEl = el('bar-cap-z');
+        const zValEl = el('cap-z-val');
+        if (zBarEl) {
+            // 将 Z-score (-3 ~ +3) 映射到 0-100%
+            const zPct = Math.min(100, Math.max(0, 50 + zComposite * 15));
+            zBarEl.style.width = `${zPct}%`;
+            zBarEl.className = 'cap-z-bar ' +
+                (zComposite > 0.5 ? 'z-bull' : zComposite < -0.5 ? 'z-bear' : 'z-neutral');
+        }
+        if (zValEl) {
+            zValEl.textContent = `${zComposite > 0 ? '+' : ''}${zComposite.toFixed(2)}`;
+            zValEl.style.color = zComposite > 0.5 ? '#10b981' : (zComposite < -0.5 ? '#ef4444' : '#f59e0b');
+        }
+    }
+
+    // === 南向 ===
+    if (capH) {
+        const valH = el('val-capital-h-compact');
+        const trendH = el('trend-capital-h-compact');
+        const dirH = el('cap-dir-h');
+        if (valH) valH.textContent = capH.value || '--';
+        if (trendH) {
+            trendH.textContent = capH.z_score != null ? `Z:${capH.z_score > 0 ? '+' : ''}${capH.z_score}` : (capH.trend || '--');
+            trendH.className = 'cap-flow-trend ' +
+                (capH.status === 'up' ? 'flow-up' : capH.status === 'down' ? 'flow-down' : 'flow-neutral');
+        }
+        if (dirH) {
+            dirH.className = 'cap-flow-dir ' +
+                (capH.status === 'up' ? 'dir-up' : capH.status === 'down' ? 'dir-down' : 'dir-neutral');
+        }
+    }
+
+    // === 卡片光晕 + 描述 ===
+    const cardEl = el('card-capital');
+    if (cardEl) {
+        const isUp = (capA && capA.status === 'up') || (capH && capH.status === 'up');
+        if (isUp) cardEl.classList.add('active-glow');
+        else cardEl.classList.remove('active-glow');
+    }
+
+    const descEl = el('desc-capital');
+    if (descEl && capA && capH) {
+        descEl.textContent = `北向: ${capA.trend} · 南向: ${capH.trend}`;
+    }
+}
+
 async function fetchQuantData() {
     try {
         const response = await fetch(API_URL);
@@ -49,6 +285,8 @@ async function fetchQuantData() {
         const result = await response.json();
         
         if (result.status === 'success') {
+            // 移除离线模式标记
+            _removeOfflineBanner();
             updateDashboard(result.data);
             
             // 更新最后拉取时间
@@ -61,10 +299,27 @@ async function fetchQuantData() {
         }
     } catch (error) {
         console.warn("未能连接到本地 FastAPI 后端，展示模拟本地挂载数据...", error);
-        document.getElementById('system-time').innerText = "提示：未检测到后端服务运行，当前展示本地缓存推演数据。请按指引启动 main.py";
-        // 如果后端没开，使用备用数据平滑过渡
+        document.getElementById('system-time').innerText = "⚠️ 离线模式 · 以下为模拟数据，仅供参考，不代表真实行情。请启动 main.py 获取实时数据";
+        // V11.0: 显示醒目的离线警告横幅
+        _showOfflineBanner();
         showFallbackData();
     }
+}
+
+/** V11.0: 离线模式警告横幅 */
+function _showOfflineBanner() {
+    if (document.getElementById('offline-banner')) return;
+    const banner = document.createElement('div');
+    banner.id = 'offline-banner';
+    banner.className = 'offline-banner';
+    banner.innerHTML = '⚠️ <strong>离线模式</strong> · 当前展示模拟数据，不代表真实市场状态。请启动 <code>python main.py</code> 连接后端';
+    const content = document.querySelector('.content');
+    if (content) content.insertBefore(banner, content.firstChild);
+}
+
+function _removeOfflineBanner() {
+    const banner = document.getElementById('offline-banner');
+    if (banner) banner.remove();
 }
 
 // 动态将数据注入到图表和 DOM
@@ -85,26 +340,16 @@ function updateDashboard(marketData) {
             const vixBar = document.getElementById('bar-vix-range');
             if (vixBar) vixBar.style.width = `${vix.percentile}%`;
         }
-        updateCardUI('card-erp', 'val-erp', 'trend-erp', marketData.macro_cards.erp);
-        
-        // A+H 跨境流量独立渲染
-        if (marketData.macro_cards.capital_a) {
-            updateCardUI(null, 'val-capital-a', 'trend-capital-a', marketData.macro_cards.capital_a);
-        }
-        if (marketData.macro_cards.capital_h) {
-            updateCardUI(null, 'val-capital-h', 'trend-capital-h', marketData.macro_cards.capital_h);
+        // V8.2: ERP 专用渲染管线 (替代通用 updateCardUI)
+        if (marketData.macro_cards.erp) {
+            renderErpCard(marketData.macro_cards.erp);
         }
         
-        // 如果 A+H 有一侧正在强力流入，点亮整个卡片背景
-        const cardCapital = document.getElementById('card-capital');
-        if (cardCapital) {
-            const isUp = (marketData.macro_cards.capital_a && marketData.macro_cards.capital_a.status === 'up') ||
-                         (marketData.macro_cards.capital_h && marketData.macro_cards.capital_h.status === 'up');
-            if (isUp) cardCapital.classList.add('active-glow');
-            else cardCapital.classList.remove('active-glow');
-        }
+        // V10.0: A+H 跨境流量专用渲染管线 (compact card)
+        renderCapitalCard(marketData.macro_cards.capital_a, marketData.macro_cards.capital_h);
 
-        updateCardUI('card-signal', 'val-signal', 'trend-signal', marketData.macro_cards.signal);
+        // V9.0: 五策略信号矩阵 (专用渲染管线)
+        renderSignalCard(marketData.macro_cards.signal);
 
         // V5.0: 全局 Regime 状态横幅
         if (marketData.macro_cards.regime_banner) {
@@ -152,44 +397,128 @@ function updateDashboard(marketData) {
         renderPositionHub(marketData.macro_cards.market_temp);
     }
 
-    // 4.5 更新明日实战决策矩阵 (V4.4)
+    // 4.5 V2.0 明日交易计划渲染管线
     if (marketData.macro_cards && marketData.macro_cards.tomorrow_plan) {
         const plan = marketData.macro_cards.tomorrow_plan;
-        
-        // 更新视角切换：Regime Badge
-        const badgeEl = document.getElementById('tag-current-regime');
-        if (badgeEl && plan.current_tactics) {
-            badgeEl.innerText = `实时状态: ${plan.current_tactics.regime}`;
-        }
 
-        // 渲染 4 阶战术矩阵
-        const matrixEl = document.getElementById('matrix-content');
-        if (matrixEl && plan.regime_matrix) {
-            matrixEl.innerHTML = plan.regime_matrix.map(m => `
-                <div class="matrix-row ${m.active ? 'active' : ''}">
-                    <div class="col-regime">${m.regime}</div>
-                    <div class="col-tactics">${m.tactics}</div>
-                    <div class="col-pos">${m.pos}</div>
-                </div>
-            `).join('');
-        }
-        
-        // 渲染核心建议 (标记 Priority)
-        const frameworkEl = document.getElementById('list-plan-framework');
-        if (frameworkEl && plan.framework) {
-            frameworkEl.innerHTML = plan.framework.map(f => {
-                const isHighlight = f.includes('优先') || f.includes('核心');
-                const style = isHighlight ? 'color: #f59e0b; font-weight: 600' : '';
-                return `<li style="${style}">${f}</li>`;
-            }).join('');
-        }
+        if (plan.primary_regime) {
+            // === V2.0 新版渲染 ===
+            const pr = plan.primary_regime;
+            const vd = plan.validators || {};
+            const rp = plan.risk_panel || {};
 
-        // 渲染情景模拟标签
-        const scenarioEl = document.getElementById('list-plan-scenarios');
-        if (scenarioEl && plan.scenarios) {
-            scenarioEl.innerHTML = plan.scenarios.map(s => 
-                `<div class="scenario-tag">${s.case}: ${s.action}</div>`
-            ).join('');
+            // 1. Header Badge
+            const badgeEl = el('tag-current-regime');
+            if (badgeEl) {
+                badgeEl.innerText = `${pr.emoji} ${pr.cn} Cap${pr.cap}%`;
+                badgeEl.style.borderColor = pr.tier <= 2 ? 'rgba(16,185,129,0.4)' : pr.tier >= 4 ? 'rgba(239,68,68,0.4)' : 'rgba(245,158,11,0.4)';
+                badgeEl.style.color = pr.tier <= 2 ? '#10b981' : pr.tier >= 4 ? '#ef4444' : '#f59e0b';
+            }
+
+            // 2. 左侧决策锚面板
+            if (el('plan-anchor-tier')) el('plan-anchor-tier').innerText = pr.emoji;
+            if (el('plan-anchor-value')) {
+                el('plan-anchor-value').innerText = pr.aiae_v1.toFixed(1);
+                const colors = {1:'#10b981',2:'#3b82f6',3:'#eab308',4:'#f97316',5:'#ef4444'};
+                el('plan-anchor-value').style.color = colors[pr.tier] || '#eab308';
+            }
+            if (el('plan-anchor-cap-val')) el('plan-anchor-cap-val').innerText = `${pr.cap}%`;
+            if (el('plan-anchor-cap-bar')) el('plan-anchor-cap-bar').style.width = `${pr.cap}%`;
+
+            // ERP pill
+            const erpPill = el('plan-anchor-erp');
+            if (erpPill && vd.erp) {
+                erpPill.innerText = `ERP ${vd.erp.value}% ${vd.erp.label}`;
+                erpPill.className = 'plan-anchor-erp' + (vd.erp.erp_tier === 'bull' ? ' erp-bull' : vd.erp.erp_tier === 'bear' ? ' erp-bear' : '');
+            }
+
+            // Slope
+            if (el('plan-anchor-slope') && rp.slope) {
+                const sl = rp.slope;
+                const arrow = sl.direction === 'rising' ? '↗' : sl.direction === 'falling' ? '↘' : '→';
+                el('plan-anchor-slope').innerText = `斜率 ${sl.value >= 0 ? '+' : ''}${sl.value} ${arrow}`;
+            }
+
+            // Risk indicators
+            const setRisk = (elId, val, threshold, decimals) => {
+                const e = el(elId);
+                if (e) {
+                    e.innerText = typeof val === 'number' ? val.toFixed(decimals || 1) + '%' : '--';
+                    e.className = 'plan-risk-val ' + (val > threshold ? 'risk-danger' : val > threshold * 0.7 ? 'risk-warning' : 'risk-safe');
+                }
+            };
+            setRisk('plan-risk-margin', rp.margin_heat?.value, rp.margin_heat?.threshold || 3.5, 1);
+            setRisk('plan-risk-slope', Math.abs(rp.slope?.value || 0), rp.slope?.threshold || 1.5, 2);
+            setRisk('plan-risk-fund', rp.fund_position?.value, rp.fund_position?.threshold || 90, 0);
+
+            // 3. 五档矩阵
+            const matrixEl = el('matrix-content-v2');
+            if (matrixEl && plan.regime_matrix) {
+                matrixEl.innerHTML = plan.regime_matrix.map(m => {
+                    const tierLabel = ['','Ⅰ','Ⅱ','Ⅲ','Ⅳ','Ⅴ'][m.tier] || m.tier;
+                    return `<div class="matrix-row-v2 tier-${m.tier} ${m.active ? 'tier-active' : ''}">
+                        <div class="col-tier-v2">${m.emoji} ${tierLabel}</div>
+                        <div class="col-range-v2">${m.range}</div>
+                        <div class="col-action-v2">${m.action}</div>
+                        <div class="col-cap-v2">${m.cap_range}</div>
+                    </div>`;
+                }).join('');
+            }
+
+            // 4. 核心指令 (3行)
+            const directivesEl = el('plan-directives');
+            if (directivesEl && plan.directives) {
+                directivesEl.innerHTML = plan.directives.map(d => {
+                    let extraClass = `priority-${d.priority}`;
+                    if (d.priority === 'risk' && d.color === '#ef4444') extraClass += ' risk-critical';
+                    else if (d.priority === 'risk' && d.color === '#f97316') extraClass += ' risk-active';
+                    return `<div class="plan-directive ${extraClass}" style="border-left-color:${d.color}">
+                        <span class="plan-directive-icon">${d.icon}</span>
+                        <span class="plan-directive-text">${d.text}</span>
+                    </div>`;
+                }).join('');
+            }
+
+            // 5. 情景标签
+            const scenarioEl = el('plan-scenarios-v2');
+            if (scenarioEl && plan.scenarios) {
+                const typeIcons = {aiae_upgrade: '📈', vix_alert: '🚨', erp_shift: '📉'};
+                scenarioEl.innerHTML = plan.scenarios.map(s =>
+                    `<div class="scenario-tag-v2 type-${s.type || ''}">${typeIcons[s.type] || '🔄'} ${s.condition}: ${s.action}</div>`
+                ).join('');
+            }
+        } else {
+            // === 旧版降级渲染 ===
+            const badgeEl = el('tag-current-regime');
+            if (badgeEl && plan.current_tactics) {
+                badgeEl.innerText = `实时状态: ${plan.current_tactics.regime}`;
+            }
+            const matrixEl = el('matrix-content-v2');
+            if (matrixEl && plan.regime_matrix) {
+                matrixEl.innerHTML = plan.regime_matrix.map(m => `
+                    <div class="matrix-row-v2 ${m.active ? 'tier-active tier-3' : ''}">
+                        <div class="col-tier-v2">${m.regime || ''}</div>
+                        <div class="col-range-v2">${m.vix_range || ''}</div>
+                        <div class="col-action-v2">${m.tactics || ''}</div>
+                        <div class="col-cap-v2">${m.pos || ''}</div>
+                    </div>
+                `).join('');
+            }
+            const directivesEl = el('plan-directives');
+            if (directivesEl && plan.framework) {
+                directivesEl.innerHTML = plan.framework.map(f => {
+                    const isPrimary = f.includes('优先') || f.includes('核心');
+                    return `<div class="plan-directive ${isPrimary ? 'priority-primary' : ''}">
+                        <span class="plan-directive-text">${f}</span>
+                    </div>`;
+                }).join('');
+            }
+            const scenarioEl = el('plan-scenarios-v2');
+            if (scenarioEl && plan.scenarios) {
+                scenarioEl.innerHTML = plan.scenarios.map(s =>
+                    `<div class="scenario-tag-v2">${s.case}: ${s.action}</div>`
+                ).join('');
+            }
         }
     }
 
@@ -262,24 +591,7 @@ function renderPositionHub(temp) {
     const vixMult = temp.market_vix_multiplier || 1.0;
     const hubEl = document.getElementById('card-sentiment-hub');
     
-    // === 左栏: 宏观温度计 ===
-    const el = (id) => document.getElementById(id);
-    
-    // 温度大字
-    if (el('val-market-temp')) el('val-market-temp').innerText = `${temp.value}°`;
-    
-    // Regime 标签
-    if (el('val-regime-name')) el('val-regime-name').innerText = temp.regime_name || "模式识别中";
-    
-    // 风险标签 (VIX 修正显示)
-    const riskLabel = el('label-market-temp');
-    if (riskLabel) {
-        const isVixHedged = vixMult < 0.9;
-        riskLabel.innerText = isVixHedged ? `${temp.label} (VIX 避险修正)` : temp.label;
-        riskLabel.style.color = isVixHedged ? "#ef4444" : (temp.value > 65 ? "#ef4444" : (temp.value < 35 ? "#06b6d4" : "#f59e0b"));
-    }
-    
-    // 心态指引
+    // === 左栏: 心态指引 ===
     if (el('val-mindset')) el('val-mindset').innerText = temp.mindset || "侦测中...";
     
     // 温度颜色区域 (CSS data attribute 切换)
@@ -288,13 +600,6 @@ function renderPositionHub(temp) {
         if (temp.value < 35) zone = 'cold';
         else if (temp.value > 65) zone = 'hot';
         hubEl.setAttribute('data-temp-zone', zone);
-    }
-    
-    // 温度环形仪表角度 (0-100 → 0-360deg)
-    const gaugeRing = el('gauge-ring');
-    if (gaugeRing) {
-        const deg = Math.round((temp.value / 100) * 360);
-        gaugeRing.style.setProperty('--temp-deg', deg);
     }
     
     // 宏观微标签: 资金Z + ERP
@@ -312,10 +617,20 @@ function renderPositionHub(temp) {
     // === 中栏: 仓位决策面板 ===
     if (el('val-pos-advice')) el('val-pos-advice').innerText = temp.advice;
     
-    // 仓位进度条
-    const posMatch = temp.advice.match(/(\d+)%/);
-    if (posMatch && el('bar-pos-advice')) {
-        el('bar-pos-advice').style.width = `${posMatch[1]}%`;
+    // 仓位进度条 (优先从 strategy_positions.total 数值字段读取, 正则降级)
+    let posPercent = 30;
+    if (temp.strategy_positions && temp.strategy_positions.total != null) {
+        posPercent = temp.strategy_positions.total;
+    } else {
+        const posMatch = (temp.advice || '').match(/(\d+)%/);
+        if (posMatch) posPercent = parseInt(posMatch[1], 10);
+    }
+    if (el('bar-pos-advice')) {
+        el('bar-pos-advice').style.width = `${posPercent}%`;
+        // V11.0: 用后端 advice_tier (1-5) 驱动颜色, 消除 emoji 匹配脆弱性
+        const tier = temp.advice_tier || 3;
+        const tierColors = {1: '#10b981', 2: '#3b82f6', 3: '#eab308', 4: '#f97316', 5: '#ef4444'};
+        el('bar-pos-advice').style.background = tierColors[tier] || '#eab308';
     }
     
     // 置信度
@@ -332,7 +647,7 @@ function renderPositionHub(temp) {
             'capital': { barId: 'fbar-capital',  scoreId: 'fscore-capital', data: temp.hub_factors.capital_flow },
             'temp':    { barId: 'fbar-temp',     scoreId: 'fscore-temp',    data: temp.hub_factors.macro_temp },
             'erp':     { barId: 'fbar-erp',      scoreId: 'fscore-erp',     data: temp.hub_factors.erp_value },
-            'signal':  { barId: 'fbar-signal',   scoreId: 'fscore-signal',  data: temp.hub_factors.signal_sync },
+            'signal':  { barId: 'fbar-signal',   scoreId: 'fscore-signal',  data: temp.hub_factors.aiae_regime },
             'aiae':    { barId: 'fbar-aiae',     scoreId: 'fscore-aiae',    data: temp.hub_factors.aiae_temp }
         };
         
@@ -402,6 +717,11 @@ function renderPositionHub(temp) {
         setFilter('filter-mr',  sf.mr);
         setFilter('filter-mom', sf.mom);
     }
+    
+    // N5: 持仓周期标签联动后端 holding_cycle_a
+    if (temp.holding_cycle_a && el('val-cycle-a')) {
+        el('val-cycle-a').innerText = temp.holding_cycle_a;
+    }
 }
 
 function updateStrategyCard(prefix, data) {
@@ -433,39 +753,72 @@ function showFallbackData() {
                 desc: "市场常态，结构性调仓", percentile: 15.2
             },
             tomorrow_plan: {
-                pos_control: "60-80%",
-                tech_logic: "🚀 均线多头持有",
-                framework: ["🔥 优先：适度加仓硬科技龙头", "💎 持有算力/AI核心资产", "🛡️ 红利ETF底仓不动"],
-                scenarios: [
-                    {case: "VIX回落至22-24", action: "适度加仓"},
-                    {case: "VIX突破30+", action: "强制止损"}
-                ],
-                current_tactics: { regime: "🟡 Ⅱ级 正常震荡" },
+                primary_regime: {
+                    tier: 3, emoji: "🟡", cn: "中性均衡",
+                    aiae_v1: 22.3, cap: 65, cap_range: "50-65%",
+                    action: "均衡持有", action_detail: "有纪律地持有，到了就卖",
+                },
+                validators: {
+                    erp: { value: 5.22, label: "偏低估", erp_tier: "bull", confirms: true },
+                    vix: { value: 20.15, label: "🟡 正常震荡", risk_override: false, multiplier: 1.0 },
+                },
                 regime_matrix: [
-                    { regime: "Ⅰ 恐慌 (VIX>30)", tactics: "停止买入·核心仓锁仓·对冲", pos: "≤25%", active: false },
-                    { regime: "Ⅱ 正常 (20-30)",   tactics: "结构性调仓·均值回归优先", pos: "50-70%", active: true },
-                    { regime: "Ⅲ 低波 (15-20)",   tactics: "趋势跟踪·动量轮动为主", pos: "70-85%", active: false },
-                    { regime: "Ⅳ 极静 (<15)",     tactics: "满仓进攻·关注拥挤度风险", pos: "85-95%", active: false }
-                ]
+                    { tier: 1, emoji: "🟢", cn: "极度恐慌", range: "<12%", cap_range: "90-95%", action: "满配进攻 · 越跌越买", vix_cross: "VIX>30时分批介入", active: false },
+                    { tier: 2, emoji: "🔵", cn: "低配置区", range: "12-16%", cap_range: "70-85%", action: "标准建仓 · 不因波动减仓", vix_cross: "VIX<20加速建仓", active: false },
+                    { tier: 3, emoji: "🟡", cn: "中性均衡", range: "16-24%", cap_range: "50-65%", action: "均衡持有 · 到了就卖", vix_cross: "VIX>30启动减仓", active: true },
+                    { tier: 4, emoji: "🟠", cn: "偏热区域", range: "24-32%", cap_range: "25-40%", action: "系统减仓 · 每周减5%", vix_cross: "VIX<15警惕拥挤", active: false },
+                    { tier: 5, emoji: "🔴", cn: "极度过热", range: ">32%", cap_range: "0-15%", action: "清仓防守 · 3天内完成", vix_cross: "任何VIX都清仓", active: false },
+                ],
+                directives: [
+                    { priority: "primary", icon: "🎯", text: "AIAE 🟡 中性均衡 Cap65% → 均衡持有", color: "#eab308" },
+                    { priority: "confirm", icon: "✅", text: "ERP 5.22% 偏低估 → 验证主轴方向", color: "#10b981" },
+                    { priority: "risk", icon: "🛡️", text: "VIX 20.15 正常 → 风控不触发", color: "#94a3b8" },
+                ],
+                scenarios: [
+                    { condition: "AIAE上行至Ⅳ级", action: "启动系统减仓至40%以下", type: "aiae_upgrade" },
+                    { condition: "VIX突破30+", action: "风控降级Cap×0.75 + 增配红利", type: "vix_alert" },
+                    { condition: "ERP跌破3%", action: "估值吸引力下降·降低进攻权重", type: "erp_shift" },
+                ],
+                risk_panel: {
+                    margin_heat: { value: 2.1, threshold: 3.5, status: "safe" },
+                    slope: { value: 0.3, threshold: 1.5, status: "safe", direction: "rising" },
+                    fund_position: { value: 82.0, threshold: 90, status: "safe" },
+                    overall_risk: "low",
+                },
+                framework: ["🎯 AIAE 🟡 中性均衡 Cap65% → 均衡持有", "✅ ERP 5.22% 偏低估 → 验证主轴方向", "🛡️ VIX 20.15 正常 → 风控不触发"],
+                current_tactics: { regime: "🟡 Ⅲ级 中性均衡" },
             },
-            capital_a: { value: "A: 151.4 亿", trend: "外资稳步买入", status: "up" },
-            capital_h: { value: "H: 20.5 亿", trend: "南向博弈均衡", status: "neutral" },
-            signal: { value: "MR 2买/3卖 · ERP 极度低估", trend: "DT 5/8趋 · AIAE 中性均衡 · MOM AI领涨", status: "up" },
-            erp: { value: "3.5%", trend: "极度低估", status: "up" },
-            regime_banner: { regime: "🟠 震荡偏多", temp: 52.3, advice: "50-65% (中性偏多)", vix: 20.15, vix_label: "🟡 正常震荡", z_capital: 0.8, aiae_regime: 3, aiae_regime_cn: "中性均衡", aiae_cap: 65, aiae_v1: 22.3 },
+            capital_a: { value: "A: 151.4 亿", trend: "外资稳步买入", status: "up", z_score: 0.85, raw_5d: 151.4, resonance: "双多共振", resonance_status: "bull", z_composite: 1.65 },
+            capital_h: { value: "H: 20.5 亿", trend: "南向博弈均衡", status: "neutral", z_score: 0.32, raw_5d: 20.5 },
+            signal: {
+                strategies: [
+                    { key: "mr",   icon: "📐", name: "均值回归", signal: "2买/3卖",  metric: "偏离8只",   direction: "mixed" },
+                    { key: "mom",  icon: "🚀", name: "动量轮动", signal: "AI领涨",   metric: "动量5.2%",  direction: "up" },
+                    { key: "div",  icon: "🛡️", name: "红利防线", signal: "5/8趋势",  metric: "买入2只",   direction: "up" },
+                    { key: "erp",  icon: "🌐", name: "ERP择时",  signal: "极度低估",  metric: "3.50%",    direction: "up" },
+                    { key: "aiae", icon: "🌡️", name: "AIAE管控", signal: "中性均衡",  metric: "Cap65%",   direction: "neutral" },
+                ],
+                consensus: "3/5 看多",
+                consensus_label: "偏多共振",
+                status: "up",
+                value: "MR 2买/3卖 · ERP 极度低估",
+                trend: "DT 5/8趋 · AIAE 中性均衡 · MOM AI领涨"
+            },
+            erp: { value: "5.2%", trend: "估值中性", status: "neutral", desc: "偏低估 · 4Y分位10.8%", erp_pct: 10.8, signal_label: "标配持有" },
+            regime_banner: { regime: "🟠 震荡偏多", temp: 52.3, advice: "🟡 中性均衡 (Cap 65%)", vix: 20.15, vix_label: "🟡 正常震荡", z_capital: 0.8, aiae_regime: 3, aiae_regime_cn: "中性均衡", aiae_cap: 65, aiae_v1: 22.3 },
             aiae_thermometer: { aiae_v1: 22.3, regime: 3, regime_cn: "中性均衡", regime_emoji: "🟡", regime_color: "#eab308", regime_name: "Regime III", cap: 65, slope: 0.3, slope_direction: "rising", margin_heat: 2.1, fund_position: 82.5, aiae_simple: 19.8, erp_value: 3.5, status: "fallback" },
             market_temp: {
-                value: 52.3, label: "温暖 | 极度低估", advice: "55% (趋势共振)",
+                value: 52.3, label: "温暖 | 极度低估", advice: "🟡 中性均衡 (Cap 65%)",
                 regime_name: "平衡模式", mindset: "⚖️ 仓位中型，等待分歧",
                 market_vix_multiplier: 1.0, erp_z: 1.8, z_capital: 0.8,
                 hub_confidence: 72,
                 hub_composite: 62.5,
                 hub_factors: {
-                    vix_fear:     { score: 78, weight: 0.30, label: "恐慌低位" },
-                    capital_flow: { score: 63, weight: 0.20, label: "资金中性" },
-                    macro_temp:   { score: 48, weight: 0.20, label: "宏观中性" },
-                    erp_value:    { score: 85, weight: 0.15, label: "极度低估" },
-                    signal_sync:  { score: 55, weight: 0.15, label: "策略分歧" },
+                    aiae_regime:  { score: 55, weight: 0.40, label: "中性均衡" },
+                    erp_value:    { score: 85, weight: 0.25, label: "极度低估" },
+                    vix_fear:     { score: 78, weight: 0.15, label: "恐慌低位" },
+                    capital_flow: { score: 63, weight: 0.10, label: "资金中性" },
+                    macro_temp:   { score: 48, weight: 0.10, label: "宏观中性" },
                     aiae_temp:    { score: 55, weight: 0.15, label: "中性均衡" }
                 },
                 regime_weights: { div: 0.30, mr: 0.24, mom: 0.18, erp: 0.11, aiae_etf: 0.18 },
@@ -515,6 +868,12 @@ function renderHeatmap(containerId, data) {
     const container = document.getElementById(containerId);
     if (!container) return;
     
+    // N3: 空状态兜底
+    if (!data || data.length === 0) {
+        container.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#64748b;font-size:0.85rem;">📡 暂无行业轮动数据 · 请等待后端数据刷新</div>';
+        return;
+    }
+    
     container.innerHTML = data.map(sector => {
         let intensityClass = '';
         const chg = sector.change;
@@ -557,14 +916,21 @@ document.addEventListener('DOMContentLoaded', () => {
     // 发起网络数据请求
     fetchQuantData();
 
-    // 绑定刷新按钮事件
+    // 绑定刷新按钮事件 (V11.0: 防抖 + disable 防止并发)
     const refreshBtn = document.getElementById('refresh-btn');
     if(refreshBtn) {
         refreshBtn.addEventListener('click', () => {
+            if (refreshBtn.disabled) return;
+            refreshBtn.disabled = true;
             const originalText = refreshBtn.innerText;
             refreshBtn.innerText = '拉取中...';
-            fetchQuantData().then(() => {
-                setTimeout(() => refreshBtn.innerText = originalText, 500);
+            refreshBtn.style.opacity = '0.6';
+            fetchQuantData().finally(() => {
+                setTimeout(() => {
+                    refreshBtn.innerText = originalText;
+                    refreshBtn.disabled = false;
+                    refreshBtn.style.opacity = '1';
+                }, 500);
             });
         });
     }
@@ -586,7 +952,7 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchAndRenderERPChart();
 });
 
-// ====== ERP 历史走势图 (近5年) · 买卖区间可视化 ======
+// ====== ERP 历史走势 V3.0 · 四档区间可视化 (近11.3年) ======
 
 let _erpDashboardChart = null;
 
@@ -615,7 +981,7 @@ async function fetchAndRenderERPChart() {
             // 隐藏 loading，显示图表
             if (loadingEl) loadingEl.style.display = 'none';
             chartEl.style.display = 'block';
-            renderERPDashboardChart(json.data.chart);
+            renderERPDashboardChart(json.data.chart, json.data);
         } else {
             if (loadingEl) loadingEl.innerHTML = '⚠️ ERP 数据暂不可用 (' + (json.message || '格式异常') + ')';
         }
@@ -628,10 +994,10 @@ async function fetchAndRenderERPChart() {
 }
 
 /**
- * 渲染 ERP 五年走势 ECharts 图表
- * 移植自 strategy.js renderERPHistoryChart() — 已验证稳定
+ * 渲染 ERP 历史走势 V3.0 · 四档区间可视化 (移植自 strategy.js)
+ * 特性: markArea色带 + dataZoom缩放 + 极值标注 + M1叠加 + KPI卡片
  */
-function renderERPDashboardChart(chart) {
+function renderERPDashboardChart(chart, signalData) {
     const dom = document.getElementById('erp-history-chart');
     if (!dom || typeof echarts === 'undefined') return;
     
@@ -639,10 +1005,61 @@ function renderERPDashboardChart(chart) {
     _erpDashboardChart = echarts.init(dom);
     
     const stats = chart.stats || {};
-    
-    // 买卖区间着色数据
-    const buyZone = chart.erp.map(v => v >= (stats.overweight_line || 99) ? v : null);
-    const sellZone = chart.erp.map(v => v <= (stats.underweight_line || -99) ? v : null);
+    const hasM1 = chart.m1_yoy && chart.m1_yoy.some(v => v != null);
+
+    // V3.0: 动态标题
+    const titleEl = document.getElementById('erp-chart-title');
+    if (titleEl) {
+        const yrs = stats.date_range_years || '?';
+        titleEl.textContent = '\u{1F4C8} ERP 历史走势 (近' + yrs + '年) · 四档区间可视化';
+    }
+
+    // V3.0: KPI 卡片
+    renderERPDashboardKPIs(stats, signalData);
+
+    // V3.0: markArea 四档色带
+    const markAreaData = [
+        [{ yAxis: stats.strong_buy_line, itemStyle: { color: 'rgba(16,185,129,0.08)' } }, { yAxis: (stats.max || 8) + 0.5 }],
+        [{ yAxis: stats.overweight_line, itemStyle: { color: 'rgba(16,185,129,0.03)' } }, { yAxis: stats.strong_buy_line }],
+        [{ yAxis: stats.underweight_line, itemStyle: { color: 'transparent' } }, { yAxis: stats.overweight_line }],
+        [{ yAxis: stats.danger_line, itemStyle: { color: 'rgba(239,68,68,0.04)' } }, { yAxis: stats.underweight_line }],
+        [{ yAxis: (stats.min || 2) - 0.5, itemStyle: { color: 'rgba(239,68,68,0.08)' } }, { yAxis: stats.danger_line }],
+    ];
+
+    // V3.0: markPoint — 当前值 + 历史极值
+    const markPointData = [];
+    const lastDate = chart.dates[chart.dates.length - 1];
+    if (stats.current != null) {
+        markPointData.push({
+            coord: [lastDate, stats.current],
+            name: '当前', symbol: 'pin', symbolSize: 44,
+            itemStyle: { color: stats.current >= stats.overweight_line ? '#10b981' : (stats.current <= stats.underweight_line ? '#ef4444' : '#f59e0b') },
+            label: { formatter: '{@[1]}%', color: '#fff', fontSize: 10, fontWeight: 700 }
+        });
+    }
+    const extremes = stats.extremes || [];
+    extremes.forEach(e => {
+        markPointData.push({
+            coord: [e.date, e.value],
+            name: e.type === 'max' ? '历史最高' : '历史最低',
+            symbol: e.type === 'max' ? 'triangle' : 'arrow',
+            symbolSize: 12, symbolRotate: e.type === 'min' ? 180 : 0,
+            itemStyle: { color: e.type === 'max' ? '#10b981' : '#ef4444' },
+            label: { show: true, formatter: e.value + '%', fontSize: 9, color: e.type === 'max' ? '#10b981' : '#ef4444', position: e.type === 'max' ? 'top' : 'bottom' }
+        });
+    });
+
+    // 区间判定函数
+    function getZoneLabel(v) {
+        if (v >= (stats.strong_buy_line || 99)) return '\uD83D\uDFE2 强买区';
+        if (v >= (stats.overweight_line || 99)) return '\uD83D\uDD35 超配区';
+        if (v >= (stats.underweight_line || -99)) return '\u26AA 中性区';
+        if (v >= (stats.danger_line || -99)) return '\uD83D\uDFE0 低配区';
+        return '\uD83D\uDD34 危险区';
+    }
+
+    const legendData = ['ERP', 'PE-TTM', '10Y国债'];
+    if (hasM1) legendData.push('M1同比');
     
     _erpDashboardChart.setOption({
         tooltip: {
@@ -654,63 +1071,91 @@ function renderERPDashboardChart(chart) {
                 let r = '<div style="font-size:0.7rem;color:#64748b;margin-bottom:4px;">' + params[0].axisValue + '</div>';
                 params.forEach(p => {
                     if (p.value != null) {
-                        r += '<div>' + p.marker + ' ' + p.seriesName + ': <b>' + p.value + (p.seriesIndex <= 2 ? '%' : '') + '</b></div>';
+                        const unit = p.seriesName === 'PE-TTM' ? 'x' : '%';
+                        r += '<div>' + p.marker + ' ' + p.seriesName + ': <b>' + p.value + unit + '</b></div>';
                     }
                 });
+                // 找到 ERP 值并标注区间
+                const erpParam = params.find(p => p.seriesName === 'ERP');
+                if (erpParam && erpParam.value != null) {
+                    r += '<div style="margin-top:3px;padding-top:3px;border-top:1px solid rgba(255,255,255,0.1);font-size:10px;">' + getZoneLabel(erpParam.value) + '</div>';
+                }
                 return r;
             }
         },
         legend: {
-            data: ['ERP', '买入区', '卖出区', 'PE-TTM', '10Y国债'],
-            top: 0,
-            textStyle: { color: '#94a3b8', fontSize: 10 }
+            data: legendData, top: 0,
+            textStyle: { color: '#94a3b8', fontSize: 10 },
+            selected: { '10Y国债': false }
         },
-        grid: { top: 40, bottom: 30, left: 50, right: 50 },
-        xAxis: {
-            type: 'category',
-            data: chart.dates,
-            axisLabel: { color: '#64748b', fontSize: 10, interval: Math.floor(chart.dates.length / 6) }
-        },
-        yAxis: [
-            {
-                type: 'value', name: 'ERP %',
-                nameTextStyle: { color: '#64748b', fontSize: 10 },
-                axisLabel: { color: '#64748b', fontSize: 10, formatter: '{value}%' },
-                splitLine: { lineStyle: { color: 'rgba(100,116,139,0.1)' } }
+        toolbox: {
+            right: 20, top: 0,
+            feature: {
+                saveAsImage: { title: '保存', pixelRatio: 2, backgroundColor: '#0f172a' },
+                restore: { title: '重置' }
             },
-            {
-                type: 'value', name: 'PE-TTM',
-                nameTextStyle: { color: '#64748b', fontSize: 10 },
-                axisLabel: { color: '#64748b', fontSize: 10 },
-                splitLine: { show: false }
+            iconStyle: { borderColor: '#64748b' }
+        },
+        grid: { top: 40, bottom: 55, left: 50, right: hasM1 ? 90 : 50 },
+        dataZoom: [
+            { type: 'inside', start: 65, end: 100 },
+            { type: 'slider', height: 16, bottom: 4, borderColor: 'rgba(255,255,255,0.06)',
+              fillerColor: 'rgba(245,158,11,0.12)', handleStyle: { color: '#f59e0b', borderColor: '#f59e0b' },
+              textStyle: { color: '#64748b', fontSize: 9 },
+              dataBackground: { lineStyle: { color: '#334155' }, areaStyle: { color: 'rgba(245,158,11,0.05)' } }
             }
         ],
+        xAxis: {
+            type: 'category', data: chart.dates, boundaryGap: false,
+            axisLabel: { color: '#64748b', fontSize: 10, formatter: function(v) { return v.substring(0, 7); } },
+            axisLine: { lineStyle: { color: '#334155' } }
+        },
+        yAxis: [
+            { type: 'value', name: 'ERP %', nameTextStyle: { color: '#64748b', fontSize: 10 },
+              axisLabel: { color: '#64748b', fontSize: 10, formatter: '{value}%' },
+              splitLine: { lineStyle: { color: 'rgba(100,116,139,0.08)' } }
+            },
+            { type: 'value', name: 'PE-TTM', position: 'right',
+              nameTextStyle: { color: '#3b82f6', fontSize: 10 },
+              axisLabel: { color: '#3b82f680', fontSize: 9 },
+              splitLine: { show: false }
+            },
+            hasM1 ? {
+                type: 'value', name: 'M1%', nameTextStyle: { color: '#a78bfa', fontSize: 10 },
+                position: 'right', offset: 40,
+                axisLabel: { color: '#a78bfa', fontSize: 9, formatter: '{value}%' },
+                splitLine: { show: false }
+            } : null
+        ].filter(Boolean),
         series: [
             {
                 name: 'ERP', type: 'line', data: chart.erp, yAxisIndex: 0,
-                lineStyle: { color: '#f59e0b', width: 2 },
+                lineStyle: { color: '#f59e0b', width: 2.5, shadowColor: 'rgba(245,158,11,0.2)', shadowBlur: 4 },
                 itemStyle: { color: '#f59e0b' },
                 symbol: 'none', z: 10,
+                areaStyle: {
+                    color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                        colorStops: [
+                            { offset: 0, color: 'rgba(245,158,11,0.12)' },
+                            { offset: 1, color: 'rgba(245,158,11,0)' }
+                        ]
+                    }
+                },
                 markLine: {
-                    silent: true, symbol: 'none',
-                    lineStyle: { type: 'dashed', width: 1 },
+                    silent: true, symbol: 'none', lineStyle: { type: 'dashed', width: 1 },
                     data: [
                         { yAxis: stats.mean, label: { formatter: '均值 ' + stats.mean + '%', color: '#94a3b8', fontSize: 9 }, lineStyle: { color: '#64748b' } },
-                        { yAxis: stats.overweight_line, label: { formatter: '超配线 ' + stats.overweight_line + '%', color: '#10b981', fontSize: 9, position: 'insideEndTop' }, lineStyle: { color: '#10b981' } },
-                        { yAxis: stats.underweight_line, label: { formatter: '低配线 ' + stats.underweight_line + '%', color: '#ef4444', fontSize: 9, position: 'insideEndTop' }, lineStyle: { color: '#ef4444' } },
-                        { yAxis: stats.strong_buy_line, label: { formatter: '强买线 ' + stats.strong_buy_line + '%', color: '#10b981', fontSize: 9, position: 'insideEndTop' }, lineStyle: { color: '#10b98180', type: 'dotted' } }
+                        { yAxis: stats.overweight_line, label: { formatter: '超配 ' + stats.overweight_line + '%', color: '#10b981', fontSize: 9, position: 'insideEndTop' }, lineStyle: { color: '#10b98166' } },
+                        { yAxis: stats.underweight_line, label: { formatter: '低配 ' + stats.underweight_line + '%', color: '#ef4444', fontSize: 9, position: 'insideEndTop' }, lineStyle: { color: '#ef444466' } },
+                        { yAxis: stats.strong_buy_line, label: { formatter: '强买 ' + stats.strong_buy_line + '%', color: '#10b981', fontSize: 9, position: 'insideEndTop' }, lineStyle: { color: '#10b98140', type: 'dotted' } },
+                        { yAxis: stats.danger_line, label: { formatter: '危险 ' + stats.danger_line + '%', color: '#ef4444', fontSize: 9, position: 'insideEndTop' }, lineStyle: { color: '#ef444440', type: 'dotted' } }
                     ]
+                },
+                markArea: { silent: true, data: markAreaData },
+                markPoint: {
+                    data: markPointData,
+                    animation: true, animationDuration: 600
                 }
-            },
-            {
-                name: '买入区', type: 'line', data: buyZone, yAxisIndex: 0,
-                lineStyle: { width: 0 }, itemStyle: { color: '#10b981' }, symbol: 'none',
-                areaStyle: { color: 'rgba(16,185,129,0.15)' }
-            },
-            {
-                name: '卖出区', type: 'line', data: sellZone, yAxisIndex: 0,
-                lineStyle: { width: 0 }, itemStyle: { color: '#ef4444' }, symbol: 'none',
-                areaStyle: { color: 'rgba(239,68,68,0.15)' }
             },
             {
                 name: 'PE-TTM', type: 'line', data: chart.pe_ttm, yAxisIndex: 1,
@@ -721,16 +1166,57 @@ function renderERPDashboardChart(chart) {
                 name: '10Y国债', type: 'line', data: chart.yield_10y, yAxisIndex: 0,
                 lineStyle: { color: '#ef4444', width: 1, type: 'dotted' },
                 itemStyle: { color: '#ef4444' }, symbol: 'none'
-            }
-        ]
+            },
+            hasM1 ? {
+                name: 'M1同比', type: 'line', data: chart.m1_yoy, yAxisIndex: 2,
+                lineStyle: { color: '#a78bfa', width: 2, type: 'solid' },
+                itemStyle: { color: '#a78bfa' },
+                symbol: 'none', smooth: true,
+                areaStyle: {
+                    color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                        colorStops: [{offset:0,color:'rgba(167,139,250,0.10)'},{offset:1,color:'rgba(167,139,250,0)'}]
+                    }
+                }
+            } : null
+        ].filter(Boolean)
     });
 }
 
-// ERP 图表响应式 resize
+/**
+ * V3.0: ERP 图表 KPI 统计卡片 (Dashboard 版)
+ */
+function renderERPDashboardKPIs(stats, signalData) {
+    const container = document.getElementById('erp-chart-kpis');
+    if (!container) return;
+    const snap = (signalData && signalData.current_snapshot) || {};
+    const pct = snap.erp_percentile || '--';
+    const deviation = stats.current_vs_mean;
+    const devColor = deviation > 0 ? '#10b981' : (deviation < -5 ? '#ef4444' : '#f59e0b');
+    const devSign = deviation > 0 ? '+' : '';
+
+    container.innerHTML = [
+        { label: '当前 ERP', value: (stats.current || '--') + '%', color: stats.current >= stats.overweight_line ? '#10b981' : (stats.current <= stats.underweight_line ? '#ef4444' : '#f59e0b') },
+        { label: '均值偏离', value: devSign + deviation + '%', color: devColor },
+        { label: '近4年分位', value: pct + '%', color: pct >= 70 ? '#10b981' : (pct <= 30 ? '#ef4444' : '#94a3b8') },
+        { label: '超配区占比', value: (stats.buy_zone_pct || '--') + '%', color: '#10b981' },
+    ].map(k => `<div style="flex:1;background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:8px 12px;text-align:center;">
+        <div style="font-size:0.65rem;color:#64748b;margin-bottom:3px;">${k.label}</div>
+        <div style="font-size:1.1rem;font-weight:800;color:${k.color};">${k.value}</div>
+    </div>`).join('');
+}
+
+// ERP 图表 + AIAE 仪表盘响应式 resize (V11.0: debounce 防抖)
 let _aiaeThermGauge = null;
+let _resizeTimer = null;
 window.addEventListener('resize', () => {
-    if (_erpDashboardChart) _erpDashboardChart.resize();
-    if (_aiaeThermGauge) try { _aiaeThermGauge.resize(); } catch(e) {}
+    clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(() => {
+        if (_erpDashboardChart) _erpDashboardChart.resize();
+        if (_aiaeThermGauge) {
+            try { _aiaeThermGauge.resize(); }
+            catch(e) { console.warn('[AIAE Gauge] resize error:', e); }
+        }
+    }, 300);
 });
 
 // ====================================================================
@@ -739,7 +1225,7 @@ window.addEventListener('resize', () => {
 
 function renderAIAEThermometer(d) {
     if (!d) return;
-    const el = (id) => document.getElementById(id);
+    // 使用全局 el() 工具函数
 
     // ── 仪表盘大字 ──
     const v1 = d.aiae_v1 || 0;

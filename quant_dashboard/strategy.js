@@ -3644,16 +3644,18 @@ function renderAIAEUI(data) {
     // ── Allocations ──
     renderAIAEAllocs(p.allocations, p.matrix_position);
 
-    // ── Cross validation ──
+    // ── Cross validation (M1: 动态罗马数字映射, 修复硬编码 Ⅳ bug) ──
     const $cv = document.getElementById('aiae-cross-validation');
     if ($cv) {
+        const _romanMap = {1:'Ⅰ', 2:'Ⅱ', 3:'Ⅲ', 4:'Ⅳ', 5:'Ⅴ'};
+        const _romanLabel = _romanMap[c.regime] || 'Ⅲ';
         $cv.innerHTML = `
             <div style="display:flex;align-items:center;gap:10px;">
                 <span class="aiae-cross-stars">${cv.confidence_stars}</span>
                 <span class="aiae-cross-verdict" style="color:${cv.color};">${cv.verdict}</span>
             </div>
             <div style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;line-height:1.6;">
-                AIAE Ⅳ${c.regime}级 × ERP ${p.erp_value}% (${cv.erp_level}) · 置信度 ${cv.confidence}/5
+                AIAE ${_romanLabel}${c.regime}级 × ERP ${p.erp_value}% (${cv.erp_level}) · 置信度 ${cv.confidence}/5
             </div>
         `;
     }
@@ -3670,6 +3672,9 @@ function renderAIAEUI(data) {
 
     // ── Warning Indicators ──
     try { renderAIAEWarnings(c); } catch(e) { console.warn('[AIAE] warnings skip:', e); }
+
+    // ── V2.1: Fund Position Quarterly Reminder ──
+    try { renderAIAEFundReminder(data.stale_data_warnings || []); } catch(e) { console.warn('[AIAE] fund reminder skip:', e); }
 
     // ── Action Dashboard ──
     try { renderAIAEActionDashboard(c.regime, ri, p.matrix_position); } catch(e) { console.warn('[AIAE] action skip:', e); }
@@ -3696,14 +3701,124 @@ function renderAIAEWarnings(c) {
     if ($sB) { $sB.style.width = Math.min(absSlope / 3 * 100, 100) + '%'; $sB.style.background = absSlope > 1.5 ? '#ef4444' : absSlope > 0.8 ? '#f59e0b' : '#10b981'; }
     if ($sC) { $sC.className = 'aiae-warning-card ' + (absSlope > 1.5 ? 'warn-danger' : absSlope > 0.8 ? 'warn-caution' : 'warn-ok'); }
 
-    // Fund position
+    // Fund position + 过期告警
     const fVal = c.fund_position || 0;
+    const fDate = c.fund_position_date || '';
     const $fV = document.getElementById('aiae-warn-fund-val');
     const $fB = document.getElementById('aiae-warn-fund-bar');
     const $fC = document.getElementById('aiae-warn-fund');
     if ($fV) { $fV.textContent = fVal + '%'; $fV.style.color = fVal > 90 ? '#ef4444' : fVal > 85 ? '#f59e0b' : '#10b981'; }
     if ($fB) { $fB.style.width = Math.min(fVal / 100 * 100, 100) + '%'; $fB.style.background = fVal > 90 ? '#ef4444' : fVal > 85 ? '#f59e0b' : '#10b981'; }
     if ($fC) { $fC.className = 'aiae-warning-card ' + (fVal > 90 ? 'warn-danger' : fVal > 85 ? 'warn-caution' : 'warn-ok'); }
+
+    // C1: 基金仓位过期告警 (>90天显示橙色⚠️)
+    if (fDate) {
+        const daysStaleFund = Math.floor((Date.now() - new Date(fDate).getTime()) / 86400000);
+        const $fStale = document.getElementById('aiae-fund-stale-badge');
+        if ($fStale) {
+            if (daysStaleFund > 90) {
+                $fStale.style.display = 'inline-flex';
+                $fStale.textContent = `⚠️ 数据滞后 ${daysStaleFund} 天`;
+                $fStale.style.color = daysStaleFund > 150 ? '#ef4444' : '#f59e0b';
+            } else {
+                $fStale.style.display = 'none';
+            }
+        }
+        // 也在数据源卡片上追加日期信息
+        const $dfLabel = document.getElementById('aiae-data-fund-date');
+        if ($dfLabel) {
+            $dfLabel.textContent = fDate;
+            $dfLabel.style.color = daysStaleFund > 90 ? '#f59e0b' : '#64748b';
+        }
+    }
+}
+
+// ── V2.1: Fund Position Quarterly Reminder ──
+function renderAIAEFundReminder(staleWarnings) {
+    const banner = document.getElementById('aiae-fund-reminder-banner');
+    if (!banner) return;
+
+    // 查找基金仓位相关告警
+    const fundWarning = staleWarnings.find(w => w.type === 'fund_update_due' || w.type === 'fund_position_stale');
+    if (!fundWarning) {
+        banner.style.display = 'none';
+        return;
+    }
+
+    banner.style.display = 'block';
+
+    // 设置标签
+    const labelEl = document.getElementById('aiae-fund-reminder-label');
+    if (labelEl) {
+        const severity = fundWarning.severity === 'critical' ? '🔴 紧急' : '🟡 提醒';
+        labelEl.textContent = severity + (fundWarning.expected_label ? ' · ' + fundWarning.expected_label : '');
+    }
+
+    // 设置消息
+    const msgEl = document.getElementById('aiae-fund-reminder-message');
+    if (msgEl) {
+        const days = fundWarning.days_stale || 0;
+        msgEl.innerHTML = fundWarning.message + 
+            '<br><span style="color:#64748b;">当前值: ' + (fundWarning.current_value||'--') + '% · 截至 ' + (fundWarning.current_date||'--') + 
+            ' · 滞后 <b style="color:#f59e0b;">' + days + '</b> 天 · 占 AIAE_V1 权重 30%</span>';
+    }
+
+    // 如果是 critical 级别，加脉冲动画
+    if (fundWarning.severity === 'critical') {
+        banner.style.animation = 'pulse 2s infinite';
+        banner.style.borderColor = 'rgba(239,68,68,0.4)';
+    } else {
+        banner.style.animation = 'none';
+        banner.style.borderColor = 'rgba(245,158,11,0.3)';
+    }
+}
+
+// ── V2.1: Fund Position Update Submit ──
+async function submitFundPositionUpdate() {
+    const valueEl = document.getElementById('aiae-fund-input-value');
+    const dateEl = document.getElementById('aiae-fund-input-date');
+    const resultEl = document.getElementById('aiae-fund-update-result');
+    const submitBtn = document.getElementById('aiae-fund-submit-btn');
+
+    if (!valueEl || !dateEl) return;
+    const value = parseFloat(valueEl.value);
+    const date = dateEl.value;
+
+    if (isNaN(value) || value < 50 || value > 100) {
+        if (resultEl) { resultEl.textContent = '❌ 仓位值须在 50-100% 之间'; resultEl.style.color = '#ef4444'; }
+        return;
+    }
+
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '⏳ 提交中...'; }
+    if (resultEl) { resultEl.textContent = '⏳ 正在更新...'; resultEl.style.color = '#f59e0b'; }
+
+    try {
+        const resp = await fetch('/api/v1/aiae/update_fund_position', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ value: value, date: date })
+        });
+        const json = await resp.json();
+
+        if (json.status === 'success') {
+            if (resultEl) { resultEl.innerHTML = '✅ 更新成功! ' + json.message + ' <span style="color:#64748b;">· 3秒后自动刷新数据...</span>'; resultEl.style.color = '#10b981'; }
+            // 隐藏提醒 banner
+            const banner = document.getElementById('aiae-fund-reminder-banner');
+            if (banner) banner.style.display = 'none';
+            // 3秒后自动刷新报告
+            setTimeout(() => {
+                document.getElementById('aiae-fund-update-panel').style.display = 'none';
+                loadAIAEReport(true);  // 强制刷新
+            }, 3000);
+        } else {
+            if (resultEl) { resultEl.textContent = '❌ ' + (json.message || '更新失败'); resultEl.style.color = '#ef4444'; }
+        }
+    } catch(e) {
+        console.error('[AIAE Fund Update] Error:', e);
+        if (resultEl) { resultEl.textContent = '❌ 网络异常: ' + e.message; resultEl.style.color = '#ef4444'; }
+    } finally {
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '✅ 提交更新'; }
+    }
 }
 
 // ── Action Dashboard V2.1 (dynamic per regime) ──
@@ -3966,10 +4081,24 @@ function renderAIAEMatrix(pos, cv) {
 
 function renderAIAEAllocs(allocs, totalPos) {
     if (!allocs) return;
-    const strategies = ['mr', 'div', 'mom', 'erp'];
+    // M2: 新增 aiae_etf 第5策略配额 (金色主题)
+    const strategies = ['mr', 'div', 'mom', 'erp', 'aiae_etf'];
     strategies.forEach(key => {
         const a = allocs[key];
-        if (!a) return;
+        if (!a) {
+            // aiae_etf 可能不在后端 allocations 中, 用 JOINT_WEIGHTS 补算
+            if (key === 'aiae_etf') {
+                const etfPct = 100 - Object.values(allocs).reduce((s, v) => s + (v.pct || 0), 0);
+                const etfPos = Math.round(totalPos * Math.max(etfPct, 0) / 100 * 10) / 10;
+                const $pct = document.getElementById('aiae-alloc-aiae_etf-pct');
+                const $pos = document.getElementById('aiae-alloc-aiae_etf-pos');
+                const $bar = document.getElementById('aiae-alloc-aiae_etf-bar');
+                if ($pct) $pct.textContent = Math.max(etfPct, 0) + '%';
+                if ($pos) $pos.textContent = etfPos + '% 仓位';
+                if ($bar) $bar.style.width = Math.min(Math.max(etfPct, 0), 100) + '%';
+            }
+            return;
+        }
         const $pct = document.getElementById(`aiae-alloc-${key}-pct`);
         const $pos = document.getElementById(`aiae-alloc-${key}-pos`);
         const $bar = document.getElementById(`aiae-alloc-${key}-bar`);

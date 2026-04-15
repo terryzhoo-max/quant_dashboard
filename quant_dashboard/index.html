@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="AlphaCore 投研量化终端 · 五策略共振引擎 · AIAE宏观温度 · ERP估值矩阵 · 实时行业轮动追踪">
+    <meta name="theme-color" content="#07090e">
     <title>AlphaCore 投研量化终端</title>
     <!-- 引入外部样式 -->
-    <link rel="stylesheet" href="./styles.css?v=6">
+    <link rel="stylesheet" href="./styles.css?v=10">
     <!-- 引入高级无衬线字体 Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Chart.js 移除 (极简主义与性能优化) -->
@@ -59,7 +61,7 @@
                 <a href="./eastmoney_audit.html" class="nav-item"><span class="icon">💹</span><span>东方财富</span><span class="badge-beta" style="background:rgba(37,99,235,0.15);color:#60a5fa;border-color:rgba(37,99,235,0.3);">DEEP</span></a>
                 <a href="./fii_audit.html" class="nav-item"><span class="icon">🤖</span><span>工业富联</span><span class="badge-beta" style="background:rgba(14,165,233,0.15);color:#38bdf8;border-color:rgba(14,165,233,0.3);">DEEP</span></a>
                 <a href="./wus_audit.html" class="nav-item"><span class="icon">💻</span><span>沪电股份</span><span class="badge-beta" style="background:rgba(236,72,153,0.15);color:#f472b6;border-color:rgba(236,72,153,0.3);">DEEP</span></a>
-            <a href="./scc_audit.html" class="nav-item"><span class="icon">📡</span><span>深南电路</span><span class="badge-beta" style="background:rgba(139,92,246,0.15);color:#a855f7;border-color:rgba(139,92,246,0.3);">DEEP</span></a>
+                <a href="./scc_audit.html" class="nav-item"><span class="icon">📡</span><span>深南电路</span><span class="badge-beta" style="background:rgba(139,92,246,0.15);color:#a855f7;border-color:rgba(139,92,246,0.3);">DEEP</span></a>
                 </div>
             <div class="nav-group-title">账 户 管 理</div>
             <a href="./portfolio.html" class="nav-item">
@@ -122,22 +124,50 @@
                     </div>
                     <div class="stat-desc" id="desc-vix">接入实时全球避险情绪水温</div>
                 </div>
-                <div class="stat-card glass-panel" id="card-erp">
-                    <div class="stat-title">资产性价比 (ERP)</div>
+                <div class="stat-card glass-panel stat-card-erp" id="card-erp">
+                    <div class="stat-title">资产性价比 (ERP) <span class="erp-signal-pill" id="erp-signal-pill">--</span></div>
                     <div class="stat-value" id="val-erp">-- <span class="trend" id="trend-erp">--</span></div>
+                    <div class="erp-dual-labels">
+                        <span class="erp-abs-label" id="erp-abs-label">--</span>
+                        <span class="erp-pct-label" id="erp-pct-label">4Y分位 --%</span>
+                    </div>
+                    <div class="erp-pct-container">
+                        <div class="erp-pct-bar" id="bar-erp-pct" style="width: 0%"></div>
+                    </div>
                     <div class="stat-desc" id="desc-erp">跨资产(股/债)估值溢价模型</div>
                 </div>
-                <div class="stat-card glass-panel" id="card-capital">
-                    <div class="stat-title">主力动向 (A+H 跨境监控)</div>
-                    <div style="display: flex; flex-direction: column; gap: 8px;">
-                        <div class="stat-value" id="val-capital-a" style="font-size: 1.5rem; margin-bottom: 0;">-- <span class="trend" id="trend-capital-a">--</span></div>
-                        <div class="stat-value" id="val-capital-h" style="font-size: 1.5rem; margin-bottom: 0;">-- <span class="trend" id="trend-capital-h">--</span></div>
+                <div class="stat-card glass-panel stat-card-capital" id="card-capital">
+                    <div class="stat-title">主力动向 (A+H 跨境监控) <span class="cap-resonance-pill" id="cap-resonance-pill">--</span></div>
+                    <div class="cap-flow-rows">
+                        <div class="cap-flow-row" id="cap-row-a">
+                            <span class="cap-flow-dir" id="cap-dir-a">●</span>
+                            <span class="cap-flow-label">北向</span>
+                            <span class="cap-flow-value" id="val-capital-a-compact">--</span>
+                            <span class="cap-flow-trend" id="trend-capital-a-compact">--</span>
+                        </div>
+                        <div class="cap-flow-row" id="cap-row-h">
+                            <span class="cap-flow-dir" id="cap-dir-h">●</span>
+                            <span class="cap-flow-label">南向</span>
+                            <span class="cap-flow-value" id="val-capital-h-compact">--</span>
+                            <span class="cap-flow-trend" id="trend-capital-h-compact">--</span>
+                        </div>
+                    </div>
+                    <div class="cap-z-row">
+                        <span class="cap-z-label">资金Z合力</span>
+                        <div class="cap-z-bar-bg"><div class="cap-z-bar" id="bar-cap-z" style="width:50%"></div></div>
+                        <span class="cap-z-val" id="cap-z-val">--</span>
                     </div>
                     <div class="stat-desc" id="desc-capital">实时追踪北向与南向资金共振</div>
                 </div>
-                <div class="stat-card glass-panel" id="card-signal">
-                    <div class="stat-title">五策略信号</div>
-                    <div class="stat-value" id="val-signal" style="font-size:1.1rem;">-- <span class="trend" id="trend-signal">--</span></div>
+                <div class="stat-card glass-panel stat-card-signal" id="card-signal">
+                    <div class="stat-title">五策略共振 <span class="signal-version-pill">V9.0</span></div>
+                    <div class="signal-consensus" id="signal-consensus">
+                        <span class="signal-consensus-count" id="signal-consensus-count">--</span>
+                        <span class="signal-consensus-label" id="signal-consensus-label">同步中</span>
+                    </div>
+                    <div class="signal-matrix" id="signal-matrix">
+                        <!-- JS 动态渲染五行策略信号 -->
+                    </div>
                     <div class="stat-desc" id="desc-signal">监控五大策略共振情况</div>
                 </div>
             </div>
@@ -153,117 +183,90 @@
                 </div>
             </div>
 
-        <!-- AIAE 温度计 · 全市场权益配置信号 -->
-        <div class="aiae-thermo-section" id="aiae-thermo-section">
-            <div class="aiae-thermo-header">
-                <div class="aiae-thermo-title-row">
-                    <span class="aiae-thermo-icon">🌡️</span>
-                    <div>
-                        <div class="aiae-thermo-title">AIAE 全市场配置温度计</div>
-                        <div class="aiae-thermo-sub">A股证券化率 · 五档状态引擎 · 仓位Cap信号</div>
-                    </div>
-                </div>
-                <a href="./strategy.html" class="aiae-thermo-link" title="前往策略中心查看完整AIAE报告">
-                    查看完整报告 ▸
-                </a>
-            </div>
-            <div class="aiae-thermo-body glass-panel">
-                <div class="aiae-thermo-grid">
-                    <!-- 左区: 仪表盘 -->
-                    <div class="aiae-thermo-gauge-col">
-                        <div id="aiae-thermo-gauge" class="aiae-thermo-gauge-chart"></div>
-                        <div class="aiae-thermo-gauge-footer">
-                            <span class="aiae-thermo-val" id="aiae-thermo-val">—</span>
-                            <span class="aiae-thermo-unit">%</span>
-                        </div>
-                        <div class="aiae-thermo-regime-badge" id="aiae-thermo-regime">—</div>
-                        <div class="aiae-thermo-slope" id="aiae-thermo-slope">月环比: —</div>
-                    </div>
-
-                    <!-- 中区: 五档 + 操作指引 -->
-                    <div class="aiae-thermo-center-col">
-                        <div class="aiae-thermo-five-tier" id="aiae-thermo-tiers">
-                            <div class="at-tier" data-tier="1"><span class="at-dot" style="background:#10b981"></span><span class="at-label">Ⅰ 恐慌</span><span class="at-range">&lt;12%</span><span class="at-pos">90-95%</span></div>
-                            <div class="at-tier" data-tier="2"><span class="at-dot" style="background:#3b82f6"></span><span class="at-label">Ⅱ 低配</span><span class="at-range">12-16%</span><span class="at-pos">70-85%</span></div>
-                            <div class="at-tier" data-tier="3"><span class="at-dot" style="background:#eab308"></span><span class="at-label">Ⅲ 中性</span><span class="at-range">16-24%</span><span class="at-pos">50-65%</span></div>
-                            <div class="at-tier" data-tier="4"><span class="at-dot" style="background:#f97316"></span><span class="at-label">Ⅳ 偏热</span><span class="at-range">24-32%</span><span class="at-pos">25-40%</span></div>
-                            <div class="at-tier" data-tier="5"><span class="at-dot" style="background:#ef4444"></span><span class="at-label">Ⅴ 过热</span><span class="at-range">&gt;32%</span><span class="at-pos">0-15%</span></div>
-                        </div>
-                        <div class="aiae-thermo-action" id="aiae-thermo-action">
-                            <div class="at-action-label">当前操作指令</div>
-                            <div class="at-action-text" id="aiae-thermo-action-text">加载数据后显示...</div>
-                        </div>
-                    </div>
-
-                    <!-- 右区: Cap仓位 + 三大预警 -->
-                    <div class="aiae-thermo-right-col">
-                        <div class="aiae-thermo-cap-card">
-                            <div class="at-cap-label">建议仓位Cap</div>
-                            <div class="at-cap-value" id="aiae-thermo-cap">—%</div>
-                            <div class="at-cap-bar-bg"><div class="at-cap-bar-fill" id="aiae-thermo-cap-bar" style="width:0%"></div></div>
-                        </div>
-                        <div class="aiae-thermo-warns">
-                            <div class="at-warn-item">
-                                <span class="at-warn-icon">🔥</span>
-                                <span class="at-warn-name">融资热度</span>
-                                <span class="at-warn-val" id="at-warn-margin">—</span>
-                                <div class="at-warn-bar-bg"><div class="at-warn-bar" id="at-warn-margin-bar" style="width:0%"></div></div>
-                            </div>
-                            <div class="at-warn-item">
-                                <span class="at-warn-icon">📐</span>
-                                <span class="at-warn-name">月斜率</span>
-                                <span class="at-warn-val" id="at-warn-slope">—</span>
-                                <div class="at-warn-bar-bg"><div class="at-warn-bar" id="at-warn-slope-bar" style="width:0%"></div></div>
-                            </div>
-                            <div class="at-warn-item">
-                                <span class="at-warn-icon">🏦</span>
-                                <span class="at-warn-name">基金仓位</span>
-                                <span class="at-warn-val" id="at-warn-fund">—</span>
-                                <div class="at-warn-bar-bg"><div class="at-warn-bar" id="at-warn-fund-bar" style="width:0%"></div></div>
-                            </div>
-                        </div>
-                        <div class="aiae-thermo-source">
-                            <span class="at-src-item" id="at-src-simple">AIAE_简: —</span>
-                            <span class="at-src-item" id="at-src-erp">ERP: —</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- V6.0 情绪与持仓枢纽 (Sentiment & Position Hub) -->
-        <div class="sentiment-section">
-            <div class="hub-main-title">AlphaCore 情绪与持仓枢纽 V7.0 (Sentiment & Position Hub)</div>
-            <div class="sentiment-hub glass-panel" id="card-sentiment-hub">
+            <!-- V7.0 情绪与持仓枢纽 (Sentiment & Position Hub) -->
+            <div class="sentiment-section">
+                <div class="hub-main-title">AlphaCore 情绪与持仓枢纽 V7.0 (Sentiment & Position Hub)</div>
+                <div class="sentiment-hub glass-panel" id="card-sentiment-hub">
                 <div class="hub-container-v6">
-                    <!-- 左栏：宏观温度计 -->
-                    <div class="hub-col col-macro">
+                    <!-- 左栏：AIAE 温度 (合并自独立温度计) -->
+                    <div class="hub-col col-macro" aria-label="AIAE 宏观温度面板">
                         <div class="hub-col-header">
                             <span class="icon">🌡️</span>
-                            <h3>宏观风控</h3>
+                            <h3>AIAE 温度</h3>
+                            <a href="./strategy.html?strat=aiae" class="hub-detail-link">详情 ▸</a>
                         </div>
-                        <div class="macro-gauge" id="macro-gauge">
-                            <div class="gauge-ring" id="gauge-ring">
-                                <div class="gauge-inner">
-                                    <div class="gauge-temp" id="val-market-temp">--.-°</div>
-                                    <div class="gauge-regime" id="val-regime-name">载入中</div>
+                        <!-- AIAE ECharts 仪表盘 -->
+                        <div id="aiae-thermo-gauge" class="hub-aiae-gauge"></div>
+                        <!-- 数值 + 档位徽章 (紧凑行) -->
+                        <div class="hub-aiae-hero-row">
+                            <div class="hub-aiae-footer">
+                                <span class="hub-aiae-val" id="aiae-thermo-val">—</span>
+                                <span class="hub-aiae-unit">%</span>
+                            </div>
+                            <div class="hub-aiae-regime" id="aiae-thermo-regime">—</div>
+                        </div>
+                        <!-- 五档 Tier 高亮区 -->
+                        <div class="hub-aiae-tiers" id="aiae-thermo-tiers">
+                            <div class="at-tier" data-tier="1"><span class="at-tier-label">Ⅰ</span><span class="at-tier-name">恐慌</span></div>
+                            <div class="at-tier" data-tier="2"><span class="at-tier-label">Ⅱ</span><span class="at-tier-name">低配</span></div>
+                            <div class="at-tier" data-tier="3"><span class="at-tier-label">Ⅲ</span><span class="at-tier-name">中性</span></div>
+                            <div class="at-tier" data-tier="4"><span class="at-tier-label">Ⅳ</span><span class="at-tier-name">偏热</span></div>
+                            <div class="at-tier" data-tier="5"><span class="at-tier-label">Ⅴ</span><span class="at-tier-name">过热</span></div>
+                        </div>
+                        <!-- Cap 仓位紧凑条 -->
+                        <div class="hub-aiae-cap">
+                            <span class="hub-cap-label">Cap仓位</span>
+                            <strong id="aiae-thermo-cap">—%</strong>
+                            <div class="hub-cap-bar-bg"><div class="hub-cap-fill" id="aiae-thermo-cap-bar" style="width:0%"></div></div>
+                        </div>
+                        <!-- AIAE 操作指引 (核心 actionable 输出) -->
+                        <div class="hub-aiae-action">
+                            <span class="hub-action-text" id="aiae-thermo-action-text">等待数据加载...</span>
+                        </div>
+                        <!-- 可折叠监控明细 -->
+                        <details class="hub-details-group">
+                            <summary class="hub-details-toggle">展开监控明细 ▾</summary>
+                            <div class="hub-aiae-slope" id="aiae-thermo-slope">月环比: —</div>
+                            <!-- 三大预警指标 -->
+                            <div class="hub-warn-group">
+                                <div class="hub-warn-row">
+                                    <span class="hub-warn-icon">🔥</span>
+                                    <span class="hub-warn-name">融资热度</span>
+                                    <span class="hub-warn-val" id="at-warn-margin">--</span>
+                                    <div class="hub-warn-bar-bg"><div class="hub-warn-bar-fill" id="at-warn-margin-bar"></div></div>
+                                </div>
+                                <div class="hub-warn-row">
+                                    <span class="hub-warn-icon">📐</span>
+                                    <span class="hub-warn-name">月斜率</span>
+                                    <span class="hub-warn-val" id="at-warn-slope">--</span>
+                                    <div class="hub-warn-bar-bg"><div class="hub-warn-bar-fill" id="at-warn-slope-bar"></div></div>
+                                </div>
+                                <div class="hub-warn-row">
+                                    <span class="hub-warn-icon">🏦</span>
+                                    <span class="hub-warn-name">基金仓位</span>
+                                    <span class="hub-warn-val" id="at-warn-fund">--</span>
+                                    <div class="hub-warn-bar-bg"><div class="hub-warn-bar-fill" id="at-warn-fund-bar"></div></div>
                                 </div>
                             </div>
-                        </div>
-                        <div class="risk-flag" id="label-market-temp">对齐中...</div>
-                        <div class="macro-tags">
-                            <div class="macro-tag" id="tag-capital-z">
-                                <span class="tag-icon">💰</span>
-                                <span class="tag-label">资金Z</span>
-                                <span class="tag-value" id="val-capital-z">--</span>
+                            <!-- 宏观微标签 -->
+                            <div class="macro-tags">
+                                <div class="macro-tag">
+                                    <span class="tag-icon">💰</span>
+                                    <span class="tag-label">资金Z</span>
+                                    <span class="tag-value" id="val-capital-z">--</span>
+                                </div>
+                                <div class="macro-tag">
+                                    <span class="tag-icon">📊</span>
+                                    <span class="tag-label">ERP</span>
+                                    <span class="tag-value" id="val-erp-tag">--</span>
+                                </div>
                             </div>
-                            <div class="macro-tag" id="tag-erp">
-                                <span class="tag-icon">📊</span>
-                                <span class="tag-label">ERP</span>
-                                <span class="tag-value" id="val-erp-tag">--</span>
+                            <!-- 数据来源微标签 -->
+                            <div class="hub-data-src">
+                                <span class="hub-src-tag" id="at-src-simple">AIAE_简: --%</span>
+                                <span class="hub-src-tag" id="at-src-erp">ERP: --%</span>
                             </div>
-                        </div>
-                        <div class="mindset-label" id="val-mindset">侦测中...</div>
+                        </details>
                     </div>
 
                     <!-- 中栏：仓位决策面板 -->
@@ -272,6 +275,8 @@
                             <span class="icon">🎯</span>
                             <h3>仓位决策</h3>
                         </div>
+                        <!-- 心态指引 (从左栏迁移，作为决策 context) -->
+                        <div class="mindset-label" id="val-mindset">侦测中...</div>
                         <div class="pos-hero">
                             <div class="pos-big-value" id="val-pos-advice">--%</div>
                             <div class="pos-bar-wrap">
@@ -309,7 +314,7 @@
                                 <span class="factor-score" id="fscore-erp">--</span>
                             </div>
                             <div class="factor-row">
-                                <span class="factor-name">策略共振</span>
+                                <span class="factor-name">AIAE档位</span>
                                 <div class="factor-bar-bg"><div class="factor-bar" id="fbar-signal" style="width:50%"></div></div>
                                 <span class="factor-score" id="fscore-signal">--</span>
                             </div>
@@ -320,6 +325,7 @@
                             </div>
                         </div>
                     </div>
+
 
                     <!-- 右栏：策略权重与联动 -->
                     <div class="hub-col col-allocation">
@@ -385,44 +391,73 @@
         </div>
 
 
-            <!-- V4.4 优化：明日实战决策矩阵 -->
+            <!-- V2.0: 明日交易计划 · AIAE五档主轴决策框架 -->
             <div class="plan-card glass-panel" id="card-tomorrow-plan">
                 <div class="plan-header">
                     <div class="header-main">
                         <span class="icon">📊</span>
-                        <h3>明日交易计划 (专业矩阵)</h3>
+                        <h3>明日交易计划 V2.0</h3>
                     </div>
                     <div class="regime-badge" id="tag-current-regime">同步中...</div>
                 </div>
                 
-                <div class="matrix-table">
-                    <div class="matrix-row matrix-header">
-                        <div class="col-regime">VIX区间</div>
-                        <div class="col-tactics">实战对策</div>
-                        <div class="col-pos">仓位建议</div>
+                <div class="plan-body-grid">
+                    <!-- 左栏: AIAE 决策锚 -->
+                    <div class="plan-anchor" id="plan-anchor-panel">
+                        <div class="plan-anchor-tier" id="plan-anchor-tier">🟡</div>
+                        <div class="plan-anchor-value" id="plan-anchor-value">--.-</div>
+                        <div class="plan-anchor-label">AIAE V1 (%)</div>
+                        <div class="plan-anchor-divider"></div>
+                        <div class="plan-anchor-cap">
+                            <span class="plan-cap-label">Cap</span>
+                            <strong id="plan-anchor-cap-val">--%</strong>
+                            <div class="plan-cap-bar-bg"><div class="plan-cap-bar-fill" id="plan-anchor-cap-bar" style="width:0%"></div></div>
+                        </div>
+                        <div class="plan-anchor-erp" id="plan-anchor-erp">ERP --</div>
+                        <div class="plan-anchor-slope" id="plan-anchor-slope">斜率 --</div>
+                        <div class="plan-anchor-divider"></div>
+                        <div class="plan-anchor-risk" id="plan-anchor-risk">
+                            <div class="plan-risk-row"><span class="plan-risk-icon">🔥</span><span class="plan-risk-name">融资</span><span class="plan-risk-val" id="plan-risk-margin">--</span></div>
+                            <div class="plan-risk-row"><span class="plan-risk-icon">📐</span><span class="plan-risk-name">斜率</span><span class="plan-risk-val" id="plan-risk-slope">--</span></div>
+                            <div class="plan-risk-row"><span class="plan-risk-icon">🏦</span><span class="plan-risk-name">基金</span><span class="plan-risk-val" id="plan-risk-fund">--</span></div>
+                        </div>
                     </div>
-                    <div id="matrix-content">
-                        <div class="loading-matrix">战术矩阵加载中...</div>
+
+                    <!-- 右栏: 矩阵 + 指令 + 情景 -->
+                    <div class="plan-main">
+                        <!-- 五档操作矩阵 -->
+                        <div class="plan-matrix-v2">
+                            <div class="matrix-row-v2 matrix-header-v2">
+                                <div class="col-tier-v2">档位</div>
+                                <div class="col-range-v2">区间</div>
+                                <div class="col-action-v2">操作指令</div>
+                                <div class="col-cap-v2">Cap</div>
+                            </div>
+                            <div id="matrix-content-v2">
+                                <div class="loading-matrix">五档矩阵加载中...</div>
+                            </div>
+                        </div>
+
+                        <!-- 核心指令 (3行) -->
+                        <div class="plan-directives" id="plan-directives">
+                            <!-- JS 动态渲染 -->
+                        </div>
+
+                        <!-- 情景标签 -->
+                        <div class="plan-scenarios-v2" id="plan-scenarios-v2"></div>
                     </div>
                 </div>
 
-                <div class="strategic-focus">
-                    <div class="focus-label">🎯 当前核心建议</div>
-                    <div class="plan-list">
-                        <ul id="list-plan-framework"></ul>
-                    </div>
-                </div>
-
-                <div class="plan-scenarios" id="list-plan-scenarios"></div>
-                <div class="plan-disclaimer">基于 VIX 4阶矩阵 + AIAE五档Cap · AlphaCore V7.0 Real-time Protocol</div>
+                <div class="plan-disclaimer">AlphaCore V7.0 · AIAE五档 × ERP双维 × VIX风控 Protocol</div>
             </div>
 
-            <!-- ERP 历史走势图 (近5年) · 买卖区间可视化 -->
-            <div class="glass-panel" style="padding:16px;margin-top:14px;" id="erp-history-section">
-                <h3 style="margin:0 0 8px;font-size:0.85rem;color:#94a3b8;">📈 ERP 历史走势 (近5年) · 买卖区间可视化</h3>
-                <div id="erp-history-chart" style="width:100%;height:380px;display:none;"></div>
-                <div id="erp-chart-loading" style="text-align:center;padding:80px 20px;color:#64748b;font-size:0.8rem;">
-                    ⏳ 正在拉取 ERP 五年历史序列数据...
+            <!-- ERP 历史走势图 (近11.3年) · 四档区间可视化 -->
+            <div class="glass-panel erp-chart-section" id="erp-history-section">
+                <h3 class="erp-chart-title" id="erp-chart-title">📈 ERP 历史走势 · 四档区间可视化</h3>
+                <div id="erp-chart-kpis" class="erp-chart-kpis" style="display:flex;gap:10px;margin-bottom:10px;"></div>
+                <div id="erp-history-chart" class="erp-chart-canvas"></div>
+                <div id="erp-chart-loading" class="erp-chart-loading">
+                    ⏳ 正在拉取 ERP 历史序列数据...
                 </div>
             </div>
 
@@ -537,6 +572,6 @@
         </div>
     </main>
 
-    <script src="./script.js?v=7"></script>
+    <script src="./script.js?v=10"></script>
 </body>
 </html>
