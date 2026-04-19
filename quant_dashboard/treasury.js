@@ -3,47 +3,13 @@
 // 海外ERP择时 + 利率择时V1.5 + 海外AIAE仓位管控
 // ============================================================
 
-// ── 页面基础功能: Tab切换 + 导航高亮 + 实时时钟 ──
+// ── 页面基础功能: Tab切换 + 导航高亮 + 实时时钟 (Phase 2: 统一由 AlphaCore 工具库驱动) ──
 (function _initTreasuryUI() {
     function setup() {
-        // 导航
-        const navItems = document.querySelectorAll('.nav-item');
-        navItems.forEach(item => {
-            item.addEventListener('click', (e) => {
-                const href = item.getAttribute('href');
-                if (!href || href === '#') e.preventDefault();
-                navItems.forEach(nav => nav.classList.remove('active'));
-                item.classList.add('active');
-            });
-        });
-
-        // 实时时间
-        function updateTime() {
-            const now = new Date();
-            const pad = n => n.toString().padStart(2, '0');
-            const el = document.getElementById('st-time');
-            if (el) el.textContent = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-        }
-        updateTime();
-        setInterval(updateTime, 1000);
-
-        // 策略标签切换
-        const tabs = document.querySelectorAll('.st-tab');
-        const reports = document.querySelectorAll('.st-report');
-        tabs.forEach(tab => {
-            tab.addEventListener('click', () => {
-                const targetId = tab.dataset.report;
-                tabs.forEach(t => t.classList.remove('active'));
-                reports.forEach(r => r.classList.remove('active'));
-                tab.classList.add('active');
-                const target = document.getElementById(targetId);
-                if (target) target.classList.add('active');
-                const dash = document.querySelector('.dashboard');
-                if (dash) dash.scrollTo({ top: 0, behavior: 'smooth' });
-            });
-        });
+        AC.initNavigation();
+        AC.startClock();
+        AC.initTabSystem();
     }
-    // Run immediately if DOM ready, otherwise defer
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', setup);
     } else {
@@ -139,7 +105,7 @@ function renderMiniGauge(elId, score, color) {
     if (!el) return;
     // P1-3: 复用已有实例，避免内存泄漏
     let chart = echarts.getInstanceByDom(el);
-    if (!chart) chart = echarts.init(el);
+    if (!chart) chart = AC.registerChart(echarts.init(el));
     if (elId.startsWith('us')) _usGaugeChart = chart;
     else if (elId.startsWith('jp')) _jpGaugeChart = chart;
     else if (elId.startsWith('hk')) _hkGaugeChart = chart;
@@ -449,7 +415,7 @@ function renderRegionChart(region, chart, color) {
     if (!chart || chart.status !== 'success') return;
     const el = document.getElementById(region+'-erp-chart');
     if (!el) return;
-    const instance = echarts.init(el);
+    const instance = AC.registerChart(echarts.init(el));
     if (region === 'us') _usErpChart = instance;
     else if (region === 'jp') _jpErpChart = instance;
     else if (region === 'hk') _hkErpChart = instance;
@@ -710,8 +676,8 @@ function renderRatesPanel(data) {
 function renderRatesGauge(score) {
     const el = document.getElementById('rates-gauge-chart');
     if (!el) return;
-    if (_ratesGaugeChart) _ratesGaugeChart.dispose();
-    _ratesGaugeChart = echarts.init(el);
+    _ratesGaugeChart = AC.disposeChart(_ratesGaugeChart);
+    _ratesGaugeChart = AC.registerChart(echarts.init(el));
     _ratesGaugeChart.setOption({
         series: [{
             type: 'gauge', startAngle: 200, endAngle: -20, min: 0, max: 100,
@@ -762,8 +728,8 @@ function renderRatesChart(chart) {
     if (!chart || chart.status !== 'success') return;
     const el = document.getElementById('rates-chart');
     if (!el) return;
-    if (_ratesMainChart) _ratesMainChart.dispose();
-    _ratesMainChart = echarts.init(el);
+    _ratesMainChart = AC.disposeChart(_ratesMainChart);
+    _ratesMainChart = AC.registerChart(echarts.init(el));
     const lines = chart.lines || {};
     const markAreas = chart.mark_areas || [];
     const pctStats = chart.percentile_stats || {};
@@ -1078,11 +1044,7 @@ function setupRatesTooltips(tips) {
 // [V3.1] 重复的 renderRatesChart 已删除 (使用 L3432 的V3.0版本)
 
 
-// P3-12: ECharts resize 监听 — 浏览器窗口变化时自适应
-window.addEventListener('resize', function() {
-    if (_ratesGaugeChart) _ratesGaugeChart.resize();
-    if (_ratesMainChart) _ratesMainChart.resize();
-});
+// Phase 2: resize 已由 alphacore_utils.js 注册中心统一处理
 
 
 // ====================================================================
@@ -1210,8 +1172,8 @@ function renderGAIAERegionPanel(region, data, color) {
         const el = document.getElementById('gaiae-' + region + '-gauge');
         if (el && typeof echarts !== 'undefined') {
             const key = '_gaiae' + region.charAt(0).toUpperCase() + region.slice(1) + 'Gauge';
-            if (window[key]) window[key].dispose();
-            window[key] = echarts.init(el);
+            if (window[key]) AC.disposeChart(window[key]);
+            window[key] = AC.registerChart(echarts.init(el));
             window[key].setOption({
                 series: [{
                     type: 'gauge', startAngle: 200, endAngle: -20, min: 0, max: max,
@@ -1518,8 +1480,8 @@ function renderGAIAEActionZone(usRegime, jpRegime, hkRegime) {
 function renderGAIAEHistoryChart(usChart, jpChart, hkChart) {
     const el = document.getElementById('gaiae-history-chart');
     if (!el || typeof echarts === 'undefined') return;
-    if (window._gaiaeHistChart) window._gaiaeHistChart.dispose();
-    window._gaiaeHistChart = echarts.init(el);
+    if (window._gaiaeHistChart) AC.disposeChart(window._gaiaeHistChart);
+    window._gaiaeHistChart = AC.registerChart(echarts.init(el));
 
     // Use US chart dates as x-axis (it has more data points typically)
     const usDates = usChart ? usChart.dates : [];
@@ -1604,33 +1566,4 @@ function renderGAIAEHistoryChart(usChart, jpChart, hkChart) {
     });
 }
 
-// ============================================================
-// P3-2: 全局 resize 监听 — 所有 ECharts 实例自适应
-// ============================================================
-(function() {
-    let _resizeTimer = null;
-    window.addEventListener('resize', function() {
-        clearTimeout(_resizeTimer);
-        _resizeTimer = setTimeout(function() {
-            // ERP gauges
-            [_usGaugeChart, _jpGaugeChart, _hkGaugeChart].forEach(function(c) {
-                if (c && typeof c.resize === 'function') c.resize();
-            });
-            // AIAE gauges
-            ['_gaiaeUsGauge', '_gaiaeJpGauge', '_gaiaeHkGauge'].forEach(function(k) {
-                if (window[k] && typeof window[k].resize === 'function') window[k].resize();
-            });
-            // AIAE history chart
-            if (window._gaiaeHistChart && typeof window._gaiaeHistChart.resize === 'function') {
-                window._gaiaeHistChart.resize();
-            }
-            // Rates charts
-            if (window._ratesGaugeChart && typeof window._ratesGaugeChart.resize === 'function') {
-                window._ratesGaugeChart.resize();
-            }
-            if (window._ratesMainChart && typeof window._ratesMainChart.resize === 'function') {
-                window._ratesMainChart.resize();
-            }
-        }, 200);
-    });
-})();
+// Phase 2: resize 已由 alphacore_utils.js 注册中心统一处理

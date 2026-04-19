@@ -1096,8 +1096,8 @@ function renderERPDashboardChart(chart, signalData) {
     const dom = document.getElementById('erp-history-chart');
     if (!dom || typeof echarts === 'undefined') return;
     
-    if (_erpDashboardChart) _erpDashboardChart.dispose();
-    _erpDashboardChart = echarts.init(dom);
+    if (_erpDashboardChart) _erpDashboardChart = AC.disposeChart(_erpDashboardChart);
+    _erpDashboardChart = AC.registerChart(echarts.init(dom));
     
     const stats = chart.stats || {};
     const hasM1 = chart.m1_yoy && chart.m1_yoy.some(v => v != null);
@@ -1300,19 +1300,8 @@ function renderERPDashboardKPIs(stats, signalData) {
     </div>`).join('');
 }
 
-// ERP 图表 + AIAE 仪表盘响应式 resize (V11.0: debounce 防抖)
+// ERP 图表 + AIAE 仪表盘 — resize 由 AC (alphacore_utils.js) 统一管理
 let _aiaeThermGauge = null;
-let _resizeTimer = null;
-window.addEventListener('resize', () => {
-    clearTimeout(_resizeTimer);
-    _resizeTimer = setTimeout(() => {
-        if (_erpDashboardChart) _erpDashboardChart.resize();
-        if (_aiaeThermGauge) {
-            try { _aiaeThermGauge.resize(); }
-            catch(e) { console.warn('[AIAE Gauge] resize error:', e); }
-        }
-    }, 300);
-});
 
 // ====================================================================
 //  AIAE 温度计 · 量化总览精简渲染引擎
@@ -1330,8 +1319,8 @@ function renderAIAEThermometer(d) {
     try {
         const gaugeEl = el('aiae-thermo-gauge');
         if (gaugeEl && typeof echarts !== 'undefined') {
-            if (_aiaeThermGauge) _aiaeThermGauge.dispose();
-            _aiaeThermGauge = echarts.init(gaugeEl);
+            if (_aiaeThermGauge) _aiaeThermGauge = AC.disposeChart(_aiaeThermGauge);
+            _aiaeThermGauge = AC.registerChart(echarts.init(gaugeEl));
             const rc = d.regime_color || '#eab308';
             _aiaeThermGauge.setOption({
                 series: [{

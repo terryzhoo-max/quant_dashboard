@@ -323,13 +323,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // === ECharts 初始化 ===
     function initCharts() {
-        if (!charts.gauge) charts.gauge = echarts.init(document.getElementById('alpha-gauge'));
-        if (!charts.radar) charts.radar = echarts.init(document.getElementById('radar-chart'));
-        if (!charts.ic) charts.ic = echarts.init(document.getElementById('ic-series-chart'));
-        if (!charts.qAvg) charts.qAvg = echarts.init(document.getElementById('quantile-avg-chart'));
-        if (!charts.qCum) charts.qCum = echarts.init(document.getElementById('quantile-cum-chart'));
-        if (!charts.histogram) charts.histogram = echarts.init(document.getElementById('ic-histogram-chart'));
-        if (!charts.decay) charts.decay = echarts.init(document.getElementById('ic-decay-chart'));
+        if (!charts.gauge) charts.gauge = AC.registerChart(echarts.init(document.getElementById('alpha-gauge')));
+        if (!charts.radar) charts.radar = AC.registerChart(echarts.init(document.getElementById('radar-chart')));
+        if (!charts.ic) charts.ic = AC.registerChart(echarts.init(document.getElementById('ic-series-chart')));
+        if (!charts.qAvg) charts.qAvg = AC.registerChart(echarts.init(document.getElementById('quantile-avg-chart')));
+        if (!charts.qCum) charts.qCum = AC.registerChart(echarts.init(document.getElementById('quantile-cum-chart')));
+        if (!charts.histogram) charts.histogram = AC.registerChart(echarts.init(document.getElementById('ic-histogram-chart')));
+        if (!charts.decay) charts.decay = AC.registerChart(echarts.init(document.getElementById('ic-decay-chart')));
     }
 
     // === 渲染结果 ===
@@ -898,10 +898,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // === resize ===
-    window.addEventListener('resize', () => {
-        Object.values(charts).forEach(c => c && c.resize());
-    });
+    // resize 由 AC (alphacore_utils.js) 统一管理
 
     // === 启动 ===
     init();

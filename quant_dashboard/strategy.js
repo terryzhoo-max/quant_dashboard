@@ -476,8 +476,8 @@ function _renderMrBacktest(data) {
         ]);
     }
 
-    if (_mrBacktestChart) { _mrBacktestChart.dispose(); }
-    _mrBacktestChart = echarts.init(chartEl, 'dark');
+    _mrBacktestChart = AC.disposeChart(_mrBacktestChart);
+    _mrBacktestChart = AC.registerChart(echarts.init(chartEl, 'dark'));
 
     const option = {
         backgroundColor: 'transparent',
@@ -534,7 +534,7 @@ function _renderMrBacktest(data) {
         ]
     };
     _mrBacktestChart.setOption(option);
-    window.addEventListener('resize', () => _mrBacktestChart && _mrBacktestChart.resize());
+
 }
 
 // 页面加载后自动尝试渲染（如有缓存数据）
@@ -892,63 +892,19 @@ function renderRegime(d) {
     _setText('hero-entry-gate', `${regimeKey} ≥${curGate}分`);
 }
 
-function _setText(id, val) {
-    const el = document.getElementById(id);
-    if (el) el.textContent = val;
-}
-function _setColor(id, color) {
-    const el = document.getElementById(id);
-    if (el) el.style.color = color;
-}
+// Phase 2: delegate to shared AlphaCore utility
+const _setText = AC.setText;
+const _setColor = AC.setColor;
 
 
+// Phase 2: 导航 + 时钟 + Tab 切换统一由 AlphaCore 工具库驱动
 document.addEventListener('DOMContentLoaded', () => {
-    // 导航
-    const navItems = document.querySelectorAll('.nav-item');
-    navItems.forEach(item => {
-        item.addEventListener('click', (e) => {
-            const href = item.getAttribute('href');
-            if (!href || href === '#') e.preventDefault();
-            navItems.forEach(nav => nav.classList.remove('active'));
-            item.classList.add('active');
-        });
-    });
-
-    // 实时时间
-    function updateTime() {
-        const now = new Date();
-        const pad = n => n.toString().padStart(2, '0');
-        const el = document.getElementById('st-time');
-        if (el) el.textContent = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-    }
-    updateTime();
-    setInterval(updateTime, 1000);
-
-    // 策略标签切换
-    const tabs = document.querySelectorAll('.st-tab');
-    const reports = document.querySelectorAll('.st-report');
-    tabs.forEach(tab => {
-        tab.addEventListener('click', () => {
-            const targetId = tab.dataset.report;
-            tabs.forEach(t => t.classList.remove('active'));
-            reports.forEach(r => r.classList.remove('active'));
-            tab.classList.add('active');
-            const target = document.getElementById(targetId);
-            if (target) target.classList.add('active');
-            document.querySelector('.dashboard').scrollTo({ top: 0, behavior: 'smooth' });
-            // 切换到信号评分系统时自动触发市场识别
-            if (targetId === 'st-signal-rules') {
-                setTimeout(() => loadMarketRegime(), 100);
-            }
-            // 切换到ERP择时时自动加载数据
-            if (targetId === 'st-erp-timing') {
-                setTimeout(() => loadERPTimingData(), 100);
-            }
-            // 切换到AIAE宏观仓位时自动加载数据
-            if (targetId === 'st-aiae-position') {
-                setTimeout(() => loadAIAEReport(), 100);
-            }
-        });
+    AC.initNavigation();
+    AC.startClock();
+    AC.initTabSystem(targetId => {
+        if (targetId === 'st-signal-rules') setTimeout(() => loadMarketRegime(), 100);
+        if (targetId === 'st-erp-timing') setTimeout(() => loadERPTimingData(), 100);
+        if (targetId === 'st-aiae-position') setTimeout(() => loadAIAEReport(), 100);
     });
 });
 
@@ -1211,7 +1167,7 @@ function renderExecGauge(value) {
     if (!container || typeof echarts === 'undefined') return;
 
     let chart = echarts.getInstanceByDom(container);
-    if (!chart) chart = echarts.init(container, 'dark');
+    if (!chart) chart = AC.registerChart(echarts.init(container, 'dark'));
 
     const color = value >= 60 ? '#10b981' : value >= 30 ? '#eab308' : '#ef4444';
     chart.setOption({
@@ -1828,7 +1784,10 @@ function renderNavChart(p) {
     const chartEl = document.getElementById('bt-nav-chart');
     if (!chartEl || !window.echarts) return;
 
-    const chart = echarts.init(chartEl, 'dark');
+    // Phase 2: dispose旧实例防内存泄漏 + 统一注册
+    let _prev = echarts.getInstanceByDom(chartEl);
+    if (_prev) AC.disposeChart(_prev);
+    const chart = AC.registerChart(echarts.init(chartEl, 'dark'));
     const hasBench = p.benchmark_values && p.benchmark_values.length > 0;
     const dates = p.dates || [];
 
@@ -1869,7 +1828,7 @@ function renderNavChart(p) {
         series
     });
 
-    window.addEventListener('resize', () => chart.resize());
+
 }
 
 function renderMonthlyHeatmap(monthlyReturns) {

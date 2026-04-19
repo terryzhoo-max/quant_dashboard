@@ -77,13 +77,13 @@ document.addEventListener('DOMContentLoaded', function () {
         const gMaxdd = document.getElementById('gauge-maxdd');
         const gVol = document.getElementById('gauge-vol');
 
-        if (sectorEl && !charts.sector) charts.sector = echarts.init(sectorEl);
-        if (mctrEl && !charts.mctr) charts.mctr = echarts.init(mctrEl);
-        if (navEl && !charts.nav) charts.nav = echarts.init(navEl);
-        if (sparkEl && !charts.sparkline) charts.sparkline = echarts.init(sparkEl);
-        if (gSharpe && !gauges.sharpe) gauges.sharpe = echarts.init(gSharpe);
-        if (gMaxdd && !gauges.maxdd) gauges.maxdd = echarts.init(gMaxdd);
-        if (gVol && !gauges.vol) gauges.vol = echarts.init(gVol);
+        if (sectorEl && !charts.sector) charts.sector = AC.registerChart(echarts.init(sectorEl));
+        if (mctrEl && !charts.mctr) charts.mctr = AC.registerChart(echarts.init(mctrEl));
+        if (navEl && !charts.nav) charts.nav = AC.registerChart(echarts.init(navEl));
+        if (sparkEl && !charts.sparkline) charts.sparkline = AC.registerChart(echarts.init(sparkEl));
+        if (gSharpe && !gauges.sharpe) gauges.sharpe = AC.registerChart(echarts.init(gSharpe));
+        if (gMaxdd && !gauges.maxdd) gauges.maxdd = AC.registerChart(echarts.init(gMaxdd));
+        if (gVol && !gauges.vol) gauges.vol = AC.registerChart(echarts.init(gVol));
     }
 
     // ════════════════════════════════════
@@ -1029,11 +1029,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    // Resize
-    window.addEventListener('resize', function () {
-        Object.values(charts).forEach(c => c && c.resize());
-        Object.values(gauges).forEach(g => g && g.resize());
-    });
+    // resize 由 AC (alphacore_utils.js) 统一管理
 
     // ════════════════════════════════════
     //  启动

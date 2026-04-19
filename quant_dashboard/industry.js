@@ -57,11 +57,11 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function initCharts() {
-        charts.rps = echarts.init(document.getElementById('gauge-rps'));
-        charts.value = echarts.init(document.getElementById('gauge-value'));
-        charts.risk = echarts.init(document.getElementById('gauge-risk'));
-        charts.rsLine = echarts.init(document.getElementById('rs-line-chart'));
-        charts.heatmap = echarts.init(document.getElementById('heatmap-chart'));
+        charts.rps = AC.registerChart(echarts.init(document.getElementById('gauge-rps')));
+        charts.value = AC.registerChart(echarts.init(document.getElementById('gauge-value')));
+        charts.risk = AC.registerChart(echarts.init(document.getElementById('gauge-risk')));
+        charts.rsLine = AC.registerChart(echarts.init(document.getElementById('rs-line-chart')));
+        charts.heatmap = AC.registerChart(echarts.init(document.getElementById('heatmap-chart')));
     }
 
     // === V4.0 Regime Banner + V5.0 Data Freshness Badge (Fix5) ===
@@ -738,5 +738,5 @@ document.addEventListener('DOMContentLoaded', function() {
 
     syncBtn.addEventListener('click', syncData);
     initPage();
-    window.addEventListener('resize', () => Object.values(charts).forEach(c => c && c.resize()));
+    // resize 由 AC (alphacore_utils.js) 统一管理
 });

@@ -345,8 +345,8 @@ function renderAIAEActionDashboard(regime, ri, matrixPos) {
 function renderAIAEGauge(value, regime, ri) {
     const container = document.getElementById('aiae-gauge-container');
     if (!container || typeof echarts === 'undefined') return;
-    if (window._aiaeGaugeChart) window._aiaeGaugeChart.dispose();
-    window._aiaeGaugeChart = echarts.init(container);
+    window._aiaeGaugeChart = AC.disposeChart(window._aiaeGaugeChart);
+    window._aiaeGaugeChart = AC.registerChart(echarts.init(container));
 
     const v = Math.min(Math.max(value, 0), 50);
 
@@ -414,8 +414,8 @@ function renderAIAEHistoryChart(chart, currentValue) {
     const container = document.getElementById('aiae-history-chart');
     if (!container || typeof echarts === 'undefined') return;
     try {
-        if (window._aiaeHistChart) window._aiaeHistChart.dispose();
-        window._aiaeHistChart = echarts.init(container);
+        if (window._aiaeHistChart) AC.disposeChart(window._aiaeHistChart);
+        window._aiaeHistChart = AC.registerChart(echarts.init(container));
 
         // 五档区间色带
         const markAreaData = [
@@ -610,26 +610,4 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// ── ECharts Resize Handler for strategy.html (防抖 200ms) ──
-(function() {
-    let _resizeTimer = null;
-    window.addEventListener('resize', function() {
-        clearTimeout(_resizeTimer);
-        _resizeTimer = setTimeout(function() {
-            // A股 AIAE gauge + history
-            if (window._aiaeGaugeChart) {
-                try { window._aiaeGaugeChart.resize(); } catch(e) {}
-            }
-            if (window._aiaeHistChart) {
-                try { window._aiaeHistChart.resize(); } catch(e) {}
-            }
-            // A股 ERP gauge + history
-            if (typeof _erpGaugeChart !== 'undefined' && _erpGaugeChart) {
-                try { _erpGaugeChart.resize(); } catch(e) {}
-            }
-            if (typeof _erpHistoryChart !== 'undefined' && _erpHistoryChart) {
-                try { _erpHistoryChart.resize(); } catch(e) {}
-            }
-        }, 200);
-    });
-})();
+// Phase 2: resize 已由 alphacore_utils.js 注册中心统一处理

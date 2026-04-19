@@ -355,8 +355,8 @@ function renderERPDimBars(dims, encyclopedia) {
 function renderERPGauge(signal, trade) {
     const dom = document.getElementById('erp-gauge-chart');
     if (!dom) return;
-    if (_erpGaugeChart) _erpGaugeChart.dispose();
-    _erpGaugeChart = echarts.init(dom);
+    _erpGaugeChart = AC.disposeChart(_erpGaugeChart);
+    _erpGaugeChart = AC.registerChart(echarts.init(dom));
     const score = signal.score || 50;
     const color = signal.color || '#64748b';
     _erpGaugeChart.setOption({
@@ -390,8 +390,8 @@ function renderERPGauge(signal, trade) {
 function renderERPHistoryChart(chart, signalData) {
     const dom = document.getElementById('erp-history-chart');
     if (!dom) return;
-    if (_erpHistoryChart) _erpHistoryChart.dispose();
-    _erpHistoryChart = echarts.init(dom);
+    _erpHistoryChart = AC.disposeChart(_erpHistoryChart);
+    _erpHistoryChart = AC.registerChart(echarts.init(dom));
     const stats = chart.stats || {};
     const hasM1 = chart.m1_yoy && chart.m1_yoy.some(v => v != null);
 
@@ -628,17 +628,6 @@ function renderERPDiagnosis(cards) {
     }).join('');
 }
 
-// 窗口resize
-let _usErpChart = null, _jpErpChart = null, _hkErpChart = null;
-window.addEventListener('resize', () => {
-    if (_erpGaugeChart) _erpGaugeChart.resize();
-    if (_erpHistoryChart) _erpHistoryChart.resize();
-    if (_usErpChart) _usErpChart.resize();
-    if (_jpErpChart) _jpErpChart.resize();
-    if (_hkErpChart) _hkErpChart.resize();
-    if (_usGaugeChart) _usGaugeChart.resize();
-    if (_jpGaugeChart) _jpGaugeChart.resize();
-    if (_hkGaugeChart) _hkGaugeChart.resize();
-});
+// Phase 2: resize 已由 alphacore_utils.js 注册中心统一处理
 
 // ============================================================
