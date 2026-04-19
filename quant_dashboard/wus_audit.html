@@ -8,8 +8,10 @@
     <link rel="stylesheet" href="./styles.css">
     <link rel="stylesheet" href="./audit.css">
     <link rel="stylesheet" href="./wus_audit.css">
+    <link rel="stylesheet" href="./audit_bridge.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
     <script src="./echarts.min.js"></script>
+    <script src="./alphacore_utils.js"></script>
 </head>
 <body>
     <!-- Ambient Orbs -->
@@ -73,7 +75,7 @@
             </div>
 
             <!-- Company Identity Banner -->
-            <div class="wus-identity-banner wus-animate-in" id="wus-identity" style="display:none;">
+            <div class="wus-identity-banner wus-animate-in" id="audit-identity" style="display:none;">
                 <div class="wus-id-left">
                     <div class="wus-logo-ring">
                         <span class="wus-logo-text">WUS</span>
@@ -139,7 +141,7 @@
             </div>
 
             <!-- KPI Dashboard -->
-            <div class="wus-kpi-dashboard" id="wus-kpi-dashboard"></div>
+            <div class="wus-kpi-dashboard" id="audit-kpi-dashboard"></div>
 
             <!-- Section: 五维穿透 -->
             <div class="wus-section-divider"></div>
@@ -167,7 +169,7 @@
             <div class="wus-section-divider"></div>
 
             <!-- Financial Deep-Dive Charts -->
-            <div class="wus-charts-grid" id="wus-charts-grid" style="display:none;">
+            <div class="wus-charts-grid" id="audit-charts-grid" style="display:none;">
                 <div class="wus-chart-panel glass-panel">
                     <div class="wus-chart-title">📊 营收与利润趋势 (2019-2025E)</div>
                     <div class="wus-chart-canvas" id="chart-revenue"></div>
@@ -190,20 +192,20 @@
             <div class="wus-section-divider"></div>
 
             <!-- Risk Matrix -->
-            <div class="wus-risk-matrix glass-panel wus-animate-in" id="wus-risk-matrix" style="display:none;">
+            <div class="wus-risk-matrix glass-panel wus-animate-in" id="audit-risk-matrix" style="display:none;">
                 <div class="wus-rm-header">
                     <span>⚡ 核心风险矩阵</span>
-                    <span class="wus-rm-badge" id="rm-badge">--</span>
+                    <span class="audit-rm-badge" id="rm-badge">--</span>
                 </div>
-                <div class="wus-rm-body" id="wus-rm-body"></div>
+                <div class="wus-rm-body" id="audit-rm-body"></div>
             </div>
 
             <!-- Investment Verdict -->
-            <div class="wus-verdict-panel glass-panel wus-animate-in" id="wus-verdict" style="display:none;">
+            <div class="wus-verdict-panel glass-panel wus-animate-in" id="audit-verdict" style="display:none;">
                 <div class="wus-verdict-header">
                     <span>🎯 投资研判结论</span>
                 </div>
-                <div class="wus-verdict-body" id="wus-verdict-body"></div>
+                <div class="wus-verdict-body" id="audit-verdict-body"></div>
             </div>
 
             <!-- Audit Timeline -->
@@ -222,7 +224,7 @@
                     <span style="margin-left:8px;" id="footer-time">· 等待审计</span>
                     <span class="footer-urgent" id="footer-urgent"></span>
                 </div>
-                <button class="audit-btn" id="audit-refresh-btn" onclick="runWUSAudit()">
+                <button class="audit-btn" id="audit-refresh-btn" onclick="AuditCore.runAudit()">
                     <span class="spinner" id="audit-spinner"></span>
                     🔄 重新审计
                 </button>
@@ -230,6 +232,7 @@
         </div>
     </main>
 
-    <script src="./wus_audit.js"></script>
+    <script src="./audit_core.js"></script>
+    <script src="./wus_data.js"></script>
 </body>
 </html>

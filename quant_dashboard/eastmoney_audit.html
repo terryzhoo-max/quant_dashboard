@@ -8,8 +8,10 @@
     <link rel="stylesheet" href="./styles.css">
     <link rel="stylesheet" href="./audit.css">
     <link rel="stylesheet" href="./eastmoney_audit.css">
+    <link rel="stylesheet" href="./audit_bridge.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
     <script src="./echarts.min.js"></script>
+    <script src="./alphacore_utils.js"></script>
 </head>
 <body>
     <!-- Ambient Orbs -->
@@ -73,7 +75,7 @@
             </div>
 
             <!-- Company Identity Banner -->
-            <div class="em-identity-banner em-animate-in" id="em-identity" style="display:none;">
+            <div class="em-identity-banner em-animate-in" id="audit-identity" style="display:none;">
                 <div class="em-id-left">
                     <div class="em-logo-ring">
                         <span class="em-logo-text">东财</span>
@@ -139,7 +141,7 @@
             </div>
 
             <!-- KPI Dashboard -->
-            <div class="em-kpi-dashboard" id="em-kpi-dashboard"></div>
+            <div class="em-kpi-dashboard" id="audit-kpi-dashboard"></div>
 
             <!-- Section: 五维穿透 -->
             <div class="em-section-divider"></div>
@@ -167,7 +169,7 @@
             <div class="em-section-divider"></div>
 
             <!-- Financial Deep-Dive Charts -->
-            <div class="em-charts-grid" id="em-charts-grid" style="display:none;">
+            <div class="em-charts-grid" id="audit-charts-grid" style="display:none;">
                 <div class="em-chart-panel glass-panel">
                     <div class="em-chart-title">📊 营收与利润趋势 (2019-2025E)</div>
                     <div class="em-chart-canvas" id="chart-revenue"></div>
@@ -190,20 +192,20 @@
             <div class="em-section-divider"></div>
 
             <!-- Risk Matrix -->
-            <div class="em-risk-matrix glass-panel em-animate-in" id="em-risk-matrix" style="display:none;">
+            <div class="em-risk-matrix glass-panel em-animate-in" id="audit-risk-matrix" style="display:none;">
                 <div class="em-rm-header">
                     <span>⚡ 核心风险矩阵</span>
-                    <span class="em-rm-badge" id="rm-badge">--</span>
+                    <span class="audit-rm-badge" id="rm-badge">--</span>
                 </div>
-                <div class="em-rm-body" id="em-rm-body"></div>
+                <div class="em-rm-body" id="audit-rm-body"></div>
             </div>
 
             <!-- Investment Verdict -->
-            <div class="em-verdict-panel glass-panel em-animate-in" id="em-verdict" style="display:none;">
+            <div class="em-verdict-panel glass-panel em-animate-in" id="audit-verdict" style="display:none;">
                 <div class="em-verdict-header">
                     <span>🎯 投资研判结论</span>
                 </div>
-                <div class="em-verdict-body" id="em-verdict-body"></div>
+                <div class="em-verdict-body" id="audit-verdict-body"></div>
             </div>
 
             <!-- Audit Timeline -->
@@ -222,7 +224,7 @@
                     <span style="margin-left:8px;" id="footer-time">· 等待审计</span>
                     <span class="footer-urgent" id="footer-urgent"></span>
                 </div>
-                <button class="audit-btn" id="audit-refresh-btn" onclick="runEMAudit()">
+                <button class="audit-btn" id="audit-refresh-btn" onclick="AuditCore.runAudit()">
                     <span class="spinner" id="audit-spinner"></span>
                     🔄 重新审计
                 </button>
@@ -230,6 +232,7 @@
         </div>
     </main>
 
-    <script src="./eastmoney_audit.js"></script>
+    <script src="./audit_core.js"></script>
+    <script src="./eastmoney_data.js"></script>
 </body>
 </html>

@@ -1,0 +1,63 @@
+/* ═══════════════════════════════════════════════════════════════ */
+/*  audit_bridge.css — Phase 3A 统一前缀桥接                      */
+/*  audit_core.js 生成 audit-* 类名，此文件提供对应样式            */
+/*  各公司主题色通过 CSS 自定义属性注入                            */
+/* ═══════════════════════════════════════════════════════════════ */
+
+/* ── Risk Matrix ── */
+.audit-rm-badge { font-size:0.62rem; font-weight:700; padding:3px 12px; border-radius:6px; font-family:'Outfit',sans-serif; }
+.audit-rm-badge.high { background:rgba(239,68,68,0.12); color:#f87171; border:1px solid rgba(239,68,68,0.2); }
+.audit-rm-badge.medium { background:rgba(245,158,11,0.12); color:#fbbf24; border:1px solid rgba(245,158,11,0.2); }
+.audit-rm-badge.low { background:rgba(16,185,129,0.12); color:#34d399; border:1px solid rgba(16,185,129,0.2); }
+.audit-risk-item { padding:14px 16px; border-radius:var(--audit-radius-sm,10px); background:rgba(255,255,255,0.015); border:1px solid rgba(255,255,255,0.04); position:relative; overflow:hidden; transition:all 0.35s cubic-bezier(0.22,1,0.36,1); display:flex; flex-direction:column; min-height:120px; }
+.audit-risk-item:hover { background:rgba(255,255,255,0.035); transform:translateY(-2px); box-shadow:0 4px 16px rgba(0,0,0,0.2); }
+.audit-risk-item::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; border-radius:3px 0 0 3px; }
+.audit-risk-item.risk-critical::before { background:#ef4444; }
+.audit-risk-item.risk-high::before { background:#f59e0b; }
+.audit-risk-item.risk-medium::before { background:#3b82f6; }
+.audit-risk-item.risk-low::before { background:#10b981; }
+.audit-risk-item.risk-critical { border-color:rgba(239,68,68,0.12); }
+.audit-risk-name { font-size:0.8rem; font-weight:700; color:var(--audit-text-primary,#e2e8f0); margin-bottom:6px; }
+.audit-risk-desc { font-size:0.7rem; color:var(--audit-text-secondary,#94a3b8); line-height:1.6; margin-bottom:8px; flex:1; }
+.audit-risk-tags { display:flex; gap:5px; flex-wrap:wrap; margin-top:auto; }
+.audit-risk-tag { font-size:0.56rem; font-weight:600; padding:2px 7px; border-radius:4px; }
+.audit-risk-tag.probability { background:rgba(239,68,68,0.07); color:#fca5a5; border:1px solid rgba(239,68,68,0.1); }
+.audit-risk-tag.impact { background:rgba(245,158,11,0.07); color:#fde68a; border:1px solid rgba(245,158,11,0.1); }
+.audit-risk-tag.mitigation { background:rgba(59,130,246,0.07); color:#93c5fd; border:1px solid rgba(59,130,246,0.1); }
+
+/* ── Verdict Panel ── */
+.audit-verdict-card { padding:16px 18px; border-radius:var(--audit-radius-sm,10px); background:rgba(255,255,255,0.015); border:1px solid rgba(255,255,255,0.05); transition:all 0.3s cubic-bezier(0.22,1,0.36,1); position:relative; overflow:hidden; min-height:140px; }
+.audit-verdict-card:hover { background:rgba(255,255,255,0.035); transform:translateY(-2px); box-shadow:0 4px 16px rgba(0,0,0,0.2); }
+.audit-verdict-card.bull { border-left:3px solid #10b981; }
+.audit-verdict-card.bear { border-left:3px solid #ef4444; }
+.audit-verdict-card.catalyst { border-left:3px solid #3b82f6; }
+.audit-verdict-card.position { border-left:3px solid #f59e0b; }
+.audit-verdict-card-title { font-size:0.8rem; font-weight:700; color:var(--audit-text-primary,#e2e8f0); margin-bottom:8px; }
+.audit-verdict-list { list-style:none; padding:0; margin:0; }
+.audit-verdict-list li { font-size:0.72rem; color:var(--audit-text-secondary,#94a3b8); line-height:1.8; padding-left:14px; position:relative; }
+.audit-verdict-list li::before { content:'▸'; position:absolute; left:0; color:var(--audit-text-dim,#64748b); }
+
+/* ── Conclusion Box ── */
+.audit-conclusion-box { grid-column:1/-1; padding:20px 22px; border-radius:var(--audit-radius-sm,10px); background:linear-gradient(135deg,rgba(100,116,139,0.06),rgba(71,85,105,0.03)); border:1px solid rgba(148,163,184,0.15); position:relative; overflow:hidden; margin-top:4px; }
+.audit-conclusion-box::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; background:linear-gradient(90deg,#3b82f6,#06b6d4); }
+.audit-conclusion-title { font-size:0.86rem; font-weight:800; color:var(--audit-text-primary,#e2e8f0); margin-bottom:8px; }
+.audit-conclusion-text { font-size:0.76rem; color:var(--audit-text-secondary,#94a3b8); line-height:1.85; }
+.audit-conclusion-rating { display:inline-flex; align-items:center; gap:6px; margin-top:12px; padding:7px 20px; border-radius:8px; font-size:0.82rem; font-weight:800; font-family:'Outfit',sans-serif; }
+.audit-conclusion-rating.buy { background:rgba(16,185,129,0.12); color:#34d399; border:1px solid rgba(16,185,129,0.25); }
+.audit-conclusion-rating.hold { background:rgba(245,158,11,0.12); color:#fbbf24; border:1px solid rgba(245,158,11,0.25); }
+.audit-conclusion-rating.sell { background:rgba(239,68,68,0.12); color:#f87171; border:1px solid rgba(239,68,68,0.25); }
+
+/* ── KPI Cards ── */
+.audit-kpi-card { padding:16px 18px; border-radius:var(--audit-radius,14px); background:rgba(15,23,42,0.65); border:1px solid rgba(255,255,255,0.06); backdrop-filter:blur(16px); position:relative; overflow:hidden; transition:all 0.35s cubic-bezier(0.22,1,0.36,1); }
+.audit-kpi-card::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; background:var(--kpi-accent,rgba(100,116,139,0.4)); }
+.audit-kpi-card:hover { transform:translateY(-3px); border-color:var(--kpi-accent,rgba(100,116,139,0.2)); box-shadow:0 8px 24px rgba(0,0,0,0.25); }
+.audit-kpi-label { font-size:0.64rem; font-weight:600; color:var(--audit-text-ghost,#475569); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px; }
+.audit-kpi-value { font-family:'Outfit',sans-serif; font-size:1.6rem; font-weight:900; margin-bottom:4px; line-height:1.1; }
+.audit-kpi-sub { font-size:0.64rem; color:var(--audit-text-dim,#64748b); line-height:1.4; }
+.audit-kpi-indicator { font-size:0.6rem; font-weight:700; margin-top:6px; padding:2px 8px; border-radius:4px; display:inline-block; }
+.audit-kpi-indicator.pass { background:rgba(16,185,129,0.1); color:#34d399; }
+.audit-kpi-indicator.warn { background:rgba(245,158,11,0.1); color:#fbbf24; }
+.audit-kpi-indicator.fail { background:rgba(239,68,68,0.1); color:#f87171; }
+
+/* ── Animation ── */
+@keyframes auditSlideUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
