@@ -18,11 +18,14 @@ V4.0 升级：
 import pandas as pd
 import numpy as np
 import tushare as ts
+import os
+import time
 from datetime import datetime, timedelta
 import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ====== Tushare 初始化 ======
-TUSHARE_TOKEN = "5334333c2cb73c9b9987fb6e89da29a3cbd0f442622fbcbfd7bd40b6"
+from config import TUSHARE_TOKEN
 ts.set_token(TUSHARE_TOKEN)
 pro = ts.pro_api()
 
@@ -128,31 +131,44 @@ def classify_yield(ttm_yield: float) -> str:
         return "low"
 
 
+def _fetch_single_dividend_etf(item, start_date, end_date, days):
+    code = item['code']
+    cache_file = f"data_lake/daily_prices/{code}.parquet"
+    try:
+        df = ts.pro_bar(ts_code=code, asset='FD', adj='qfq',
+                        start_date=start_date, end_date=end_date)
+        if df is not None and not df.empty:
+            df = df.sort_values('trade_date').reset_index(drop=True)
+            df = df.tail(days).reset_index(drop=True)
+            os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+            df.to_parquet(cache_file)
+            return code, df, f"  [OK] {item['name']}({code}): {len(df)}条数据"
+    except Exception as e:
+        if os.path.exists(cache_file):
+            df = pd.read_parquet(cache_file)
+            if not df.empty:
+                df = df.tail(days).reset_index(drop=True)
+                return code, df, f"  [WARN] {item['name']}({code}) API失败，使用本地缓存: {len(df)}条"
+        return code, None, f"  [FAIL] {item['name']}({code}): {e}"
+    return code, None, f"  [FAIL] {item['name']}({code}): 无数据返回"
+
 def fetch_etf_data_by_code(days: int = 150) -> dict:
     """
-    5000积分用户高效模式：按ts_code逐只获取历史数据
-    8只ETF仅需8次API调用，远优于按trade_date循环150次
+    V5.0: 并发拉取历史数据并引入本地 Parquet 降级保护
     """
-    print(f"[红利引擎] 开始获取{days}天历史数据（按ts_code获取）...")
+    print(f"[红利引擎] 开始并发获取{days}天历史数据...")
 
     end_date   = datetime.now().strftime("%Y%m%d")
     start_date = (datetime.now() - timedelta(days=int(days * 2.0))).strftime("%Y%m%d")
 
     etf_data = {}
-    for item in DIVIDEND_POOL:
-        code = item['code']
-        try:
-            df = ts.pro_bar(ts_code=code, asset='FD', adj='qfq',
-                            start_date=start_date, end_date=end_date)
-            if df is not None and not df.empty:
-                df = df.sort_values('trade_date').reset_index(drop=True)
-                df = df.tail(days).reset_index(drop=True)
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(_fetch_single_dividend_etf, item, start_date, end_date, days) for item in DIVIDEND_POOL]
+        for future in as_completed(futures):
+            code, df, msg = future.result()
+            print(msg)
+            if df is not None:
                 etf_data[code] = df
-                print(f"  [OK] {item['name']}({code}): {len(df)}条数据")
-            else:
-                print(f"  [FAIL] {item['name']}({code}): 无数据返回")
-        except Exception as e:
-            print(f"  [FAIL] {item['name']}({code}): {e}")
 
     print(f"[红利引擎] 数据获取完成，共{len(etf_data)}/8只ETF有数据")
     return etf_data
@@ -420,7 +436,7 @@ def cross_validate_dividend_signal(ind: dict, regime: str) -> dict:
             mr_score = int(score_result)
 
         warning = mr_score < gate
-        msg = f"⚠️ 技术面警告: 均值回归评分{mr_score}<门槛{gate}" if warning else ""
+        msg = f"[WARN] 技术面警告: 均值回归评分{mr_score}<门槛{gate}" if warning else ""
         return {'warning': warning, 'mr_score': mr_score, 'message': msg}
 
     except Exception as e:

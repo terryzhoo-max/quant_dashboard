@@ -27,11 +27,13 @@ import time
 import os
 import json
 import threading
+from functools import wraps
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
+from config import FRED_API_KEY as CONFIG_FRED_API_KEY
 
-FRED_API_KEY = "eadf412d4f0e8ccd2bb3993b357bdca6"
+FRED_API_KEY = os.environ.get("FRED_API_KEY", CONFIG_FRED_API_KEY)
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
@@ -44,32 +46,72 @@ def _get_wilshire_ttl() -> int:
     """Wilshire5000 智能TTL: 工作日4h / 周末24h"""
     return 86400 if datetime.now().weekday() >= 5 else 14400
 
-# ===== 线程安全 TTL 缓存 =====
+# ===== 工业级重试装饰器 =====
+def retry_with_backoff(max_retries=3, base_delay=2.0):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            delay = base_delay
+            for i in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if i == max_retries - 1:
+                        raise e
+                    print(f"[Retry] {func.__name__} failed: {e}. Retrying in {delay}s...")
+                    time.sleep(delay)
+                    delay *= 2
+            return None
+        return wrapper
+    return decorator
+
+# ===== 原子性文件写入 =====
+def atomic_write_json(data, filepath):
+    tmp_path = filepath + ".tmp"
+    try:
+        with open(tmp_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, filepath)
+    except Exception as e:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise e
+
+# ===== 线程安全 TTL 缓存 (SWR) =====
 _us_aiae_cache = {}
 _us_aiae_lock = threading.Lock()
+_bg_executor = ThreadPoolExecutor(max_workers=3)
 
 def _log(msg: str, level: str = "INFO"):
     ts_str = datetime.now().strftime("%H:%M:%S.%f")[:-3]
     print(f"[{ts_str}] [{level}] [US-AIAE] {msg}")
 
+def _refresh_cache(key: str, fetcher):
+    try:
+        data = fetcher()
+        with _us_aiae_lock:
+            _us_aiae_cache[key] = (time.time(), data)
+        return data
+    except Exception as e:
+        _log(f"后台缓存刷新失败 ({key}): {e}", "WARN")
+        with _us_aiae_lock:
+            if key in _us_aiae_cache:
+                return _us_aiae_cache[key][1]
+        raise
+
 def _cached(key: str, ttl_seconds: int, fetcher):
+    """线程安全 TTL 缓存 (支持 SWR - Stale-While-Revalidate)"""
     now = time.time()
     with _us_aiae_lock:
         if key in _us_aiae_cache:
             ts_cached, data = _us_aiae_cache[key]
             if now - ts_cached < ttl_seconds:
                 return data
-    try:
-        data = fetcher()
-        with _us_aiae_lock:
-            _us_aiae_cache[key] = (now, data)
-        return data
-    except Exception as e:
-        _log(f"缓存获取失败 ({key}): {e}", "WARN")
-        with _us_aiae_lock:
-            if key in _us_aiae_cache:
-                return _us_aiae_cache[key][1]
-        raise
+            else:
+                _bg_executor.submit(_refresh_cache, key, fetcher)
+                return data
+
+    return _refresh_cache(key, fetcher)
 
 
 # FRED API helper
@@ -165,96 +207,47 @@ class AIAEUSEngine:
     # ========== 数据获取层 ==========
 
     def _fetch_wilshire5000_market_cap(self) -> Dict:
-        """获取 Wilshire 5000 指数值 (代理美股总市值)
-
-        ⚠️ FRED 于 2024-06-03 永久移除所有 Wilshire 指数数据 (WILL5000INDFC / WILL5000PR)
-        三级降级链:
-          Tier 1: yfinance ^W5000 (直接数据, 最准, 但 Yahoo 偶尔封IP)
-          Tier 2: FRED SP500 × 8.0 乘数估算 (日频, ~5-10%误差, 对AIAE影响<1.5pp)
-          Tier 3: 磁盘缓存 (30天内有效)
-          Tier 4: 硬编码兜底 (2026年校准)
-
-        转换公式: Wilshire5000 指数值 / 1000 ≈ 美股总市值(万亿美元)
-        """
+        """获取 Wilshire 5000 指数值 (代理美股总市值, FRED)"""
         def _fetch():
             cache_file = os.path.join(CACHE_DIR, "aiae_us_wilshire.json")
-
-            # ── Tier 1: yfinance Wilshire 5000 (最准确) ──
-            try:
-                import yfinance as yf
-                w5k = yf.download("^W5000", period="5d", progress=False, timeout=10)
-                if w5k is not None and not w5k.empty:
-                    close_col = w5k["Close"]
-                    if hasattr(close_col, "columns"):
-                        close_col = close_col.iloc[:, 0]
-                    close_col = close_col.dropna()
-                    if not close_col.empty:
-                        latest_val = float(close_col.iloc[-1])
-                        latest_date = close_col.index[-1]
+            fred = _get_fred()
+            if fred:
+                try:
+                    start_dt = datetime.now() - timedelta(days=90)
+                    @retry_with_backoff(max_retries=3, base_delay=2.0)
+                    def _call_fred():
+                        return fred.get_series("WILL5000INDFC", observation_start=start_dt)
+                    series = _call_fred()
+                    if series is not None and not series.empty:
+                        series = series.dropna()
+                        latest_val = float(series.iloc[-1])
+                        latest_date = series.index[-1]
+                        # Wilshire 5000 Full Cap: 指数值 ≈ 总市值(十亿美元)
+                        # 实际上 Wilshire5000 以 1980.12.31 = 1,404.6 为基准
+                        # 2026年约 55,000 → 代理约 55 万亿美元
                         market_cap_trillion = round(latest_val / 1000, 2)
                         result = {
                             "trade_date": latest_date.strftime("%Y-%m-%d"),
                             "wilshire_index": round(latest_val, 2),
                             "market_cap_trillion_usd": market_cap_trillion,
-                            "source": "yfinance/W5000",
                             "fetched_at": datetime.now().isoformat()
                         }
-                        with open(cache_file, 'w', encoding='utf-8') as f:
-                            json.dump(result, f, ensure_ascii=False, indent=2)
-                        _log(f"Wilshire5000 (yfinance): {latest_val:.0f} (≈${market_cap_trillion}T)")
-                        return result
-            except Exception as e:
-                _log(f"yfinance W5000 failed (切换FRED推算): {e}", "WARN")
-
-            # ── Tier 2: FRED SP500 × 8.0 乘数估算 ──
-            # SP500 指数 ≈ Wilshire5000 × 0.125 (历史稳定比率)
-            # 即: Wilshire ≈ SP500 × 8.0, 误差 ~5-10%, 对 AIAE 影响 <1.5pp
-            fred = _get_fred()
-            if fred:
-                try:
-                    start_dt = datetime.now() - timedelta(days=10)
-                    sp500 = fred.get_series("SP500", observation_start=start_dt)
-                    if sp500 is not None and not sp500.empty:
-                        sp500 = sp500.dropna()
-                        sp500_val = float(sp500.iloc[-1])
-                        latest_date = sp500.index[-1]
-                        # SP500 → 估算 Wilshire5000
-                        SP500_TO_W5K_RATIO = 8.0
-                        estimated_wilshire = sp500_val * SP500_TO_W5K_RATIO
-                        market_cap_trillion = round(estimated_wilshire / 1000, 2)
-                        result = {
-                            "trade_date": latest_date.strftime("%Y-%m-%d"),
-                            "wilshire_index": round(estimated_wilshire, 2),
-                            "market_cap_trillion_usd": market_cap_trillion,
-                            "source": f"FRED/SP500×{SP500_TO_W5K_RATIO}",
-                            "sp500_index": round(sp500_val, 2),
-                            "fetched_at": datetime.now().isoformat(),
-                            "is_estimated": True,
-                        }
-                        with open(cache_file, 'w', encoding='utf-8') as f:
-                            json.dump(result, f, ensure_ascii=False, indent=2)
-                        _log(f"Wilshire5000 (SP500推算): SP500={sp500_val:.0f} → W5K≈{estimated_wilshire:.0f} (≈${market_cap_trillion}T)")
+                        atomic_write_json(result, cache_file)
+                        _log(f"Wilshire5000: {latest_val:.0f} (≈${market_cap_trillion}T)")
                         return result
                 except Exception as e:
-                    _log(f"FRED SP500 estimation failed: {e}", "WARN")
+                    _log(f"FRED WILL5000PR error: {e}", "WARN")
 
-            # ── Tier 3: 磁盘缓存 ──
             if os.path.exists(cache_file):
-                try:
-                    with open(cache_file, 'r', encoding='utf-8') as f:
-                        cached = json.load(f)
-                    _log(f"Wilshire: 使用磁盘缓存 (source={cached.get('source', 'disk')})", "WARN")
-                    return cached
-                except Exception:
-                    pass
+                with open(cache_file, 'r', encoding='utf-8') as f:
+                    _log("Wilshire: 使用磁盘缓存", "WARN")
+                    return json.load(f)
 
-            # ── Tier 4: 硬编码兜底 (2026Q1 校准) ──
-            _log("Wilshire: 硬编码估算 ($55T, 2026Q1)", "ERROR")
+            _log("Wilshire: 硬编码估算", "ERROR")
             return {
                 "trade_date": datetime.now().strftime("%Y-%m-%d"),
-                "wilshire_index": 55000,
-                "market_cap_trillion_usd": 55.0,
-                "source": "hardcoded/2026Q1",
+                "wilshire_index": 48000,
+                "market_cap_trillion_usd": 48.0,
                 "fetched_at": datetime.now().isoformat(),
                 "is_fallback": True
             }
@@ -269,7 +262,10 @@ class AIAEUSEngine:
             if fred:
                 try:
                     start_dt = datetime.now() - timedelta(days=180)
-                    series = fred.get_series("M2SL", observation_start=start_dt)
+                    @retry_with_backoff(max_retries=3, base_delay=2.0)
+                    def _call_fred():
+                        return fred.get_series("M2SL", observation_start=start_dt)
+                    series = _call_fred()
                     if series is not None and not series.empty:
                         series = series.dropna()
                         latest = float(series.iloc[-1])
@@ -281,8 +277,7 @@ class AIAEUSEngine:
                             "m2_trillion_usd": m2_trillion,
                             "fetched_at": datetime.now().isoformat()
                         }
-                        with open(cache_file, 'w', encoding='utf-8') as f:
-                            json.dump(result, f, ensure_ascii=False, indent=2)
+                        atomic_write_json(result, cache_file)
                         _log(f"US M2: ${m2_trillion}T")
                         return result
                 except Exception as e:
@@ -309,7 +304,10 @@ class AIAEUSEngine:
                 try:
                     # 尝试 FINRA Margin Debt 代理序列
                     start_dt = datetime.now() - timedelta(days=400)
-                    series = fred.get_series("BOGZ1FL663067003Q", observation_start=start_dt)
+                    @retry_with_backoff(max_retries=3, base_delay=2.0)
+                    def _call_fred():
+                        return fred.get_series("BOGZ1FL663067003Q", observation_start=start_dt)
+                    series = _call_fred()
                     if series is not None and not series.empty:
                         series = series.dropna()
                         latest = float(series.iloc[-1])
@@ -321,8 +319,7 @@ class AIAEUSEngine:
                             "margin_trillion_usd": margin_trillion,
                             "fetched_at": datetime.now().isoformat()
                         }
-                        with open(cache_file, 'w', encoding='utf-8') as f:
-                            json.dump(result, f, ensure_ascii=False, indent=2)
+                        atomic_write_json(result, cache_file)
                         _log(f"US Margin: ${margin_trillion}T")
                         return result
                 except Exception as e:
@@ -378,8 +375,12 @@ class AIAEUSEngine:
             req = urllib.request.Request(url, headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             })
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                html = resp.read().decode('utf-8', errors='replace')
+            @retry_with_backoff(max_retries=3, base_delay=2.0)
+            def _fetch_html():
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    return resp.read().decode('utf-8', errors='replace')
+            html = _fetch_html()
+            if not html: return None
 
             # 尝试从页面提取 Bullish / Bearish / Neutral 百分比
             bull_match = re.search(r'Bullish[:\s]*?([\d.]+)\s*%', html, re.IGNORECASE)
@@ -399,8 +400,7 @@ class AIAEUSEngine:
                     "date": datetime.now().strftime("%Y-%m-%d"),
                     "source": "aaii_crawl"
                 }
-                with open(AAII_SENTIMENT_FILE, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
+                atomic_write_json(data, AAII_SENTIMENT_FILE)
                 _log(f"AAII crawled: Bull={bull:.1f}% Bear={bear:.1f}% Spread={spread:.1f}%")
                 return data
         except Exception as e:
@@ -419,8 +419,7 @@ class AIAEUSEngine:
             "date": datetime.now().strftime("%Y-%m-%d"),
             "source": "manual"
         }
-        with open(AAII_SENTIMENT_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        atomic_write_json(data, AAII_SENTIMENT_FILE)
         self._aaii_data = data
         _log(f"AAII 手动更新: spread={data['spread']:.1f}%")
 
@@ -516,8 +515,7 @@ class AIAEUSEngine:
                 'aiae_v1': aiae_v1,
                 'saved_at': datetime.now().isoformat()
             }
-            with open(self._PREV_AIAE_FILE, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+            atomic_write_json(data, self._PREV_AIAE_FILE)
         except Exception as e:
             _log(f"保存上月AIAE失败: {e}", "WARN")
 

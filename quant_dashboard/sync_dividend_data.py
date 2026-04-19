@@ -7,7 +7,7 @@ import pandas as pd
 import os
 import time
 
-TUSHARE_TOKEN = "5334333c2cb73c9b9987fb6e89da29a3cbd0f442622fbcbfd7bd40b6"
+from config import TUSHARE_TOKEN
 ts.set_token(TUSHARE_TOKEN)
 pro = ts.pro_api()
 

@@ -1,16 +1,57 @@
 """
 AlphaCore · 全局配置中心
 ========================
-V5.0: 将所有引擎中的分散常量统一管理
+V5.1: 将所有引擎中的分散常量统一管理
+      Token 统一从环境变量/.env 读取 (安全加固)
 使用方式:
     from config import TUSHARE_TOKEN, CACHE_TTL_INTRADAY
 """
 
-# ── Tushare API ──
-TUSHARE_TOKEN = "5334333c2cb73c9b9987fb6e89da29a3cbd0f442622fbcbfd7bd40b6"
+import os
+from pathlib import Path
+
+# ── 加载 .env 文件 (兼容 dotenv 未安装的环境) ──
+try:
+    from dotenv import load_dotenv
+    _env_path = Path(__file__).resolve().parent / ".env"
+    load_dotenv(_env_path)
+except ImportError:
+    pass  # 无 dotenv 时依赖 Docker env 或系统环境变量
+
+# ── Tushare API (从环境变量读取, 禁止硬编码) ──
+TUSHARE_TOKEN = os.environ.get("TUSHARE_TOKEN", "")
+if not TUSHARE_TOKEN:
+    raise RuntimeError("❌ TUSHARE_TOKEN 未设置! 请在 .env 文件或环境变量中配置。")
+
+# ==========================================
+# TUSHARE CONNECTION FIX (Monkey Patch)
+# ==========================================
+import tushare as ts
+import tushare.pro.client
+import time
+
+_orig_post = tushare.pro.client.requests.post
+
+def _patched_post(url, **kwargs):
+    # Intercept requests to waditu and forward to the reliable tushare.pro root endpoint
+    if 'api.waditu.com' in url or 'api.tushare.pro' in url:
+        url = 'http://api.tushare.pro'
+        
+        max_retries = 3
+        for i in range(max_retries):
+            try:
+                return _orig_post(url, **kwargs)
+            except Exception as e:
+                if i == max_retries - 1:
+                    raise e
+                time.sleep(1.5)
+    return _orig_post(url, **kwargs)
+
+tushare.pro.client.requests.post = _patched_post
+# ==========================================
 
 # ── FRED API (VIX / 国债收益率 / M1 / 美股宏观) ──
-FRED_API_KEY = "eadf412d4f0e8ccd2bb3993b357bdca6"
+FRED_API_KEY = os.environ.get("FRED_API_KEY", "")
 
 # ── 数据缓存 TTL ──
 CACHE_TTL_INTRADAY    = 300       # 盘中5分钟（09:30-15:00 工作日）

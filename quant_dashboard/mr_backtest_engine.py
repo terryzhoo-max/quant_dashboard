@@ -26,7 +26,7 @@ from typing import List, Dict, Tuple
 
 # ─── 配置 ─────────────────────────────────────────────────────────────────────
 
-TUSHARE_TOKEN    = "5334333c2cb73c9b9987fb6e89da29a3cbd0f442622fbcbfd7bd40b6"
+TUSHARE_TOKEN    = __import__('config').TUSHARE_TOKEN
 DAILY_PRICE_DIR  = "data_lake/daily_prices"
 BENCHMARK_CODE   = "510300.SH"       # 沪深300ETF 作为基准
 RISK_FREE_RATE   = 0.02              # 年化无风险利率

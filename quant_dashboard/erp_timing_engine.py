@@ -26,33 +26,82 @@ import os
 from datetime import datetime, timedelta
 from typing import Optional
 
-TUSHARE_TOKEN = "5334333c2cb73c9b9987fb6e89da29a3cbd0f442622fbcbfd7bd40b6"
+import json
+import threading
+from functools import wraps
+from concurrent.futures import ThreadPoolExecutor
+from config import TUSHARE_TOKEN as CONFIG_TOKEN
+
+TUSHARE_TOKEN = os.environ.get("TUSHARE_TOKEN", CONFIG_TOKEN)
 ts.set_token(TUSHARE_TOKEN)
 pro = ts.pro_api()
 
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
-# ===== TTL 缓存 =====
-# 盘中30分钟刷新 PE/Yield，盘后/周末可放宽 (由调用频率自然控制)
-_cache = {}
+# ===== 工业级重试装饰器 =====
+def retry_with_backoff(max_retries=3, base_delay=2.0):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            delay = base_delay
+            for i in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if i == max_retries - 1:
+                        raise e
+                    print(f"[Retry] {func.__name__} failed: {e}. Retrying in {delay}s...")
+                    time.sleep(delay)
+                    delay *= 2
+            return None
+        return wrapper
+    return decorator
 
-def _cached(key: str, ttl_seconds: int, fetcher):
-    """简易 TTL 缓存: key → (timestamp, data)"""
-    now = time.time()
-    if key in _cache:
-        ts_cached, data = _cache[key]
-        if now - ts_cached < ttl_seconds:
-            return data
+# ===== 原子性文件写入 =====
+def atomic_write_parquet(df, filepath):
+    tmp_path = filepath + ".tmp"
+    try:
+        df.to_parquet(tmp_path)
+        os.replace(tmp_path, filepath)
+    except Exception as e:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise e
+
+# ===== 线程安全 + SWR 后台缓存 =====
+_cache = {}
+_cache_lock = threading.Lock()
+_bg_executor = ThreadPoolExecutor(max_workers=3)
+
+def _refresh_cache(key: str, fetcher):
     try:
         data = fetcher()
-        _cache[key] = (now, data)
+        with _cache_lock:
+            _cache[key] = (time.time(), data)
         return data
     except Exception as e:
-        print(f"[ERP Engine] 缓存获取失败 ({key}): {e}")
-        if key in _cache:
-            return _cache[key][1]
+        print(f"[ERP Engine] 后台缓存刷新失败 ({key}): {e}")
+        with _cache_lock:
+            if key in _cache:
+                return _cache[key][1]
         raise
+
+def _cached(key: str, ttl_seconds: int, fetcher):
+    """线程安全 TTL 缓存 (支持 SWR - Stale-While-Revalidate)"""
+    now = time.time()
+    with _cache_lock:
+        if key in _cache:
+            ts_cached, data = _cache[key]
+            if now - ts_cached < ttl_seconds:
+                return data
+            else:
+                # SWR 模式: 返回旧数据，并在后台异步刷新
+                _bg_executor.submit(_refresh_cache, key, fetcher)
+                return data
+
+    # 内存无数据，必须同步阻塞拉取（通常是冷启动或服务重启后）
+    return _refresh_cache(key, fetcher)
 
 
 # ===== 规则百科 =====
@@ -124,9 +173,38 @@ class ERPTimingEngine:
     }
 
     def __init__(self):
-        self._prev_score = None       # P1 fix: 追踪上次综合得分
-        self._prev_score_date = None  # C1 fix: 仅比较同日内的 Score 变化，防止跨天漂移
-        self._score_high_water = 0.0  # C2 fix: Score 历史高水位，用于止盈规则
+        # P1/C1/C2 fix: 从本地文件加载状态，确保多进程/请求间无状态污染
+        history = self._load_history()
+        self._prev_score = history.get("prev_score")
+        self._prev_score_date = history.get("prev_score_date")
+        self._score_high_water = history.get("score_high_water", 0.0)
+
+    def _load_history(self) -> dict:
+        filepath = os.path.join(CACHE_DIR, "erp_daily_history.json")
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return {}
+
+    def _save_history(self):
+        filepath = os.path.join(CACHE_DIR, "erp_daily_history.json")
+        data = {
+            "prev_score": self._prev_score,
+            "prev_score_date": str(self._prev_score_date) if self._prev_score_date else None,
+            "score_high_water": self._score_high_water
+        }
+        tmp_path = filepath + ".tmp"
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False)
+            os.replace(tmp_path, filepath)
+        except Exception as e:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            print(f"[ERP Engine] 保存状态失败: {e}")
 
     # ========== 数据获取层 (带TTL缓存+磁盘持久化) ==========
 
@@ -144,16 +222,19 @@ class ERPTimingEngine:
             if last_date_str and last_date_str >= end_date:
                 return existing.sort_values('trade_date').reset_index(drop=True)
             start_date = last_date_str if last_date_str else (datetime.now() - timedelta(days=years * 365)).strftime("%Y%m%d")
-            df = pro.index_dailybasic(
-                ts_code=self.INDEX_CODE, start_date=start_date, end_date=end_date,
-                fields="ts_code,trade_date,pe,pe_ttm,pb,turnover_rate"
-            )
+            @retry_with_backoff(max_retries=3, base_delay=1.0)
+            def _call_pro():
+                return pro.index_dailybasic(
+                    ts_code=self.INDEX_CODE, start_date=start_date, end_date=end_date,
+                    fields="ts_code,trade_date,pe,pe_ttm,pb,turnover_rate"
+                )
+            df = _call_pro()
             if df is not None and not df.empty:
                 df['trade_date'] = pd.to_datetime(df['trade_date'], format='%Y%m%d')
                 if existing is not None:
                     df = pd.concat([existing, df]).drop_duplicates(subset='trade_date', keep='last')
                 df = df.sort_values('trade_date').reset_index(drop=True)
-                df.to_parquet(cache_file)
+                atomic_write_parquet(df, cache_file)
                 print(f"[ERP] PE-TTM cached: {len(df)} rows")
             elif existing is not None:
                 df = existing
@@ -182,8 +263,12 @@ class ERPTimingEngine:
             while chunk_start < end_dt:
                 chunk_end = min(chunk_start + timedelta(days=180), end_dt)
                 s_str, e_str = chunk_start.strftime("%Y%m%d"), chunk_end.strftime("%Y%m%d")
+                @retry_with_backoff(max_retries=3, base_delay=2.0)
+                def _call_pro_yc():
+                    return pro.yc_cb(ts_code=self.BOND_CODE, curve_type='0', start_date=s_str, end_date=e_str)
+
                 try:
-                    chunk = pro.yc_cb(ts_code=self.BOND_CODE, curve_type='0', start_date=s_str, end_date=e_str)
+                    chunk = _call_pro_yc()
                     if chunk is not None and not chunk.empty:
                         chunk_10y = chunk[chunk['curve_term'] == 10.0].copy()
                         if not chunk_10y.empty:
@@ -192,7 +277,7 @@ class ERPTimingEngine:
                 except Exception as e:
                     print(f"[ERP] yield batch {s_str}-{e_str}: {e}")
                 chunk_start = chunk_end + timedelta(days=1)
-                time.sleep(2.0)  # M3 fix: Tushare yc_cb 限流约60次/分钟，2s足够且加速冷启动
+                time.sleep(1.0)  # Rate limit safety
             if all_dfs:
                 new_df = pd.concat(all_dfs, ignore_index=True)
                 new_df['trade_date'] = pd.to_datetime(new_df['trade_date'], format='%Y%m%d')
@@ -200,7 +285,7 @@ class ERPTimingEngine:
                 new_df = new_df[['trade_date', 'yield_10y']]
                 df = pd.concat([existing, new_df]).drop_duplicates(subset='trade_date', keep='last') if existing is not None else new_df
                 df = df.sort_values('trade_date').reset_index(drop=True)
-                df.to_parquet(cache_file)
+                atomic_write_parquet(df, cache_file)
                 print(f"[ERP] 10Y yield cached: {len(df)} rows ({batch_count} batches)")
             elif existing is not None:
                 df = existing
@@ -214,7 +299,11 @@ class ERPTimingEngine:
         def _fetch():
             end_m = datetime.now().strftime("%Y%m")
             start_m = (datetime.now() - timedelta(days=months * 31)).strftime("%Y%m")
-            df = pro.cn_m(start_m=start_m, end_m=end_m, fields="month,m1,m1_yoy,m2,m2_yoy")
+            @retry_with_backoff(max_retries=3, base_delay=1.5)
+            def _call_pro_cn():
+                return pro.cn_m(start_m=start_m, end_m=end_m, fields="month,m1,m1_yoy,m2,m2_yoy")
+            
+            df = _call_pro_cn()
             if df is None or df.empty:
                 raise ValueError("M1 数据为空")
             return df.sort_values('month').reset_index(drop=True)
@@ -459,8 +548,8 @@ class ERPTimingEngine:
 
         # === 止损规则 (逆向加仓型) ===
         # V2.3: Score 跌幅仅比较同日内变化，防止跨天漂移误触发
-        today = datetime.now().date()
-        if self._prev_score is not None and self._prev_score_date == today:
+        today_str = str(datetime.now().date())
+        if self._prev_score is not None and self._prev_score_date == today_str:
             score_delta = round(score - self._prev_score, 1)
         else:
             score_delta = 0.0  # 首次/跨天 = 无跌幅
@@ -581,8 +670,9 @@ class ERPTimingEngine:
             trade = self._generate_trade_rules(composite, dims, snap)
             # C1+C2 fix: 更新 Score 追踪状态
             self._prev_score = composite
-            self._prev_score_date = datetime.now().date()
+            self._prev_score_date = str(datetime.now().date())
             self._score_high_water = max(self._score_high_water, composite)
+            self._save_history()
 
             # 警示
             alerts = self._generate_alerts(composite, erp_val, d2_pct, m1_info, vol_info)

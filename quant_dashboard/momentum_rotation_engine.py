@@ -14,12 +14,14 @@ V3.0 升级：
 import pandas as pd
 import numpy as np
 import tushare as ts
-# yfinance removed — VIX via FRED/CNBC (see fetch_vix)
+import os
+import time
 from datetime import datetime, timedelta
 import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ====== Tushare 初始化 ======
-TUSHARE_TOKEN = "5334333c2cb73c9b9987fb6e89da29a3cbd0f442622fbcbfd7bd40b6"
+from config import TUSHARE_TOKEN
 ts.set_token(TUSHARE_TOKEN)
 pro = ts.pro_api()
 
@@ -132,32 +134,45 @@ VOLUME_RATIO_MIN = 0.8    # 量比最低要求
 #  数据获取层
 # ====================================================================
 
+def _fetch_single_mom_etf(item, start_date, end_date, days, pro):
+    code = item["code"]
+    cache_file = f"data_lake/daily_prices/{code}.parquet"
+    tag = "[DEF]" if item.get("type") == "defense" else "[OFF]"
+    try:
+        df = pro.fund_daily(ts_code=code, start_date=start_date, end_date=end_date)
+        if df is not None and not df.empty:
+            df = df.sort_values("trade_date").reset_index(drop=True)
+            df = df.tail(days).reset_index(drop=True)
+            os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+            df.to_parquet(cache_file)
+            return code, df, f"  {tag} [OK] {item['name']}({code}): {len(df)}条"
+    except Exception as e:
+        if os.path.exists(cache_file):
+            df = pd.read_parquet(cache_file)
+            if not df.empty:
+                df = df.tail(days).reset_index(drop=True)
+                return code, df, f"  {tag} [WARN] {item['name']}({code}) API失败, 降级缓存: {len(df)}条"
+        return code, None, f"  [FAIL] {item['name']}({code}): {e}"
+    return code, None, f"  [FAIL] {item['name']}({code}): 无数据"
+
 def fetch_etf_data(days: int = 60) -> dict:
     """
-    按ts_code逐只获取历史数据。
-    V3.0: 获取全部Pool（进攻+防御），24只ETF。
+    V5.0: 并发拉取历史数据并引入本地 Parquet 降级保护
     """
     full_pool = MOMENTUM_POOL_OFFENSE + MOMENTUM_POOL_DEFENSE
     total = len(full_pool)
-    print(f"[动量引擎] 开始获取{days}天历史数据 ({total}只)...")
+    print(f"[动量引擎] 开始并发获取{days}天历史数据 ({total}只)...")
     end_date = datetime.now().strftime("%Y%m%d")
     start_date = (datetime.now() - timedelta(days=int(days * 2.0))).strftime("%Y%m%d")
 
     etf_data = {}
-    for item in full_pool:
-        code = item["code"]
-        try:
-            df = pro.fund_daily(ts_code=code, start_date=start_date, end_date=end_date)
-            if df is not None and not df.empty:
-                df = df.sort_values("trade_date").reset_index(drop=True)
-                df = df.tail(days).reset_index(drop=True)
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(_fetch_single_mom_etf, item, start_date, end_date, days, pro) for item in full_pool]
+        for future in as_completed(futures):
+            code, df, msg = future.result()
+            print(msg)
+            if df is not None:
                 etf_data[code] = df
-                tag = "🛡" if item.get("type") == "defense" else "⚔"
-                print(f"  {tag} [OK] {item['name']}({code}): {len(df)}条")
-            else:
-                print(f"  [FAIL] {item['name']}({code}): 无数据")
-        except Exception as e:
-            print(f"  [FAIL] {item['name']}({code}): {e}")
 
     print(f"[动量引擎] 数据获取完成: {len(etf_data)}/{total} 只")
     return etf_data
@@ -185,7 +200,8 @@ def fetch_vix() -> float:
     # Tier 1: FRED VIXCLS
     try:
         from fredapi import Fred
-        fred = Fred(api_key="eadf412d4f0e8ccd2bb3993b357bdca6")
+        from config import FRED_API_KEY
+        fred = Fred(api_key=FRED_API_KEY)
         series = fred.get_series("VIXCLS", observation_start=(datetime.now() - timedelta(days=10)))
         if series is not None and not series.empty:
             val = float(series.dropna().iloc[-1])
@@ -349,7 +365,8 @@ def calculate_indicators(df) -> dict:
     hist_vol = round(hist_vol, 1)
 
     # ── 波动调整收益 SHARPE = MOM_S / hist_vol ──
-    sharpe_factor = round(momentum_pct / hist_vol, 3) if hist_vol > 0 else 0
+    # 修复除零错误：防止波动率为0或极小值产生 NaN
+    sharpe_factor = round(momentum_pct / hist_vol, 3) if hist_vol > 1e-4 else 0
 
     # ── 趋势斜率 SLOPE (20日线性回归斜率) ──
     if len(close) >= 20:
@@ -564,7 +581,7 @@ def cross_validate_signal(indicators: dict, regime: str) -> dict:
                 "warning": True,
                 "mr_score": mr_total,
                 "gate": safety_gate,
-                "message": f"⚠️ 技术面警告: 均值回归评分{mr_total}<门槛{safety_gate}",
+                "message": f"[WARN] 技术面警告: 均值回归评分{mr_total}<门槛{safety_gate}",
             }
         return {"warning": False, "mr_score": mr_total, "gate": safety_gate, "message": ""}
     except Exception as e:

@@ -3060,3 +3060,45 @@ h3::before {
     0%, 100% { border-color: rgba(239, 68, 68, 0.35); }
     50% { border-color: rgba(245, 158, 11, 0.6); box-shadow: 0 0 12px rgba(245, 158, 11, 0.1); }
 }
+/* ====== V14.0 Toast ֪ͨϵͳ ====== */
+.toast-container {
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    pointer-events: none;
+}
+
+.toast {
+    background: rgba(20, 24, 34, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #f1f5f9;
+    padding: 14px 24px;
+    border-radius: 12px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    transform: translateX(120%);
+    opacity: 0;
+    transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.toast.show {
+    transform: translateX(0);
+    opacity: 1;
+}
+
+.toast-success { border-left: 4px solid #10b981; }
+.toast-warning { border-left: 4px solid #f59e0b; }
+.toast-error   { border-left: 4px solid #ef4444; }
+.toast-info    { border-left: 4px solid #3b82f6; }
+ 
+ 

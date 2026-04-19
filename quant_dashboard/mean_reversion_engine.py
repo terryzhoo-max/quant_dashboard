@@ -14,9 +14,27 @@ import numpy as np
 import tushare as ts
 import json
 import os
+import time
+import traceback
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-TUSHARE_TOKEN   = "5334333c2cb73c9b9987fb6e89da29a3cbd0f442622fbcbfd7bd40b6"
+def retry_with_backoff(retries=3, backoff_in_seconds=1):
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            x = 0
+            while True:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if x == retries:
+                        raise
+                    time.sleep(backoff_in_seconds * (2 ** x))
+                    x += 1
+        return wrapper
+    return decorator
+
+from config import TUSHARE_TOKEN
 DAILY_PRICE_DIR = "data_lake/daily_prices"
 PARAMS_FILE     = "mr_per_regime_params.json"
 
@@ -199,15 +217,16 @@ def _classify_regime_from_series(close_arr) -> dict:
     }
 
 
+@retry_with_backoff(retries=3, backoff_in_seconds=2)
 def detect_regime() -> dict:
     """
     实时识别市场状态（CSI300 指数，000300.SH）
     使用统一三重条件算法，与信号评分系统 /api/v1/market/regime 完全一致。
+    加入了指数退避重试，防止网络抖动导致的误判。
     返回：{"regime": ..., "params": {...}, "pos_cap": ..., "score_gate": ...}
     """
     try:
-        ts.set_token(TUSHARE_TOKEN)
-        pro = ts.pro_api()
+        pro = ts.pro_api(token=TUSHARE_TOKEN)
 
         end_dt   = datetime.now().strftime("%Y%m%d")
         start_dt = (datetime.now() - pd.Timedelta(days=300)).strftime("%Y%m%d")
@@ -273,9 +292,12 @@ def calculate_indicators(df: pd.DataFrame, regime_info: dict = None) -> dict:
     boll_std   = close.rolling(20).std()
     boll_upper = ma20 + 2 * boll_std
     boll_lower = ma20 - 2 * boll_std
+    boll_diff  = boll_upper - boll_lower
+    
+    # 修复除零错误：当波动为 0 时，boll_diff可能为0甚至NaN
     percent_b  = np.where(
-        (boll_upper - boll_lower).abs() > 1e-6,
-        (close - boll_lower) / (boll_upper - boll_lower),
+        boll_diff > 1e-6,
+        (close - boll_lower) / np.where(boll_diff > 1e-6, boll_diff, 1e-6),
         0.5
     )
 
@@ -494,60 +516,81 @@ def generate_signal(indicators: dict, score: int) -> str:
     return "hold"
 
 
+def _fetch_and_calc_mr(code, regime_info, start_date, end_date, pro):
+    """并发拉取与计算单只ETF的原子函数"""
+    try:
+        cache_file = f"data_lake/daily_prices/{code}.parquet"
+        df = None
+        # 尝试API获取
+        try:
+            df = pro.fund_daily(ts_code=code, start_date=start_date, end_date=end_date)
+            if df is not None and not df.empty:
+                df = df.sort_values("trade_date").reset_index(drop=True)
+                os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+                df.to_parquet(cache_file) # 缓存
+        except Exception as api_e:
+            # API失败，尝试本地缓存托底
+            if os.path.exists(cache_file):
+                df = pd.read_parquet(cache_file)
+            else:
+                raise ValueError(f"无API数据且无本地缓存: {api_e}")
+                
+        if df is None or df.empty:
+            return {"ts_code": code, "signal": "error", "error": "数据为空"}
+
+        indicators  = calculate_indicators(df, regime_info=regime_info)
+        score_dict  = calculate_score(indicators)
+        score       = score_dict["total"]
+        breakdown   = score_dict["breakdown"]
+        signal      = generate_signal(indicators, score)
+
+        name = next((e["name"] for e in MR_POOL if e["code"] == code), code)
+        return {
+            "ts_code":       code,
+            "name":          name,
+            "signal":        signal,
+            "signal_score":  score,
+            "score_breakdown": breakdown,       # V4.2 新增明细
+            "rsi":           round(indicators["rsi"], 1),
+            "rsi_3":         round(indicators["rsi_3"], 1),
+            "rsi_slope5":    round(indicators.get("rsi_slope5", 0), 2),  # V4.2
+            "kline_pattern": indicators.get("kline_pattern", "neutral"), # V4.2
+            "bias":          round(indicators["bias"], 2),
+            "percent_b":     round(indicators["percent_b"], 3),
+            "vol_ratio":     round(indicators["vol_ratio"], 2),
+            "close":         round(indicators["close"], 3),
+            "ma20":          round(indicators["ma20"], 3),
+            "ma_n":          round(indicators["ma_n"], 3),
+            "regime":        indicators["regime"],
+            "regime_params": indicators["regime_params"],
+            "pos_cap":       indicators["pos_cap"],
+            "score_gate":    indicators["score_gate"],
+            "needs_reopt":   indicators["needs_reopt"],
+        }
+    except Exception as e:
+        name = next((e["name"] for e in MR_POOL if e["code"] == code), code)
+        return {
+            "ts_code": code, "name": name,
+            "signal": "error", "signal_score": 0,
+            "error": str(e),
+        }
+
 def run_strategy(ts_codes: list = None, regime_override: str = None) -> list:
-    """主策略入口 — 批量计算每只ETF的信号"""
-    ts.set_token(TUSHARE_TOKEN)
-    pro = ts.pro_api()
+    """主策略入口 — V5.0 并发版本"""
+    pro = ts.pro_api(token=TUSHARE_TOKEN)
 
     pool = ts_codes if ts_codes else [e["code"] for e in MR_POOL]
     results = []
     end_date   = datetime.now().strftime("%Y%m%d")
     start_date = "20230101"
 
-    # V4.2: Regime 只识别一次，注入到每只 ETF 的计算中（原最35次API调用→现在1次）
+    # V4.2: Regime 只识别一次
     regime_info = detect_regime()
 
-    for code in pool:
-        try:
-            df = pro.fund_daily(ts_code=code, start_date=start_date, end_date=end_date)
-            if df is None or df.empty:
-                continue
-            df = df.sort_values("trade_date").reset_index(drop=True)
-
-            indicators  = calculate_indicators(df, regime_info=regime_info)
-            score_dict  = calculate_score(indicators)
-            score       = score_dict["total"]
-            breakdown   = score_dict["breakdown"]
-            signal      = generate_signal(indicators, score)
-
-            name = next((e["name"] for e in MR_POOL if e["code"] == code), code)
-            results.append({
-                "ts_code":       code,
-                "name":          name,
-                "signal":        signal,
-                "signal_score":  score,
-                "score_breakdown": breakdown,       # V4.2 新增明细
-                "rsi":           round(indicators["rsi"], 1),
-                "rsi_3":         round(indicators["rsi_3"], 1),
-                "rsi_slope5":    round(indicators.get("rsi_slope5", 0), 2),  # V4.2
-                "kline_pattern": indicators.get("kline_pattern", "neutral"), # V4.2
-                "bias":          round(indicators["bias"], 2),
-                "percent_b":     round(indicators["percent_b"], 3),
-                "vol_ratio":     round(indicators["vol_ratio"], 2),
-                "close":         round(indicators["close"], 3),
-                "ma20":          round(indicators["ma20"], 3),
-                "ma_n":          round(indicators["ma_n"], 3),
-                "regime":        indicators["regime"],
-                "regime_params": indicators["regime_params"],
-                "pos_cap":       indicators["pos_cap"],
-                "score_gate":    indicators["score_gate"],
-                "needs_reopt":   indicators["needs_reopt"],
-            })
-        except Exception as e:
-            results.append({
-                "ts_code": code, "name": code,
-                "signal": "error", "signal_score": 0,
-                "error": str(e),
-            })
+    # V5.0: 使用线程池并发抓取与计算
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(_fetch_and_calc_mr, code, regime_info, start_date, end_date, pro) for code in pool]
+        for future in as_completed(futures):
+            results.append(future.result())
 
     return sorted(results, key=lambda x: x.get("signal_score", 0), reverse=True)

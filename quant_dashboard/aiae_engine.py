@@ -40,11 +40,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 
-# ===== Token: 优先环境变量, 降级硬编码 =====
-TUSHARE_TOKEN = os.environ.get(
-    "TUSHARE_TOKEN",
-    "5334333c2cb73c9b9987fb6e89da29a3cbd0f442622fbcbfd7bd40b6"
-)
+# ===== Token: 统一从 config 读取 =====
+from config import TUSHARE_TOKEN
 ts.set_token(TUSHARE_TOKEN)
 pro = ts.pro_api()
 
@@ -54,31 +51,50 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 # ===== 线程安全 TTL 缓存 =====
 _cache = {}
 _cache_lock = threading.Lock()
+_bg_executor = ThreadPoolExecutor(max_workers=3)
 
 def _log(msg: str, level: str = "INFO"):
     """结构化日志"""
     ts_str = datetime.now().strftime("%H:%M:%S.%f")[:-3]
     print(f"[{ts_str}] [{level}] [AIAE] {msg}")
 
+def atomic_write_json(data, filepath):
+    tmp_path = filepath + ".tmp"
+    try:
+        with open(tmp_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, filepath)
+    except Exception as e:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise e
+
+def _refresh_cache(key: str, fetcher):
+    try:
+        data = fetcher()
+        with _cache_lock:
+            _cache[key] = (time.time(), data)
+        return data
+    except Exception as e:
+        _log(f"后台缓存刷新失败 ({key}): {e}", "WARN")
+        with _cache_lock:
+            if key in _cache:
+                return _cache[key][1]
+        raise
+
 def _cached(key: str, ttl_seconds: int, fetcher):
-    """线程安全 TTL 缓存"""
+    """线程安全 TTL 缓存 (支持 SWR - Stale-While-Revalidate)"""
     now = time.time()
     with _cache_lock:
         if key in _cache:
             ts_cached, data = _cache[key]
             if now - ts_cached < ttl_seconds:
                 return data
-    try:
-        data = fetcher()
-        with _cache_lock:
-            _cache[key] = (now, data)
-        return data
-    except Exception as e:
-        _log(f"缓存获取失败 ({key}): {e}", "WARN")
-        with _cache_lock:
-            if key in _cache:
-                return _cache[key][1]
-        raise
+            else:
+                _bg_executor.submit(_refresh_cache, key, fetcher)
+                return data
+
+    return _refresh_cache(key, fetcher)
 
 
 # ===== 历史基准数据 (回测验证) =====
@@ -283,8 +299,7 @@ class AIAEEngine:
             ]
         }
         try:
-            with open(fp_file, 'w', encoding='utf-8') as f:
-                json.dump(seed_data, f, ensure_ascii=False, indent=2)
+            atomic_write_json(seed_data, fp_file)
             _log("基金仓位种子文件已创建 (82.0% 2025-12-31)，请尽快更新")
         except Exception as e:
             _log(f"种子文件创建失败: {e}", "WARN")
@@ -330,8 +345,7 @@ class AIAEEngine:
             "source": "manual_update",
             "history": history,
         }
-        with open(fp_file, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        atomic_write_json(data, fp_file)
         
         _log(f"基金仓位已更新: {old_value}% → {value}% (截至 {date})")
         return {"success": True, "message": f"基金仓位已更新为 {value}% (截至 {date})", "data": data}
@@ -460,8 +474,7 @@ class AIAEEngine:
                             "fetched_at": datetime.now().isoformat()
                         }
                         # 磁盘缓存
-                        with open(cache_file, 'w', encoding='utf-8') as f:
-                            json.dump(result, f, ensure_ascii=False, indent=2)
+                        atomic_write_json(result, cache_file)
                         # 合理性校验
                         if not (MV_BOUNDS['min'] <= result['total_mv_wan_yi'] <= MV_BOUNDS['max']):
                             _log(f"市值 {result['total_mv_wan_yi']}万亿 超出合理区间 [{MV_BOUNDS['min']},{MV_BOUNDS['max']}]，可能为部分数据", "WARN")
@@ -507,8 +520,7 @@ class AIAEEngine:
                         "m2_yoy": float(latest['m2_yoy']),
                         "fetched_at": datetime.now().isoformat()
                     }
-                    with open(cache_file, 'w', encoding='utf-8') as f:
-                        json.dump(result, f, ensure_ascii=False, indent=2)
+                    atomic_write_json(result, cache_file)
                     _log(f"M2: {result['m2_wan_yi']}万亿 (同比{result['m2_yoy']}%)")
                     return result
             except Exception as e:
@@ -549,8 +561,7 @@ class AIAEEngine:
                             "rzye_wan_yi": round(total_rzye / 1000000000000, 4),  # 万亿
                             "fetched_at": datetime.now().isoformat()
                         }
-                        with open(cache_file, 'w', encoding='utf-8') as f:
-                            json.dump(result, f, ensure_ascii=False, indent=2)
+                        atomic_write_json(result, cache_file)
                         _log(f"融资余额: {result['rzye']}亿")
                         return result
                 except Exception as e:
@@ -785,8 +796,7 @@ class AIAEEngine:
             })
         
         fp = self._get_monthly_history_file()
-        with open(fp, 'w', encoding='utf-8') as f:
-            json.dump(history, f, ensure_ascii=False, indent=2)
+        atomic_write_json(history, fp)
 
     def _get_prev_month_aiae(self) -> Optional[float]:
         """C2: 获取上个月的 AIAE 值 (用于斜率计算)

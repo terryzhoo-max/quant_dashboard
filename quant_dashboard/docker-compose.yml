@@ -1,0 +1,19 @@
+version: "3.8"
+
+services:
+  quant_dashboard:
+    build: .
+    container_name: quant_dashboard_app
+    ports:
+      - "8000:8000"
+    volumes:
+      # 【核心策略】将本地的 data_lake 文件夹映射进容器。
+      # 这样不仅可以加速启动，而且哪怕 Docker 容器被删除重建，过去积累的 Parquet 缓存依然保留，实现"永不丢数据"。
+      - ./data_lake:/app/data_lake
+    
+    # P0-1: 环境变量从 .env 文件注入 (Token 不再硬编码在源码中)
+    env_file:
+      - .env
+
+    # 遇到错误崩溃时自动重启（除非你手动停止它），保持服务高可用。
+    restart: unless-stopped

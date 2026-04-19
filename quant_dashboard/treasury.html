@@ -7,6 +7,7 @@
     <meta name="description" content="AlphaCore 海外策略终端 - 美债利率择时 · 全球ERP跨市场配置决策">
     <link rel="stylesheet" href="./styles.css">
     <link rel="stylesheet" href="./strategy.css">
+    <link rel="stylesheet" href="./treasury.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -87,105 +88,7 @@
             <!-- ==================== 海外AIAE宏观仓位管控 V1.0 ==================== -->
             <div class="st-report active" id="st-aiae-global">
 
-            <style>
-                .gaiae-hero-grid { display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:10px; margin-bottom:14px; }
-                .gaiae-hero-card { background:linear-gradient(135deg,rgba(15,23,42,0.9),rgba(30,41,59,0.7)); border-radius:12px; padding:16px; text-align:center; border:1px solid rgba(100,116,139,0.2); transition:all 0.4s; }
-                .gaiae-hero-card:hover { transform:translateY(-2px); box-shadow:0 4px 20px rgba(0,0,0,0.3); }
-                .gaiae-hero-card.coldest-glow { border-color:rgba(16,185,129,0.4); box-shadow:0 0 20px rgba(16,185,129,0.12); }
-                .gaiae-hero-label { font-size:0.6rem; color:#64748b; margin-bottom:4px; }
-                .gaiae-hero-value { font-size:2rem; font-weight:900; letter-spacing:-1px; color:#f59e0b; }
-                .gaiae-hero-sub { font-size:0.6rem; color:#94a3b8; margin-top:3px; }
-                .gaiae-dual-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; margin-bottom:14px; }
-                .gaiae-region-panel.hk { border-color:rgba(168,85,247,0.25); }
-                .gaiae-region-panel { background:rgba(15,23,42,0.6); border-radius:12px; padding:16px; border:1px solid rgba(100,116,139,0.15); }
-                .gaiae-region-panel.us { border-color:rgba(59,130,246,0.25); }
-                .gaiae-region-panel.jp { border-color:rgba(220,38,38,0.25); }
-                .gaiae-region-title { font-size:0.85rem; font-weight:700; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
-                .gaiae-gauge-container { width:100%; height:180px; margin-bottom:8px; }
-                .gaiae-gauge-label { text-align:center; font-size:1.2rem; font-weight:800; color:#f59e0b; }
-                .gaiae-gauge-regime { text-align:center; font-size:0.72rem; font-weight:600; margin-bottom:6px; }
-                /* ① 因子卡片 + hover 解释层 */
-                .gaiae-factor-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:10px; }
-                .gaiae-factor-card { background:rgba(30,41,59,0.5); border-radius:8px; padding:8px 6px; text-align:center; border:1px solid rgba(100,116,139,0.1); position:relative; cursor:default; transition:all 0.3s; }
-                .gaiae-factor-card:hover { border-color:rgba(245,158,11,0.3); background:rgba(30,41,59,0.7); }
-                .gaiae-factor-label { font-size:0.5rem; color:#64748b; }
-                .gaiae-factor-value { font-size:0.95rem; font-weight:800; color:#e2e8f0; margin-top:2px; }
-                .gaiae-factor-unit { font-size:0.48rem; color:#475569; }
-                .gaiae-factor-explain { display:none; position:absolute; left:50%; top:100%; transform:translateX(-50%); width:220px; padding:10px 12px; background:rgba(15,23,42,0.97); border:1px solid rgba(245,158,11,0.3); border-radius:8px; z-index:50; font-size:0.55rem; color:#cbd5e1; line-height:1.6; text-align:left; pointer-events:none; box-shadow:0 8px 24px rgba(0,0,0,0.5); }
-                .gaiae-factor-explain .fe-weight { color:#f59e0b; font-weight:700; }
-                .gaiae-factor-explain .fe-warn { color:#ef4444; font-weight:600; }
-                .gaiae-factor-explain .fe-safe { color:#10b981; }
-                .gaiae-factor-card:hover .gaiae-factor-explain { display:block; }
-                /* ⑤ 五档竖卡组 */
-                .gaiae-regime-cards { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; margin-bottom:10px; }
-                .gaiae-rc { border-radius:8px; padding:8px 4px; text-align:center; opacity:0.35; transition:all 0.4s cubic-bezier(.4,0,.2,1); border:1px solid transparent; cursor:default; }
-                .gaiae-rc.active { opacity:1; transform:scale(1.04); border-color:currentColor; box-shadow:0 0 12px rgba(245,158,11,0.15); }
-                .gaiae-rc-emoji { font-size:1.1rem; }
-                .gaiae-rc-name { font-size:0.6rem; font-weight:700; margin-top:2px; }
-                .gaiae-rc-range { font-size:0.5rem; color:#94a3b8; margin-top:1px; }
-                .gaiae-rc-pos { font-size:0.55rem; font-weight:800; margin-top:2px; }
-                .gaiae-rc-tip { font-size:0.42rem; color:#64748b; margin-top:3px; line-height:1.3; }
-                /* ② 警示指标面板 */
-                .gaiae-warn-panel { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:10px; }
-                .gaiae-warn-card { background:rgba(15,23,42,0.5); border-radius:8px; padding:8px; border:1px solid rgba(100,116,139,0.1); transition:all 0.4s; }
-                .gaiae-warn-card.warn-danger { border-color:rgba(239,68,68,0.4); animation:gaiae-warn-pulse 2s ease-in-out infinite; }
-                .gaiae-warn-card.warn-caution { border-color:rgba(245,158,11,0.3); }
-                .gaiae-warn-card.warn-ok { border-color:rgba(16,185,129,0.2); }
-                @keyframes gaiae-warn-pulse { 0%,100%{box-shadow:0 0 0 rgba(239,68,68,0)} 50%{box-shadow:0 0 12px rgba(239,68,68,0.2)} }
-                .gaiae-warn-label { font-size:0.55rem; color:#94a3b8; font-weight:600; margin-bottom:3px; }
-                .gaiae-warn-value { font-size:0.85rem; font-weight:800; }
-                .gaiae-warn-threshold { font-size:0.45rem; color:#475569; margin-top:2px; }
-                .gaiae-warn-bar { height:4px; background:rgba(30,41,59,0.8); border-radius:2px; margin-top:4px; overflow:hidden; }
-                .gaiae-warn-bar-fill { height:100%; border-radius:2px; transition:width 0.8s cubic-bezier(.4,0,.2,1); }
-                /* Matrix */
-                .gaiae-matrix-wrap { background:rgba(15,23,42,0.6); border-radius:12px; padding:14px; border:1px solid rgba(100,116,139,0.15); margin-bottom:14px; }
-                .gaiae-matrix-table { width:100%; border-collapse:collapse; font-size:0.62rem; }
-                .gaiae-matrix-table th { padding:6px 4px; color:#94a3b8; font-weight:600; text-align:center; border-bottom:1px solid rgba(100,116,139,0.2); }
-                .gaiae-matrix-table td { padding:6px 4px; text-align:center; color:#cbd5e1; font-weight:700; border-bottom:1px solid rgba(100,116,139,0.08); border-radius:4px; }
-                .gaiae-matrix-table td.gaiae-cell-active { background:rgba(245,158,11,0.25) !important; color:#fbbf24; box-shadow:0 0 8px rgba(245,158,11,0.3); font-weight:900; font-size:0.72rem; animation:gaiae-cell-breathe 2.5s ease-in-out infinite; }
-                @keyframes gaiae-cell-breathe { 0%,100%{box-shadow:0 0 8px rgba(245,158,11,0.3)} 50%{box-shadow:0 0 16px rgba(245,158,11,0.5)} }
-                /* ③ 操作区合并 */
-                .gaiae-3way { background:rgba(15,23,42,0.6); border-radius:12px; padding:16px; border:1px solid rgba(100,116,139,0.15); margin-bottom:14px; }
-                .gaiae-3way-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:10px; }
-                .gaiae-3way-card { border-radius:10px; padding:14px; text-align:center; transition:all 0.4s; }
-                .gaiae-3way-card.cn { background:rgba(239,68,68,0.06); border:1px solid rgba(239,68,68,0.2); }
-                .gaiae-3way-card.us { background:rgba(59,130,246,0.06); border:1px solid rgba(59,130,246,0.2); }
-                .gaiae-3way-card.jp { background:rgba(220,38,38,0.06); border:1px solid rgba(220,38,38,0.15); }
-                .gaiae-3way-card.hk { background:rgba(168,85,247,0.06); border:1px solid rgba(168,85,247,0.2); }
-                .gaiae-3way-card.is-coldest { box-shadow:0 0 16px rgba(16,185,129,0.15); border-color:rgba(16,185,129,0.35) !important; }
-                .gaiae-3way-flag { font-size:1.8rem; margin-bottom:4px; }
-                .gaiae-3way-value { font-size:1.6rem; font-weight:900; }
-                .gaiae-3way-regime { font-size:0.65rem; margin-top:3px; }
-                .gaiae-3way-crown { display:inline-block; font-size:1rem; animation:crown-bounce 1s ease-in-out infinite alternate; }
-                @keyframes crown-bounce { 0%{transform:translateY(0)} 100%{transform:translateY(-3px)} }
-                .gaiae-recommendation { padding:10px 14px; border-radius:8px; background:rgba(245,158,11,0.06); border:1px solid rgba(245,158,11,0.2); font-size:0.72rem; color:#fbbf24; text-align:center; font-weight:600; }
-                .gaiae-action-zone { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:14px; }
-                .gaiae-az-card { border-radius:10px; padding:14px; transition:all 0.4s; }
-                .gaiae-az-card.az-buy { background:rgba(16,185,129,0.04); border:1px solid rgba(16,185,129,0.15); }
-                .gaiae-az-card.az-hold { background:rgba(234,179,8,0.04); border:1px solid rgba(234,179,8,0.15); }
-                .gaiae-az-card.az-sell { background:rgba(239,68,68,0.04); border:1px solid rgba(239,68,68,0.15); }
-                .gaiae-az-card.az-active { border-width:2px; }
-                .gaiae-az-card.az-buy.az-active { border-color:rgba(16,185,129,0.5); box-shadow:0 0 16px rgba(16,185,129,0.12); background:rgba(16,185,129,0.08); }
-                .gaiae-az-card.az-hold.az-active { border-color:rgba(234,179,8,0.5); box-shadow:0 0 16px rgba(234,179,8,0.12); background:rgba(234,179,8,0.08); }
-                .gaiae-az-card.az-sell.az-active { border-color:rgba(239,68,68,0.5); box-shadow:0 0 16px rgba(239,68,68,0.12); background:rgba(239,68,68,0.08); animation:gaiae-sell-pulse 2s ease-in-out infinite; }
-                @keyframes gaiae-sell-pulse { 0%,100%{box-shadow:0 0 16px rgba(239,68,68,0.12)} 50%{box-shadow:0 0 24px rgba(239,68,68,0.25)} }
-                .gaiae-az-card.az-dimmed { opacity:0.35; }
-                .gaiae-az-title { font-size:0.78rem; font-weight:700; margin-bottom:8px; }
-                .gaiae-az-card ul { list-style:none; padding:0; margin:0; }
-                .gaiae-az-card li { font-size:0.6rem; color:#cbd5e1; padding:3px 0; line-height:1.5; }
-                .gaiae-az-card li.az-region-label { font-weight:700; margin-top:5px; padding-bottom:1px; }
-                .gaiae-chart-container { width:100%; height:280px; }
-                .gaiae-signal-list { display:flex; flex-direction:column; gap:5px; margin-top:8px; }
-                .gaiae-signal-item { display:flex; align-items:center; gap:8px; padding:6px 10px; border-radius:6px; background:rgba(30,41,59,0.4); border-left:3px solid; font-size:0.65rem; color:#e2e8f0; }
-                /* ④ 风控折叠区 */
-                .gaiae-accordion-trigger { display:flex; align-items:center; gap:10px; padding:12px 16px; background:rgba(15,23,42,0.5); border:1px solid rgba(100,116,139,0.15); border-radius:10px; cursor:pointer; transition:all 0.3s; margin-bottom:14px; }
-                .gaiae-accordion-trigger:hover { background:rgba(15,23,42,0.7); border-color:rgba(245,158,11,0.2); }
-                .gaiae-accordion-trigger .acc-title { flex:1; font-size:0.75rem; font-weight:700; color:#f59e0b; }
-                .gaiae-accordion-trigger .acc-arrow { font-size:1rem; color:#64748b; transition:transform 0.3s; }
-                .gaiae-accordion-trigger.open .acc-arrow { transform:rotate(90deg); }
-                .gaiae-accordion-body { max-height:0; overflow:hidden; transition:max-height 0.4s ease; }
-                .gaiae-accordion-body.open { max-height:800px; }
-            </style>
+            <!-- AIAE styles: see treasury.css -->
 
             <!-- Hero Cards -->
             <div class="gaiae-hero-grid">
@@ -593,40 +496,7 @@
             <!-- ==================== 海外ERP择时 V2.0 ==================== -->
             <div class="st-report" id="st-erp-global">
 
-            <!-- V2.0 骨架屏CSS -->
-            <style>
-                @keyframes erp-shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
-                .erp-skeleton { background:linear-gradient(90deg,rgba(30,41,59,0.5) 25%,rgba(51,65,85,0.4) 50%,rgba(30,41,59,0.5) 75%); background-size:200% 100%; animation:erp-shimmer 1.8s infinite; border-radius:6px; }
-                .erp-hero-card { position:relative; background:linear-gradient(135deg,rgba(15,23,42,0.9),rgba(30,41,59,0.7)); border-radius:12px; padding:20px; text-align:center; border:1px solid rgba(100,116,139,0.2); transition:all 0.4s; }
-                .erp-hero-card.us-active { border-color:rgba(59,130,246,0.4); box-shadow:0 0 24px rgba(59,130,246,0.12); }
-                .erp-hero-card.jp-active { border-color:rgba(220,38,38,0.4); box-shadow:0 0 24px rgba(220,38,38,0.12); }
-                .erp-hero-card.hk-active { border-color:rgba(168,85,247,0.4); box-shadow:0 0 24px rgba(168,85,247,0.12); }
-                .erp-hero-value { font-size:2.4rem; font-weight:900; letter-spacing:-1px; line-height:1; }
-                .erp-hero-label { font-size:0.65rem; color:#64748b; margin-top:4px; }
-                .erp-signal-banner { border-radius:10px; padding:10px 16px; display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; border:1px solid; transition:all 0.4s; }
-                .erp-signal-banner .signal-main { display:flex; align-items:center; gap:10px; }
-                .erp-signal-banner .signal-score { font-size:1.8rem; font-weight:900; }
-                .erp-signal-banner .signal-text { font-size:0.82rem; font-weight:700; }
-                .erp-signal-banner .signal-pos { font-size:0.68rem; opacity:0.8; }
-                .erp-aux-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; margin-bottom:12px; }
-                .erp-aux-card { background:rgba(15,23,42,0.5); border-radius:8px; padding:8px 6px; text-align:center; border:1px solid rgba(100,116,139,0.1); }
-                .erp-aux-card .label { font-size:0.58rem; color:#64748b; margin-bottom:3px; }
-                .erp-aux-card .value { font-size:1rem; font-weight:800; color:#e2e8f0; }
-                .erp-aux-card .sub { font-size:0.52rem; color:#475569; margin-top:2px; }
-                .erp-dim-row { display:flex; align-items:center; gap:6px; margin-bottom:5px; }
-                .erp-dim-label { font-size:0.62rem; color:#94a3b8; width:68px; text-align:right; flex-shrink:0; }
-                .erp-dim-weight { font-size:0.48rem; color:#475569; }
-                .erp-dim-track { flex:1; height:8px; background:rgba(30,41,59,0.8); border-radius:4px; overflow:hidden; }
-                .erp-dim-fill { height:100%; border-radius:4px; transition:width 0.8s cubic-bezier(.4,0,.2,1); }
-                .erp-dim-score { font-size:0.65rem; font-weight:700; width:28px; text-align:right; }
-                .erp-crown { display:inline-block; font-size:1.2rem; animation:crown-bounce 1s ease-in-out infinite alternate; }
-                @keyframes crown-bounce { 0%{transform:translateY(0)} 100%{transform:translateY(-3px)} }
-                @keyframes pulse-glow { 0%,100%{opacity:1} 50%{opacity:0.6} }
-                .erp-trade-section { background:rgba(15,23,42,0.6); border-radius:8px; padding:10px; }
-                .erp-trade-title { font-size:0.65rem; margin-bottom:6px; font-weight:600; }
-                .erp-comparison-card { border-radius:12px; padding:16px; text-align:center; transition:all 0.4s; position:relative; }
-                .erp-comparison-card.winner { box-shadow:0 0 20px rgba(251,191,36,0.2); }
-            </style>
+            <!-- ERP styles: see treasury.css -->
 
             <!-- ZONE 0 · 策略身份 V2.0 -->
             <div class="st-identity-bar" style="background:linear-gradient(135deg,#0c1929 0%,#1a2744 50%,#0f2840 100%);border-left:4px solid #d97706;position:relative;overflow:hidden;">
@@ -1052,10 +922,12 @@
                 </div>
             </div>
 
-            <!-- ZONE 5: 走势图 -->
-            <div class="glass-panel" style="padding:14px;margin-bottom:14px;">
-                <div style="font-size:0.75rem;color:#94a3b8;font-weight:600;margin-bottom:8px;">📊 US 10Y Treasury 走势 (含曲线利差)</div>
-                <div id="rates-chart" style="width:100%;height:280px;"></div>
+            <!-- ZONE 5: 走势图 V3.0 (对标ERP历史走势图) -->
+            <div class="glass-panel" style="padding:16px;margin-bottom:14px;">
+                <h3 id="rates-chart-title" style="margin:0 0 8px;font-size:0.85rem;color:#94a3b8;">📊 US 10Y Treasury 走势 · 四档区间可视化</h3>
+                <div id="rates-chart-kpis" style="display:flex;gap:10px;margin-bottom:10px;"></div>
+                <div id="rates-chart-action-bar" style="margin-bottom:10px;"></div>
+                <div id="rates-chart" style="width:100%;height:380px;"></div>
             </div>
 
             <!-- ZONE 6: 诊断卡片 -->
@@ -1087,7 +959,7 @@
     </main>
 
     <script src="./echarts.min.js"></script>
-    <script src="./strategy.js"></script>
+    <script src="./treasury.js"></script>
 
     <script>
     // V2.0: 页面打开自动加载
@@ -1097,6 +969,8 @@
             setTimeout(loadGlobalAIAE, 300);
         } else if (activeTab && activeTab.dataset.report === 'st-erp-global') {
             setTimeout(loadGlobalERP, 300);
+        } else if (activeTab && activeTab.dataset.report === 'st-rates-strategy') {
+            setTimeout(loadRatesStrategy, 300);
         }
     });
 
@@ -1118,7 +992,7 @@
             });
             const json = await resp.json();
             if (json.status === 'success') {
-                _jpUpdateStatus('✅ ' + json.message, '#10b981');
+                _jpUpdateStatus('✅ ' + json.message, '#10b981', true);
                 input.value = '';
                 // 自动刷新AIAE数据
                 setTimeout(() => loadGlobalAIAE(true), 500);
@@ -1165,10 +1039,22 @@
         btn.disabled = false; btn.textContent = '📤 更新外資流向';
     }
 
-    function _jpUpdateStatus(msg, color) {
+    function _jpUpdateStatus(msg, color, autoCollapse) {
         const el = document.getElementById('jp-update-status');
         if (el) { el.textContent = msg; el.style.color = color; }
-        setTimeout(() => { if (el) el.textContent = ''; }, 5000);
+        // P3-3: 成功后3s清除状态 + 自动折叠
+        const delay = autoCollapse ? 2000 : 5000;
+        setTimeout(() => {
+            if (el) el.textContent = '';
+            if (autoCollapse) {
+                document.querySelectorAll('.gaiae-accordion-trigger').forEach(t => {
+                    if (t.textContent.includes('日股')) {
+                        t.classList.remove('open');
+                        t.nextElementSibling.classList.remove('open');
+                    }
+                });
+            }
+        }, delay);
     }
 
     // V2.0: HK手动数据更新
@@ -1194,7 +1080,7 @@
             });
             const json = await resp.json();
             if (json.status === 'success') {
-                _hkUpdateStatus('✅ ' + json.message, '#10b981');
+                _hkUpdateStatus('✅ ' + json.message, '#10b981', true);
                 input.value = ''; monthInput.value = '';
                 setTimeout(() => loadGlobalAIAE(true), 500);
             } else {
@@ -1223,7 +1109,7 @@
             });
             const json = await resp.json();
             if (json.status === 'success') {
-                _hkUpdateStatus('✅ ' + json.message, '#10b981');
+                _hkUpdateStatus('✅ ' + json.message, '#10b981', true);
                 input.value = '';
                 setTimeout(() => loadGlobalAIAE(true), 500);
             } else {
@@ -1235,10 +1121,22 @@
         btn.disabled = false; btn.textContent = '📤 更新AH溢价';
     }
 
-    function _hkUpdateStatus(msg, color) {
+    function _hkUpdateStatus(msg, color, autoCollapse) {
         const el = document.getElementById('hk-update-status');
         if (el) { el.textContent = msg; el.style.color = color; }
-        setTimeout(() => { if (el) el.textContent = ''; }, 5000);
+        // P3-3: 成功后3s清除状态 + 自动折叠
+        const delay = autoCollapse ? 2000 : 5000;
+        setTimeout(() => {
+            if (el) el.textContent = '';
+            if (autoCollapse) {
+                document.querySelectorAll('.gaiae-accordion-trigger').forEach(t => {
+                    if (t.textContent.includes('港股')) {
+                        t.classList.remove('open');
+                        t.nextElementSibling.classList.remove('open');
+                    }
+                });
+            }
+        }, delay);
     }
 
     // Hook: 当AIAE数据加载后，填充JP+HK当前值

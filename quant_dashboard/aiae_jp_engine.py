@@ -27,11 +27,13 @@ import time
 import os
 import json
 import threading
+from functools import wraps
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
+from config import FRED_API_KEY as CONFIG_FRED_API_KEY
 
-FRED_API_KEY = "eadf412d4f0e8ccd2bb3993b357bdca6"
+FRED_API_KEY = os.environ.get("FRED_API_KEY", CONFIG_FRED_API_KEY)
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
@@ -42,31 +44,72 @@ def _get_topix_ttl() -> int:
     """TOPIX 智能TTL: 工作日4h / 周末24h"""
     return 86400 if datetime.now().weekday() >= 5 else 14400
 
+# ===== 工业级重试装饰器 =====
+def retry_with_backoff(max_retries=3, base_delay=2.0):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            delay = base_delay
+            for i in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if i == max_retries - 1:
+                        raise e
+                    print(f"[Retry] {func.__name__} failed: {e}. Retrying in {delay}s...")
+                    time.sleep(delay)
+                    delay *= 2
+            return None
+        return wrapper
+    return decorator
+
+# ===== 原子性文件写入 =====
+def atomic_write_json(data, filepath):
+    tmp_path = filepath + ".tmp"
+    try:
+        with open(tmp_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, filepath)
+    except Exception as e:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise e
+
+# ===== 线程安全 TTL 缓存 (SWR) =====
 _jp_aiae_cache = {}
 _jp_aiae_lock = threading.Lock()
+_bg_executor = ThreadPoolExecutor(max_workers=3)
 
 def _log(msg: str, level: str = "INFO"):
     ts_str = datetime.now().strftime("%H:%M:%S.%f")[:-3]
     print(f"[{ts_str}] [{level}] [JP-AIAE] {msg}")
 
+def _refresh_cache(key: str, fetcher):
+    try:
+        data = fetcher()
+        with _jp_aiae_lock:
+            _jp_aiae_cache[key] = (time.time(), data)
+        return data
+    except Exception as e:
+        _log(f"后台缓存刷新失败 ({key}): {e}", "WARN")
+        with _jp_aiae_lock:
+            if key in _jp_aiae_cache:
+                return _jp_aiae_cache[key][1]
+        raise
+
 def _cached(key: str, ttl_seconds: int, fetcher):
+    """线程安全 TTL 缓存 (支持 SWR - Stale-While-Revalidate)"""
     now = time.time()
     with _jp_aiae_lock:
         if key in _jp_aiae_cache:
             ts_cached, data = _jp_aiae_cache[key]
             if now - ts_cached < ttl_seconds:
                 return data
-    try:
-        data = fetcher()
-        with _jp_aiae_lock:
-            _jp_aiae_cache[key] = (now, data)
-        return data
-    except Exception as e:
-        _log(f"缓存获取失敗 ({key}): {e}", "WARN")
-        with _jp_aiae_lock:
-            if key in _jp_aiae_cache:
-                return _jp_aiae_cache[key][1]
-        raise
+            else:
+                _bg_executor.submit(_refresh_cache, key, fetcher)
+                return data
+
+    return _refresh_cache(key, fetcher)
 
 _fred = None
 def _get_fred():
@@ -177,7 +220,10 @@ class AIAEJPEngine:
             if fred:
                 try:
                     start_dt = datetime.now() - timedelta(days=30)
-                    series = fred.get_series("NIKKEI225", observation_start=start_dt)
+                    @retry_with_backoff(max_retries=3, base_delay=2.0)
+                    def _call_fred():
+                        return fred.get_series("NIKKEI225", observation_start=start_dt)
+                    series = _call_fred()
                     if series is not None and not series.empty:
                         series = series.dropna()
                         latest = float(series.iloc[-1])
@@ -192,8 +238,7 @@ class AIAEJPEngine:
                             "market_cap_trillion_jpy": mktcap,
                             "fetched_at": datetime.now().isoformat()
                         }
-                        with open(cache_file, 'w', encoding='utf-8') as f:
-                            json.dump(result, f, ensure_ascii=False, indent=2)
+                        atomic_write_json(result, cache_file)
                         _log(f"N225→TOPIX推估: {mktcap}兆円")
                         return result
                 except Exception as e:
@@ -203,8 +248,12 @@ class AIAEJPEngine:
             try:
                 import requests
                 cnbc_url = "https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=.N225&requestMethod=itv&noCache=1&partnerId=2&fund=1&exthrs=1&output=json&events=1"
-                r = requests.get(cnbc_url, timeout=10, headers={'User-Agent': 'Mozilla/5.0'})
-                quote = r.json().get('FormattedQuoteResult', {}).get('FormattedQuote', [{}])[0]
+                @retry_with_backoff(max_retries=3, base_delay=2.0)
+                def _call_cnbc():
+                    r = requests.get(cnbc_url, timeout=10, headers={'User-Agent': 'Mozilla/5.0'})
+                    r.raise_for_status()
+                    return r.json().get('FormattedQuoteResult', {}).get('FormattedQuote', [{}])[0]
+                quote = _call_cnbc()
                 price_str = quote.get('last', '0').replace(',', '')
                 n225 = float(price_str)
                 if n225 > 10000:
@@ -218,8 +267,7 @@ class AIAEJPEngine:
                         "fetched_at": datetime.now().isoformat(),
                         "source": "cnbc"
                     }
-                    with open(cache_file, 'w', encoding='utf-8') as f:
-                        json.dump(result, f, ensure_ascii=False, indent=2)
+                    atomic_write_json(result, cache_file)
                     _log(f"CNBC N225={n225:.0f}→TOPIX推估: {mktcap}兆円")
                     return result
             except Exception as e:
@@ -250,7 +298,10 @@ class AIAEJPEngine:
             if fred:
                 try:
                     start_dt = datetime.now() - timedelta(days=180)
-                    series = fred.get_series("MYAGM2JPM189N", observation_start=start_dt)
+                    @retry_with_backoff(max_retries=3, base_delay=2.0)
+                    def _call_fred():
+                        return fred.get_series("MYAGM2JPM189N", observation_start=start_dt)
+                    series = _call_fred()
                     if series is not None and not series.empty:
                         series = series.dropna()
                         latest = float(series.iloc[-1])
@@ -262,8 +313,7 @@ class AIAEJPEngine:
                             "m2_trillion_jpy": m2_trillion,
                             "fetched_at": datetime.now().isoformat()
                         }
-                        with open(cache_file, 'w', encoding='utf-8') as f:
-                            json.dump(result, f, ensure_ascii=False, indent=2)
+                        atomic_write_json(result, cache_file)
                         _log(f"JP M2: {m2_trillion}兆円")
                         return result
                 except Exception as e:
@@ -316,8 +366,7 @@ class AIAEJPEngine:
             "date": datetime.now().strftime("%Y-%m-%d"),
             "source": "manual"
         }
-        with open(JP_MARGIN_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        atomic_write_json(data, JP_MARGIN_FILE)
         self._margin_data = data
         _log(f"JP Margin 手動更新: {margin_buying_trillion_jpy}兆円")
 
@@ -329,8 +378,7 @@ class AIAEJPEngine:
             "date": datetime.now().strftime("%Y-%m-%d"),
             "source": "manual"
         }
-        with open(JP_FOREIGN_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        atomic_write_json(data, JP_FOREIGN_FILE)
         self._foreign_data = data
         _log(f"JP Foreign 手動更新: net={net_buy_billion_jpy}億円")
 
@@ -431,8 +479,7 @@ class AIAEJPEngine:
                 'aiae_v1': aiae_v1,
                 'saved_at': datetime.now().isoformat()
             }
-            with open(self._PREV_AIAE_FILE, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+            atomic_write_json(data, self._PREV_AIAE_FILE)
         except Exception as e:
             _log(f"前月AIAE保存失敗: {e}", "WARN")
 

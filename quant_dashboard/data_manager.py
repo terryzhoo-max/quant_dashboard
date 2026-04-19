@@ -5,8 +5,10 @@ import time
 from datetime import datetime, timedelta
 from typing import List, Optional
 
+import config  # 导入config以触发Tushare全局连接修复(Monkey Patch)
+
 # ====== 配置区 ======
-TUSHARE_TOKEN = "5334333c2cb73c9b9987fb6e89da29a3cbd0f442622fbcbfd7bd40b6"
+TUSHARE_TOKEN = config.TUSHARE_TOKEN
 DATA_DIR = "data_lake"
 FINA_INDICATOR_DIR = os.path.join(DATA_DIR, "financials")
 DAILY_PRICE_DIR = os.path.join(DATA_DIR, "daily_prices")

@@ -1,0 +1,31 @@
+import sys, json, urllib.request
+sys.stdout.reconfigure(encoding='utf-8')
+r = urllib.request.urlopen('http://127.0.0.1:8000/api/v1/strategy/erp-timing')
+d = json.loads(r.read())
+c = d['data']['chart']
+s = c['stats']
+erp = c['erp']
+total = len(erp)
+buy_count = sum(1 for v in erp if v >= s['overweight_line'])
+sell_count = sum(1 for v in erp if v <= s['underweight_line'])
+strong_buy = sum(1 for v in erp if v >= s['strong_buy_line'])
+danger = sum(1 for v in erp if v <= s['danger_line'])
+
+print(f"=== ERP Chart Data Analysis ===")
+print(f"overweight_line = {s['overweight_line']}%")
+print(f"underweight_line = {s['underweight_line']}%")
+print(f"strong_buy_line = {s['strong_buy_line']}%")
+print(f"danger_line = {s['danger_line']}%")
+print(f"mean = {s['mean']}%, std = {s['std']}%")
+print(f"---")
+print(f"Buy zone (>= overweight): {buy_count}/{total} = {buy_count/total*100:.1f}%")
+print(f"Strong buy zone (>= strong_buy): {strong_buy}/{total} = {strong_buy/total*100:.1f}%")
+print(f"Sell zone (<= underweight): {sell_count}/{total} = {sell_count/total*100:.1f}%")
+print(f"Danger zone (<= danger): {danger}/{total} = {danger/total*100:.1f}%")
+print(f"Current = {s['current']}% vs mean {s['mean']}%")
+print(f"  deviation = {(s['current']-s['mean'])/s['mean']*100:.1f}%")
+print(f"---")
+print(f"10Y yield range: {min(c['yield_10y'])} ~ {max(c['yield_10y'])}%")
+print(f"PE-TTM range: {min(c['pe_ttm'])} ~ {max(c['pe_ttm'])}x")
+print(f"ERP range: {s['min']} ~ {s['max']}%")
+print(f"M1 YoY range: {min(v for v in c['m1_yoy'] if v is not None)} ~ {max(v for v in c['m1_yoy'] if v is not None)}%")

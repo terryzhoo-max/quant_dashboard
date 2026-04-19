@@ -76,6 +76,8 @@ async def lifespan(app: FastAPI):
     threading.Thread(target=_warmup_erp_cache, daemon=True).start()
     threading.Thread(target=_warmup_rates_cache, daemon=True).start()
     threading.Thread(target=lambda: get_aiae_engine().generate_report(), daemon=True).start()
+    threading.Thread(target=_warmup_dashboard_cache, daemon=True).start()
+    threading.Thread(target=_hot_data_reactor, daemon=True).start()
     _schedule_daily_warmup()
     _schedule_morning_warmup()
     _schedule_fred_daily_refresh()
@@ -94,9 +96,15 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="AlphaCore Quant API", description="AlphaCore量化终端底层数据接口", lifespan=lifespan)
 
 # 配置 CORS 跨域
+# P1-3: CORS 白名单 (生产环境仅允许自身域名 + 本地开发)
+_CORS_ORIGINS = [
+    "http://127.0.0.1:8000",
+    "http://localhost:8000",
+    "http://8.219.112.184:8000",
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -181,23 +189,69 @@ def _warmup_aiae_cache():
         raise Exception(f"AIAE report failed with status: {status}")
     print(f"[AIAE Warmup] 预热完成 · status={status}")
 
+def _hot_data_reactor():
+    """后台高频预热循环：盘中提取 VIX/CNY，主动写入缓存"""
+    from dashboard_modules.fetch_macro import fetch_vix_for_dashboard, fetch_cny_for_dashboard
+    while True:
+        try:
+            now_dt = datetime.now()
+            is_trading_hours = now_dt.weekday() < 5 and ((now_dt.hour == 9 and now_dt.minute >= 30) or (10 <= now_dt.hour < 15))
+            with _STRATEGY_LOCK:
+                has_strategy_cache = STRATEGY_CACHE["dashboard_data"] is not None
+                
+            if is_trading_hours and has_strategy_cache:
+                hot_vix, prev_vix = fetch_vix_for_dashboard()
+                cny_result = fetch_cny_for_dashboard()
+                
+                hot_vix_change = ((hot_vix - prev_vix) / prev_vix * 100) if prev_vix > 0 else 0
+                hot_vix_status = "down" if hot_vix_change < 0 else "up"
+                hot_vix_analysis = get_vix_analysis(hot_vix)
+                
+                with _STRATEGY_LOCK:
+                    hot_data = copy.deepcopy(STRATEGY_CACHE["dashboard_data"])
+                    _hot_aiae_ctx = STRATEGY_CACHE.get("aiae_ctx")
+                
+                mc = hot_data.get("data", {}).get("macro_cards", {})
+                if "vix" in mc:
+                    mc["vix"]["value"] = round(hot_vix, 2)
+                    mc["vix"]["trend"] = f"{round(hot_vix_change, 1)}%"
+                    mc["vix"]["status"] = hot_vix_status
+                    mc["vix"]["regime"] = hot_vix_analysis["label"]
+                    mc["vix"]["class"] = hot_vix_analysis["class"]
+                    mc["vix"]["desc"] = hot_vix_analysis.get("desc", "")
+                    mc["vix"]["percentile"] = hot_vix_analysis.get("percentile", 0)
+                if mc.get("regime_banner"):
+                    mc["regime_banner"]["vix"] = round(hot_vix, 2)
+                    mc["regime_banner"]["vix_label"] = hot_vix_analysis.get("label", "—")
+                if mc.get("market_temp") and "multiplier" in hot_vix_analysis:
+                    mc["market_temp"]["market_vix_multiplier"] = hot_vix_analysis["multiplier"]
+                
+                if "tomorrow_plan" in mc:
+                    mc["tomorrow_plan"] = get_tomorrow_plan(hot_vix_analysis, mc.get("market_temp", {}).get("value", 50), _hot_aiae_ctx)
+                hot_data["timestamp"] = now_dt.isoformat()
+                
+                with _STRATEGY_LOCK:
+                    STRATEGY_CACHE["last_update"] = time.time()
+                    STRATEGY_CACHE["dashboard_data"] = hot_data
+        except Exception as e:
+            print(f"[Reactor Warning] {e}")
+        time.sleep(120)
+
 def _warmup_dashboard_cache():
     """后台预热量化总览缓存: True Zero-Wait (真实主动流水线预热)"""
-    # 清除旧缓存
-    STRATEGY_CACHE["last_update"] = None
-    STRATEGY_CACHE["dashboard_data"] = None
-    
     # 主动触发全数据流水线
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    # 因为 get_dashboard_data 是协程，在后台线程中需借助事件循环
-    data = loop.run_until_complete(get_dashboard_data())
-    loop.close()
-    
-    if data and data.get("status") == "success":
-        print(f"[Dashboard Warmup] 主动预热成功, 零等待缓存已就绪")
-    else:
-        raise Exception("预热后返回状态异常，缓存建立失败")
+    try:
+        data = loop.run_until_complete(_build_dashboard_data_full())
+        if data and data.get("status") == "success":
+            print(f"[Dashboard Warmup] 主动预热成功, 零等待缓存已就绪")
+        else:
+            print("[Dashboard Warmup] 预热后返回状态异常，部分缓存建立失败")
+    except Exception as e:
+        print(f"[Dashboard Warmup] 失败: {e}")
+    finally:
+        loop.close()
 
 def _schedule_daily_warmup():
     """计算距下一个 15:35 的秒数, 注册定时器"""
@@ -802,9 +856,28 @@ def get_tactical_label(final_pos, temp, erp_z, crisis):
 @app.get("/api/v1/dashboard-data")
 async def get_dashboard_data():
     """
-    V12.0 核心数据拉取接口 — 子模块编排器
-    原 640 行内联代码 → 7 个子模块 (Issue #14)
+    V14.0 核心数据拉取接口 — 彻底转向纯前端读取模式 (Producer-Consumer)
+    不执行任何计算，仅仅从 STRATEGY_CACHE 返回快照。
     """
+    with _STRATEGY_LOCK:
+        _cached_data = STRATEGY_CACHE.get("dashboard_data")
+        _cached_ts = STRATEGY_CACHE.get("last_update")
+        
+    if _cached_data:
+        # P0: 若超过3小时未更新，增加一个 stale 标记
+        if time.time() - (_cached_ts or 0) > 10800:
+            _cached_data["is_stale"] = True
+        return _cached_data
+        
+    return {
+        "status": "warming_up",
+        "message": "引擎极速预热中...",
+        "is_stale": True,
+        "data": {}
+    }
+
+async def _build_dashboard_data_full():
+    """由后台 Reactor 主动触发的全量构建逻辑，绝不在 API 线程中直接调用"""
     from dashboard_modules.fetch_macro import fetch_vix_for_dashboard, fetch_cny_for_dashboard, fetch_macro_data
     from dashboard_modules.run_strategies import run_all_strategies, wrap_mr_results
     from dashboard_modules.capital_flow import compute_capital_flow
@@ -813,119 +886,88 @@ async def get_dashboard_data():
     from dashboard_modules.assemble_response import assemble_dashboard_response
 
     current_time = time.time()
-    ttl = _get_cache_ttl()
 
-    # ── 缓存命中 ──
-    with _STRATEGY_LOCK:
-        _cached_ts = STRATEGY_CACHE["last_update"]
-        _cached_data = STRATEGY_CACHE["dashboard_data"]
-    if _cached_ts and (current_time - _cached_ts < ttl):
-        age = int(current_time - _cached_ts)
-        ttl_type = "盘中5min" if ttl == 300 else ("周末24h" if ttl == 86400 else "盘后1h")
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] Dashboard Cache Hit [{ttl_type}] ({age}s ago).")
-        return _cached_data
-
-    # ── 盘中热刷新: 只刷 VIX/CNY ──
-    now_dt = datetime.now()
-    is_trading_hours = now_dt.weekday() < 5 and ((now_dt.hour == 9 and now_dt.minute >= 30) or (10 <= now_dt.hour < 15))
-    with _STRATEGY_LOCK:
-        has_strategy_cache = STRATEGY_CACHE["dashboard_data"] is not None
-
-    if is_trading_hours and has_strategy_cache:
-        print(f"[{now_dt.strftime('%H:%M:%S')}] [HOT] Trading-hours refresh: VIX/CNY only, skip strategy engine")
-        try:
-            loop = asyncio.get_event_loop()
-            vix_result, cny_result = await asyncio.gather(
-                loop.run_in_executor(executor, fetch_vix_for_dashboard),
-                loop.run_in_executor(executor, fetch_cny_for_dashboard)
-            )
-            hot_vix, prev_vix = vix_result
-            hot_vix_change = ((hot_vix - prev_vix) / prev_vix * 100) if prev_vix > 0 else 0
-            hot_vix_status = "down" if hot_vix_change < 0 else "up"
-            hot_vix_analysis = get_vix_analysis(hot_vix)
-
-            hot_data = copy.deepcopy(STRATEGY_CACHE["dashboard_data"])
-            mc = hot_data["data"]["macro_cards"]
-            mc["vix"] = {
-                "value": round(hot_vix, 2), "trend": f"{round(hot_vix_change, 1)}%",
-                "status": hot_vix_status, "regime": hot_vix_analysis["label"],
-                "class": hot_vix_analysis["class"], "desc": hot_vix_analysis.get("desc", ""),
-                "percentile": hot_vix_analysis.get("percentile", 0)
-            }
-            if mc.get("regime_banner"):
-                mc["regime_banner"]["vix"] = round(hot_vix, 2)
-                mc["regime_banner"]["vix_label"] = hot_vix_analysis.get("label", "—")
-            if mc.get("market_temp"):
-                mc["market_temp"]["market_vix_multiplier"] = hot_vix_analysis["multiplier"]
-            # P0-1: 直接复用全量刷新时存储的原始 aiae_ctx (不再反向构造)
-            with _STRATEGY_LOCK:
-                _hot_aiae_ctx = STRATEGY_CACHE.get("aiae_ctx")
-            mc["tomorrow_plan"] = get_tomorrow_plan(hot_vix_analysis, mc.get("market_temp", {}).get("value", 50), _hot_aiae_ctx)
-            hot_data["timestamp"] = now_dt.isoformat()
-
-            with _STRATEGY_LOCK:
-                STRATEGY_CACHE["last_update"] = current_time
-                STRATEGY_CACHE["dashboard_data"] = hot_data
-            print(f"[{now_dt.strftime('%H:%M:%S')}] [HOT] Refresh done: VIX={hot_vix:.2f} CNY={cny_result:.4f}")
-            return hot_data
-        except Exception as e:
-            print(f"[Hot Refresh] 降级到全量刷新: {e}")
-
-    # ── 全量刷新: 子模块编排 ──
+    # ── 全量刷新: 子模块并发编排 ──
     latest_vix, vix_change, vix_status = 18.25, -1.5, "down"
     latest_cny = 7.23
+    
+    ts.set_token(TUSHARE_TOKEN)
+    pro = ts.pro_api()
+    today_str = datetime.now().strftime('%Y%m%d')
+    loop = asyncio.get_event_loop()
 
     try:
-        # Step 1: 宏观数据 (VIX / CNY)
-        try:
-            latest_vix, prev_vix, latest_cny = await fetch_macro_data(executor)
-            vix_change = ((latest_vix - prev_vix) / prev_vix * 100) if prev_vix > 0 else 0
-            vix_status = "down" if vix_change < 0 else "up"
-        except Exception as e:
-            print(f"Warning: Macro fetch partial failure: {e}")
+        # 第一层: 并发执行 I/O 和独立计算
+        async def fetch_macro_safe():
+            try:
+                v, p, c = await fetch_macro_data(executor)
+                return v, p, c
+            except Exception as e:
+                print(f"Warning: Macro fetch partial failure: {e}")
+                return 18.25, 18.25, 7.23
+                
+        async def get_capital_flow():
+            return await loop.run_in_executor(executor, compute_capital_flow, pro, today_str)
+            
+        async def get_aiae_report():
+            def _fetch():
+                try:
+                    eng = get_aiae_engine()
+                    return eng.generate_report()
+                except Exception as e:
+                    print(f"[Dashboard] AIAE引擎异常: {e}")
+                    return {"status": "error", "message": str(e)}
+            return await loop.run_in_executor(executor, _fetch)
 
-        # Step 2: 三大策略引擎并行
-        ts.set_token(TUSHARE_TOKEN)
-        pro = ts.pro_api()
-        today_str = datetime.now().strftime('%Y%m%d')
+        macro_task = asyncio.create_task(fetch_macro_safe())
+        strat_task = asyncio.create_task(run_all_strategies(executor))
+        cap_task = asyncio.create_task(get_capital_flow())
+        aiae_task = asyncio.create_task(get_aiae_report())
 
-        mr_res, div_res, mom_res = await run_all_strategies(executor)
+        # 等待第一层完成
+        macro_res, strat_res, cap_res, aiae_report = await asyncio.gather(
+            macro_task, strat_task, cap_task, aiae_task
+        )
+
+        # 解包第一层结果
+        latest_vix, prev_vix, latest_cny = macro_res
+        vix_change = ((latest_vix - prev_vix) / prev_vix * 100) if prev_vix > 0 else 0
+        vix_status = "down" if vix_change < 0 else "up"
+
+        mr_res, div_res, mom_res = strat_res
         STRATEGY_CACHE["strategy_results"] = {"mr": mr_res, "div": div_res, "mom": mom_res}
 
-        # Step 3: HSGT 资金流
-        capital_a, capital_h, liquidity_score, total_money_z, z_s = compute_capital_flow(pro, today_str)
+        capital_a, capital_h, liquidity_score, total_money_z, z_s = cap_res
 
-        # Step 4: AIAE 引擎注入
+        # 处理 AIAE
         aiae_regime = 3
         aiae_cap = 65
         aiae_v1_value = 0.0
         aiae_regime_cn = "中性均衡"
-        aiae_report = {}
-        try:
-            _aiae_engine = get_aiae_engine()
-            aiae_report = _aiae_engine.generate_report()
-            if aiae_report.get("status") == "success":
-                aiae_regime = aiae_report["current"]["regime"]
-                aiae_v1_value = aiae_report["current"]["aiae_v1"]
-                aiae_cap = aiae_report["position"]["matrix_position"]
-                aiae_regime_cn = aiae_report["current"]["regime_info"]["cn"]
-                print(f"[Dashboard] AIAE注入成功: V1={aiae_v1_value:.1f}% Regime={aiae_regime} Cap={aiae_cap}%")
-            else:
-                print(f"[Dashboard] AIAE降级: {aiae_report.get('message', 'unknown')}")
-        except Exception as e:
-            print(f"[Dashboard] AIAE引擎异常,降级Ⅲ级: {e}")
+        if aiae_report.get("status") == "success":
+            aiae_regime = aiae_report["current"]["regime"]
+            aiae_v1_value = aiae_report["current"]["aiae_v1"]
+            aiae_cap = aiae_report["position"]["matrix_position"]
+            aiae_regime_cn = aiae_report["current"]["regime_info"]["cn"]
+            print(f"[Dashboard] AIAE注入成功: V1={aiae_v1_value:.1f}% Regime={aiae_regime} Cap={aiae_cap}%")
+        else:
+            print(f"[Dashboard] AIAE降级: {aiae_report.get('message', 'unknown')}")
 
-        # Step 5: VIX 分析
+        # 第二层: 温度分析与热力图
         vix_analysis = get_vix_analysis(latest_vix)
 
-        # Step 6: 市场温度 + DMSO + 策略过滤 (Issue #5 + #15)
-        temp_data = compute_market_temperature(
-            pro, today_str, latest_vix, latest_cny, liquidity_score, z_s,
-            aiae_regime, aiae_cap, aiae_v1_value, aiae_regime_cn, aiae_report, vix_analysis
-        )
-
-        # Step 7: 行业热力图
-        sector_heatmap = await compute_sector_heatmap(executor, mr_res, mom_res)
+        async def get_temp():
+            def _calc():
+                return compute_market_temperature(
+                    pro, today_str, latest_vix, latest_cny, liquidity_score, z_s,
+                    aiae_regime, aiae_cap, aiae_v1_value, aiae_regime_cn, aiae_report, vix_analysis
+                )
+            return await loop.run_in_executor(executor, _calc)
+            
+        temp_task = asyncio.create_task(get_temp())
+        heatmap_task = asyncio.create_task(compute_sector_heatmap(executor, mr_res, mom_res))
+        
+        temp_data, sector_heatmap = await asyncio.gather(temp_task, heatmap_task)
 
         # Step 8: 组装最终响应
         final_data = assemble_dashboard_response(
@@ -1373,10 +1415,11 @@ async def run_all_strategies(override_cap: int = None):
         erp_result = erp_raw
         aiae_result = aiae_raw
 
-        # 缓存
-        STRATEGY_CACHE["strategy_results"]["mr"] = mr_result
-        STRATEGY_CACHE["strategy_results"]["div"] = div_result
-        STRATEGY_CACHE["strategy_results"]["mom"] = mom_result
+        # 缓存 (P1-4: 线程安全写入)
+        with _STRATEGY_LOCK:
+            STRATEGY_CACHE["strategy_results"]["mr"] = mr_result
+            STRATEGY_CACHE["strategy_results"]["div"] = div_result
+            STRATEGY_CACHE["strategy_results"]["mom"] = mom_result
 
         # 提取标准化信号
         mr_signals   = _extract_signals_normalized("mr", mr_result)
@@ -1691,7 +1734,7 @@ async def get_stock_name(ts_code: str):
         return {"ts_code": ts_code, "name": _NAME_CACHE[ts_code], "type": "cached"}
 
     def do_lookup():
-        pro = ts.pro_api("5334333c2cb73c9b9987fb6e89da29a3cbd0f442622fbcbfd7bd40b6")
+        pro = ts.pro_api(TUSHARE_TOKEN)
         # 判断后缀决定查询策略
         suffix = ts_code.split(".")[-1] if "." in ts_code else ""
         code_num = ts_code.split(".")[0] if "." in ts_code else ts_code
@@ -2084,7 +2127,7 @@ async def get_market_regime():
     from mean_reversion_engine import _classify_regime_from_series
     def _detect():
         import numpy as np
-        ts.set_token("5334333c2cb73c9b9987fb6e89da29a3cbd0f442622fbcbfd7bd40b6")
+        ts.set_token(TUSHARE_TOKEN)
         pro_ = ts.pro_api()
         end_dt   = datetime.now().strftime("%Y%m%d")
         start_dt = (datetime.now() - timedelta(days=300)).strftime("%Y%m%d")
@@ -3297,7 +3340,35 @@ async def root():
 async def serve_html(filename: str):
     return FileResponse(f"{filename}.html")
 
-app.mount("/", StaticFiles(directory="."), name="static")
+# P0-2 安全加固: 仅暴露前端静态资源文件, 不暴露 .py/.git/config 等
+import mimetypes
+from starlette.responses import Response
+from starlette.types import ASGIApp, Receive, Scope, Send
+
+class SafeStaticFiles(StaticFiles):
+    """只允许安全的前端文件类型通过"""
+    ALLOWED_EXTENSIONS = {
+        '.html', '.js', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg',
+        '.ico', '.woff', '.woff2', '.ttf', '.eot', '.map', '.json',
+    }
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            path = scope.get("path", "")
+            # 阻止访问隐藏文件、Python 文件、配置文件
+            if any(seg.startswith('.') for seg in path.split('/') if seg):
+                response = Response("Not Found", status_code=404)
+                await response(scope, receive, send)
+                return
+            import os
+            _, ext = os.path.splitext(path)
+            if ext and ext.lower() not in self.ALLOWED_EXTENSIONS:
+                response = Response("Not Found", status_code=404)
+                await response(scope, receive, send)
+                return
+        await super().__call__(scope, receive, send)
+
+app.mount("/", SafeStaticFiles(directory="."), name="static")
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)

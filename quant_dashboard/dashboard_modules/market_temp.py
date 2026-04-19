@@ -11,6 +11,7 @@ Dashboard Module: 市场温度 + DMSO核心策略引擎
 
 import tushare as ts
 import numpy as np
+import time
 from datetime import datetime, timedelta
 from erp_timing_engine import get_erp_engine
 from erp_hk_engine import get_hk_erp_engine
@@ -18,28 +19,96 @@ from aiae_engine import get_aiae_engine, REGIMES as AIAE_REGIMES
 
 
 # ═══════════════════════════════════════════════════════════
+#  Tushare API 自动重试 (网络断连 / 超时 / 限频)
+# ═══════════════════════════════════════════════════════════
+
+# 触发重试的异常关键词 (覆盖 RemoteDisconnected, ConnectionReset, Timeout 等)
+_RETRYABLE_KEYWORDS = (
+    "RemoteDisconnected", "Connection aborted", "ConnectionReset",
+    "timeout", "Timeout", "timed out", "Too Many Requests",
+    "抱歉，您每分钟最多访问",   # tushare 限频中文提示
+)
+
+def tushare_retry(fn, *args, max_retries=3, base_delay=1.0, **kwargs):
+    """
+    通用 tushare API 调用重试包装器。
+    
+    用法:
+        df = tushare_retry(pro.margin_detail, trade_date=date_str)
+    
+    策略:
+        - 最多重试 max_retries 次 (默认3次)
+        - 指数退避: 1s → 2s → 4s
+        - 仅对网络/限频类错误重试，数据逻辑错误直接抛出
+    """
+    last_err = None
+    for attempt in range(max_retries + 1):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            err_str = str(e)
+            is_retryable = any(kw in err_str for kw in _RETRYABLE_KEYWORDS)
+            if not is_retryable or attempt >= max_retries:
+                raise  # 非网络错误 or 已耗尽重试次数 → 直接抛出
+            last_err = e
+            delay = base_delay * (2 ** attempt)
+            print(f"[Retry] {fn.__name__ if hasattr(fn, '__name__') else 'api_call'} "
+                  f"attempt {attempt+1}/{max_retries} failed: {err_str[:80]}... "
+                  f"retrying in {delay:.1f}s")
+            time.sleep(delay)
+    raise last_err  # 理论上不会到这里
+
+
+# 降级哨兵 — 函数返回此值表示真正降级 (区别于正常值恰好等于默认值)
+_DEGRADED = "__DEGRADED__"
+
+# ═══════════════════════════════════════════════════════════
 #  DMSO 子引擎 (从 main.py 提取)
 # ═══════════════════════════════════════════════════════════
+
+def _find_latest_trade_date(pro, date_str, api_fn, max_lookback=7, **api_kwargs):
+    """
+    通用交易日回溯: 若当日无数据，向前查找最近有数据的交易日。
+    返回 (df, actual_date_str) 或 (None, None)。
+    """
+    fn_name = getattr(api_fn, '__name__', None) or getattr(api_fn, 'func', type(api_fn)).__name__
+    dt = datetime.strptime(date_str, '%Y%m%d')
+    for offset in range(0, max_lookback):
+        try_date = (dt - timedelta(days=offset)).strftime('%Y%m%d')
+        try:
+            df = tushare_retry(api_fn, trade_date=try_date, **api_kwargs)
+        except Exception as e:
+            print(f"[Fallback] {fn_name}: {try_date} API error: {str(e)[:60]}, skip")
+            continue
+        if df is not None and not df.empty:
+            if offset > 0:
+                print(f"[Fallback] {fn_name}: {date_str} no data, fell back to {try_date}")
+            return df, try_date
+    return None, None
+
 
 def get_margin_risk_ratio(pro, date_str):
     """
     计算融资买入占比分位 (Margin Buying Ratio Percentile)
     权重: A股 25%
+    返回: (score, is_degraded)
     """
     try:
-        df = pro.margin_detail(trade_date=date_str)
-        if df.empty:
-            return 50.0
-        df_index = pro.index_daily(ts_code='000001.SH', start_date=date_str, end_date=date_str)
-        if df_index.empty: return 50.0
+        df, actual_date = _find_latest_trade_date(pro, date_str, pro.margin_detail)
+        if df is None:
+            print(f"[Margin] 最近7日均无融资数据, 降级")
+            return 50.0, True
+        df_index, _ = _find_latest_trade_date(pro, actual_date, pro.index_daily, ts_code='000001.SH')
+        if df_index is None:
+            return 50.0, True
         total_margin_buy = df['rzmre'].sum()
         total_mkt_vol = df_index['amount'].iloc[0] * 1000
         ratio = total_margin_buy / total_mkt_vol if total_mkt_vol > 0 else 0
         percentile = min(100, max(0, (ratio - 0.07) / (0.12 - 0.07) * 100))
-        return round(percentile, 1)
+        return round(percentile, 1), False
     except Exception as e:
         print(f"[Margin] 融资数据异常, 降级中性: {e}")
-        return 50.0
+        return 50.0, True
 
 
 def get_market_breadth(pro, date_str):
@@ -48,10 +117,10 @@ def get_market_breadth(pro, date_str):
     权重: A股 20%
     """
     try:
-        df_cons = pro.index_weight(index_code='399300.SZ', start_date=date_str, end_date=date_str)
+        df_cons = tushare_retry(pro.index_weight, index_code='399300.SZ', start_date=date_str, end_date=date_str)
         if df_cons is None or df_cons.empty:
             _start = (datetime.strptime(date_str, '%Y%m%d') - timedelta(days=30)).strftime('%Y%m%d')
-            df_cons = pro.index_weight(index_code='399300.SZ', start_date=_start, end_date=date_str)
+            df_cons = tushare_retry(pro.index_weight, index_code='399300.SZ', start_date=_start, end_date=date_str)
         if df_cons is None or df_cons.empty:
             print(f"[Breadth] 沪深300成分股数据缺失, 降级50.0")
             return 50.0
@@ -61,7 +130,7 @@ def get_market_breadth(pro, date_str):
         valid_count = 0
         for code in codes[:50]:
             try:
-                df_daily = ts.pro_bar(ts_code=code, adj='qfq', start_date=
+                df_daily = tushare_retry(ts.pro_bar, ts_code=code, adj='qfq', start_date=
                     (datetime.strptime(date_str, '%Y%m%d') - timedelta(days=400)).strftime('%Y%m%d'),
                     end_date=date_str)
                 if df_daily is not None and len(df_daily) >= 250:
@@ -88,18 +157,26 @@ def get_market_breadth(pro, date_str):
 
 def get_real_turnover_score(pro, date_str):
     """
-    V11.0: 全市场换手率分位分数 (替代原硬编码 55.0)
+    V11.1: 全市场换手率分位分数
+    修复: 使用 daily_basic() 获取 turnover_rate (daily() 无此字段)
+    新增: 交易日回溯 (非交易日/盘中自动查前一交易日)
+    返回: (score, is_degraded)
     """
     try:
-        df = pro.daily(trade_date=date_str)
-        if df is None or df.empty:
-            return 50.0
+        # daily_basic 才有 turnover_rate 字段 (daily 只有 vol/amount)
+        df, actual_date = _find_latest_trade_date(
+            pro, date_str, pro.daily_basic,
+            fields='ts_code,trade_date,turnover_rate'
+        )
+        if df is None:
+            print(f"[Turnover] 最近7日均无换手率数据, 降级")
+            return 50.0, True
 
         today_median_turnover = df['turnover_rate'].median()
 
-        _end = date_str
-        _start = (datetime.strptime(date_str, '%Y%m%d') - timedelta(days=35)).strftime('%Y%m%d')
-        df_idx = pro.index_daily(ts_code='000001.SH', start_date=_start, end_date=_end)
+        _end = actual_date
+        _start = (datetime.strptime(actual_date, '%Y%m%d') - timedelta(days=35)).strftime('%Y%m%d')
+        df_idx = tushare_retry(pro.index_daily, ts_code='000001.SH', start_date=_start, end_date=_end)
         if df_idx is not None and len(df_idx) >= 10:
             df_idx = df_idx.sort_values('trade_date')
             vol_series = df_idx['vol'].tail(20)
@@ -111,11 +188,11 @@ def get_real_turnover_score(pro, date_str):
         else:
             score = min(100, max(0, (today_median_turnover - 0.5) / 3.0 * 100))
 
-        print(f"[Turnover] 当日换手率中位数: {today_median_turnover:.2f}% → score={score:.1f}")
-        return round(score, 1)
+        print(f"[Turnover] 换手率中位数: {today_median_turnover:.2f}% (date={actual_date}) → score={score:.1f}")
+        return round(score, 1), False
     except Exception as e:
         print(f"[Turnover] 换手率计算异常, 降级中性: {e}")
-        return 50.0
+        return 50.0, True
 
 
 def get_real_erp_data():
@@ -177,7 +254,7 @@ def get_real_erp_data():
 def get_liquidity_crisis_signal(pro, today_str):
     """监控流动性危机：个股跌停占比 > 10%"""
     try:
-        df = pro.daily(trade_date=today_str)
+        df = tushare_retry(pro.daily, trade_date=today_str)
         if df.empty: return False
         limit_down = len(df[df['pct_chg'] <= -9.8])
         ratio = limit_down / len(df)
@@ -188,17 +265,45 @@ def get_liquidity_crisis_signal(pro, today_str):
 
 
 def get_ah_premium_adj(pro, date_str):
-    """AH 溢价调节因子 (H股吸引力乘数)"""
+    """
+    AH 溢价调节因子 (H股吸引力乘数)
+    
+    数据源: H50066.CSI (中证沪港AH溢价指数)
+    注意: 这不是恒生 HSAHP (HK:HSAHP)! 两者差异约 +10 点:
+      - HSAHP 2026-04-15 = 119.51  (恒生编制, tushare 已下线)
+      - H50066 2026-04-15 = 129.37  (中证编制, tushare 可用)
+    
+    阈值校准 (基于 H50066/HSAHP ≈ 1.08x 比例):
+      - HSAHP < 125 → H50066 < 135  → adj=0.85 (溢价低, H股吸引力弱)
+      - HSAHP > 145 → H50066 > 157  → adj=1.15 (溢价高, H股有吸引力)
+    
+    溢价含义: 值越高 → A股相对H股越贵 → H股越有投资吸引力
+    返回: (adj_factor, is_degraded)
+    """
+    # 校准后阈值 (基于 H50066.CSI 与 HSAHP 的 ~1.08x 偏移)
+    H50066_LOW = 135    # 对应 HSAHP 125
+    H50066_HIGH = 157   # 对应 HSAHP 145
+    
     try:
-        df = pro.index_daily(ts_code='HSAHP.HI', start_date='20240101', end_date=date_str)
-        if df.empty: return 1.0
-        latest_val = df.sort_values('trade_date').iloc[-1]['close']
-        if latest_val > 145: return 1.15
-        if latest_val < 125: return 0.85
-        return 1.0
+        _start = (datetime.strptime(date_str, '%Y%m%d') - timedelta(days=365)).strftime('%Y%m%d')
+        df = tushare_retry(pro.index_daily, ts_code='H50066.CSI', start_date=_start, end_date=date_str)
+        if df is None or df.empty:
+            print(f"[AH Premium] H50066.CSI no data, degraded")
+            return 1.0, True
+        df = df.sort_values('trade_date')
+        latest_val = df.iloc[-1]['close']
+        latest_date = df.iloc[-1]['trade_date']
+        if latest_val > H50066_HIGH:
+            adj = 1.15  # 溢价偏高 → H股有吸引力
+        elif latest_val < H50066_LOW:
+            adj = 0.85  # 溢价偏低 → H股吸引力弱
+        else:
+            adj = 1.0   # 中性区间
+        print(f"[AH Premium] H50066.CSI={latest_val:.1f} (date={latest_date}) thresholds=[{H50066_LOW},{H50066_HIGH}] -> adj={adj}")
+        return adj, False
     except Exception as e:
-        print(f"[AH Premium] 溢价数据异常: {e}")
-        return 1.0
+        print(f"[AH Premium] error, degraded: {e}")
+        return 1.0, True
 
 
 def get_hk_erp_score():
@@ -307,18 +412,17 @@ def compute_market_temperature(pro, today_str, latest_vix, latest_cny, liquidity
     vix_score = max(0, min(100, 100 - (latest_vix - 10) * 3))
     cny_score = max(0, min(100, 100 - (latest_cny - 7.0) * 100))
 
-    # P2-1: 降级追踪器 — 统计子模块降级情况
+    # P2-1: 降级追踪器 — 基于函数显式返回的 is_degraded 标记
     _degraded = []
 
     # A股得分维度 (权重: 60%)
-    margin_score = get_margin_risk_ratio(pro, today_str)
-    if margin_score == 50.0:
+    margin_score, margin_deg = get_margin_risk_ratio(pro, today_str)
+    if margin_deg:
         _degraded.append("margin")
     breadth_score = get_market_breadth(pro, today_str)
-    if breadth_score == 50.0:
-        _degraded.append("breadth")
-    turnover_score = get_real_turnover_score(pro, today_str)
-    if turnover_score == 50.0:
+    # breadth 仍用旧逻辑 (内部有多级降级), 暂保留
+    turnover_score, turnover_deg = get_real_turnover_score(pro, today_str)
+    if turnover_deg:
         _degraded.append("turnover")
 
     # V8.0: 真实 ERP 引擎
@@ -341,9 +445,9 @@ def compute_market_temperature(pro, today_str, latest_vix, latest_cny, liquidity
     sb_flow_score = min(100, max(0, 50 + z_s * 15))
     score_hk = hsi_pe_score * 0.40 + epfr_proxy * 0.30 + sb_flow_score * 0.30
 
-    # AH 溢价调节 (±15%)
-    ah_adj = get_ah_premium_adj(pro, today_str)
-    if ah_adj == 1.0:
+    # AH 溢价调节 (±15%) — V11.1: 使用显式降级标记
+    ah_adj, ah_deg = get_ah_premium_adj(pro, today_str)
+    if ah_deg:
         _degraded.append("ah_premium")
     score_hk = min(100, score_hk * ah_adj)
 
@@ -354,11 +458,13 @@ def compute_market_temperature(pro, today_str, latest_vix, latest_cny, liquidity
     _deg_count = len(_degraded)
     if _deg_count >= 3:
         temp_confidence = "low"
-        print(f"[MarketTemp] ⚠️ {_deg_count}/6 子模块降级 ({', '.join(_degraded)}) → temp_confidence=LOW")
+        print(f"[MarketTemp] WARN: {_deg_count}/6 degraded ({', '.join(_degraded)}) -> confidence=LOW")
     elif _deg_count >= 1:
         temp_confidence = "medium"
+        print(f"[MarketTemp] INFO: {_deg_count}/6 degraded ({', '.join(_degraded)}) -> confidence=MEDIUM")
     else:
         temp_confidence = "high"
+        print(f"[MarketTemp] OK: 0/6 degraded -> confidence=HIGH")
 
     # 最终合成温度 + PAT
     base_temp = round(score_a * 0.6 + score_hk * 0.4, 1)

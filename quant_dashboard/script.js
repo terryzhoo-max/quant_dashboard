@@ -13,6 +13,45 @@ const formatTrend = (change, isInverse = false) => {
     return `${arrow} ${sign}${change}%`;
 };
 
+// ====== UI/UX 平滑动画库 ======
+function animateValueWithHTML(elementId, targetValueStr, trendHtml, duration = 800) {
+    const obj = document.getElementById(elementId);
+    if (!obj) return;
+    
+    const targetNum = parseFloat(targetValueStr);
+    if (isNaN(targetNum)) {
+        obj.innerHTML = `${targetValueStr} ${trendHtml}`;
+        return;
+    }
+    
+    const currentText = obj.childNodes[0] ? obj.childNodes[0].textContent.trim() : "0";
+    const startNum = parseFloat(currentText) || 0;
+    
+    if (startNum === targetNum) {
+        obj.innerHTML = `${targetValueStr} ${trendHtml}`;
+        return;
+    }
+    
+    let startTimestamp = null;
+    const isInt = String(targetValueStr).indexOf('.') === -1;
+    const decimals = isInt ? 0 : String(targetValueStr).split('.')[1].length;
+    
+    const step = (timestamp) => {
+        if (!startTimestamp) startTimestamp = timestamp;
+        const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+        const ease = 1 - Math.pow(1 - progress, 4); // easeOutQuart
+        const current = startNum + (targetNum - startNum) * ease;
+        
+        obj.innerHTML = `${current.toFixed(decimals)} ${trendHtml}`;
+        if (progress < 1) {
+            window.requestAnimationFrame(step);
+        } else {
+            obj.innerHTML = `${targetValueStr} ${trendHtml}`;
+        }
+    };
+    window.requestAnimationFrame(step);
+}
+
 const updateCardUI = (cardId, valId, trendId, dataItem) => {
     if (!dataItem) return;
     
@@ -22,11 +61,8 @@ const updateCardUI = (cardId, valId, trendId, dataItem) => {
         return;
     }
     
-    // Update HTML layout based on the design plan
-    valEl.innerHTML = `
-        ${dataItem.value} 
-        <span class="trend" id="${trendId}">${dataItem.trend}</span>
-    `;
+    const trendHtml = `<span class="trend" id="${trendId}">${dataItem.trend}</span>`;
+    animateValueWithHTML(valId, dataItem.value, trendHtml);
     
     // Dynamically set highlight color based on status (up = green, down = red, neutral = gray etc)
     const cardEl = cardId ? document.getElementById(cardId) : null;
@@ -276,6 +312,9 @@ function renderCapitalCard(capA, capH) {
     }
 }
 
+let _pollingTimer = null;
+let _isWarmingUp = false;
+
 async function fetchQuantData() {
     try {
         const response = await fetch(API_URL);
@@ -284,43 +323,87 @@ async function fetchQuantData() {
         }
         const result = await response.json();
         
-        if (result.status === 'success') {
-            // 移除离线模式标记
-            _removeOfflineBanner();
+        // V14.0纯缓存读取：支持返回旧数据但带 stale 标记，或返回 warming_up 状态
+        if (result.status === 'success' || (result.data && Object.keys(result.data).length > 0)) {
+            if (_isWarmingUp && result.status === 'success') {
+                showToast('✅ 并发同步完成，实盘数据已加载', 'success');
+                _isWarmingUp = false;
+            }
+            
+            if (result.is_stale && result.status === 'warming_up') {
+                 showToast('🟡 系统后台维护中，当前展示快照', 'warning');
+            } else if (result.is_stale) {
+                 showToast('🔶 数据延期警告，展示陈旧缓存', 'error');
+            }
+            
             updateDashboard(result.data);
             
             // 更新最后拉取时间
-            const date = new Date(result.timestamp);
+            const date = new Date(result.timestamp || Date.now());
             document.getElementById('system-time').innerText = 
-                `${date.toLocaleDateString()} ${date.toLocaleTimeString()} · 已连接 AlphaCore API · 数据实时同步中`;
+                `${date.toLocaleDateString()} ${date.toLocaleTimeString()} · 已连接 AlphaCore API · ${result.is_stale ? '数据延期' : '数据实时同步中'}`;
+                
+        } else if (result.status === 'warming_up') {
+            console.log("后台引擎首次预热中...");
+            if (!_isWarmingUp) {
+                showToast('🟡 引擎预热中，正在自动智能同步...', 'warning');
+                _isWarmingUp = true;
+            }
+            document.getElementById('system-time').innerText = "🟡 " + result.message + " (自动同步中...)";
+            
+            // 如果页面是空的，先拿Fallback撑一下门面
+            const vixVal = document.getElementById('val-vix');
+            if (vixVal && (!vixVal.innerText.trim() || vixVal.innerText.includes('--'))) {
+                showFallbackData();
+            }
+            
+            // UI/UX 亮点: Smart Polling 智能轮询
+            clearTimeout(_pollingTimer);
+            _pollingTimer = setTimeout(fetchQuantData, 2000);
+            return;
         } else {
             console.error("后端返回错误:", result.message);
             document.getElementById('system-time').innerText = `API 错误: ${result.message}`;
+            showToast(`❌ API 错误: ${result.message}`, 'error');
         }
     } catch (error) {
         console.warn("未能连接到本地 FastAPI 后端，展示模拟本地挂载数据...", error);
-        document.getElementById('system-time').innerText = "⚠️ 离线模式 · 以下为模拟数据，仅供参考，不代表真实行情。请启动 main.py 获取实时数据";
-        // V11.0: 显示醒目的离线警告横幅
-        _showOfflineBanner();
+        document.getElementById('system-time').innerText = "⚠️ 离线模式 · 请启动 main.py 获取实时数据";
+        showToast('⚠️ 离线模式: 无法连接 AlphaCore 后端', 'error');
         showFallbackData();
     }
 }
 
-/** V11.0: 离线模式警告横幅 */
-function _showOfflineBanner() {
-    if (document.getElementById('offline-banner')) return;
-    const banner = document.createElement('div');
-    banner.id = 'offline-banner';
-    banner.className = 'offline-banner';
-    banner.innerHTML = '⚠️ <strong>离线模式</strong> · 当前展示模拟数据，不代表真实市场状态。请启动 <code>python main.py</code> 连接后端';
-    const content = document.querySelector('.content');
-    if (content) content.insertBefore(banner, content.firstChild);
+/** V14.0 UI/UX: 现代 Toast 通知系统 (替换过时的 _showBanner) */
+function showToast(message, type = 'info') {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        container.className = 'toast-container';
+        document.body.appendChild(container);
+    }
+    
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.innerHTML = message;
+    
+    container.appendChild(toast);
+    
+    // 强制重绘以触发动画
+    toast.offsetHeight;
+    toast.classList.add('show');
+    
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 400); // 等待 CSS 过渡结束
+    }, 4000);
 }
 
-function _removeOfflineBanner() {
-    const banner = document.getElementById('offline-banner');
-    if (banner) banner.remove();
-}
+// 废弃的横幅函数作为空壳保留，防止其他旧代码报错
+function _showBanner() {}
+function _removeBanner() {}
+function _removeOfflineBanner() {}
 
 // 动态将数据注入到图表和 DOM
 function updateDashboard(marketData) {
@@ -915,6 +998,14 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // 发起网络数据请求
     fetchQuantData();
+    
+    // UI/UX 亮点: 全局自动定时同步 (3分钟)
+    setInterval(() => {
+        if (!_isWarmingUp) {
+            console.log("⌚ 全局定时同步触发...");
+            fetchQuantData();
+        }
+    }, 180000);
 
     // 绑定刷新按钮事件 (V11.0: 防抖 + disable 防止并发)
     const refreshBtn = document.getElementById('refresh-btn');
@@ -925,6 +1016,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const originalText = refreshBtn.innerText;
             refreshBtn.innerText = '拉取中...';
             refreshBtn.style.opacity = '0.6';
+            
+            // 如果处于预热状态，强制清掉 timer，走手动请求
+            clearTimeout(_pollingTimer);
+            
             fetchQuantData().finally(() => {
                 setTimeout(() => {
                     refreshBtn.innerText = originalText;

@@ -13,8 +13,8 @@ def fetch_vix_for_dashboard():
     """FRED VIXCLS → CNBC → 默认值 (返回 (latest, prev) 元组)"""
     try:
         from fredapi import Fred
-        _fred_key = getattr(__import__('config'), 'FRED_API_KEY', 'eadf412d4f0e8ccd2bb3993b357bdca6')
-        fred = Fred(api_key=_fred_key)
+        from config import FRED_API_KEY
+        fred = Fred(api_key=FRED_API_KEY)
         s = fred.get_series("VIXCLS", observation_start=(datetime.now() - timedelta(days=10)))
         if s is not None and not s.empty:
             s = s.dropna()

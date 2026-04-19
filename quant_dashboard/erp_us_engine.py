@@ -19,7 +19,7 @@ import os
 from datetime import datetime, timedelta
 from typing import Optional
 
-FRED_API_KEY = "eadf412d4f0e8ccd2bb3993b357bdca6"
+FRED_API_KEY = __import__('config').FRED_API_KEY
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
 

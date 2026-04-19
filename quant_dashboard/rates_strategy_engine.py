@@ -24,7 +24,7 @@ from typing import Optional
 logger = logging.getLogger("alphacore.rates")
 
 # FRED API Key: 优先从环境变量读取，fallback 到内置默认值
-FRED_API_KEY = os.environ.get("FRED_API_KEY", "eadf412d4f0e8ccd2bb3993b357bdca6")
+FRED_API_KEY = __import__('config').FRED_API_KEY
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
@@ -322,9 +322,11 @@ class RatesStrategyEngine:
 
     # ========== 核心评分层 ==========
 
-    def _score_d1_yield_level(self) -> tuple:
-        """D1: 利率水平 → 0-100 (高利率=高分=债券有吸引力)"""
-        df = self._fetch_10y()
+    def _score_d1_yield_level(self, df_10y=None, pct_stats=None) -> tuple:
+        """D1: 利率水平 → 0-100 (高利率=高分=债券有吸引力)
+        V2.0: 使用5年滚动分位数动态阈值, 替代硬编码 (与买卖决策区/图表区间线统一)
+        """
+        df = df_10y if df_10y is not None else self._fetch_10y()
         if df.empty:
             return 50.0, {}, "数据缺失"
 
@@ -336,30 +338,39 @@ class RatesStrategyEngine:
         std_5y = float(df["yield_10y"].std())
         z_score = (current - mean_5y) / std_5y if std_5y > 0 else 0
 
-        if current >= 5.0:
+        # V2.0: 动态分位数阈值 (与 _compute_yield_percentiles 统一)
+        if pct_stats is None:
+            pct_stats = self._compute_yield_percentiles()
+        t_bond_ow = pct_stats["bond_overweight"]  # P87 超配债券
+        t_bond_tl = pct_stats["bond_tilt"]         # P75 标配偏债
+        t_p50     = pct_stats["p50"]               # P50 中位数
+        t_stock_tl = pct_stats["stock_tilt"]       # P25 标配偏股
+        t_full_eq = pct_stats["full_equity"]       # P13 全股票
+
+        if current >= t_bond_ow + 0.5 * std_5y:
             score, regime = 95, "extreme_high"
-            desc = f"10Y {current:.2f}% ≥ 5% → 40年罕见高位! 债券极具吸引力"
-        elif current >= 4.5:
+            desc = f"10Y {current:.2f}% >> P87({t_bond_ow:.1f}%) → 极端高位! 债券极具吸引力"
+        elif current >= t_bond_ow:
             score, regime = 85, "very_high"
-            desc = f"10Y {current:.2f}% 高收益环境，长债配置价值突出"
-        elif current >= 4.0:
+            desc = f"10Y {current:.2f}% > P87({t_bond_ow:.1f}%) → 超配债券区"
+        elif current >= t_bond_tl:
             score, regime = 75, "high"
-            desc = f"10Y {current:.2f}% 偏高，债券票息丰厚"
-        elif current >= 3.5:
-            score, regime = 65, "above_avg"
-            desc = f"10Y {current:.2f}% 中性偏高"
-        elif current >= 3.0:
-            score, regime = 50, "neutral"
-            desc = f"10Y {current:.2f}% 中性区间"
-        elif current >= 2.0:
-            score, regime = 35, "below_avg"
-            desc = f"10Y {current:.2f}% 偏低，股票更有吸引力"
-        elif current >= 1.0:
-            score, regime = 20, "low"
-            desc = f"10Y {current:.2f}% 低利率，TINA效应驱动股市"
+            desc = f"10Y {current:.2f}% > P75({t_bond_tl:.1f}%) → 偏高，债券票息丰厚"
+        elif current >= t_p50:
+            score, regime = 60, "above_avg"
+            desc = f"10Y {current:.2f}% > P50({t_p50:.1f}%) → 中性偏高"
+        elif current >= t_stock_tl:
+            score, regime = 45, "neutral"
+            desc = f"10Y {current:.2f}% P25-P50 中性区间"
+        elif current >= t_full_eq:
+            score, regime = 30, "below_avg"
+            desc = f"10Y {current:.2f}% < P25({t_stock_tl:.1f}%) → 偏低，股票更有吸引力"
+        elif current >= t_full_eq - 0.5 * std_5y:
+            score, regime = 15, "low"
+            desc = f"10Y {current:.2f}% < P13({t_full_eq:.1f}%) → 低利率，TINA效应"
         else:
             score, regime = 5, "extreme_low"
-            desc = f"10Y {current:.2f}% < 1% → 零利率时代"
+            desc = f"10Y {current:.2f}% << P13 → 极端低利率时代"
 
         info = {
             "current": round(current, 3),
@@ -370,11 +381,11 @@ class RatesStrategyEngine:
         }
         return round(score, 1), info, desc
 
-    def _score_d2_yield_momentum(self) -> tuple:
+    def _score_d2_yield_momentum(self, df_10y=None) -> tuple:
         """D2: 利率动量 → 0-100 (利率下行=高分=债券牛市)
         P1-5: 使用日期回溯而非固定索引偏移，避免非交易日导致的窗口漂移
         """
-        df = self._fetch_10y()
+        df = df_10y if df_10y is not None else self._fetch_10y()
         if df.empty or len(df) < 63:
             return 50.0, {}, "数据不足"
 
@@ -432,11 +443,11 @@ class RatesStrategyEngine:
         }
         return round(score, 1), info, desc
 
-    def _score_d3_curve_shape(self) -> tuple:
+    def _score_d3_curve_shape(self, df_10y=None, df_2y=None) -> tuple:
         """D3: 曲线形态 (10Y-2Y) → 0-100"""
         try:
-            df_10y = self._fetch_10y()
-            df_2y = self._fetch_2y()
+            if df_10y is None: df_10y = self._fetch_10y()
+            if df_2y is None: df_2y = self._fetch_2y()
         except Exception as e:
             logger.warning(f"D3 curve_shape data error: {e}")
             return 50.0, {}, "数据缺失"
@@ -493,10 +504,10 @@ class RatesStrategyEngine:
         }
         return round(score, 1), info, desc
 
-    def _score_d4_real_yield(self) -> tuple:
+    def _score_d4_real_yield(self, df_real=None, df_bei=None) -> tuple:
         """D4: 实际利率 (TIPS 10Y) → 0-100 (高实际利率=高分=债券有吸引力)"""
         try:
-            df = self._fetch_real_yield()
+            df = df_real if df_real is not None else self._fetch_real_yield()
         except Exception as e:
             logger.warning(f"D4 real_yield data error: {e}")
             return 50.0, {}, "TIPS数据缺失"
@@ -509,7 +520,7 @@ class RatesStrategyEngine:
 
         # 通胀预期 = 10Y名义 - TIPS
         try:
-            bei_df = self._fetch_breakeven()
+            bei_df = df_bei if df_bei is not None else self._fetch_breakeven()
             bei = float(bei_df["breakeven"].iloc[-1]) if not bei_df.empty else 0
         except Exception as e:
             logger.debug(f"BEI data unavailable: {e}")
@@ -542,10 +553,12 @@ class RatesStrategyEngine:
         }
         return round(score, 1), info, desc
 
-    def _score_d5_fed_policy(self) -> tuple:
-        """D5: Fed政策方向 (3M T-Bill) → 0-100 (降息=高分)"""
+    def _score_d5_fed_policy(self, df_3m=None) -> tuple:
+        """D5: Fed政策方向 (3M T-Bill) → 0-100 (降息=高分)
+        V2.0: 使用日期回溯替代固定索引偏移, 与D2统一
+        """
         try:
-            df = self._fetch_tbill_3m()
+            df = df_3m if df_3m is not None else self._fetch_tbill_3m()
         except Exception as e:
             logger.warning(f"D5 fed_policy data error: {e}")
             return 50.0, {}, "3M T-Bill数据缺失"
@@ -554,12 +567,19 @@ class RatesStrategyEngine:
             return 50.0, {}, "数据不足"
 
         current = float(df["rate_3m"].iloc[-1])
-        prev_1m = float(df["rate_3m"].iloc[-22]) if len(df) >= 22 else current
-        prev_3m = float(df["rate_3m"].iloc[-63]) if len(df) >= 63 else current
+        latest_date = pd.Timestamp(df["trade_date"].iloc[-1])
+
+        def _lookback_3m(days):
+            target = latest_date - pd.Timedelta(days=days)
+            mask = df["trade_date"] <= target
+            if mask.any():
+                return float(df.loc[mask, "rate_3m"].iloc[-1])
+            return current
+
+        prev_1m = _lookback_3m(30)
+        prev_3m = _lookback_3m(91)
 
         chg_3m = current - prev_3m
-        is_easing = chg_3m < -0.1  # 利率下行>10bps
-        is_tightening = chg_3m > 0.1
 
         if chg_3m <= -0.5:
             score, direction = 90, "fast_easing"
@@ -912,7 +932,7 @@ class RatesStrategyEngine:
     # ========== 走势图 ==========
 
     def _build_chart_data(self, pct_stats=None) -> dict:
-        """P2-10: 图表数据裁剪到最近2年(~500点) + V2.0动态分位数区间"""
+        """V3.0: 生产级图表数据 — 扩展到~5年 + stats统计 + extremes极值 (对标ERP历史走势图)"""
         try:
             df_10y = self._fetch_10y()
             df_2y = self._fetch_2y()
@@ -927,8 +947,8 @@ class RatesStrategyEngine:
         if pct_stats is None:
             pct_stats = self._compute_yield_percentiles()
 
-        # P2-10: 只取最近2年数据 (~500个交易日) 减少前端ECharts渲染负担
-        df_10y = df_10y.tail(500)
+        # V3.0: 扩展到~5年数据 (~1200个交易日) 提供完整利率周期视角 (dataZoom缓解渲染负担)
+        df_10y = df_10y.tail(1200)
         dates = df_10y["trade_date"].dt.strftime("%Y-%m-%d").tolist()
         yields_10y = [round(float(v), 3) for v in df_10y["yield_10y"].values]
 
@@ -969,6 +989,84 @@ class RatesStrategyEngine:
              "label": f"全股票 <{lines['low_zone']:.1f}%"},
         ]
 
+        # ═══ V3.0: stats 统计增强 (对标 ERP chart.stats 结构) ═══
+        import numpy as np
+        arr = np.array(yields_10y)
+        current_val = arr[-1] if len(arr) > 0 else 0
+        mean_val = round(float(np.nanmean(arr)), 2)
+        std_val = round(float(np.nanstd(arr)), 3)
+        min_val = round(float(np.nanmin(arr)), 2) if len(arr) > 0 else 0
+        max_val = round(float(np.nanmax(arr)), 2) if len(arr) > 0 else 0
+
+        # 数据跨度(年)
+        date_range_years = round(len(arr) / 252, 1) if len(arr) > 0 else 0
+
+        # 当前值vs均值偏离
+        current_vs_mean = round(float(current_val - mean_val), 2)
+
+        # 当前5年分位数
+        current_pct = round(float(np.sum(arr <= current_val) / max(len(arr), 1) * 100), 1)
+
+        # 区间分类函数
+        def _zone_classify(v):
+            if v >= lines["high_zone"]:
+                return "超配债券区", "#10b981"
+            elif v >= lines["high_tilt"]:
+                return "标配偏债区", "#3b82f6"
+            elif v <= lines["low_zone"]:
+                return "全股票区", "#ef4444"
+            elif v <= lines["low_tilt"]:
+                return "标配偏股区", "#f97316"
+            else:
+                return "中性均衡区", "#94a3b8"
+
+        current_zone_label, current_zone_color = _zone_classify(current_val)
+
+        # 各区间历史占比
+        bond_zone_count = int(np.sum(arr >= lines["high_zone"]))
+        stock_zone_count = int(np.sum(arr <= lines["low_zone"]))
+        bond_zone_pct = round(bond_zone_count / max(len(arr), 1) * 100, 1)
+        stock_zone_pct = round(stock_zone_count / max(len(arr), 1) * 100, 1)
+
+        # 极值点标注 (历史最高+最低)
+        extremes = []
+        if len(arr) > 0:
+            max_idx = int(np.nanargmax(arr))
+            min_idx = int(np.nanargmin(arr))
+            extremes.append({"date": dates[max_idx], "value": round(float(arr[max_idx]), 2), "type": "max"})
+            extremes.append({"date": dates[min_idx], "value": round(float(arr[min_idx]), 2), "type": "min"})
+
+        # 利差倒挂统计 (科学优化: 衰退预警)
+        inversion_days = 0
+        if spreads:
+            inversion_days = sum(1 for s in spreads if s < 0)
+
+        stats = {
+            "current": round(float(current_val), 2),
+            "mean": mean_val,
+            "std": std_val,
+            "min": min_val,
+            "max": max_val,
+            "current_vs_mean": current_vs_mean,
+            "current_pct": current_pct,
+            "current_zone_label": current_zone_label,
+            "current_zone_color": current_zone_color,
+            "date_range_years": date_range_years,
+            "bond_zone_pct": bond_zone_pct,
+            "stock_zone_pct": stock_zone_pct,
+            "extremes": extremes,
+            "inversion_days": inversion_days,
+            "inversion_pct": round(inversion_days / max(len(dates), 1) * 100, 1),
+            # 前端区间判定所需的阈值 (供 JS getYieldZoneLabel 使用)
+            "zone_thresholds": {
+                "high_zone": round(float(lines["high_zone"]), 2),
+                "high_tilt": round(float(lines["high_tilt"]), 2),
+                "neutral": round(float(lines["neutral"]), 2),
+                "low_tilt": round(float(lines["low_tilt"]), 2),
+                "low_zone": round(float(lines["low_zone"]), 2),
+            },
+        }
+
         return {
             "status": "success",
             "dates": dates,
@@ -977,18 +1075,54 @@ class RatesStrategyEngine:
             "lines": lines,
             "mark_areas": mark_areas,
             "percentile_stats": pct_stats,
+            "stats": stats,
         }
+
+    # ========== V2.0: 并行数据预取 ==========
+
+    def _prefetch_all_data(self) -> dict:
+        """并行获取所有FRED序列, 避免串行延迟 (5x200ms→1x200ms)"""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        results = {}
+        fetchers = {
+            "df_10y": self._fetch_10y,
+            "df_2y": self._fetch_2y,
+            "df_real": self._fetch_real_yield,
+            "df_bei": self._fetch_breakeven,
+            "df_3m": self._fetch_tbill_3m,
+        }
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            futures = {pool.submit(fn): key for key, fn in fetchers.items()}
+            for f in as_completed(futures):
+                key = futures[f]
+                try:
+                    results[key] = f.result()
+                except Exception as e:
+                    logger.warning(f"Prefetch {key} failed: {e}")
+                    results[key] = pd.DataFrame()
+        return results
 
     # ========== 主报告 ==========
 
     def generate_report(self) -> dict:
         try:
-            # 五维评分
-            d1_score, d1_info, d1_desc = self._score_d1_yield_level()
-            d2_score, d2_info, d2_desc = self._score_d2_yield_momentum()
-            d3_score, d3_info, d3_desc = self._score_d3_curve_shape()
-            d4_score, d4_info, d4_desc = self._score_d4_real_yield()
-            d5_score, d5_info, d5_desc = self._score_d5_fed_policy()
+            # V2.0: 并行预取所有FRED序列 (5个请求并行, ~200ms)
+            data = self._prefetch_all_data()
+            df_10y = data["df_10y"]
+            df_2y = data["df_2y"]
+            df_real = data["df_real"]
+            df_bei = data["df_bei"]
+            df_3m = data["df_3m"]
+
+            # V2.0: 分位数统计 (一次计算, 全链路共享)
+            pct_stats = self._compute_yield_percentiles()
+
+            # 五维评分 (传入预取数据, 消除重复fetch)
+            d1_score, d1_info, d1_desc = self._score_d1_yield_level(df_10y=df_10y, pct_stats=pct_stats)
+            d2_score, d2_info, d2_desc = self._score_d2_yield_momentum(df_10y=df_10y)
+            d3_score, d3_info, d3_desc = self._score_d3_curve_shape(df_10y=df_10y, df_2y=df_2y)
+            d4_score, d4_info, d4_desc = self._score_d4_real_yield(df_real=df_real, df_bei=df_bei)
+            d5_score, d5_info, d5_desc = self._score_d5_fed_policy(df_3m=df_3m)
 
             dims = {
                 "yield_level":    {"score": d1_score, "label": "利率水平", "weight": self.W["yield_level"],    "yield_info": d1_info, "desc": d1_desc},
@@ -1025,10 +1159,7 @@ class RatesStrategyEngine:
             # 买卖规则
             trade = self._generate_trade_rules(composite, dims, snap)
 
-            # V2.0: 分位数统计 (在图表和决策区之间共享, 避免重复计算)
-            pct_stats = self._compute_yield_percentiles()
-
-            # 买卖决策区 (传入分位数)
+            # 买卖决策区 (传入分位数, 避免重复计算)
             buy_sell_zones = self._generate_buy_sell_zones(dims, snap, signal, pct_stats)
 
             # 警示
@@ -1037,7 +1168,7 @@ class RatesStrategyEngine:
             # 诊断
             diagnosis = self._generate_diagnosis(dims, signal)
 
-            # 走势图 (传入分位数, 避免重复计算)
+            # 走势图 (传入预取数据+分位数)
             chart = self._build_chart_data(pct_stats)
 
             return {
@@ -1065,12 +1196,8 @@ class RatesStrategyEngine:
         t0 = time.time()
         _force_refresh_cache()  # 先清空内存缓存
         try:
-            # 拉取5个FRED序列
-            self._fetch_10y()
-            self._fetch_2y()
-            self._fetch_real_yield()
-            self._fetch_breakeven()
-            self._fetch_tbill_3m()
+            # 并行拉取5个FRED序列
+            self._prefetch_all_data()
             # 生成完整报告(触发评分计算, 填充结果缓存)
             report = self.generate_report()
             y10 = report.get('current_snapshot',{}).get('yield_10y', '?')
@@ -1093,7 +1220,8 @@ def get_rates_engine() -> RatesStrategyEngine:
 
 
 def warmup_rates_cache():
-    """供 main.py \u8c03\u7528\u7684\u9884\u70ed\u51fd\u6570"""
+    """供 main.py 调用的预热函数"""
     engine = get_rates_engine()
     engine.warmup()
+
 
