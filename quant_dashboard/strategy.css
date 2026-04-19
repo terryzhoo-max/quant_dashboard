@@ -2384,3 +2384,218 @@
     max-height: 80px;
     margin-top: 6px;
 }
+
+/* ================================================
+   Phase 1 · 通用组件 CSS (替代内联样式)
+   ================================================ */
+
+/* ── Zone Header 通用版 (替代 border-left 内联) ──
+   用法: <div class="st-zone-header" style="--zone-color:#f59e0b">
+         或 class="st-zone-header st-zone-header--line" 用竖线变体 */
+.st-zone-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 8px 0 4px;
+    padding: 10px 16px;
+    background: rgba(255,255,255,0.02);
+    border-radius: 10px;
+    border-left: 3px solid var(--zone-color, #f59e0b);
+    transition: background 0.2s;
+}
+.st-zone-header:hover {
+    background: rgba(255,255,255,0.04);
+}
+.st-zone-header .zone-icon {
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
+.st-zone-header .zone-title {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--zone-color, #f59e0b);
+    letter-spacing: 0.06em;
+}
+.st-zone-header .zone-sub {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+}
+
+/* 竖线变体 (红利/动量 tab 用) */
+.st-zone-header--line {
+    border-left: none;
+    margin: 28px 0 12px;
+    padding: 0 0 0 4px;
+    background: none;
+    border-radius: 0;
+}
+.st-zone-header--line::before {
+    content: '';
+    width: 4px;
+    height: 32px;
+    background: var(--zone-gradient, linear-gradient(180deg, var(--zone-color, #3b82f6), var(--zone-color-end, #6366f1)));
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+.st-zone-header--line:hover {
+    background: none;
+}
+.st-zone-header--line .zone-icon {
+    display: none; /* 竖线变体不需要 icon */
+}
+.st-zone-header--line .zone-title {
+    font-size: 0.82rem;
+    font-weight: 800;
+}
+
+/* ── 通用表单控件 ── */
+.st-input-label {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    display: block;
+    margin-bottom: 6px;
+}
+.st-input-field {
+    width: 100%;
+    background: rgba(255,255,255,0.05);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-family: inherit;
+    font-size: 0.85rem;
+    outline: none;
+    box-sizing: border-box;
+    transition: border-color 0.2s;
+}
+.st-input-field:focus {
+    border-color: rgba(99,102,241,0.5);
+}
+.st-input-field--select {
+    padding: 9px 12px;
+    height: 40px;
+}
+
+/* ── 通用网格 ── */
+.st-grid { display: grid; gap: 12px; }
+.st-grid--2 { grid-template-columns: 1fr 1fr; }
+.st-grid--3 { grid-template-columns: repeat(3, 1fr); }
+.st-grid--4 { grid-template-columns: repeat(4, 1fr); }
+.st-grid--5 { grid-template-columns: repeat(5, 1fr); }
+@media (max-width: 1200px) {
+    .st-grid--4, .st-grid--5 { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 900px) {
+    .st-grid--2, .st-grid--3 { grid-template-columns: 1fr; }
+}
+
+/* ── 通用折叠组件 (accordion) ── */
+.st-accordion-trigger {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 20px;
+    cursor: pointer;
+    background: rgba(255,255,255,0.03);
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.06);
+    user-select: none;
+    transition: background 0.2s;
+}
+.st-accordion-trigger:hover {
+    background: rgba(255,255,255,0.06);
+}
+.st-accordion-trigger .acc-icon {
+    font-size: 1rem;
+}
+.st-accordion-trigger .acc-title {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    flex: 1;
+}
+.st-accordion-trigger .acc-arrow {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    transition: transform 0.25s;
+    transform: rotate(-90deg);
+}
+.st-accordion-trigger.open .acc-arrow {
+    transform: rotate(0deg);
+}
+.st-accordion-body {
+    display: none;
+    padding-top: 12px;
+}
+.st-accordion-body.open {
+    display: block;
+}
+
+/* ── 通用数据面板小卡片 ── */
+.st-data-card {
+    background: rgba(0,0,0,0.2);
+    border-radius: 10px;
+    padding: 14px;
+    text-align: center;
+}
+.st-data-card--bordered {
+    border: 1px solid rgba(255,255,255,0.06);
+}
+.st-data-card .st-dc-label {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    margin-bottom: 3px;
+}
+.st-data-card .st-dc-value {
+    font-size: 1.3rem;
+    font-weight: 900;
+}
+.st-data-card .st-dc-sub {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+/* ── 通用内联小标签 ── */
+.st-inline-hint {
+    font-size: 0.72rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin-left: 8px;
+}
+.st-inline-badge {
+    font-size: 0.78rem;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-weight: 600;
+}
+
+/* ── 通用警告/提示面板 ── */
+.st-notice {
+    padding: 14px;
+    border-radius: 10px;
+    font-size: 0.75rem;
+    line-height: 1.8;
+}
+.st-notice--warn {
+    background: rgba(251,191,36,0.05);
+    border: 1px solid rgba(251,191,36,0.2);
+    color: var(--text-muted);
+}
+.st-notice--warn .st-notice-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #fbbf24;
+    margin-bottom: 8px;
+}
+.st-notice--success {
+    background: rgba(16,185,129,0.04);
+    border: 1px solid rgba(16,185,129,0.15);
+    color: var(--text-muted);
+}
+.st-notice--success .st-notice-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #10b981;
+    margin-bottom: 8px;
+}

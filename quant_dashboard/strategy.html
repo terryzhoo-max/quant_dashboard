@@ -473,19 +473,18 @@
 
 
             <!-- ZONE divider: ZONE 1 · 市场状态 -->
-            <div style="display:flex; align-items:center; gap:12px; margin:8px 0 4px; padding:10px 16px;
-                background:rgba(255,255,255,0.02); border-radius:10px; border-left:3px solid #f59e0b;">
-                <span style="font-size:1.1rem;">📡</span>
+            <div class="st-zone-header" style="--zone-color:#f59e0b">
+                <span class="zone-icon">📡</span>
                 <div>
-                    <div style="font-size:0.78rem; font-weight:700; color:#f59e0b; letter-spacing:0.06em;">ZONE 1 · 市场状态</div>
-                    <div style="font-size:0.68rem; color:var(--text-muted);">每日开盘第一件事 · 确认 Regime 并读取激活参数</div>
+                    <div class="zone-title">ZONE 1 · 市场状态</div>
+                    <div class="zone-sub">每日开盘第一件事 · 确认 Regime 并读取激活参数</div>
                 </div>
             </div>
 
             <!-- ==================== ZONE 1 · 市场状态 ==================== -->
             <section class="st-section" id="mr-active-params">
                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
-                    <h3 style="margin:0;">⚡ V4.2 · 当前激活参数 <span style="font-size:0.72rem; font-weight:400; color:var(--text-muted); margin-left:8px;">统一Regime算法 · 自动切换三套专属参数 · 无需重启 · AlphaCore V5.0</span></h3>
+                    <h3 style="margin:0;">⚡ V4.2 · 当前激活参数 <span class="st-inline-hint">统一Regime算法 · 自动切换三套专属参数 · 无需重启 · AlphaCore V5.0</span></h3>
                     <button onclick="loadMrCurrentParams(true)" id="mr-params-refresh-btn"
                         style="background:rgba(99,102,241,0.12); color:#a78bfa; border:1px solid rgba(99,102,241,0.3); border-radius:8px; padding:7px 16px; cursor:pointer; font-size:0.8rem; font-family:inherit; transition:all 0.2s;">
                         🔄 重新识别
@@ -564,12 +563,11 @@
 
 
             <!-- ZONE divider: ZONE 2 · 标的筛选 -->
-            <div style="display:flex; align-items:center; gap:12px; margin:8px 0 4px; padding:10px 16px;
-                background:rgba(255,255,255,0.02); border-radius:10px; border-left:3px solid #a78bfa;">
-                <span style="font-size:1.1rem;">🎯</span>
+            <div class="st-zone-header" style="--zone-color:#a78bfa">
+                <span class="zone-icon">🎯</span>
                 <div>
-                    <div style="font-size:0.78rem; font-weight:700; color:#a78bfa; letter-spacing:0.06em;">ZONE 2 · 标的筛选</div>
-                    <div style="font-size:0.68rem; color:var(--text-muted);">35只ETF池 · 按领域分类 · 可追加自选标的</div>
+                    <div class="zone-title">ZONE 2 · 标的筛选</div>
+                    <div class="zone-sub">35只ETF池 · 按领域分类 · 可追加自选标的</div>
                 </div>
             </div>
 
@@ -701,23 +699,23 @@
                     <!-- 输入行 -->
                     <div style="display:grid; grid-template-columns:1fr auto auto auto; gap:12px; align-items:end; margin-bottom:20px;">
                         <div>
-                            <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:6px;">股票/ETF 代码（Tushare 格式 · 如 600036.SH 或 512480.SH）</label>
+                            <label class="st-input-label">股票/ETF 代码（Tushare 格式 · 如 600036.SH 或 512480.SH）</label>
                             <input id="custom-input-mean-reversion" type="text" maxlength="12"
                                 placeholder="输入代码后按 Enter 或点击查询..."
-                                style="width:100%; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:10px 14px; font-family:inherit; outline:none; font-size:0.9rem; box-sizing:border-box;"
+                                class="st-input-field"
                                 onkeydown="if(event.key==='Enter') lookupAndAdd('mean-reversion')" />
                         </div>
                         <div>
-                            <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:6px;">识别结果</label>
+                            <label class="st-input-label">识别结果</label>
                             <div id="custom-name-mean-reversion"
                                 style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:10px 14px; font-size:0.85rem; color:var(--text-muted); min-width:140px; height:40px; line-height:20px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                                 — 等待查询 —
                             </div>
                         </div>
                         <div>
-                            <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:6px;">仓位上限</label>
+                            <label class="st-input-label">仓位上限</label>
                             <select id="custom-cap-mean-reversion"
-                                style="background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:10px 12px; font-family:inherit; outline:none; height:40px;">
+                                class="st-input-field st-input-field--select">
                                 <option value="5">5%</option><option value="8" selected>8% (个股推荐)</option><option value="10">10%</option><option value="15">15% (ETF)</option>
                             </select>
                         </div>
@@ -773,12 +771,11 @@
 
 
             <!-- ZONE divider: ZONE 3 · 入场决策基准 -->
-            <div style="display:flex; align-items:center; gap:12px; margin:8px 0 4px; padding:10px 16px;
-                background:rgba(255,255,255,0.02); border-radius:10px; border-left:3px solid #2dd4bf;">
-                <span style="font-size:1.1rem;">⚡</span>
+            <div class="st-zone-header" style="--zone-color:#2dd4bf">
+                <span class="zone-icon">⚡</span>
                 <div>
-                    <div style="font-size:0.78rem; font-weight:700; color:#2dd4bf; letter-spacing:0.06em;">ZONE 3 · 入场决策基准</div>
-                    <div style="font-size:0.68rem; color:var(--text-muted);">关键技术指标解读 · 买入卖出规则</div>
+                    <div class="zone-title">ZONE 3 · 入场决策基准</div>
+                    <div class="zone-sub">关键技术指标解读 · 买入卖出规则</div>
                 </div>
             </div>
 
@@ -812,32 +809,21 @@
 
 
             <!-- ZONE divider: ZONE 4 · 策略研究归档 -->
-            <div style="display:flex; align-items:center; gap:12px; margin:8px 0 4px; padding:10px 16px;
-                background:rgba(255,255,255,0.02); border-radius:10px; border-left:3px solid #6b7280;">
-                <span style="font-size:1.1rem;">📚</span>
+            <div class="st-zone-header" style="--zone-color:#6b7280">
+                <span class="zone-icon">📚</span>
                 <div>
-                    <div style="font-size:0.78rem; font-weight:700; color:#6b7280; letter-spacing:0.06em;">ZONE 4 · 策略研究归档</div>
-                    <div style="font-size:0.68rem; color:var(--text-muted);">运行逻辑 · 回测验证 · 点击展开</div>
+                    <div class="zone-title">ZONE 4 · 策略研究归档</div>
+                    <div class="zone-sub">运行逻辑 · 回测验证 · 点击展开</div>
                 </div>
             </div>
 
             <!-- ==================== ZONE 4 · 研究归档（折叠）==================== -->
 
             <section class="st-section" style="padding:0;">
-                <div onclick="(function(el){
-                    var c=el.nextElementSibling;
-                    var arrow=el.querySelector('.acc-arrow');
-                    if(c.style.display==='none'){c.style.display='block';arrow.style.transform='rotate(0deg)';}
-                    else{c.style.display='none';arrow.style.transform='rotate(-90deg)';}
-                })(this)"
-                style="display:flex; align-items:center; gap:10px; padding:12px 20px; cursor:pointer;
-                       background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid rgba(255,255,255,0.06);
-                       user-select:none; transition:background 0.2s;"
-                onmouseover="this.style.background='rgba(255,255,255,0.06)'"
-                onmouseout="this.style.background='rgba(255,255,255,0.03)'">
-                    <span style="font-size:1rem;">🔄</span>
-                    <span style="font-size:0.88rem; font-weight:600; color:var(--text-primary); flex:1;">🔄 策略运行逻辑</span>
-                    <span class="acc-arrow" style="font-size:0.8rem; color:var(--text-muted); transition:transform 0.25s; transform:rotate(-90deg);">›</span>
+                <div class="st-accordion-trigger" onclick="toggleAccordion(this)">
+                    <span class="acc-icon">🔄</span>
+                    <span class="acc-title">🔄 策略运行逻辑</span>
+                    <span class="acc-arrow">›</span>
                 </div>
                 <div id="acc-logic-body" style="display:none; padding-top:12px;">
                     <section class="st-section" style="margin-top:0;">
@@ -856,24 +842,14 @@
             </section>
 
             <section class="st-section" style="padding:0;">
-                <div onclick="(function(el){
-                    var c=el.nextElementSibling;
-                    var arrow=el.querySelector('.acc-arrow');
-                    if(c.style.display==='none'){c.style.display='block';arrow.style.transform='rotate(0deg)';}
-                    else{c.style.display='none';arrow.style.transform='rotate(-90deg)';}
-                })(this)"
-                style="display:flex; align-items:center; gap:10px; padding:12px 20px; cursor:pointer;
-                       background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid rgba(255,255,255,0.06);
-                       user-select:none; transition:background 0.2s;"
-                onmouseover="this.style.background='rgba(255,255,255,0.06)'"
-                onmouseout="this.style.background='rgba(255,255,255,0.03)'">
-                    <span style="font-size:1rem;">📊</span>
-                    <span style="font-size:0.88rem; font-weight:600; color:var(--text-primary); flex:1;">📊 V3.0 回测验证报告（864种参数网格 · 双集验证）</span>
-                    <span class="acc-arrow" style="font-size:0.8rem; color:var(--text-muted); transition:transform 0.25s; transform:rotate(-90deg);">›</span>
+                <div class="st-accordion-trigger" onclick="toggleAccordion(this)">
+                    <span class="acc-icon">📊</span>
+                    <span class="acc-title">📊 V3.0 回测验证报告（864种参数网格 · 双集验证）</span>
+                    <span class="acc-arrow">›</span>
                 </div>
                 <div id="acc-backtest-body" style="display:none; padding-top:12px;">
                     <section class="st-section" style="margin-top:0;">
-<h3>📊 V3.0 · 回测验证报告 <span style="font-size:0.72rem; font-weight:400; color:var(--text-muted); margin-left:8px;">864种参数网格 · 双集验证防过拟合 · Regime Overlay 状态切换</span></h3>
+<h3>📊 V3.0 · 回测验证报告 <span class="st-inline-hint">864种参数网格 · 双集验证防过拟合 · Regime Overlay 状态切换</span></h3>
                 <div class="glass-panel" style="padding:28px; border-color:rgba(99,102,241,0.2);">
 
                     <!-- 方法论说明条 -->
@@ -974,17 +950,16 @@
             </section>
 
             <!-- ══════ ZONE 1 · 入场决策 ══════ -->
-            <div style="display:flex; align-items:center; gap:12px; margin:28px 0 12px; padding-left:4px;">
-                <div style="width:4px; height:32px; background:linear-gradient(180deg,#3b82f6,#6366f1); border-radius:2px;"></div>
+            <div class="st-zone-header st-zone-header--line" style="--zone-color:#3b82f6; --zone-color-end:#6366f1">
                 <div>
-                    <div style="font-size:0.82rem; font-weight:800; color:#60a5fa; letter-spacing:0.06em;">ZONE 1 · 入场决策</div>
-                    <div style="font-size:0.7rem; color:var(--text-muted);">7维评分 + 实时指标同步 + 交叉验证警告</div>
+                    <div class="zone-title" style="color:#60a5fa">入场决策</div>
+                    <div class="zone-sub">7维评分 + 实时指标同步 + 交叉验证警告</div>
                 </div>
             </div>
 
             <!-- ===== 💰 红利策略专属评分器 V4.0 ===== -->
             <section class="st-section">
-                <h3>💰 ③ 红利策略专属评分器 <span style="font-size:0.72rem; font-weight:400; color:var(--text-muted); margin-left:8px;">7维因子·自适应门槛·红利ETF定制版</span></h3>
+                <h3>💰 ③ 红利策略专属评分器 <span class="st-inline-hint">7维因子·自适应门槛·红利ETF定制版</span></h3>
                 <div class="glass-panel" style="padding:28px; border-color:rgba(59,130,246,0.2);">
                     <!-- 实时同步控制栏 -->
                     <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px; padding:12px 16px; background:rgba(59,130,246,0.06); border:1px solid rgba(59,130,246,0.15); border-radius:10px; flex-wrap:wrap;">
@@ -1127,11 +1102,10 @@
             </section>
 
             <!-- ══════ ZONE 2 · 市场状态 ══════ -->
-            <div style="display:flex; align-items:center; gap:12px; margin:28px 0 12px; padding-left:4px;">
-                <div style="width:4px; height:32px; background:linear-gradient(180deg,#f59e0b,#ea580c); border-radius:2px;"></div>
+            <div class="st-zone-header st-zone-header--line" style="--zone-color:#f59e0b; --zone-color-end:#ea580c">
                 <div>
-                    <div style="font-size:0.82rem; font-weight:800; color:#fcd34d; letter-spacing:0.06em;">ZONE 2 · 市场状态</div>
-                    <div style="font-size:0.7rem; color:var(--text-muted);">四状态参数自适应切换 · 与信号评分系统联动</div>
+                    <div class="zone-title" style="color:#fcd34d">ZONE 2 · 市场状态</div>
+                    <div class="zone-sub">四状态参数自适应切换 · 与信号评分系统联动</div>
                 </div>
             </div>
 
@@ -1202,11 +1176,10 @@
             </section>
 
             <!-- ══════ ZONE 3 · 标的筛选 ══════ -->
-            <div style="display:flex; align-items:center; gap:12px; margin:28px 0 12px; padding-left:4px;">
-                <div style="width:4px; height:32px; background:linear-gradient(180deg,#10b981,#059669); border-radius:2px;"></div>
+            <div class="st-zone-header st-zone-header--line" style="--zone-color:#10b981; --zone-color-end:#059669">
                 <div>
-                    <div style="font-size:0.82rem; font-weight:800; color:#10b981; letter-spacing:0.06em;">ZONE 3 · 标的筛选</div>
-                    <div style="font-size:0.7rem; color:var(--text-muted);">8只红利ETF固定权重 + 信号规则 + 数据架构</div>
+                    <div class="zone-title" style="color:#10b981">ZONE 3 · 标的筛选</div>
+                    <div class="zone-sub">8只红利ETF固定权重 + 信号规则 + 数据架构</div>
                 </div>
             </div>
 
@@ -1314,23 +1287,23 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                     <!-- 输入行 -->
                     <div style="display:grid; grid-template-columns:1fr auto auto auto; gap:12px; align-items:end; margin-bottom:20px;">
                         <div>
-                            <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:6px;">股票/ETF 代码（Tushare 格式 · 如 600036.SH 或 512480.SH）</label>
+                            <label class="st-input-label">股票/ETF 代码（Tushare 格式 · 如 600036.SH 或 512480.SH）</label>
                             <input id="custom-input-dividend-trend" type="text" maxlength="12"
                                 placeholder="输入代码后按 Enter 或点击查询..."
-                                style="width:100%; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:10px 14px; font-family:inherit; outline:none; font-size:0.9rem; box-sizing:border-box;"
+                                class="st-input-field"
                                 onkeydown="if(event.key==='Enter') lookupAndAdd('dividend-trend')" />
                         </div>
                         <div>
-                            <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:6px;">识别结果</label>
+                            <label class="st-input-label">识别结果</label>
                             <div id="custom-name-dividend-trend"
                                 style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:10px 14px; font-size:0.85rem; color:var(--text-muted); min-width:140px; height:40px; line-height:20px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                                 — 等待查询 —
                             </div>
                         </div>
                         <div>
-                            <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:6px;">仓位上限</label>
+                            <label class="st-input-label">仓位上限</label>
                             <select id="custom-cap-dividend-trend"
-                                style="background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:10px 12px; font-family:inherit; outline:none; height:40px;">
+                                class="st-input-field st-input-field--select">
                                 <option value="5">5%</option><option value="8" selected>8% (个股推荐)</option><option value="10">10%</option><option value="15">15% (ETF)</option>
                             </select>
                         </div>
@@ -1385,11 +1358,10 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
             </section>
 
             <!-- ══════ ZONE 4 · 研究归档（折叠） ══════ -->
-            <div style="display:flex; align-items:center; gap:12px; margin:28px 0 12px; padding-left:4px;">
-                <div style="width:4px; height:32px; background:linear-gradient(180deg,rgba(255,255,255,0.3),rgba(255,255,255,0.1)); border-radius:2px;"></div>
+            <div class="st-zone-header st-zone-header--line" style="--zone-gradient:linear-gradient(180deg,rgba(255,255,255,0.3),rgba(255,255,255,0.1))">
                 <div>
-                    <div style="font-size:0.82rem; font-weight:800; color:var(--text-muted); letter-spacing:0.06em;">ZONE 4 · 研究归档</div>
-                    <div style="font-size:0.7rem; color:var(--text-muted);">回测结果 · 分状态验证 · 自选扩池（点击展开）</div>
+                    <div class="zone-title" style="color:var(--text-muted)">ZONE 4 · 研究归档</div>
+                    <div class="zone-sub">回测结果 · 分状态验证 · 自选扩池（点击展开）</div>
                 </div>
             </div>
 
@@ -1403,7 +1375,7 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
 
             <!-- V3.0 回测优化结果面板 -->
             <section class="st-section">
-                <h3>🔬 参数优化回测结果 <span style="font-size:0.72rem; font-weight:400; color:var(--text-muted); margin-left:8px;">2022-01-01 → 2026-03-27 · 144种参数组合网格搜索</span></h3>
+                <h3>🔬 参数优化回测结果 <span class="st-inline-hint">2022-01-01 → 2026-03-27 · 144种参数组合网格搜索</span></h3>
 
                 <!-- 最优参数卡片 -->
                 <div class="glass-panel" style="padding:24px; margin-bottom:20px; border-color:rgba(59,130,246,0.2);">
@@ -1550,7 +1522,7 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
 
             <!-- ===== V3.1 分状态验证结果面板 ===== -->
             <section class="st-section">
-                <h3>🧪 V3.1 分状态参数验证 <span style="font-size:0.72rem; font-weight:400; color:var(--text-muted); margin-left:8px;">自适应参数 vs 统一RANGE参数 · 4段历史市场窗口</span></h3>
+                <h3>🧪 V3.1 分状态参数验证 <span class="st-inline-hint">自适应参数 vs 统一RANGE参数 · 4段历史市场窗口</span></h3>
 
                 <!-- 验证结论摘要 -->
                 <div class="glass-panel" style="padding:20px; margin-bottom:16px; border-color:rgba(251,191,36,0.25); background:linear-gradient(135deg,rgba(251,191,36,0.05),rgba(20,24,34,0.4));">
@@ -1725,12 +1697,11 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
             </section>
 
             <!-- ZONE divider: ZONE 1 · 市场状态 -->
-            <div style="display:flex; align-items:center; gap:12px; margin:8px 0 4px; padding:10px 16px;
-                background:rgba(255,255,255,0.02); border-radius:10px; border-left:3px solid #f59e0b;">
-                <span style="font-size:1.1rem;">⚡</span>
+            <div class="st-zone-header" style="--zone-color:#f59e0b">
+                <span class="zone-icon">⚡</span>
                 <div>
-                    <div style="font-size:0.78rem; font-weight:700; color:#f59e0b; letter-spacing:0.06em;">ZONE 1 · 市场状态</div>
-                    <div style="font-size:0.68rem; color:var(--text-muted);">每周五开盘第一件事：确认 Regime 并读取自适应因子权重</div>
+                    <div class="zone-title">ZONE 1 · 市场状态</div>
+                    <div class="zone-sub">每周五开盘第一件事：确认 Regime 并读取自适应因子权重</div>
                 </div>
             </div>
 
@@ -1825,12 +1796,11 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
 
 
             <!-- ZONE divider: ZONE 2 · 6维评分体系 -->
-            <div style="display:flex; align-items:center; gap:12px; margin:8px 0 4px; padding:10px 16px;
-                background:rgba(255,255,255,0.02); border-radius:10px; border-left:3px solid #a78bfa;">
-                <span style="font-size:1.1rem;">🧬</span>
+            <div class="st-zone-header" style="--zone-color:#a78bfa">
+                <span class="zone-icon">🧬</span>
                 <div>
-                    <div style="font-size:0.78rem; font-weight:700; color:#a78bfa; letter-spacing:0.06em;">ZONE 2 · 6维评分体系</div>
-                    <div style="font-size:0.68rem; color:var(--text-muted);">满分100分 · 权重随Regime自动调整 · 含信号交叉验证</div>
+                    <div class="zone-title">ZONE 2 · 6维评分体系</div>
+                    <div class="zone-sub">满分100分 · 权重随Regime自动调整 · 含信号交叉验证</div>
                 </div>
             </div>
 
@@ -1892,12 +1862,11 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
 
 
             <!-- ZONE divider: ZONE 3 · 标的筛选 -->
-            <div style="display:flex; align-items:center; gap:12px; margin:8px 0 4px; padding:10px 16px;
-                background:rgba(255,255,255,0.02); border-radius:10px; border-left:3px solid #10b981;">
-                <span style="font-size:1.1rem;">🎯</span>
+            <div class="st-zone-header" style="--zone-color:#10b981">
+                <span class="zone-icon">🎯</span>
                 <div>
-                    <div style="font-size:0.78rem; font-weight:700; color:#10b981; letter-spacing:0.06em;">ZONE 3 · 标的筛选</div>
-                    <div style="font-size:0.68rem; color:var(--text-muted);">进攻20只 + 防御4只 · BEAR/RANGE自动激活防御池</div>
+                    <div class="zone-title">ZONE 3 · 标的筛选</div>
+                    <div class="zone-sub">进攻20只 + 防御4只 · BEAR/RANGE自动激活防御池</div>
                 </div>
             </div>
 
@@ -2083,30 +2052,19 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
 
 
             <!-- ZONE divider: ZONE 4 · 研究与实操归档 -->
-            <div style="display:flex; align-items:center; gap:12px; margin:8px 0 4px; padding:10px 16px;
-                background:rgba(255,255,255,0.02); border-radius:10px; border-left:3px solid #6b7280;">
-                <span style="font-size:1.1rem;">📚</span>
+            <div class="st-zone-header" style="--zone-color:#6b7280">
+                <span class="zone-icon">📚</span>
                 <div>
-                    <div style="font-size:0.78rem; font-weight:700; color:#6b7280; letter-spacing:0.06em;">ZONE 4 · 研究与实操归档</div>
-                    <div style="font-size:0.68rem; color:var(--text-muted);">回测控制台 · 5步SOP手册 · 参数优化 · 点击展开</div>
+                    <div class="zone-title">ZONE 4 · 研究与实操归档</div>
+                    <div class="zone-sub">回测控制台 · 5步SOP手册 · 参数优化 · 点击展开</div>
                 </div>
             </div>
 
             <section class="st-section" style="padding:0;">
-                <div onclick="(function(el){
-                    var c=el.nextElementSibling;
-                    var arrow=el.querySelector('.acc-arrow');
-                    if(c.style.display==='none'){c.style.display='block';arrow.style.transform='rotate(0deg)';}
-                    else{c.style.display='none';arrow.style.transform='rotate(-90deg)';}
-                })(this)"
-                style="display:flex; align-items:center; gap:10px; padding:12px 20px; cursor:pointer;
-                       background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid rgba(245,158,11,0.2);
-                       user-select:none; transition:background 0.2s; margin-bottom:0;"
-                onmouseover="this.style.background='rgba(255,255,255,0.06)'"
-                onmouseout="this.style.background='rgba(255,255,255,0.03)'">
-                    <span style="font-size:1rem;">🔬</span>
-                    <span style="font-size:0.88rem; font-weight:600; color:#fcd34d; flex:1;">🔬 回测控制台 + 绩效评估 + 净值曲线 + 月度热力图</span>
-                    <span class="acc-arrow" style="font-size:0.8rem; color:var(--text-muted); transition:transform 0.25s; transform:rotate(-90deg);">›</span>
+                <div class="st-accordion-trigger" onclick="toggleAccordion(this)" style="border-color:rgba(245,158,11,0.2)">
+                    <span class="acc-icon">🔬</span>
+                    <span class="acc-title" style="color:#fcd34d">🔬 回测控制台 + 绩效评估 + 净值曲线 + 月度热力图</span>
+                    <span class="acc-arrow">›</span>
                 </div>
                 <div style="display:none; padding-top:12px;">
 
@@ -2256,20 +2214,10 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
 
             <!-- Optimizer accordion -->
             <section class="st-section" style="padding:0; margin-top:12px;">
-                <div onclick="(function(el){
-                    var c=el.nextElementSibling;
-                    var arrow=el.querySelector('.acc-arrow');
-                    if(c.style.display==='none'){c.style.display='block';arrow.style.transform='rotate(0deg)';}
-                    else{c.style.display='none';arrow.style.transform='rotate(-90deg)';}
-                })(this)"
-                style="display:flex; align-items:center; gap:10px; padding:12px 20px; cursor:pointer;
-                       background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid rgba(99,102,241,0.2);
-                       user-select:none; transition:background 0.2s;"
-                onmouseover="this.style.background='rgba(255,255,255,0.06)'"
-                onmouseout="this.style.background='rgba(255,255,255,0.03)'">
-                    <span style="font-size:1rem;">⚙️</span>
-                    <span style="font-size:0.88rem; font-weight:600; color:#a78bfa; flex:1;">⚙️ 参数优化中心（网格搜索）</span>
-                    <span class="acc-arrow" style="font-size:0.8rem; color:var(--text-muted); transition:transform 0.25s; transform:rotate(-90deg);">›</span>
+                <div class="st-accordion-trigger" onclick="toggleAccordion(this)" style="border-color:rgba(99,102,241,0.2)">
+                    <span class="acc-icon">⚙️</span>
+                    <span class="acc-title" style="color:#a78bfa">⚙️ 参数优化中心（网格搜索）</span>
+                    <span class="acc-arrow">›</span>
                 </div>
                 <div style="display:none; padding-top:12px;">
 
@@ -2318,20 +2266,10 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
 
             <!-- SOP accordion -->
             <section class="st-section" style="padding:0; margin-top:12px;">
-                <div onclick="(function(el){
-                    var c=el.nextElementSibling;
-                    var arrow=el.querySelector('.acc-arrow');
-                    if(c.style.display==='none'){c.style.display='block';arrow.style.transform='rotate(0deg)';}
-                    else{c.style.display='none';arrow.style.transform='rotate(-90deg)';}
-                })(this)"
-                style="display:flex; align-items:center; gap:10px; padding:12px 20px; cursor:pointer;
-                       background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid rgba(59,130,246,0.2);
-                       user-select:none; transition:background 0.2s;"
-                onmouseover="this.style.background='rgba(255,255,255,0.06)'"
-                onmouseout="this.style.background='rgba(255,255,255,0.03)'">
-                    <span style="font-size:1rem;">📋</span>
-                    <span style="font-size:0.88rem; font-weight:600; color:#3b82f6; flex:1;">📋 实盘作战手册 V3.0 · 5步SOP</span>
-                    <span class="acc-arrow" style="font-size:0.8rem; color:var(--text-muted); transition:transform 0.25s; transform:rotate(-90deg);">›</span>
+                <div class="st-accordion-trigger" onclick="toggleAccordion(this)" style="border-color:rgba(59,130,246,0.2)">
+                    <span class="acc-icon">📋</span>
+                    <span class="acc-title" style="color:#3b82f6">📋 实盘作战手册 V3.0 · 5步SOP</span>
+                    <span class="acc-arrow">›</span>
                 </div>
                 <div style="display:none; padding-top:12px;">
 
@@ -2404,20 +2342,10 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
 
             <!-- Custom Pool accordion -->
             <section class="st-section" style="padding:0; margin-top:12px;">
-                <div onclick="(function(el){
-                    var c=el.nextElementSibling;
-                    var arrow=el.querySelector('.acc-arrow');
-                    if(c.style.display==='none'){c.style.display='block';arrow.style.transform='rotate(0deg)';}
-                    else{c.style.display='none';arrow.style.transform='rotate(-90deg)';}
-                })(this)"
-                style="display:flex; align-items:center; gap:10px; padding:12px 20px; cursor:pointer;
-                       background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid rgba(16,185,129,0.2);
-                       user-select:none; transition:background 0.2s;"
-                onmouseover="this.style.background='rgba(255,255,255,0.06)'"
-                onmouseout="this.style.background='rgba(255,255,255,0.03)'">
-                    <span style="font-size:1rem;">➕</span>
-                    <span style="font-size:0.88rem; font-weight:600; color:#10b981; flex:1;">➕ 自选扩池管理器</span>
-                    <span class="acc-arrow" style="font-size:0.8rem; color:var(--text-muted); transition:transform 0.25s; transform:rotate(-90deg);">›</span>
+                <div class="st-accordion-trigger" onclick="toggleAccordion(this)" style="border-color:rgba(16,185,129,0.2)">
+                    <span class="acc-icon">➕</span>
+                    <span class="acc-title" style="color:#10b981">➕ 自选扩池管理器</span>
+                    <span class="acc-arrow">›</span>
                 </div>
                 <div style="display:none; padding-top:12px;">
 
@@ -2429,23 +2357,23 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                     <!-- 输入行 -->
                     <div style="display:grid; grid-template-columns:1fr auto auto auto; gap:12px; align-items:end; margin-bottom:20px;">
                         <div>
-                            <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:6px;">股票/ETF 代码（Tushare 格式 · 如 600036.SH 或 512480.SH）</label>
+                            <label class="st-input-label">股票/ETF 代码（Tushare 格式 · 如 600036.SH 或 512480.SH）</label>
                             <input id="custom-input-momentum" type="text" maxlength="12"
                                 placeholder="输入代码后按 Enter 或点击查询..."
-                                style="width:100%; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:10px 14px; font-family:inherit; outline:none; font-size:0.9rem; box-sizing:border-box;"
+                                class="st-input-field"
                                 onkeydown="if(event.key==='Enter') lookupAndAdd('momentum')" />
                         </div>
                         <div>
-                            <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:6px;">识别结果</label>
+                            <label class="st-input-label">识别结果</label>
                             <div id="custom-name-momentum"
                                 style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:10px 14px; font-size:0.85rem; color:var(--text-muted); min-width:140px; height:40px; line-height:20px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                                 — 等待查询 —
                             </div>
                         </div>
                         <div>
-                            <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:6px;">仓位上限</label>
+                            <label class="st-input-label">仓位上限</label>
                             <select id="custom-cap-momentum"
-                                style="background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:10px 12px; font-family:inherit; outline:none; height:40px;">
+                                class="st-input-field st-input-field--select">
                                 <option value="5">5%</option><option value="8">8%</option><option value="10" selected>10% (个股推荐)</option><option value="15">15% (ETF)</option>
                             </select>
                         </div>

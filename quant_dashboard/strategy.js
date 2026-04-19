@@ -1,6 +1,16 @@
 // AlphaCore · 策略中心页面 JS
 const API_URL = '';
 
+// ====== 通用折叠组件 (Phase 1 提取) ======
+function toggleAccordion(trigger) {
+    const body = trigger.nextElementSibling;
+    if (!body) return;
+    const isOpen = body.style.display !== 'none';
+    body.style.display = isOpen ? 'none' : 'block';
+    const arrow = trigger.querySelector('.acc-arrow');
+    if (arrow) arrow.style.transform = isOpen ? 'rotate(-90deg)' : 'rotate(0deg)';
+}
+
 // ====== 计算器自动填入市场状态 ======
 async function autoFillCalcRegime() {
     const btn = document.getElementById('calc-auto-fill-btn');
