@@ -397,11 +397,11 @@ function renderAIAEGauge(value, regime, ri) {
                 lineStyle: {
                     width: 14,
                     color: [
-                        [0.24, '#10b981'],   // Ⅰ: 0-12
-                        [0.32, '#3b82f6'],   // Ⅱ: 12-16
-                        [0.48, '#eab308'],   // Ⅲ: 16-24
-                        [0.64, '#f97316'],   // Ⅳ: 24-32
-                        [1, '#ef4444']       // Ⅴ: 32-50
+                        [0.25, '#10b981'],   // Ⅰ: 0-12.5
+                        [0.34, '#3b82f6'],   // Ⅱ: 12.5-17
+                        [0.46, '#eab308'],   // Ⅲ: 17-23
+                        [0.60, '#f97316'],   // Ⅳ: 23-30
+                        [1, '#ef4444']       // Ⅴ: 30-50
                     ]
                 }
             },
@@ -421,7 +421,7 @@ function renderAIAEGauge(value, regime, ri) {
                 color: '#64748b',
                 fontSize: 9,
                 formatter: function(val) {
-                    var map = {0: '0', 10: '10', 12: 'Ⅰ', 16: 'Ⅱ', 20: '20', 24: 'Ⅲ', 30: '30', 32: 'Ⅳ', 40: '40', 50: '50'};
+                    var map = {0: '0', 10: '10', 13: 'Ⅰ', 17: 'Ⅱ', 20: '20', 23: 'Ⅲ', 30: 'Ⅳ', 40: '40', 50: '50'};
                     return map[val] || '';
                 }
             },
@@ -443,19 +443,19 @@ function renderAIAEHistoryChart(chart, currentValue) {
 
         // 五档区间色带
         const markAreaData = [
-            [{ yAxis: 0, itemStyle: { color: 'rgba(16,185,129,0.06)' } }, { yAxis: 12 }],   // Ⅰ
-            [{ yAxis: 12, itemStyle: { color: 'rgba(59,130,246,0.05)' } }, { yAxis: 16 }],   // Ⅱ
-            [{ yAxis: 16, itemStyle: { color: 'rgba(234,179,8,0.05)' } }, { yAxis: 24 }],    // Ⅲ
-            [{ yAxis: 24, itemStyle: { color: 'rgba(249,115,22,0.06)' } }, { yAxis: 32 }],   // Ⅳ
-            [{ yAxis: 32, itemStyle: { color: 'rgba(239,68,68,0.06)' } }, { yAxis: 50 }],    // Ⅴ
+            [{ yAxis: 0, itemStyle: { color: 'rgba(16,185,129,0.06)' } }, { yAxis: 12.5 }],   // Ⅰ
+            [{ yAxis: 12.5, itemStyle: { color: 'rgba(59,130,246,0.05)' } }, { yAxis: 17 }],   // Ⅱ
+            [{ yAxis: 17, itemStyle: { color: 'rgba(234,179,8,0.05)' } }, { yAxis: 23 }],    // Ⅲ
+            [{ yAxis: 23, itemStyle: { color: 'rgba(249,115,22,0.06)' } }, { yAxis: 30 }],   // Ⅳ
+            [{ yAxis: 30, itemStyle: { color: 'rgba(239,68,68,0.06)' } }, { yAxis: 50 }],    // Ⅴ
         ];
 
         // 分界参考线
-        const markLines = [12, 16, 24, 32].map(val => ({
+        const markLines = [12.5, 17, 23, 30].map(val => ({
             yAxis: val,
-            lineStyle: { color: val <= 16 ? '#3b82f644' : (val <= 24 ? '#eab30844' : '#ef444444'), type: 'dashed', width: 1 },
+            lineStyle: { color: val <= 17 ? '#3b82f644' : (val <= 23 ? '#eab30844' : '#ef444444'), type: 'dashed', width: 1 },
             label: {
-                formatter: val === 12 ? 'Ⅰ|Ⅱ' : (val === 16 ? 'Ⅱ|Ⅲ' : (val === 24 ? 'Ⅲ|Ⅳ' : 'Ⅳ|Ⅴ')),
+                formatter: val === 12.5 ? 'Ⅰ|Ⅱ' : (val === 17 ? 'Ⅱ|Ⅲ' : (val === 23 ? 'Ⅲ|Ⅳ' : 'Ⅳ|Ⅴ')),
                 position: 'end', color: '#64748b', fontSize: 9
             }
         }));
@@ -475,10 +475,10 @@ function renderAIAEHistoryChart(chart, currentValue) {
                     // Determine tier
                     const val = p.value;
                     let tierLabel = '';
-                    if (val < 12) tierLabel = '<span style="color:#10b981">Ⅰ级 极度恐慌</span>';
-                    else if (val < 16) tierLabel = '<span style="color:#3b82f6">Ⅱ级 低配置区</span>';
-                    else if (val < 24) tierLabel = '<span style="color:#eab308">Ⅲ级 中性均衡</span>';
-                    else if (val < 32) tierLabel = '<span style="color:#f97316">Ⅳ级 偏热区域</span>';
+                    if (val < 12.5) tierLabel = '<span style="color:#10b981">Ⅰ级 极度恐慌</span>';
+                    else if (val < 17) tierLabel = '<span style="color:#3b82f6">Ⅱ级 低配置区</span>';
+                    else if (val < 23) tierLabel = '<span style="color:#eab308">Ⅲ级 中性均衡</span>';
+                    else if (val < 30) tierLabel = '<span style="color:#f97316">Ⅳ级 偏热区域</span>';
                     else tierLabel = '<span style="color:#ef4444">Ⅴ级 极度过热</span>';
 
                     return '<b>' + p.axisValue + '</b><br/>' +
@@ -540,7 +540,7 @@ function renderAIAEMatrix(pos, cv) {
     }
 
     // 清除旧高亮 + 添加热力图
-    const posValues = [[95,85,70,45,20],[90,80,65,40,15],[85,70,55,30,10],[75,60,40,20,5]];
+    const posValues = [[95,85,65,40,15],[90,80,60,35,10],[85,70,50,25,5],[75,55,35,15,0]];
     const rows = table.querySelectorAll('tbody tr');
     rows.forEach((row, ri) => {
         const cells = row.querySelectorAll('td');

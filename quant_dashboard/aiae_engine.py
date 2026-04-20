@@ -1,5 +1,5 @@
 """
-AlphaCore · AIAE 全市场权益配置择时引擎 V2.0
+AlphaCore · AIAE 全市场权益配置择时引擎 V3.0
 ================================================
 核心思想: AIAE = 全市场投资者把多少比例的钱放在了股票里
   - 比例极高 → 市场过热，减仓
@@ -7,19 +7,26 @@ AlphaCore · AIAE 全市场权益配置择时引擎 V2.0
 
 计算公式:
   AIAE_简 = A股总市值 / (A股总市值 + M2)
-  AIAE_V1 = 0.5×AIAE_简 + 0.3×基金仓位(手动) + 0.2×融资占比(日频)
+  AIAE_V1 = 0.55×AIAE_简 + 0.20×基金仓位(Sigmoid) + 0.25×融资热度(Sigmoid)
 
 五档状态:
-  Ⅰ级 极度恐慌 (<12%)  → 总仓位 90-95%
-  Ⅱ级 低配置区 (12-16%) → 总仓位 70-85%
-  Ⅲ级 中性均衡 (16-24%) → 总仓位 50-65%
-  Ⅳ级 偏热区域 (24-32%) → 总仓位 25-40%
-  Ⅴ级 极度过热 (>32%)   → 总仓位 0-15%
+  Ⅰ级 极度恐慌 (<13%)  → 总仓位 90-95%
+  Ⅱ级 低配置区 (13-17%) → 总仓位 70-85%
+  Ⅲ级 中性均衡 (17-23%) → 总仓位 50-65%
+  Ⅳ级 偏热区域 (23-30%) → 总仓位 25-40%
+  Ⅴ级 极度过热 (>30%)   → 总仓位 0-15%
 
 数据源: Tushare Pro
   - daily_basic → total_mv / circ_mv (日频)
   - cn_m → M2 (月频)
   - margin → 融资余额/买入额 (日频)
+
+V3.0 Changelog:
+  - Sigmoid 归一化替代线性映射 (基金仓位 / 融资热度)
+  - 三维权重重标定 [0.55, 0.20, 0.25]
+  - 五档分界线重划 [13, 17, 23, 30]
+  - 仓位矩阵 ±1.5pt 缓冲带平滑插值
+  - 参数中心化 aiae_params.py (Single Source of Truth)
 
 V2.0 Changelog:
   - ThreadPoolExecutor 并行数据获取 (3x speedup)
@@ -35,6 +42,7 @@ import tushare as ts
 import time
 import os
 import json
+import math
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
@@ -42,6 +50,7 @@ from typing import Optional, Dict, List, Tuple
 
 # ===== Token: 统一从 config 读取 =====
 from config import TUSHARE_TOKEN
+import aiae_params as AP  # V3.0: 参数中心 (Single Source of Truth)
 ts.set_token(TUSHARE_TOKEN)
 pro = ts.pro_api()
 
@@ -136,42 +145,31 @@ FUND_UPDATE_GUIDE = {
     "frequency": "每季度更新一次 (Q1→4月底, Q2→7月底, Q3→10月底, Q4→次年1月底)",
 }
 
-# ===== 五档状态定义 =====
+# ===== 五档状态定义 (V3.0: 分界线从 aiae_params.py 读取) =====
+_T = AP.REGIME_THRESHOLDS  # [13, 17, 23, 30]
 REGIMES = {
-    1: {"name": "Ⅰ级 · EXTREME FEAR", "cn": "极度恐慌", "range": "<12%",
+    1: {"name": "Ⅰ级 · EXTREME FEAR", "cn": "极度恐慌", "range": f"<{_T[0]}%",
         "color": "#10b981", "emoji": "🟢", "position": "90-95%", "pos_min": 90, "pos_max": 95,
         "action": "满配进攻", "desc": "越跌越买，分3批建仓"},
-    2: {"name": "Ⅱ级 · LOW ALLOCATION", "cn": "低配置区", "range": "12-16%",
+    2: {"name": "Ⅱ级 · LOW ALLOCATION", "cn": "低配置区", "range": f"{_T[0]}-{_T[1]}%",
         "color": "#3b82f6", "emoji": "🔵", "position": "70-85%", "pos_min": 70, "pos_max": 85,
         "action": "标准建仓", "desc": "耐心持有，不因波动减仓"},
-    3: {"name": "Ⅲ级 · NEUTRAL", "cn": "中性均衡", "range": "16-24%",
+    3: {"name": "Ⅲ级 · NEUTRAL", "cn": "中性均衡", "range": f"{_T[1]}-{_T[2]}%",
         "color": "#eab308", "emoji": "🟡", "position": "50-65%", "pos_min": 50, "pos_max": 65,
         "action": "均衡持有", "desc": "有纪律地持有，到了就卖"},
-    4: {"name": "Ⅳ级 · GETTING HOT", "cn": "偏热区域", "range": "24-32%",
+    4: {"name": "Ⅳ级 · GETTING HOT", "cn": "偏热区域", "range": f"{_T[2]}-{_T[3]}%",
         "color": "#f97316", "emoji": "🟠", "position": "25-40%", "pos_min": 25, "pos_max": 40,
         "action": "系统减仓", "desc": "每周减5%总仓位"},
-    5: {"name": "Ⅴ级 · EUPHORIA", "cn": "极度过热", "range": ">32%",
+    5: {"name": "Ⅴ级 · EUPHORIA", "cn": "极度过热", "range": f">{_T[3]}%",
         "color": "#ef4444", "emoji": "🔴", "position": "0-15%", "pos_min": 0, "pos_max": 15,
         "action": "清仓防守", "desc": "3天内完成清仓"},
 }
 
-# ===== AIAE × ERP 仓位矩阵 =====
-# 行: ERP水位, 列: AIAE档位(1-5)
-POSITION_MATRIX = {
-    "erp_gt6":  [95, 85, 70, 45, 20],  # ERP > 6%
-    "erp_4_6":  [90, 80, 65, 40, 15],  # ERP 4-6%
-    "erp_2_4":  [85, 70, 55, 30, 10],  # ERP 2-4%
-    "erp_lt2":  [75, 60, 40, 20,  5],  # ERP < 2%
-}
+# ===== AIAE × ERP 仓位矩阵 (V3.0: 从参数中心读取) =====
+POSITION_MATRIX = AP.POSITION_MATRIX
 
-# ===== 子策略配额矩阵 =====
-SUB_STRATEGY_ALLOC = {
-    1: {"mr": 40, "div": 20, "mom": 25, "erp": 15},  # Ⅰ级
-    2: {"mr": 35, "div": 25, "mom": 25, "erp": 15},  # Ⅱ级
-    3: {"mr": 25, "div": 30, "mom": 25, "erp": 20},  # Ⅲ级
-    4: {"mr": 10, "div": 50, "mom": 15, "erp": 25},  # Ⅳ级
-    5: {"mr":  0, "div": 80, "mom":  0, "erp": 20},  # Ⅴ级
-}
+# ===== 子策略配额矩阵 (V3.0: 从参数中心读取) =====
+SUB_STRATEGY_ALLOC = AP.SUB_STRATEGY_ALLOC
 
 # ===== AIAE ETF 标的池 V1.0 =====
 # 5 宽基 (进攻) + 3 红利 (防御) = 8 只 ETF
@@ -247,15 +245,15 @@ JOINT_WEIGHTS = {
 AIAE_RUN_ALL_WEIGHTS = {r: JOINT_WEIGHTS[r]["neutral"] for r in JOINT_WEIGHTS}
 
 
-# ===== 数据合理性断言阈值 =====
-MV_BOUNDS = {"min": 30.0, "max": 300.0}  # 总市值万亿元合理区间
-M2_BOUNDS = {"min": 200.0, "max": 600.0}  # M2万亿元合理区间
+# ===== 数据合理性断言阈值 (V3.0: 从参数中心读取) =====
+MV_BOUNDS = {"min": AP.MV_BOUNDS_MIN, "max": AP.MV_BOUNDS_MAX}
+M2_BOUNDS = {"min": AP.M2_BOUNDS_MIN, "max": AP.M2_BOUNDS_MAX}
 
 
 class AIAEEngine:
-    """AIAE 全市场权益配置择时引擎 V2.0"""
+    """AIAE 全市场权益配置择时引擎 V3.0"""
 
-    VERSION = "2.0"
+    VERSION = AP.VERSION
 
     def __init__(self):
         # C1: 基金仓位从持久化文件加载，降级为硬编码默认值
@@ -597,30 +595,41 @@ class AIAEEngine:
 
     def compute_aiae_v1(self, aiae_simple: float, fund_pos: float, margin_heat: float) -> float:
         """
-        融合 AIAE V1.0
-        = 0.5 × AIAE_简 + 0.3 × 基金仓位归一化 + 0.2 × 融资热度归一化
+        融合 AIAE V3.0
+        = W_AIAE_SIMPLE × AIAE_简 + W_FUND_POS × 基金仓位(Sigmoid) + W_MARGIN_HEAT × 融资热度(Sigmoid)
+        
+        V3.0 变更:
+          - 权重: [0.50, 0.30, 0.20] → [0.55, 0.20, 0.25]
+          - 归一化: 线性映射 → Sigmoid 平滑映射
+          - 基金仓位区间: 60-95% → Sigmoid(center=80, k=0.15)
+          - 融资热度区间: 1-4% → Sigmoid(center=2.2, k=2.5)
         """
-        # 基金仓位归一化: 60-95% → 8-32% AIAE等效
-        fund_normalized = 8 + (fund_pos - 60) / (95 - 60) * (32 - 8)
-        fund_normalized = max(8, min(32, fund_normalized))
+        # V3.0: Sigmoid 归一化 (从 aiae_params 读取参数)
+        fund_normalized = AP.sigmoid_normalize(
+            fund_pos, AP.FUND_SIGMOID_CENTER, AP.FUND_SIGMOID_K)
 
-        # 融资热度归一化: 1-4% → 8-32% AIAE等效
-        margin_normalized = 8 + (margin_heat - 1) / (4 - 1) * (32 - 8)
-        margin_normalized = max(8, min(32, margin_normalized))
+        margin_normalized = AP.sigmoid_normalize(
+            margin_heat, AP.MARGIN_SIGMOID_CENTER, AP.MARGIN_SIGMOID_K)
 
-        return round(0.5 * aiae_simple + 0.3 * fund_normalized + 0.2 * margin_normalized, 2)
+        return round(
+            AP.W_AIAE_SIMPLE * aiae_simple +
+            AP.W_FUND_POS * fund_normalized +
+            AP.W_MARGIN_HEAT * margin_normalized, 2)
 
     # ========== 五档判定层 ==========
 
     def classify_regime(self, aiae_value: float) -> int:
-        """AIAE值 → 五档状态 (1-5)"""
-        if aiae_value < 12:
+        """AIAE值 → 五档状态 (1-5)
+        V3.0: 分界线从 aiae_params.REGIME_THRESHOLDS 读取
+        """
+        t = AP.REGIME_THRESHOLDS  # [13, 17, 23, 30]
+        if aiae_value < t[0]:
             return 1
-        elif aiae_value < 16:
+        elif aiae_value < t[1]:
             return 2
-        elif aiae_value < 24:
+        elif aiae_value < t[2]:
             return 3
-        elif aiae_value < 32:
+        elif aiae_value < t[3]:
             return 4
         else:
             return 5
@@ -633,18 +642,35 @@ class AIAEEngine:
         direction = "rising" if slope > 0 else ("falling" if slope < 0 else "flat")
 
         signal = None
-        if slope > 1.5:
+        if slope > AP.SLOPE_ACCEL_UP:
             signal = {"type": "accel_up", "text": "AIAE 加速上行", "level": "warning"}
-        elif slope < -1.5:
+        elif slope < AP.SLOPE_ACCEL_DOWN:
             signal = {"type": "accel_down", "text": "AIAE 加速下行", "level": "opportunity"}
 
         return {"slope": round(slope, 2), "direction": direction, "signal": signal}
 
-    def get_position_from_matrix(self, regime: int, erp_level: str) -> int:
-        """AIAE × ERP 仓位矩阵查表"""
+    def get_position_from_matrix(self, regime: int, erp_level: str, 
+                                  aiae_value: float = None) -> int:
+        """AIAE × ERP 仓位矩阵查表
+        V3.0: 在分界线 ±1.5pt 内做平滑插值，消除仓位跳变
+        """
         row = POSITION_MATRIX.get(erp_level, POSITION_MATRIX["erp_2_4"])
         idx = min(regime - 1, 4)
-        return row[idx]
+        base_pos = row[idx]
+        
+        # V3.0: 分界线平滑插值
+        if aiae_value is not None:
+            t = AP.REGIME_THRESHOLDS
+            for i, threshold in enumerate(t):
+                pos_high = row[i]       # 低档仓位（AIAE 低→仓位高）
+                pos_low = row[i + 1]    # 高档仓位（AIAE 高→仓位低）
+                if abs(aiae_value - threshold) <= AP.REGIME_SMOOTH_BUFFER:
+                    base_pos = AP.smooth_position(
+                        pos_low, pos_high, aiae_value, threshold)
+                    _log(f"仓位平滑: AIAE={aiae_value:.1f} 近分界{threshold} → 插值 {base_pos}% (原{row[idx]}%)")
+                    break
+        
+        return base_pos
 
     def classify_erp_level(self, erp_value: float) -> str:
         """ERP值分级"""
@@ -749,11 +775,11 @@ class AIAEEngine:
             signals.append({"type": "slope", "level": s["level"], "text": s["text"],
                           "color": "#f59e0b" if s["level"] == "warning" else "#10b981"})
 
-        # 融资占比信号
-        if margin_heat > 3.5:
+        # 融资占比信号 (V3.0: 阈值从参数中心读取)
+        if margin_heat > AP.MARGIN_HEAT_DANGER:
             signals.append({"type": "margin", "level": "warning",
                           "text": f"融资占比 {margin_heat:.1f}% 偏高，散户杠杆入场", "color": "#f97316"})
-        elif margin_heat < 1.5:
+        elif margin_heat < AP.MARGIN_HEAT_LOW:
             signals.append({"type": "margin", "level": "opportunity",
                           "text": f"融资占比 {margin_heat:.1f}% 极低，杠杆出清", "color": "#10b981"})
 
@@ -928,7 +954,7 @@ class AIAEEngine:
             # 5. ERP 交叉 (尝试从 ERP 引擎获取)
             erp_value = self._get_erp_value()
             erp_level = self.classify_erp_level(erp_value)
-            matrix_position = self.get_position_from_matrix(regime, erp_level)
+            matrix_position = self.get_position_from_matrix(regime, erp_level, aiae_value=aiae_v1)
 
             # 6. 子策略配额
             allocations = self.allocate_sub_strategies(regime, matrix_position)
