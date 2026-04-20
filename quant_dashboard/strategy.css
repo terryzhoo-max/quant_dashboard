@@ -2386,6 +2386,41 @@
 }
 
 /* ================================================
+   AIAE V2.2 · 布局 Class 化 (替代 inline style)
+   ================================================ */
+
+/* ── ZONE 1 布局 ── */
+.aiae-gauge-grid { display: grid; grid-template-columns: 1fr 1.5fr; gap: 20px; }
+.aiae-data-grid  { margin-top: 14px; display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
+.aiae-section-label { font-size: 0.8rem; font-weight: 700; color: #f59e0b; margin-bottom: 12px; letter-spacing: 0.03em; }
+.aiae-regime-grid { display: grid; grid-template-columns: repeat(5,1fr); gap: 8px; }
+.aiae-hero-actions { display: flex; gap: 10px; margin-top: 16px; align-items: center; }
+.aiae-load-status { font-size: 0.72rem; color: var(--text-muted); }
+
+/* ── ZONE 2 布局 ── */
+.aiae-matrix-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 20px; }
+.aiae-matrix-header { font-size: 0.8rem; font-weight: 700; color: #f59e0b; margin-bottom: 10px; letter-spacing: 0.03em; }
+.aiae-alloc-header { font-size: 0.8rem; font-weight: 700; color: #f59e0b; margin-bottom: 14px; letter-spacing: 0.03em; }
+.aiae-cross-header { font-size: 0.78rem; font-weight: 700; color: #f59e0b; margin-bottom: 8px; }
+
+/* ── ZONE 3 布局 ── */
+.aiae-chart-panel { padding: 24px; }
+
+/* ── ZONE 4 信号网格 ── */
+.aiae-signal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px,1fr)); gap: 12px; }
+
+/* ── 风控面板内嵌网格 ── */
+.aiae-defense-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 20px; }
+.aiae-defense-card { border-radius: 10px; padding: 14px; }
+.aiae-defense-card--l1 { background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.2); }
+.aiae-defense-card--l2 { background: rgba(59,130,246,0.06); border: 1px solid rgba(59,130,246,0.2); }
+.aiae-defense-card--l3 { background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.2); }
+.aiae-defense-title { font-size: 0.8rem; font-weight: 700; margin-bottom: 6px; }
+.aiae-defense-body { font-size: 0.75rem; color: var(--text-muted); line-height: 1.7; }
+.aiae-rules-title { font-size: 0.82rem; font-weight: 700; color: #ef4444; margin-bottom: 8px; }
+.aiae-rules-list { font-size: 0.78rem; color: var(--text-muted); line-height: 2.0; padding-left: 20px; margin: 0; }
+
+/* ================================================
    Phase 1 · 通用组件 CSS (替代内联样式)
    ================================================ */
 

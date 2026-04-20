@@ -20,8 +20,29 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 FRED_API_KEY = __import__('config').FRED_API_KEY
+from erp_signal_enhancer import adaptive_weights, multi_timeframe_confirmation
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
+
+# O1: 动态EPS估算配置 (替代硬编码，每季度自动衰减)
+EPS_CONFIG_US = {
+    "base_eps": 265.0,       # SP500 Operating EPS 共识中位 (2026Q1)
+    "as_of_quarter": "2026Q1",
+    "annual_growth": 0.10,   # 年化EPS增长率
+}
+
+def _get_dynamic_eps_us() -> float:
+    """基于基准EPS + 时间衰减的动态估算, 避免硬编码过期"""
+    cfg = EPS_CONFIG_US
+    # 解析基准季度
+    year = int(cfg["as_of_quarter"][:4])
+    quarter = int(cfg["as_of_quarter"][-1])
+    base_date = datetime(year, quarter * 3, 1)
+    quarters_elapsed = (datetime.now() - base_date).days / 91.25
+    adjusted = cfg["base_eps"] * (1 + cfg["annual_growth"]) ** (quarters_elapsed / 4)
+    if quarters_elapsed >= 3:
+        print(f"[US-ERP] ⚠️ EPS估算基于{cfg['as_of_quarter']}，已过期{quarters_elapsed:.0f}个季度，请更新EPS_CONFIG_US")
+    return round(adjusted, 1)
 
 # FRED API 初始化
 _fred_instance = None
@@ -139,8 +160,8 @@ class USERPTimingEngine:
         import json
         pe_cache_file = os.path.join(CACHE_DIR, "erp_us_current_pe.json")
         
-        # 2025-26年 S&P500 Operating EPS 共识约 $240-260，取中位 $250
-        ESTIMATED_INDEX_EPS = 250.0
+        # O1: 动态EPS估算 (替代硬编码$250)
+        ESTIMATED_INDEX_EPS = _get_dynamic_eps_us()
         
         # Tier 1 (推荐): FRED SP500 指数价格 — 与 EPS 同一尺度
         try:
@@ -376,8 +397,9 @@ class USERPTimingEngine:
         return round(min(100, max(0, score)), 1), desc
 
     def _score_d2_erp_percentile(self, erp_val: float, erp_series: pd.Series) -> tuple:
-        """D2: ERP历史分位 → 0-100"""
-        pct = (erp_series < erp_val).mean() * 100
+        """D2: ERP历史分位 → 0-100 (O2: 使用滚动5年窗口)"""
+        window = erp_series.tail(1260)  # O2: ~5年滚动窗口, 与CN引擎对齐
+        pct = (window < erp_val).mean() * 100
         if pct >= 80:   desc = f"近5年{pct:.1f}%分位 → 历史极度低估"
         elif pct >= 60: desc = f"近5年{pct:.1f}%分位 → 偏低估"
         elif pct >= 40: desc = f"近5年{pct:.1f}%分位 → 估值中性"
@@ -442,7 +464,7 @@ class USERPTimingEngine:
         current_vix = float(vix_df["vix"].iloc[-1])
         vix_pct = (vix_df["vix"] < current_vix).mean() * 100
 
-        # === A5优化: 更精细的VIX评分区间 ===
+        # O3: VIX评分单调化修正 — 消除12-14区间反常降分
         if current_vix >= 40:
             score, regime = 10, "extreme_panic"
             desc = f"VIX {current_vix:.1f} ≥ 40 → 极端恐慌! 逆向加仓窗口"
@@ -462,11 +484,11 @@ class USERPTimingEngine:
             score, regime = 80, "normal"
             desc = f"VIX {current_vix:.1f} 正常区间，适合配置"
         elif current_vix >= 12:
-            score, regime = 70, "complacent"
-            desc = f"VIX {current_vix:.1f} 偏低，市场过度乐观"
+            score, regime = 75, "low"  # O3 fix: 75分(略低于正常), 而非70分
+            desc = f"VIX {current_vix:.1f} 偏低，市场乐观但可配置"
         else:
-            score, regime = 40, "extreme_complacent"
-            desc = f"VIX {current_vix:.1f} < 12 → 极度自满! 警惕突发回调"
+            score, regime = 55, "extreme_complacent"  # O3 fix: 55分(非40), 极端自满仍有配置空间
+            desc = f"VIX {current_vix:.1f} < 12 → 极度自满，警惕均值回归"
 
         vix_info = {"current": round(current_vix, 1), "pct": round(vix_pct, 1), "regime": regime}
         return round(score, 1), vix_info, desc
@@ -505,6 +527,35 @@ class USERPTimingEngine:
         return round(min(100, max(0, score)), 1), credit_info, desc
 
     # ========== 买卖规则引擎 ==========
+
+    # O7: ERP动量修正 — 3月ERP变化率 → ±5分
+    def _erp_momentum_modifier(self, erp_series) -> tuple:
+        """ERP动量: 近3个月ERP变化方向, 作为composite的修正因子"""
+        if len(erp_series) < 63:
+            return 0, "数据不足"
+        current = float(erp_series.iloc[-1])
+        past = float(erp_series.iloc[-63])
+        if abs(past) < 0.01:
+            return 0, "基准值过小"
+        momentum_pct = (current - past) / abs(past) * 100
+        if momentum_pct > 10:
+            return 5, f"ERP 3月动量+{momentum_pct:.0f}% → 价值回归(+5)"
+        elif momentum_pct < -10:
+            return -5, f"ERP 3月动量{momentum_pct:.0f}% → 估值恶化(-5)"
+        return 0, f"ERP 3月动量{momentum_pct:+.0f}% → 中性"
+
+    # O8: EMA平滑 — 防止信号在阈值边界频繁跳变
+    _prev_smooth_score = None
+
+    def _smooth_composite(self, raw_score: float) -> float:
+        """EMA平滑: α=0.3, 保持趋势连续性"""
+        if self._prev_smooth_score is None:
+            self._prev_smooth_score = raw_score
+            return raw_score
+        alpha = 0.3
+        smooth = alpha * raw_score + (1 - alpha) * self._prev_smooth_score
+        self._prev_smooth_score = smooth
+        return round(smooth, 1)
 
     def _generate_trade_rules(self, score: float, dims: dict, snap: dict) -> dict:
         erp = snap.get("erp_value", 0)
@@ -717,11 +768,26 @@ class USERPTimingEngine:
             d4_score, vix_info, d4_desc = self._score_d4_vix()
             d5_score, credit_info, d5_desc = self._score_d5_credit_spread()
 
+            # O10: 权重自适应 — VIX恐慌时提升vix维度权重
+            vix_regime = vix_info.get("regime", "normal")
+            aw = adaptive_weights(self.W, "vix", vix_regime)
+
             composite = round(
-                d1_score * self.W["erp_abs"] + d2_score * self.W["erp_pct"] +
-                d3_score * self.W["fed_liquidity"] + d4_score * self.W["vix"] +
-                d5_score * self.W["credit_spread"], 1
+                d1_score * aw["erp_abs"] + d2_score * aw["erp_pct"] +
+                d3_score * aw["fed_liquidity"] + d4_score * aw["vix"] +
+                d5_score * aw["credit_spread"], 1
             )
+
+            # O7: ERP动量修正
+            momentum_mod, momentum_desc = self._erp_momentum_modifier(erp_df["erp"])
+            composite = round(min(100, max(0, composite + momentum_mod)), 1)
+
+            # O11: 多时间框架确认
+            mtf = multi_timeframe_confirmation(erp_df["erp"], composite)
+            composite = round(min(100, max(0, composite + mtf["confidence_mod"])), 1)
+
+            # O8: EMA平滑
+            composite = self._smooth_composite(composite)
 
             snap = {
                 "pe_ttm": round(pe_ttm, 2), "yield_10y": round(yield_10y, 4),
@@ -735,6 +801,7 @@ class USERPTimingEngine:
                 "fed_liquidity": {"score": d3_score, "weight": self.W["fed_liquidity"], "label": "Fed流动性", "desc": d3_desc, "fed_info": fed_info},
                 "vix":           {"score": d4_score, "weight": self.W["vix"], "label": "VIX恐慌", "desc": d4_desc, "vix_info": vix_info},
                 "credit_spread": {"score": d5_score, "weight": self.W["credit_spread"], "label": "信用利差", "desc": d5_desc, "credit_info": credit_info},
+                "erp_momentum":  {"score": momentum_mod, "weight": 0, "label": "ERP动量", "desc": momentum_desc},
             }
 
             trade = self._generate_trade_rules(composite, dims, snap)
@@ -743,6 +810,8 @@ class USERPTimingEngine:
 
             return {
                 "status": "success", "region": "US",
+                "adaptive_weights": aw,  # O10
+                "multi_timeframe": mtf,  # O11
                 "current_snapshot": snap, "signal": {
                     "score": composite, "key": trade["signal_key"],
                     "label": trade["signal"]["label_cn"], "position": trade["signal"]["position"],

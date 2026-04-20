@@ -29,6 +29,26 @@ FRED_API_KEY = __import__('config').FRED_API_KEY
 
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
+from erp_signal_enhancer import adaptive_weights, multi_timeframe_confirmation
+
+# O1: 动态EPS估算配置 (替代硬编码¥2500)
+EPS_CONFIG_JP = {
+    "base_eps": 2600.0,      # 日经225 EPS 共识中位 (2026Q1)
+    "as_of_quarter": "2026Q1",
+    "annual_growth": 0.06,   # 年化EPS增长率
+}
+
+def _get_dynamic_eps_jp() -> float:
+    """基于基准EPS + 时间衰减的动态估算"""
+    cfg = EPS_CONFIG_JP
+    year = int(cfg["as_of_quarter"][:4])
+    quarter = int(cfg["as_of_quarter"][-1])
+    base_date = datetime(year, quarter * 3, 1)
+    quarters_elapsed = (datetime.now() - base_date).days / 91.25
+    adjusted = cfg["base_eps"] * (1 + cfg["annual_growth"]) ** (quarters_elapsed / 4)
+    if quarters_elapsed >= 3:
+        print(f"[JP-ERP] ⚠️ EPS估算基于{cfg['as_of_quarter']}，已过期{quarters_elapsed:.0f}个季度，请更新EPS_CONFIG_JP")
+    return round(adjusted, 1)
 
 _jp_fred = None
 def _get_jp_fred():
@@ -136,7 +156,7 @@ class JPERPTimingEngine:
                 nk = fred.get_series("NIKKEI225", observation_start=datetime.now() - timedelta(days=10))
                 if nk is not None and not nk.empty:
                     price = float(nk.dropna().iloc[-1])
-                    estimated_eps = 2500.0  # 日经225 2025-26年EPS中位估算
+                    estimated_eps = _get_dynamic_eps_jp()  # O1: 动态EPS
                     pe = price / estimated_eps
                     pe = max(10, min(35, pe))
                     with open(pe_cache_file, "w") as f:
@@ -326,7 +346,9 @@ class JPERPTimingEngine:
         return round(min(100, max(0, score)), 1), desc
 
     def _score_d2_erp_percentile(self, erp_val: float, erp_series: pd.Series) -> tuple:
-        pct = (erp_series < erp_val).mean() * 100
+        """D2: ERP历史分位 (O2: 滚动5年窗口)"""
+        window = erp_series.tail(1260)  # O2: ~5年滚动窗口
+        pct = (window < erp_val).mean() * 100
         if pct >= 80:   desc = f"近5年{pct:.1f}%分位 → 历史极度低估"
         elif pct >= 60: desc = f"近5年{pct:.1f}%分位 → 偏低估"
         elif pct >= 40: desc = f"近5年{pct:.1f}%分位 → 中性"
@@ -459,6 +481,33 @@ class JPERPTimingEngine:
         return round(min(100, max(0, score)), 1), rate_info, desc
 
     # ========== 买卖规则引擎 ==========
+
+    # O7: ERP动量修正
+    def _erp_momentum_modifier(self, erp_series) -> tuple:
+        if len(erp_series) < 63:
+            return 0, "数据不足"
+        current = float(erp_series.iloc[-1])
+        past = float(erp_series.iloc[-63])
+        if abs(past) < 0.01:
+            return 0, "基准值过小"
+        momentum_pct = (current - past) / abs(past) * 100
+        if momentum_pct > 10:
+            return 5, f"ERP 3月动量+{momentum_pct:.0f}% → 价值回归(+5)"
+        elif momentum_pct < -10:
+            return -5, f"ERP 3月动量{momentum_pct:.0f}% → 估值恶化(-5)"
+        return 0, f"ERP 3月动量{momentum_pct:+.0f}% → 中性"
+
+    # O8: EMA平滑
+    _prev_smooth_score = None
+
+    def _smooth_composite(self, raw_score: float) -> float:
+        if self._prev_smooth_score is None:
+            self._prev_smooth_score = raw_score
+            return raw_score
+        alpha = 0.3
+        smooth = alpha * raw_score + (1 - alpha) * self._prev_smooth_score
+        self._prev_smooth_score = smooth
+        return round(smooth, 1)
 
     def _generate_trade_rules(self, score, dims, snap) -> dict:
         erp = snap.get("erp_value", 5.0)
@@ -632,11 +681,26 @@ class JPERPTimingEngine:
             d4_score, vol_info, d4_desc = self._score_d4_volatility()
             d5_score, rate_info, d5_desc = self._score_d5_rate_env()
 
+            # O10: 权重自适应
+            vol_regime = vol_info.get("regime", "normal")
+            aw = adaptive_weights(self.W, "volatility", vol_regime)
+
             composite = round(
-                d1_score * self.W["erp_abs"] + d2_score * self.W["erp_pct"] +
-                d3_score * self.W["yen_trend"] + d4_score * self.W["volatility"] +
-                d5_score * self.W["rate_env"], 1
+                d1_score * aw["erp_abs"] + d2_score * aw["erp_pct"] +
+                d3_score * aw["yen_trend"] + d4_score * aw["volatility"] +
+                d5_score * aw["rate_env"], 1
             )
+
+            # O7: ERP动量修正
+            momentum_mod, momentum_desc = self._erp_momentum_modifier(erp_df["erp"])
+            composite = round(min(100, max(0, composite + momentum_mod)), 1)
+
+            # O11: 多时间框架确认
+            mtf = multi_timeframe_confirmation(erp_df["erp"], composite)
+            composite = round(min(100, max(0, composite + mtf["confidence_mod"])), 1)
+
+            # O8: EMA平滑
+            composite = self._smooth_composite(composite)
 
             snap = {
                 "pe_ttm": round(pe_ttm, 2), "yield_10y": round(yield_10y, 4),
@@ -645,11 +709,12 @@ class JPERPTimingEngine:
             }
 
             dims = {
-                "erp_abs":    {"score": d1_score, "weight": self.W["erp_abs"], "label": "ERP绝対値", "desc": d1_desc},
+                "erp_abs":    {"score": d1_score, "weight": self.W["erp_abs"], "label": "ERP絶対値", "desc": d1_desc},
                 "erp_pct":    {"score": d2_score, "weight": self.W["erp_pct"], "label": "ERP分位", "desc": d2_desc, "percentile": d2_pct},
                 "yen_trend":  {"score": d3_score, "weight": self.W["yen_trend"], "label": "日元趋势", "desc": d3_desc, "yen_info": yen_info},
                 "volatility": {"score": d4_score, "weight": self.W["volatility"], "label": "日経波動率", "desc": d4_desc, "vol_info": vol_info},
                 "rate_env":   {"score": d5_score, "weight": self.W["rate_env"], "label": "利率環境", "desc": d5_desc, "rate_info": rate_info},
+                "erp_momentum": {"score": momentum_mod, "weight": 0, "label": "ERP动量", "desc": momentum_desc},
             }
 
             trade = self._generate_trade_rules(composite, dims, snap)
@@ -658,6 +723,8 @@ class JPERPTimingEngine:
 
             return {
                 "status": "success", "region": "JP",
+                "adaptive_weights": aw,  # O10
+                "multi_timeframe": mtf,  # O11
                 "current_snapshot": snap, "signal": {
                     "score": composite, "key": trade["signal_key"],
                     "label": trade["signal"]["label_cn"], "position": trade["signal"]["position"],

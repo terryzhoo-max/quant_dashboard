@@ -31,6 +31,7 @@ import threading
 from functools import wraps
 from concurrent.futures import ThreadPoolExecutor
 from config import TUSHARE_TOKEN as CONFIG_TOKEN
+from erp_signal_enhancer import adaptive_weights, multi_timeframe_confirmation
 
 TUSHARE_TOKEN = os.environ.get("TUSHARE_TOKEN", CONFIG_TOKEN)
 ts.set_token(TUSHARE_TOKEN)
@@ -178,6 +179,7 @@ class ERPTimingEngine:
         self._prev_score = history.get("prev_score")
         self._prev_score_date = history.get("prev_score_date")
         self._score_high_water = history.get("score_high_water", 0.0)
+        self._score_history = history.get("score_history", [])  # O6: 最近5天Score列表
 
     def _load_history(self) -> dict:
         filepath = os.path.join(CACHE_DIR, "erp_daily_history.json")
@@ -194,7 +196,8 @@ class ERPTimingEngine:
         data = {
             "prev_score": self._prev_score,
             "prev_score_date": str(self._prev_score_date) if self._prev_score_date else None,
-            "score_high_water": self._score_high_water
+            "score_high_water": self._score_high_water,
+            "score_history": self._score_history[-5:],  # O6: 保留最近5条
         }
         tmp_path = filepath + ".tmp"
         try:
@@ -456,7 +459,35 @@ class ERPTimingEngine:
         credit_info = {"scissor": scissor, "trend": m1_dir}
         return round(min(100, max(0, score)), 1), credit_info, desc
 
+
     # ========== 买卖规则引擎 (逆向型) ==========
+
+    # O7: ERP动量修正
+    def _erp_momentum_modifier(self, erp_series) -> tuple:
+        if len(erp_series) < 63:
+            return 0, "数据不足"
+        current = float(erp_series.iloc[-1])
+        past = float(erp_series.iloc[-63])
+        if abs(past) < 0.01:
+            return 0, "基准值过小"
+        momentum_pct = (current - past) / abs(past) * 100
+        if momentum_pct > 10:
+            return 5, f"ERP 3月动量+{momentum_pct:.0f}% → 价值回归(+5)"
+        elif momentum_pct < -10:
+            return -5, f"ERP 3月动量{momentum_pct:.0f}% → 估值恶化(-5)"
+        return 0, f"ERP 3月动量{momentum_pct:+.0f}% → 中性"
+
+    # O8: EMA平滑
+    _prev_smooth_score = None
+
+    def _smooth_composite(self, raw_score: float) -> float:
+        if self._prev_smooth_score is None:
+            self._prev_smooth_score = raw_score
+            return raw_score
+        alpha = 0.3
+        smooth = alpha * raw_score + (1 - alpha) * self._prev_smooth_score
+        self._prev_smooth_score = smooth
+        return round(smooth, 1)
 
     def _generate_trade_rules(self, score: float, dims: dict, snap: dict) -> dict:
         """生成买卖信号 + 止盈止损规则 (逆向加仓型)"""
@@ -547,12 +578,13 @@ class ERPTimingEngine:
         })
 
         # === 止损规则 (逆向加仓型) ===
-        # V2.3: Score 跌幅仅比较同日内变化，防止跨天漂移误触发
-        today_str = str(datetime.now().date())
-        if self._prev_score is not None and self._prev_score_date == today_str:
-            score_delta = round(score - self._prev_score, 1)
+        # O6: Score跌幅改为3天滚动窗口 (替代仅当天比较, 使止损可实际触发)
+        recent_scores = [h["score"] for h in self._score_history[-3:] if isinstance(h, dict)]
+        if recent_scores:
+            rolling_high = max(recent_scores)
+            score_delta = round(score - rolling_high, 1)
         else:
-            score_delta = 0.0  # 首次/跨天 = 无跌幅
+            score_delta = 0.0  # 无历史数据
         score_drop_triggered = score_delta < -15
         stop_loss = [
             {
@@ -561,9 +593,9 @@ class ERPTimingEngine:
                 "triggered": bool(erp >= 7.0), "current": f"ERP={erp:.2f}%"
             },
             {
-                "trigger": "Score单次跌幅 > 15分", "action": "不止损，观察1周后再决策",
+                "trigger": "Score 3日跌幅 > 15分", "action": "不止损，观察1周后再决策",
                 "type": "wait", "color": "#3b82f6",
-                "triggered": bool(score_drop_triggered), "current": f"Score={score:.1f} (Δ{score_delta:+.1f})"
+                "triggered": bool(score_drop_triggered), "current": f"Score={score:.1f} (3d Δ{score_delta:+.1f})"
             },
             {
                 "trigger": "ERP < 2.5% (极端高估)", "action": "唯一硬止损：清仓权益",
@@ -645,12 +677,27 @@ class ERPTimingEngine:
             d4_score, vol_info, d4_desc = self._score_d4_volatility(erp_df)
             d5_score, credit_info, d5_desc = self._score_d5_credit(m1_info)
 
+            # O10: 权重自适应
+            vol_regime = vol_info.get("regime", "normal")
+            aw = adaptive_weights(self.W, "volatility", vol_regime)
+
             # 加权融合
             composite = round(
-                d1_score * self.W["erp_abs"] + d2_score * self.W["erp_pct"] +
-                d3_score * self.W["m1_trend"] + d4_score * self.W["volatility"] +
-                d5_score * self.W["credit"], 1
+                d1_score * aw["erp_abs"] + d2_score * aw["erp_pct"] +
+                d3_score * aw["m1_trend"] + d4_score * aw["volatility"] +
+                d5_score * aw["credit"], 1
             )
+
+            # O7: ERP动量修正
+            momentum_mod, momentum_desc = self._erp_momentum_modifier(erp_df['erp'])
+            composite = round(min(100, max(0, composite + momentum_mod)), 1)
+
+            # O11: 多时间框架确认
+            mtf = multi_timeframe_confirmation(erp_df['erp'], composite)
+            composite = round(min(100, max(0, composite + mtf["confidence_mod"])), 1)
+
+            # O8: EMA平滑
+            composite = self._smooth_composite(composite)
 
             snap = {
                 "pe_ttm": round(pe_ttm, 2), "yield_10y": round(yield_10y, 4),
@@ -664,6 +711,7 @@ class ERPTimingEngine:
                 "m1_trend":   {"score": d3_score, "weight": self.W["m1_trend"], "label": "M1流动性", "desc": d3_desc, "m1_info": m1_info},
                 "volatility": {"score": d4_score, "weight": self.W["volatility"], "label": "波动率", "desc": d4_desc, "vol_info": vol_info},
                 "credit":     {"score": d5_score, "weight": self.W["credit"], "label": "信用环境", "desc": d5_desc, "credit_info": credit_info},
+                "erp_momentum": {"score": momentum_mod, "weight": 0, "label": "ERP动量", "desc": momentum_desc},
             }
 
             # 买卖规则
@@ -672,6 +720,13 @@ class ERPTimingEngine:
             self._prev_score = composite
             self._prev_score_date = str(datetime.now().date())
             self._score_high_water = max(self._score_high_water, composite)
+            # O6: 追加到Score历史 (每天仅记录一次)
+            today_str = str(datetime.now().date())
+            if not self._score_history or self._score_history[-1].get("date") != today_str:
+                self._score_history.append({"date": today_str, "score": composite})
+            else:
+                self._score_history[-1]["score"] = composite  # 同天覆盖
+            self._score_history = self._score_history[-5:]  # 只保留最近5天
             self._save_history()
 
             # 警示
@@ -682,6 +737,8 @@ class ERPTimingEngine:
 
             return {
                 "status": "success",
+                "adaptive_weights": aw,  # O10
+                "multi_timeframe": mtf,  # O11
                 "current_snapshot": snap,
                 "signal": {
                     "score": composite, "key": trade["signal_key"],

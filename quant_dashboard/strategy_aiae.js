@@ -10,6 +10,29 @@
 let _aiaeData = null;
 let _aiaeLoading = false;
 
+// DOM 缓存 — 避免每次 render 执行 ~30 次 getElementById
+const _aiaeDOM = {};
+function _aiaeCacheDOM() {
+    if (_aiaeDOM._ready) return;
+    ['hero-value','hero-regime','hero-position','hero-erp',
+     'gauge-container','gauge-label','gauge-regime','slope-indicator',
+     'data-simple','data-margin','data-fund','data-fund-date',
+     'history-chart','hist-current','signal-cards',
+     'matrix-table','matrix-verdict','cross-validation',
+     'action-buy-list','action-hold-list','action-sell-list',
+     'warn-margin','warn-slope','warn-fund',
+     'warn-margin-val','warn-slope-val','warn-fund-val',
+     'warn-margin-bar','warn-slope-bar','warn-fund-bar',
+     'warning-panel','history-summary','regime-cards',
+     'alloc-cards','load-status','load-btn','refresh-btn',
+     'fund-reminder-banner','fund-stale-badge'
+    ].forEach(k => {
+        _aiaeDOM[k] = document.getElementById('aiae-' + k);
+    });
+    _aiaeDOM._ready = true;
+}
+
+
 async function loadAIAEReport(forceRefresh = false) {
     if (_aiaeLoading) return;
     if (_aiaeData && !forceRefresh) {
@@ -27,7 +50,7 @@ async function loadAIAEReport(forceRefresh = false) {
 
     try {
         const endpoint = forceRefresh ? '/api/v1/aiae/refresh' : '/api/v1/aiae/report';
-        const resp = await fetch(endpoint);
+        const resp = await fetch(endpoint, { signal: AbortSignal.timeout(20000) });
         const json = await resp.json();
 
         if (json.status === 'success' && json.data) {
@@ -62,16 +85,17 @@ async function loadAIAEReport(forceRefresh = false) {
 
 function renderAIAEUI(data) {
     if (!data) return;
+    _aiaeCacheDOM();  // 懒初始化 DOM 缓存
     const c = data.current;
     const p = data.position;
     const cv = data.cross_validation;
     const ri = c.regime_info;
 
-    // ── Hero Stats ──
-    const $v = document.getElementById('aiae-hero-value');
-    const $r = document.getElementById('aiae-hero-regime');
-    const $p = document.getElementById('aiae-hero-position');
-    const $e = document.getElementById('aiae-hero-erp');
+    // ── Hero Stats (使用 DOM 缓存) ──
+    const $v = _aiaeDOM['hero-value'];
+    const $r = _aiaeDOM['hero-regime'];
+    const $p = _aiaeDOM['hero-position'];
+    const $e = _aiaeDOM['hero-erp'];
     if ($v) $v.textContent = c.aiae_v1 + '%';
     if ($r) { $r.textContent = `${ri.emoji} ${ri.cn}`; $r.style.color = ri.color; }
     if ($p) $p.textContent = p.matrix_position + '%';
@@ -79,9 +103,9 @@ function renderAIAEUI(data) {
 
     // ── ZONE 1: ECharts Gauge ──
     try { renderAIAEGauge(c.aiae_v1, c.regime, ri); } catch(e) { console.warn('[AIAE] gauge skip:', e); }
-    const $gl = document.getElementById('aiae-gauge-label');
-    const $gr = document.getElementById('aiae-gauge-regime');
-    const $sl = document.getElementById('aiae-slope-indicator');
+    const $gl = _aiaeDOM['gauge-label'];
+    const $gr = _aiaeDOM['gauge-regime'];
+    const $sl = _aiaeDOM['slope-indicator'];
     if ($gl) $gl.textContent = c.aiae_v1;
     if ($gr) { $gr.textContent = `${ri.emoji} ${ri.name}`; $gr.style.color = ri.color; }
     if ($sl) {
@@ -97,10 +121,10 @@ function renderAIAEUI(data) {
         card.classList.toggle('active', r === c.regime);
     });
 
-    // ── Data source cards ──
-    const $ds = document.getElementById('aiae-data-simple');
-    const $dm = document.getElementById('aiae-data-margin');
-    const $df = document.getElementById('aiae-data-fund');
+    // ── Data source cards (DOM 缓存) ──
+    const $ds = _aiaeDOM['data-simple'];
+    const $dm = _aiaeDOM['data-margin'];
+    const $df = _aiaeDOM['data-fund'];
     if ($ds) $ds.textContent = c.aiae_simple + '%';
     if ($dm) $dm.textContent = c.margin_heat + '%';
     if ($df) $df.textContent = c.fund_position + '%';
@@ -112,7 +136,7 @@ function renderAIAEUI(data) {
     renderAIAEAllocs(p.allocations, p.matrix_position);
 
     // ── Cross validation (M1: 动态罗马数字映射, 修复硬编码 Ⅳ bug) ──
-    const $cv = document.getElementById('aiae-cross-validation');
+    const $cv = _aiaeDOM['cross-validation'];
     if ($cv) {
         const _romanMap = {1:'Ⅰ', 2:'Ⅱ', 3:'Ⅲ', 4:'Ⅳ', 5:'Ⅴ'};
         const _romanLabel = _romanMap[c.regime] || 'Ⅲ';
@@ -130,8 +154,8 @@ function renderAIAEUI(data) {
     // ── ZONE 3: History chart ──
     try { if (data.chart) renderAIAEHistoryChart(data.chart, c.aiae_v1); } catch(e) { console.warn('[AIAE] chart skip:', e); }
 
-    // ── History summary current value ──
-    const $hc = document.getElementById('aiae-hist-current');
+    // ── History summary current value (DOM 缓存) ──
+    const $hc = _aiaeDOM['hist-current'];
     if ($hc) $hc.textContent = c.aiae_v1 + '%';
 
     // ── ZONE 4: Signals ──
@@ -147,13 +171,13 @@ function renderAIAEUI(data) {
     try { renderAIAEActionDashboard(c.regime, ri, p.matrix_position); } catch(e) { console.warn('[AIAE] action skip:', e); }
 }
 
-// ── Warning Indicators V2.1 ──
+// ── Warning Indicators V2.1 (DOM 缓存) ──
 function renderAIAEWarnings(c) {
     // Margin heat
     const mVal = c.margin_heat || 0;
-    const $mV = document.getElementById('aiae-warn-margin-val');
-    const $mB = document.getElementById('aiae-warn-margin-bar');
-    const $mC = document.getElementById('aiae-warn-margin');
+    const $mV = _aiaeDOM['warn-margin-val'];
+    const $mB = _aiaeDOM['warn-margin-bar'];
+    const $mC = _aiaeDOM['warn-margin'];
     if ($mV) { $mV.textContent = mVal + '%'; $mV.style.color = mVal > 3.5 ? '#ef4444' : mVal > 2.5 ? '#f59e0b' : '#10b981'; }
     if ($mB) { $mB.style.width = Math.min(mVal / 5 * 100, 100) + '%'; $mB.style.background = mVal > 3.5 ? '#ef4444' : mVal > 2.5 ? '#f59e0b' : '#10b981'; }
     if ($mC) { $mC.className = 'aiae-warning-card ' + (mVal > 3.5 ? 'warn-danger' : mVal > 2.5 ? 'warn-caution' : 'warn-ok'); }
@@ -161,9 +185,9 @@ function renderAIAEWarnings(c) {
     // Slope
     const sVal = c.slope?.slope || 0;
     const absSlope = Math.abs(sVal);
-    const $sV = document.getElementById('aiae-warn-slope-val');
-    const $sB = document.getElementById('aiae-warn-slope-bar');
-    const $sC = document.getElementById('aiae-warn-slope');
+    const $sV = _aiaeDOM['warn-slope-val'];
+    const $sB = _aiaeDOM['warn-slope-bar'];
+    const $sC = _aiaeDOM['warn-slope'];
     if ($sV) { $sV.textContent = (sVal > 0 ? '+' : '') + sVal; $sV.style.color = absSlope > 1.5 ? '#ef4444' : absSlope > 0.8 ? '#f59e0b' : '#10b981'; }
     if ($sB) { $sB.style.width = Math.min(absSlope / 3 * 100, 100) + '%'; $sB.style.background = absSlope > 1.5 ? '#ef4444' : absSlope > 0.8 ? '#f59e0b' : '#10b981'; }
     if ($sC) { $sC.className = 'aiae-warning-card ' + (absSlope > 1.5 ? 'warn-danger' : absSlope > 0.8 ? 'warn-caution' : 'warn-ok'); }
@@ -171,9 +195,9 @@ function renderAIAEWarnings(c) {
     // Fund position + 过期告警
     const fVal = c.fund_position || 0;
     const fDate = c.fund_position_date || '';
-    const $fV = document.getElementById('aiae-warn-fund-val');
-    const $fB = document.getElementById('aiae-warn-fund-bar');
-    const $fC = document.getElementById('aiae-warn-fund');
+    const $fV = _aiaeDOM['warn-fund-val'];
+    const $fB = _aiaeDOM['warn-fund-bar'];
+    const $fC = _aiaeDOM['warn-fund'];
     if ($fV) { $fV.textContent = fVal + '%'; $fV.style.color = fVal > 90 ? '#ef4444' : fVal > 85 ? '#f59e0b' : '#10b981'; }
     if ($fB) { $fB.style.width = Math.min(fVal / 100 * 100, 100) + '%'; $fB.style.background = fVal > 90 ? '#ef4444' : fVal > 85 ? '#f59e0b' : '#10b981'; }
     if ($fC) { $fC.className = 'aiae-warning-card ' + (fVal > 90 ? 'warn-danger' : fVal > 85 ? 'warn-caution' : 'warn-ok'); }
@@ -181,7 +205,7 @@ function renderAIAEWarnings(c) {
     // C1: 基金仓位过期告警 (>90天显示橙色⚠️)
     if (fDate) {
         const daysStaleFund = Math.floor((Date.now() - new Date(fDate).getTime()) / 86400000);
-        const $fStale = document.getElementById('aiae-fund-stale-badge');
+        const $fStale = _aiaeDOM['fund-stale-badge'];
         if ($fStale) {
             if (daysStaleFund > 90) {
                 $fStale.style.display = 'inline-flex';
@@ -192,7 +216,7 @@ function renderAIAEWarnings(c) {
             }
         }
         // 也在数据源卡片上追加日期信息
-        const $dfLabel = document.getElementById('aiae-data-fund-date');
+        const $dfLabel = _aiaeDOM['data-fund-date'];
         if ($dfLabel) {
             $dfLabel.textContent = fDate;
             $dfLabel.style.color = daysStaleFund > 90 ? '#f59e0b' : '#64748b';
@@ -345,7 +369,7 @@ function renderAIAEActionDashboard(regime, ri, matrixPos) {
 function renderAIAEGauge(value, regime, ri) {
     const container = document.getElementById('aiae-gauge-container');
     if (!container || typeof echarts === 'undefined') return;
-    window._aiaeGaugeChart = AC.disposeChart(window._aiaeGaugeChart);
+    try { window._aiaeGaugeChart = AC.disposeChart(window._aiaeGaugeChart); } catch(_) {}
     window._aiaeGaugeChart = AC.registerChart(echarts.init(container));
 
     const v = Math.min(Math.max(value, 0), 50);
@@ -414,7 +438,7 @@ function renderAIAEHistoryChart(chart, currentValue) {
     const container = document.getElementById('aiae-history-chart');
     if (!container || typeof echarts === 'undefined') return;
     try {
-        if (window._aiaeHistChart) AC.disposeChart(window._aiaeHistChart);
+        try { if (window._aiaeHistChart) AC.disposeChart(window._aiaeHistChart); } catch(_) {}
         window._aiaeHistChart = AC.registerChart(echarts.init(container));
 
         // 五档区间色带

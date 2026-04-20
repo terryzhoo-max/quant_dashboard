@@ -884,8 +884,7 @@ class AIAEEngine:
         if seed_entries:
             history = seed_entries + history
             fp = self._get_monthly_history_file()
-            with open(fp, 'w', encoding='utf-8') as f:
-                json.dump(history, f, ensure_ascii=False, indent=2)
+            atomic_write_json(history, fp)
             _log(f"月度历史已预填 {len(seed_entries)} 条估算记录 (冷启动修复)")
 
     # ========== 完整报告 ==========
@@ -894,11 +893,10 @@ class AIAEEngine:
         """生成 AIAE 完整报告 (V2.1: 并行数据获取 + 季度提醒 + 冷启动修复)"""
         t0 = time.time()
         try:
-            # 1. 并行获取三个数据源 (ThreadPoolExecutor)
-            with ThreadPoolExecutor(max_workers=3, thread_name_prefix='aiae') as pool:
-                f_mv = pool.submit(self._fetch_total_market_cap)
-                f_m2 = pool.submit(self._fetch_m2)
-                f_margin = pool.submit(self._fetch_margin_data)
+            # 1. 并行获取三个数据源 (模块级线程池, 避免 with 块过早 shutdown)
+            f_mv = _bg_executor.submit(self._fetch_total_market_cap)
+            f_m2 = _bg_executor.submit(self._fetch_m2)
+            f_margin = _bg_executor.submit(self._fetch_margin_data)
 
             mv_data = f_mv.result(timeout=30)
             m2_data = f_m2.result(timeout=30)
@@ -1014,16 +1012,35 @@ class AIAEEngine:
             return self._fallback_report(str(e))
 
     def _get_erp_value(self) -> float:
-        """尝试从ERP引擎获取当前ERP值"""
+        """尝试从ERP引擎获取当前ERP值, 三级降级: 引擎→磁盘缓存→硬编码"""
+        erp_cache_file = os.path.join(CACHE_DIR, "aiae_erp_latest.json")
         try:
             from erp_timing_engine import get_erp_engine
             engine = get_erp_engine()
             signal = engine.compute_signal()
             if signal.get("status") == "success":
-                return signal["current_snapshot"].get("erp_value", 3.5)
+                erp_val = signal["current_snapshot"].get("erp_value", 3.5)
+                # 成功时持久化, 供后续降级使用
+                try:
+                    atomic_write_json({"erp_value": erp_val, "ts": datetime.now().isoformat()}, erp_cache_file)
+                except Exception:
+                    pass
+                return erp_val
         except Exception as e:
-            _log(f"ERP引擎读取失败, 降级为3.5%: {e}", "WARN")
-        return 3.5  # 降级估算
+            _log(f"ERP引擎读取失败, 尝试磁盘缓存: {e}", "WARN")
+        # 降级 L2: 磁盘缓存
+        if os.path.exists(erp_cache_file):
+            try:
+                with open(erp_cache_file, 'r', encoding='utf-8') as f:
+                    cached = json.load(f)
+                erp_val = cached.get("erp_value", 3.5)
+                _log(f"ERP 使用磁盘缓存: {erp_val}% (from {cached.get('ts', '?')})", "WARN")
+                return erp_val
+            except Exception:
+                pass
+        # 降级 L3: 硬编码
+        _log("ERP 使用硬编码降级值 3.5%", "WARN")
+        return 3.5
 
     def _cross_validate(self, regime: int, erp_value: float) -> Dict:
         """AIAE × ERP 交叉验证 (V2.0: 11分支全覆盖)"""
