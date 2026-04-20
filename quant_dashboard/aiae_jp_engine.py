@@ -388,22 +388,27 @@ class AIAEJPEngine:
         """
         JP_AIAE_Core = 日本市場 MktCap / M2 比值 → 歸一化到 AIAE 標度
 
-        歴史錨点:
-          ratio=0.4  (2008リーマン底) → AIAE=8%   (Ⅰ級極度悲観)
-          ratio=1.2  (1989バブル頂)   → AIAE=32%  (Ⅴ級バブル警報)
+        歴史アンカー:
+          ratio=0.35  (2008リーマン底余裕) → AIAE=8%   (Ⅰ級極度悲観)
+          ratio=0.95  (実用30年上限余裕)   → AIAE=32%  (Ⅴ級バブル警報)
 
-        線形映射: AIAE = 8 + (ratio - 0.4) / (1.2 - 0.4) × 24
+        V1.2 優化: 区間 [0.4, 1.2] → [0.35, 0.95]
+        旧上限 1.2 は1989年バブル(半世紀の極端事件)がアンカー。
+        その後30年間のデータでratioは0.35-0.75の範囲。
+        2024-03 N225=41000時 ratio≈0.70。上限 0.95 で十分な余裕あり。
+
+        線形映射: AIAE = 8 + (ratio - 0.35) / (0.95 - 0.35) × 24
 
         日本特殊性: M2/GDP比率が世界最高(~250%)なので、
         MktCap/(MktCap+M2) だと M2 が過大で常に低値になるか、
         またはMktCapがM2に匹敵すると ~50% に偏る。
-        比值法なら正確に歴史データに適合する。
+        比値法なら正確に歴史データに適合する。
         """
         if m2_trillion_jpy <= 0:
             return 17.0
         ratio = mktcap_trillion_jpy / m2_trillion_jpy
-        # 線形歸一化: [0.4, 1.2] → [8%, 32%]
-        aiae_core = 8.0 + (ratio - 0.4) / (1.2 - 0.4) * 24.0
+        # 線形歸一化: [0.35, 0.95] → [8%, 32%]
+        aiae_core = 8.0 + (ratio - 0.35) / (0.95 - 0.35) * 24.0
         return round(max(5.0, min(40.0, aiae_core)), 2)
 
     def compute_margin_heat(self, margin_trillion: float, mktcap_trillion: float) -> float:

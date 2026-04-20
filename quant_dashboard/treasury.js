@@ -1163,7 +1163,7 @@ function renderGAIAERegionPanel(region, data, color) {
     // Gauge
     const max = region === 'us' ? 50 : (region === 'jp' ? 40 : 45);
     const bands = region === 'us'
-        ? [[0.30,'#10b981'],[0.40,'#3b82f6'],[0.56,'#eab308'],[0.72,'#f97316'],[1,'#ef4444']]
+        ? [[0.30,'#10b981'],[0.40,'#3b82f6'],[0.54,'#eab308'],[0.68,'#f97316'],[1,'#ef4444']]
         : region === 'jp'
         ? [[0.25,'#10b981'],[0.35,'#3b82f6'],[0.50,'#eab308'],[0.70,'#f97316'],[1,'#ef4444']]
         : [[0.18,'#10b981'],[0.31,'#3b82f6'],[0.49,'#eab308'],[0.67,'#f97316'],[1,'#ef4444']];
@@ -1505,9 +1505,9 @@ function renderGAIAEHistoryChart(usChart, jpChart, hkChart) {
     const markAreaData = [
         [{ yAxis: 0, itemStyle: { color: 'rgba(16,185,129,0.05)' } }, { yAxis: 15 }],
         [{ yAxis: 15, itemStyle: { color: 'rgba(59,130,246,0.04)' } }, { yAxis: 20 }],
-        [{ yAxis: 20, itemStyle: { color: 'rgba(234,179,8,0.04)' } }, { yAxis: 28 }],
-        [{ yAxis: 28, itemStyle: { color: 'rgba(249,115,22,0.05)' } }, { yAxis: 36 }],
-        [{ yAxis: 36, itemStyle: { color: 'rgba(239,68,68,0.05)' } }, { yAxis: 50 }],
+        [{ yAxis: 20, itemStyle: { color: 'rgba(234,179,8,0.04)' } }, { yAxis: 27 }],
+        [{ yAxis: 27, itemStyle: { color: 'rgba(249,115,22,0.05)' } }, { yAxis: 34 }],
+        [{ yAxis: 34, itemStyle: { color: 'rgba(239,68,68,0.05)' } }, { yAxis: 50 }],
     ];
 
     window._gaiaeHistChart.setOption({

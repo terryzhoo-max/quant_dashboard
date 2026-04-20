@@ -344,17 +344,36 @@ class AIAEHKEngine:
     # ========== 核心计算层 ==========
 
     def compute_aiae_core(self, mktcap_usd: float, effective_m2: float) -> float:
-        """HK_AIAE_Core = HSI MktCap / (MktCap + Effective_M2)"""
+        """HK_AIAE_Core = HSI MktCap / Effective_M2 比値 → 歸一化到 AIAE 標度
+
+        V1.1 修正: 从分数法改为 ratio 法 (与美/日统一)
+        旧公式 MktCap/(MktCap+M2) 因 CN M2($43T) >> HK MktCap($4T),
+        导致 Core 永远≈9%, 五档系统失去区分能力.
+
+        歴史錨点:
+          ratio=0.08  (2022-10 HSI 14800 極底) → AIAE=6%  (Ⅰ級恐慌)
+          ratio=0.20  (2018-01 HSI 33500 泡沫) → AIAE=28% (Ⅴ級過熱)
+
+        線形映射: AIAE = 6 + (ratio - 0.08) / (0.20 - 0.08) × 22
+        """
         if effective_m2 <= 0:
             return 15.0
-        return round(mktcap_usd / (mktcap_usd + effective_m2) * 100, 2)
+        ratio = mktcap_usd / effective_m2
+        # 線形歸一化: [0.08, 0.20] → [6%, 28%]
+        aiae_core = 6.0 + (ratio - 0.08) / (0.20 - 0.08) * 22.0
+        return round(max(4.0, min(35.0, aiae_core)), 2)
 
     def compute_southbound_heat(self, cumulative_12m: float, mktcap_usd: float) -> float:
-        """南向热度 = 南向12M累计 / HSI总市值 × 100"""
+        """南向热度 = 南向12M累计 / HSI总市值 × 100
+        
+        V1.1 修正: mktcap_usd 单位=万亿(trillion), cumulative_12m 单位=亿RMB
+        旧: *1000 (万亿→十亿) vs 亿 → 放大10倍
+        新: *10000 (万亿→亿) 单位统一
+        """
         if mktcap_usd <= 0:
             return 1.0
-        cumulative_usd = cumulative_12m / 7.25  # RMB→USD
-        return round(cumulative_usd / (mktcap_usd * 1000) * 100, 2)  # mktcap是万亿, cumulative是亿
+        cumulative_usd = cumulative_12m / 7.25  # 亿RMB→亿USD
+        return round(cumulative_usd / (mktcap_usd * 10000) * 100, 2)  # 万亿→亿, 单位统一
 
     def compute_ah_premium_score(self, ah_index: float) -> float:
         """AH溢价指数归一化 → AIAE等效值

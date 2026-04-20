@@ -13,9 +13,9 @@ AlphaCore · 美股 AIAE 宏观仓位管控引擎 V1.0
 五档状态 (美股校准, 比A股上移3-4%):
   Ⅰ <15%   → 90-95%   极度恐慌
   Ⅱ 15-20% → 70-85%   低配置区
-  Ⅲ 20-28% → 50-65%   中性均衡
-  Ⅳ 28-36% → 25-40%   偏热区域
-  Ⅴ >36%   → 0-15%    极度过热
+  Ⅲ 20-27% → 50-65%   中性均衡
+  Ⅳ 27-34% → 25-40%   偏热区域
+  Ⅴ >34%   → 0-15%    极度过热
 
 数据源: FRED API (Wilshire5000, M2, Margin proxy) + AAII公开数据
 交叉验证: US_AIAE × US ERP 仓位矩阵
@@ -150,13 +150,13 @@ REGIMES_US = {
     2: {"name": "Ⅱ · LOW ALLOCATION", "cn": "低配置区", "range": "15-20%",
         "color": "#3b82f6", "emoji": "🔵", "position": "70-85%", "pos_min": 70, "pos_max": 85,
         "action": "标准建仓", "desc": "耐心持有, 不因波动减仓"},
-    3: {"name": "Ⅲ · NEUTRAL", "cn": "中性均衡", "range": "20-28%",
+    3: {"name": "Ⅲ · NEUTRAL", "cn": "中性均衡", "range": "20-27%",
         "color": "#eab308", "emoji": "🟡", "position": "50-65%", "pos_min": 50, "pos_max": 65,
         "action": "均衡持有", "desc": "有纪律地持有, 到了就卖"},
-    4: {"name": "Ⅳ · GETTING HOT", "cn": "偏热区域", "range": "28-36%",
+    4: {"name": "Ⅳ · GETTING HOT", "cn": "偏热区域", "range": "27-34%",
         "color": "#f97316", "emoji": "🟠", "position": "25-40%", "pos_min": 25, "pos_max": 40,
         "action": "系统减仓", "desc": "每周减5%总仓位"},
-    5: {"name": "Ⅴ · EUPHORIA", "cn": "极度过热", "range": ">36%",
+    5: {"name": "Ⅴ · EUPHORIA", "cn": "极度过热", "range": ">34%",
         "color": "#ef4444", "emoji": "🔴", "position": "0-15%", "pos_min": 0, "pos_max": 15,
         "action": "清仓防守", "desc": "3天内完成清仓"},
 }
@@ -429,21 +429,21 @@ class AIAEUSEngine:
         """
         US_AIAE_Core = MktCap / M2 比值 → 归一化到 AIAE 标度
 
+        V1.1 优化: 区间从 [0.8, 3.0] → [0.7, 2.6]
+        旧上限 3.0 以 2000年互联网泡沫(百年极端事件)为锚, 导致正常牛熊区间
+        (ratio=2.0-2.5) 灵敏度不足. 新上限 2.6 覆盖99%历史数据(2021顶 ratio=2.29).
+
         历史锚点:
-          ratio=0.8  (2009 GFC底)   → AIAE=10%  (Ⅰ级恐慌区间)
-          ratio=3.0  (2000互联网顶)  → AIAE=45%  (Ⅴ级过热区间)
+          ratio=0.7  (极端底部余量)      → AIAE=10%  (Ⅰ级恐慌区间)
+          ratio=2.6  (覆盖99%历史上限)  → AIAE=45%  (Ⅴ级过热区间)
 
-        线性映射: AIAE = 10 + (ratio - 0.8) / (3.0 - 0.8) × 35
-
-        A股之所以用 MktCap/(MktCap+M2) 可行，是因为中国 M2(330万亿)远大于
-        总市值(95万亿)，分母 MktCap+M2≈M2，实质上就是 MktCap/M2 的近似。
-        美股 MktCap($48T) >> M2($22.67T)，必须直接用比值法。
+        线性映射: AIAE = 10 + (ratio - 0.7) / (2.6 - 0.7) × 35
         """
         if m2_trillion <= 0:
             return 25.0
         ratio = mktcap_trillion / m2_trillion
-        # 线性归一化: [0.8, 3.0] → [10%, 45%]
-        aiae_core = 10.0 + (ratio - 0.8) / (3.0 - 0.8) * 35.0
+        # 线性归一化: [0.7, 2.6] → [10%, 45%]
+        aiae_core = 10.0 + (ratio - 0.7) / (2.6 - 0.7) * 35.0
         return round(max(5.0, min(50.0, aiae_core)), 2)
 
     def compute_margin_heat(self, margin_trillion: float, mktcap_trillion: float) -> float:
@@ -455,32 +455,38 @@ class AIAEUSEngine:
     def compute_us_aiae_v1(self, aiae_core: float, margin_heat: float, aaii_spread: float) -> float:
         """
         US AIAE V1.1 融合
-        = 0.5 × AIAE_Core + 0.2 × Margin_归一化 + 0.3 × AAII_归一化
+        = 0.60 × AIAE_Core + 0.20 × Margin_归一化 + 0.20 × AAII_归一化
+
+        V1.1 优化:
+        - Core 权重 50→60%: 核心基本面指标信噪比最高, 应占主导
+        - AAII 权重 30→20%: 散户调查(~300人/周)单次读数噪音大, 降低干扰
+        - Margin 归一化上限 3.5→2.5%: 2020后 margin/mktcap 一般在1.0-1.8%, 旧上限稀释信号
 
         归一化区间与 AIAE_Core 新范围 (5-50%) 对齐:
-        Margin heat: 0.5-3.5% → 8-38% AIAE等效
+        Margin heat: 0.5-2.5% → 8-36% AIAE等效
         AAII spread: -30 ~ +30 → 8-38% AIAE等效
         """
-        # Margin归一化: 0.5-3.5% → 8-38%
-        m_norm = 8 + (margin_heat - 0.5) / (3.5 - 0.5) * (38 - 8)
-        m_norm = max(8.0, min(38.0, m_norm))
+        # Margin归一化: 0.5-2.5% → 8-36%
+        m_norm = 8 + (margin_heat - 0.5) / (2.5 - 0.5) * (36 - 8)
+        m_norm = max(8.0, min(36.0, m_norm))
 
         # AAII归一化: -30 ~ +30 → 8-38%
         s_norm = 8 + (aaii_spread - (-30)) / (30 - (-30)) * (38 - 8)
         s_norm = max(8.0, min(38.0, s_norm))
 
-        return round(0.5 * aiae_core + 0.2 * m_norm + 0.3 * s_norm, 2)
+        return round(0.60 * aiae_core + 0.20 * m_norm + 0.20 * s_norm, 2)
 
     # ========== 五档判定层 ==========
 
     def classify_regime(self, aiae_value: float) -> int:
+        """V1.1: 五档阈值微调, Ⅳ/Ⅴ 降低 1-2pp 以匹配 Core 灵敏度提升"""
         if aiae_value < 15:
             return 1
         elif aiae_value < 20:
             return 2
-        elif aiae_value < 28:
+        elif aiae_value < 27:
             return 3
-        elif aiae_value < 36:
+        elif aiae_value < 34:
             return 4
         else:
             return 5
@@ -585,8 +591,8 @@ class AIAEUSEngine:
         bands = [
             {"name": "Ⅰ上限", "value": 15, "color": "#10b981"},
             {"name": "Ⅱ上限", "value": 20, "color": "#3b82f6"},
-            {"name": "Ⅲ上限", "value": 28, "color": "#eab308"},
-            {"name": "Ⅳ上限", "value": 36, "color": "#f97316"},
+            {"name": "Ⅲ上限", "value": 27, "color": "#eab308"},
+            {"name": "Ⅳ上限", "value": 34, "color": "#f97316"},
         ]
         return {
             "dates": dates, "values": values, "labels": labels,
