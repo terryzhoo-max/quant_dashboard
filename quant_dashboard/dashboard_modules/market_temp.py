@@ -11,6 +11,7 @@ Dashboard Module: 市场温度 + DMSO核心策略引擎
 
 import tushare as ts
 import numpy as np
+import math
 import time
 from datetime import datetime, timedelta
 from erp_timing_engine import get_erp_engine
@@ -104,8 +105,11 @@ def get_margin_risk_ratio(pro, date_str):
         total_margin_buy = df['rzmre'].sum()
         total_mkt_vol = df_index['amount'].iloc[0] * 1000
         ratio = total_margin_buy / total_mkt_vol if total_mkt_vol > 0 else 0
-        percentile = min(100, max(0, (ratio - 0.07) / (0.12 - 0.07) * 100))
-        return round(percentile, 1), False
+        # V3.1: Sigmoid 映射 (替代线性 [7%,12%] 硬编码区间)
+        # center=0.095 (融资占比中位数 ~9.5%), k=60 (7%→~5分, 9.5%→50分, 12%→~95分)
+        x = max(-20, min(20, 60.0 * (ratio - 0.095)))
+        percentile = round(100.0 / (1.0 + math.exp(-x)), 1)
+        return percentile, False
     except Exception as e:
         print(f"[Margin] 融资数据异常, 降级中性: {e}")
         return 50.0, True
@@ -407,10 +411,14 @@ def compute_market_temperature(pro, today_str, latest_vix, latest_cny, liquidity
       - is_circuit_breaker
       - temp_confidence ('high'/'medium'/'low'), degraded_modules (list)
     """
-    # 温度初始化
+    # 温度初始化 (V3.1: Sigmoid 映射, 与 AIAE/ERP 评分体系统一)
     low_pe_score = 65.0
-    vix_score = max(0, min(100, 100 - (latest_vix - 10) * 3))
-    cny_score = max(0, min(100, 100 - (latest_cny - 7.0) * 100))
+    # VIX: 越低越好 → 反向 Sigmoid (center=20, k=-0.15)
+    _vix_x = max(-20, min(20, -0.15 * (latest_vix - 20.0)))
+    vix_score = round(100.0 / (1.0 + math.exp(-_vix_x)), 1)
+    # CNY: 越强(越低)越好 → 反向 Sigmoid (center=7.15, k=-8.0)
+    _cny_x = max(-20, min(20, -8.0 * (latest_cny - 7.15)))
+    cny_score = round(100.0 / (1.0 + math.exp(-_cny_x)), 1)
 
     # P2-1: 降级追踪器 — 基于函数显式返回的 is_degraded 标记
     _degraded = []
@@ -516,21 +524,36 @@ def compute_market_temperature(pro, today_str, latest_vix, latest_cny, liquidity
         "total":   round(final_pos_val, 1)
     }
 
-    # hub_result (V7.0)
+    # hub_result (V8.0: 六因子加权复合得分 + 降级感知置信度)
     total_money_z = liquidity_score / 12.0 - 50/12.0  # 反推 (仅供 label 用)
+    _hub_aiae_score = round(max(10, 100 - (aiae_regime - 1) * 22.5), 1)
+    _hub_macro_score = round(100 - total_temp, 1)
+    _hub_factors = {
+        "aiae_regime": {"score": _hub_aiae_score, "weight": 0.40, "label": aiae_regime_cn},
+        "erp_value":   {"score": round(erp_score, 1), "weight": 0.25, "label": valuation_label},
+        "vix_fear":    {"score": round(vix_score, 1), "weight": 0.15, "label": vix_analysis.get('label', '—')},
+        "capital_flow": {"score": round(liquidity_score, 1), "weight": 0.10,
+                         "label": "资金流" if liquidity_score > 56 else ("资金流出" if liquidity_score < 44 else "资金中性")},
+        "macro_temp":  {"score": _hub_macro_score, "weight": 0.10, "label": status_label},
+    }
+    # 六因子加权 composite (替代旧版 composite_score = aiae_cap)
+    _hub_composite = round(
+        _hub_aiae_score * 0.40 +
+        erp_score * 0.25 +
+        vix_score * 0.15 +
+        liquidity_score * 0.10 +
+        _hub_macro_score * 0.10, 1)
+    # 置信度 = 因子方向一致性 × 数据完整度
+    _factor_scores = [_hub_aiae_score, erp_score, vix_score, liquidity_score, _hub_macro_score]
+    _agreement = sum(1 for s in _factor_scores if s > 50) / max(len(_factor_scores), 1)
+    _confidence_base = 100 - len(_degraded) * 12  # 每个降级模块扣12分
+    _hub_confidence = round(min(100, max(20, _confidence_base * _agreement)))
     hub_result = {
-        "composite_score": aiae_cap,
-        "confidence": aiae_cap,
+        "composite_score": _hub_composite,
+        "confidence": _hub_confidence,
         "position": final_pos_val,
         "position_label": pos_advice,
-        "factors": {
-            "aiae_regime": {"score": round(max(10, 100 - (aiae_regime - 1) * 22.5), 1), "weight": 0.40, "label": aiae_regime_cn},
-            "erp_value":   {"score": round(erp_score, 1), "weight": 0.25, "label": valuation_label},
-            "vix_fear":    {"score": round(vix_score, 1), "weight": 0.15, "label": vix_analysis.get('label', '—')},
-            "capital_flow": {"score": round(liquidity_score, 1), "weight": 0.10,
-                             "label": "资金流" if liquidity_score > 56 else ("资金流出" if liquidity_score < 44 else "资金中性")},
-            "macro_temp":  {"score": round(100 - total_temp, 1), "weight": 0.10, "label": status_label},
-        },
+        "factors": _hub_factors,
         "signal_detail": {},  # 由调用方注入
     }
 

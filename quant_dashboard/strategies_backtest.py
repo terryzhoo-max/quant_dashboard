@@ -363,16 +363,16 @@ def _score_d5_credit_vec(scissor: pd.Series, m1_yoy: pd.Series) -> pd.Series:
 def erp_timing_strategy_vectorized(
     df: pd.DataFrame,
     macro_df: pd.DataFrame = None,
-    buy_threshold: float = 65.0,
-    sell_threshold: float = 40.0,
-    erp_window: int = 1260,
+    buy_threshold: float = None,
+    sell_threshold: float = None,
+    erp_window: int = None,
     vol_window: int = 60,
-    w_erp_abs: float = 0.25,
-    w_erp_pct: float = 0.25,
-    w_m1: float = 0.30,
-    w_vol: float = 0.10,
-    w_credit: float = 0.10,
-    stop_loss: float = 10.0,
+    w_erp_abs: float = None,
+    w_erp_pct: float = None,
+    w_m1: float = None,
+    w_vol: float = None,
+    w_credit: float = None,
+    stop_loss: float = None,
 ) -> pd.Series:
     """
     宏观ERP择时策略 V1.0 — 与 erp_timing_engine.py V2.0 五维评分完全对齐
@@ -399,6 +399,18 @@ def erp_timing_strategy_vectorized(
     """
     if macro_df is None:
         raise ValueError("ERP策略需要 macro_df 参数 (宏观日频宽表)")
+
+    # P1 fix: 从参数中心读取默认值 (Single Source of Truth)
+    from erp_params import OPTIMIZER_DEFAULTS as _D
+    if buy_threshold is None:  buy_threshold  = _D["buy_threshold"]
+    if sell_threshold is None: sell_threshold = _D["sell_threshold"]
+    if erp_window is None:     erp_window     = _D["erp_window"]
+    if w_erp_abs is None:      w_erp_abs      = _D["w_erp_abs"]
+    if w_erp_pct is None:      w_erp_pct      = _D["w_erp_pct"]
+    if w_m1 is None:           w_m1           = _D["w_m1"]
+    if w_vol is None:          w_vol          = _D["w_vol"]
+    if w_credit is None:       w_credit       = _D["w_credit"]
+    if stop_loss is None:      stop_loss      = _D["stop_loss"]
 
     # 对齐日期: 以ETF价格数据的日期为准
     close = df['close']

@@ -749,6 +749,11 @@ function renderPositionHub(temp) {
             }
             if (scoreEl) {
                 scoreEl.innerText = Math.round(cfg.data.score);
+                // [P3] 因子分数颜色联动
+                scoreEl.className = 'factor-score';
+                if (cfg.data.score >= 65) scoreEl.classList.add('score-color-high');
+                else if (cfg.data.score >= 35) scoreEl.classList.add('score-color-mid');
+                else scoreEl.classList.add('score-color-low');
             }
         }
     }

@@ -18,11 +18,13 @@ def adaptive_weights(base_weights: dict, vol_key: str, vol_regime: str) -> dict:
     """
     w = dict(base_weights)  # 浅拷贝
 
-    if vol_regime in ("extreme_panic", "high_fear"):
+    # P4 fix: 仅匹配引擎 D4 实际产生的 regime 值
+    # D4 output: extreme_panic | high | normal | calm
+    if vol_regime == "extreme_panic":
         # 恐慌环境: 波动率最重要, ERP绝对值被当前极端估值扭曲
         w[vol_key] = w[vol_key] * 2.0
         w["erp_abs"] = w["erp_abs"] * 0.6
-    elif vol_regime in ("elevated", "elevated_high", "high"):
+    elif vol_regime == "high":
         # 紧张环境: 适度提升波动率
         w[vol_key] = w[vol_key] * 1.3
         w["erp_abs"] = w["erp_abs"] * 0.85

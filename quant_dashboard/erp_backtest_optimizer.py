@@ -49,13 +49,14 @@ STAGE2_WEIGHT_GRID = {
     "w_m1":      [0.25, 0.30, 0.35],
 }
 
-# 默认权重 (Stage 1 固定)
+# P2 fix: 从参数中心读取默认权重 (与生产引擎对齐)
+from erp_params import OPTIMIZER_DEFAULTS as _PARAMS
 DEFAULT_WEIGHTS = {
-    "w_erp_abs": 0.25,
-    "w_erp_pct": 0.25,
-    "w_m1": 0.30,
-    "w_vol": 0.10,
-    "w_credit": 0.10,
+    "w_erp_abs": _PARAMS["w_erp_abs"],
+    "w_erp_pct": _PARAMS["w_erp_pct"],
+    "w_m1":      _PARAMS["w_m1"],
+    "w_vol":     _PARAMS["w_vol"],
+    "w_credit":  _PARAMS["w_credit"],
 }
 
 # ETF标的

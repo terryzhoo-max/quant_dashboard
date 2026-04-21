@@ -342,11 +342,12 @@ body {
     gap: var(--space-card);
 }
 
-/* A2: 宏观卡片差异化 — 顶部色条 */
+/* A2: 宏观卡片差异化 — 顶部色条 + [P2] 差异化光晕 */
 .stat-card {
     padding: var(--space-card);
     position: relative;
     overflow: hidden;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.3s ease, box-shadow 0.4s ease;
 }
 
 .stat-card::after {
@@ -364,6 +365,12 @@ body {
 #card-erp::after  { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
 #card-capital::after { background: linear-gradient(90deg, #06b6d4, #10b981); }
 #card-signal::after  { background: linear-gradient(90deg, #3b82f6, #6366f1); }
+
+/* [P2] 各卡片独立主色 hover 光晕 */
+#card-vix:hover    { border-color: rgba(99,102,241,0.35); box-shadow: 0 8px 32px rgba(0,0,0,0.25), 0 0 20px rgba(99,102,241,0.08); }
+#card-erp:hover    { border-color: rgba(245,158,11,0.35); box-shadow: 0 8px 32px rgba(0,0,0,0.25), 0 0 20px rgba(245,158,11,0.08); }
+#card-capital:hover { border-color: rgba(6,182,212,0.35); box-shadow: 0 8px 32px rgba(0,0,0,0.25), 0 0 20px rgba(6,182,212,0.08); }
+#card-signal:hover  { border-color: rgba(59,130,246,0.35); box-shadow: 0 8px 32px rgba(0,0,0,0.25), 0 0 20px rgba(59,130,246,0.08); }
 
 /* ====== ERP 卡片专用样式 (V8.2 机构级) ====== */
 .stat-card-erp {
@@ -644,6 +651,19 @@ body {
     background: rgba(255, 255, 255, 0.08);
     border-radius: 2px;
     overflow: hidden;
+    position: relative;
+}
+
+/* [P2] Z-Score 零点标记 */
+.cap-z-bar-bg::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: -1px;
+    bottom: -1px;
+    width: 1px;
+    background: rgba(255,255,255,0.25);
+    z-index: 1;
 }
 
 .cap-z-bar {
@@ -991,16 +1011,7 @@ body {
 }
 
 
-
-/* Danger Zone 红色边框 */
-.border-danger {
-    border-color: rgba(239, 68, 68, 0.2) !important;
-    box-shadow: 0 0 20px rgba(239, 68, 68, 0.05), 0 8px 32px rgba(0, 0, 0, 0.25);
-}
-
-.border-danger:hover {
-    border-color: rgba(239, 68, 68, 0.35) !important;
-}
+/* [C2] Danger Zone 红色边框 — 统一为 L1741 增强版 (此处移除, 避免覆盖冲突) */
 
 /* 评分徽章 (Buy/Danger Zone) */
 .score-pill {
@@ -1154,10 +1165,11 @@ body {
 }
 
 /* 双栏布局 */
+/* [P6] 间距令牌统一 */
 .plan-body-grid {
     display: grid;
     grid-template-columns: 190px 1fr;
-    gap: 20px;
+    gap: var(--space-card);
     margin-bottom: 16px;
 }
 
@@ -1430,24 +1442,7 @@ body {
     font-style: italic;
 }
 
-.weight-pill {
-    padding: 2px 8px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 12px;
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    font-weight: 500;
-    margin-left: auto;
-}
-
-.strat-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    width: 100%;
-    margin-bottom: 12px;
-}
+/* [C6+C3] weight-pill 与 strat-header 统一由 V5.0 策略区定义 (L2875/L1642) */
 
 /* 行业热力图 (Sector Heatmap) */
 .heatmap-section {
@@ -1519,50 +1514,7 @@ body {
 .heatmap-cell.up-high .sector-change { color: #f87171; }
 .heatmap-cell.down-high .sector-change { color: #34d399; }
 
-/* --- Multi-Factor Score Pills (V3.0) --- */
-.score-pill {
-    font-size: 0.75rem;
-    font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 12px;
-    display: inline-block;
-    margin-bottom: 5px;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.score-high {
-    color: #10b981;
-    background: rgba(16, 185, 129, 0.15);
-    border-color: rgba(16, 185, 129, 0.3);
-    box-shadow: 0 0 10px rgba(16, 185, 129, 0.1);
-}
-
-.score-mid {
-    color: #f59e0b;
-    background: rgba(245, 158, 11, 0.15);
-    border-color: rgba(245, 158, 11, 0.3);
-}
-
-.score-low {
-    color: #94a3b8;
-    background: rgba(148, 163, 184, 0.1);
-    border-color: rgba(148, 163, 184, 0.2);
-}
-
-.score-danger {
-    color: #ef4444;
-    background: rgba(239, 68, 68, 0.15);
-    border-color: rgba(239, 68, 68, 0.3);
-    box-shadow: 0 0 10px rgba(239, 68, 68, 0.1);
-    animation: pulse-danger 2s infinite;
-}
-
-@keyframes pulse-danger {
-    0% { opacity: 1; }
-    50% { opacity: 0.7; }
-    100% { opacity: 1; }
-}
+/* [C1] score-pill/score-high/mid/low/danger 已在 L1005-1039 统一定义 (此处重复已移除) */
 
 .metric-row {
     display: flex;
@@ -1583,10 +1535,11 @@ body {
 }
 
 /* 策略状态卡片区 V7.0 (5策略) */
+/* [P6] 策略卡片间距令牌统一 */
 .strategy-cards-grid {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    gap: 16px;
+    gap: var(--space-card);
 }
 
 /* B4: 策略卡片视觉分层 — 独立主色调顶部光条 + 图标着色 */
@@ -1621,15 +1574,16 @@ body {
 .strategy-card:nth-child(4)::after { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
 .strategy-card:nth-child(5)::after { background: linear-gradient(90deg, #f97316, #fb923c); }
 
-/* 策略卡片 hover 底部光晕 */
-.strategy-card:nth-child(1):hover { box-shadow: 0 12px 30px rgba(59,130,246,0.1); border-color: rgba(59,130,246,0.3); }
-.strategy-card:nth-child(2):hover { box-shadow: 0 12px 30px rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.3); }
-.strategy-card:nth-child(3):hover { box-shadow: 0 12px 30px rgba(245,158,11,0.1); border-color: rgba(245,158,11,0.3); }
-.strategy-card:nth-child(4):hover { box-shadow: 0 12px 30px rgba(139,92,246,0.1); border-color: rgba(139,92,246,0.3); }
+/* [P4+B4] 策略卡片 hover 底部光晕 (5策略完备) */
+.strategy-card:nth-child(1):hover { box-shadow: 0 12px 30px rgba(59,130,246,0.12), 0 0 0 1px rgba(59,130,246,0.15); border-color: rgba(59,130,246,0.3); }
+.strategy-card:nth-child(2):hover { box-shadow: 0 12px 30px rgba(16,185,129,0.12), 0 0 0 1px rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.3); }
+.strategy-card:nth-child(3):hover { box-shadow: 0 12px 30px rgba(245,158,11,0.12), 0 0 0 1px rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.3); }
+.strategy-card:nth-child(4):hover { box-shadow: 0 12px 30px rgba(139,92,246,0.12), 0 0 0 1px rgba(139,92,246,0.15); border-color: rgba(139,92,246,0.3); }
+.strategy-card:nth-child(5):hover { box-shadow: 0 12px 30px rgba(249,115,22,0.12), 0 0 0 1px rgba(249,115,22,0.15); border-color: rgba(249,115,22,0.3); }
 
 /* AIAE 卡片特殊样式保留 */
 .strat-card-aiae { border-color: rgba(245,158,11,0.3); background: linear-gradient(135deg, rgba(23,23,23,0.9), rgba(40,30,10,0.8)); }
-.strat-card-aiae:hover { border-color: rgba(245,158,11,0.6); box-shadow: 0 0 20px rgba(245,158,11,0.15); }
+.strat-card-aiae:hover { border-color: rgba(245,158,11,0.6); box-shadow: 0 0 24px rgba(245,158,11,0.18), 0 0 0 1px rgba(245,158,11,0.2) !important; }
 .strategy-card .strat-body { font-size: 0.82rem; }
 
 /* 图标主色调 */
@@ -2087,12 +2041,35 @@ h3::before {
     margin-bottom: 16px;
 }
 
-/* --- 中栏: 仓位决策面板 --- */
+/* --- [P3] 中栏: 仓位决策面板 — 渐变分割线替代生硬实线 --- */
 .col-position {
-    border-left: 1px solid rgba(255, 255, 255, 0.06);
-    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    border-left: none;
+    border-right: none;
     padding-left: 24px !important;
     padding-right: 24px !important;
+    position: relative;
+}
+
+/* 左侧渐变分割线 */
+.col-position::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 10%;
+    bottom: 10%;
+    width: 1px;
+    background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.10), rgba(255,255,255,0.06), transparent);
+}
+
+/* 右侧渐变分割线 */
+.col-position::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 10%;
+    bottom: 10%;
+    width: 1px;
+    background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.10), rgba(255,255,255,0.06), transparent);
 }
 
 .pos-hero {
@@ -2100,13 +2077,18 @@ h3::before {
     margin-bottom: 20px;
 }
 
+/* [P3] 仓位大字渐变色 + 底部微光 */
 .pos-big-value {
-    font-size: 2.2rem;
+    font-size: 2.4rem;
     font-weight: 900;
-    color: #f59e0b;
-    text-shadow: 0 0 30px rgba(245, 158, 11, 0.3);
+    background: linear-gradient(135deg, #f59e0b, #fbbf24, #f59e0b);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 0 20px rgba(245, 158, 11, 0.35));
     margin-bottom: 12px;
     font-family: 'Inter', monospace;
+    letter-spacing: -0.5px;
 }
 
 .pos-bar-wrap { padding: 0 10px; }
@@ -2217,12 +2199,14 @@ h3::before {
 .factor-bar.score-mid  { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
 .factor-bar.score-low  { background: linear-gradient(90deg, #ef4444, #f87171); }
 
+/* [P3] 因子分数颜色联动 */
 .factor-score {
     font-size: 0.72rem;
     font-weight: 700;
     color: var(--text-muted);
     font-family: 'Inter', monospace;
     text-align: right;
+    transition: color 0.3s ease;
 }
 
 /* --- 右栏: 策略配仓 --- */
@@ -2235,12 +2219,13 @@ h3::before {
     font-family: 'Inter', monospace;
 }
 
+/* [P3] 策略堆叠条升级 — segment间暗色间隔 */
 .alloc-stacked-bar {
     display: flex;
     height: 28px;
     border-radius: 8px;
     overflow: hidden;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255,255,255,0.06);
     margin-bottom: 16px;
 }
 
@@ -2253,6 +2238,11 @@ h3::before {
     color: #fff;
     transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
     min-width: 36px;
+    border-right: 1px solid rgba(0,0,0,0.25);
+}
+
+.alloc-seg:last-child {
+    border-right: none;
 }
 
 /* 五策略色彩系统 */
@@ -2262,18 +2252,19 @@ h3::before {
 .seg-erp  { background: linear-gradient(135deg, #f59e0b, #d97706); }
 .seg-aiae { background: linear-gradient(135deg, #06b6d4, #0891b2); }
 
-/* 策略圆点着色 */
+/* [P3] 策略圆点着色 + 发光效果 */
 .alloc-item .dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
     flex-shrink: 0;
+    transition: box-shadow 0.3s ease;
 }
-.dot-div  { background: #10b981; }
-.dot-mr   { background: #3b82f6; }
-.dot-mom  { background: #8b5cf6; }
-.dot-erp  { background: #f59e0b; }
-.dot-aiae { background: #06b6d4; }
+.dot-div  { background: #10b981; box-shadow: 0 0 6px rgba(16,185,129,0.4); }
+.dot-mr   { background: #3b82f6; box-shadow: 0 0 6px rgba(59,130,246,0.4); }
+.dot-mom  { background: #8b5cf6; box-shadow: 0 0 6px rgba(139,92,246,0.4); }
+.dot-erp  { background: #f59e0b; box-shadow: 0 0 6px rgba(245,158,11,0.4); }
+.dot-aiae { background: #06b6d4; box-shadow: 0 0 6px rgba(6,182,212,0.4); }
 
 .alloc-items {
     display: flex;
@@ -2569,8 +2560,9 @@ h3::before {
 }
 
 
-/* --- Industry Deep-Dive V2.0 Styles (Decision Gauges) --- */
-.stat-card {
+/* --- [C4+C5] Industry Deep-Dive V2.0 Styles (Scoped to industry pages) --- */
+.industry-page .stat-card,
+body.industry-scope .stat-card {
     min-height: 260px;
     display: flex;
     flex-direction: column;
@@ -2581,13 +2573,15 @@ h3::before {
     overflow: hidden;
 }
 
-.stat-card:hover {
+.industry-page .stat-card:hover,
+body.industry-scope .stat-card:hover {
     transform: translateY(-8px);
     border-color: rgba(59, 130, 246, 0.4);
     box-shadow: 0 12px 40px rgba(0,0,0,0.4);
 }
 
-.stat-title {
+.industry-page .stat-title,
+body.industry-scope .stat-title {
     font-size: 0.85rem;
     color: var(--text-muted);
     font-weight: 600;
@@ -2596,7 +2590,8 @@ h3::before {
     text-transform: uppercase;
 }
 
-.stat-desc {
+.industry-page .stat-desc,
+body.industry-scope .stat-desc {
     font-size: 0.75rem;
     font-weight: 700;
     margin-top: 5px;
@@ -2614,7 +2609,8 @@ h3::before {
     text-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
 }
 
-.badge-beta {
+.industry-page .badge-beta,
+body.industry-scope .badge-beta {
     background: linear-gradient(135deg, #3b82f6, #6366f1);
     color: #fff;
     padding: 2px 10px;
@@ -2750,26 +2746,31 @@ h3::before {
 }
 
 /* ================= V8.0 Regime 氛围 Hero Banner ================= */
+/* [P1] Regime Banner 升级 — 深度 Glassmorphism + 温度脉冲 + 响应式 */
 .regime-banner {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 18px 28px;
+    padding: 20px 32px;
     border-radius: var(--radius-card);
     border: 1px solid rgba(255,255,255,0.1);
-    transition: all 0.5s ease;
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
     overflow: hidden;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05);
 }
 
-/* A1: 底部微光粒子底纹 */
+/* A1: 底部微光粒子底纹 + 增强光晕 */
 .regime-banner::before {
     content: '';
     position: absolute;
     inset: 0;
     background:
-        radial-gradient(circle at 15% 50%, rgba(255,255,255,0.04) 0%, transparent 50%),
-        radial-gradient(circle at 85% 50%, rgba(255,255,255,0.03) 0%, transparent 40%);
+        radial-gradient(circle at 15% 50%, rgba(255,255,255,0.05) 0%, transparent 50%),
+        radial-gradient(circle at 85% 50%, rgba(255,255,255,0.04) 0%, transparent 40%),
+        radial-gradient(ellipse at 50% 100%, rgba(255,255,255,0.02) 0%, transparent 70%);
     pointer-events: none;
 }
 
@@ -2796,13 +2797,35 @@ h3::before {
     color: #fff;
     letter-spacing: 0.5px;
 }
+/* [P1] 温度大字呼吸光晕 */
 .rb-temp {
-    font-size: 2.2rem;
+    font-size: 2.3rem;
     font-weight: 800;
     font-family: 'Outfit', 'Inter', monospace;
     color: #fff;
-    text-shadow: 0 0 20px rgba(255,255,255,0.15);
     font-variant-numeric: tabular-nums;
+    animation: temp-glow 3s ease-in-out infinite;
+}
+@keyframes temp-glow {
+    0%, 100% { text-shadow: 0 0 16px rgba(255,255,255,0.12); }
+    50% { text-shadow: 0 0 28px rgba(255,255,255,0.25), 0 0 8px rgba(255,255,255,0.1); }
+}
+
+/* [P1] Regime Banner 响应式断点 */
+@media (max-width: 900px) {
+    .regime-banner {
+        flex-wrap: wrap;
+        gap: 12px;
+        padding: 16px 20px;
+    }
+    .rb-center {
+        order: -1;
+        width: 100%;
+        text-align: center;
+    }
+    .rb-right {
+        flex-wrap: wrap;
+    }
 }
 .rb-center {
     font-size: 0.95rem;
@@ -2911,6 +2934,11 @@ h3::before {
 }
 .strat-dot.dormant {
     background: #64748b;
+    animation: dormant-breathe 4s ease-in-out infinite;
+}
+@keyframes dormant-breathe {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
 }
 .strat-status-text {
     font-size: 0.82rem;
@@ -3100,5 +3128,41 @@ h3::before {
 .toast-warning { border-left: 4px solid #f59e0b; }
 .toast-error   { border-left: 4px solid #ef4444; }
 .toast-info    { border-left: 4px solid #3b82f6; }
- 
- 
+
+/* ================= [P5] 补全入场动画 ================= */
+
+/* Hub 三栏依次入场 */
+.hub-col:nth-child(1) {
+    animation: fadeSlideUp 0.5s 0.1s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+}
+.hub-col:nth-child(2) {
+    animation: fadeSlideUp 0.5s 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+}
+.hub-col:nth-child(3) {
+    animation: fadeSlideUp 0.5s 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+}
+
+/* 交易矩阵行依次入场 */
+.matrix-row-v2:not(.matrix-header-v2) {
+    animation: fadeSlideUp 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+}
+.matrix-row-v2:nth-child(2) { animation-delay: 0.05s; }
+.matrix-row-v2:nth-child(3) { animation-delay: 0.10s; }
+.matrix-row-v2:nth-child(4) { animation-delay: 0.15s; }
+.matrix-row-v2:nth-child(5) { animation-delay: 0.20s; }
+.matrix-row-v2:nth-child(6) { animation-delay: 0.25s; }
+
+/* ERP 图表区入场 */
+.erp-chart-section {
+    animation: fadeSlideUp 0.6s 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+}
+
+/* [P3] 因子分数颜色联动 (JS设置) */
+.factor-score.score-color-high { color: #34d399; }
+.factor-score.score-color-mid  { color: #fbbf24; }
+.factor-score.score-color-low  { color: #f87171; }
+
+/* [P4] 策略卡片 metric 数字对齐 */
+.strat-metric strong {
+    font-variant-numeric: tabular-nums;
+}

@@ -1,12 +1,15 @@
 """
-AlphaCore · 宏观ERP择时引擎 V2.0
+AlphaCore · 宏观ERP择时引擎 V2.1
 ===================================
-五维择时信号系统 (权重已通过回测优化):
-  D1: ERP绝对值 (1/PE - 10Y国债)       — 权重20%  [估值]
+五维择时信号系统 (权重经回测优化, V2.1 Sigmoid平滑评分):
+  D1: ERP绝对值 (1/PE - 10Y国债)       — 权重20%  [估值]  V2.1: Sigmoid平滑
   D2: ERP历史分位 (近4年)               — 权重30%  [估值]
-  D3: M1同比趋势 (拐点+方向)            — 权重35%  [流动性] ← 最关键因子
-  D4: 波动率指标 (PE滚动标准差)          — 权重 8%  [风险]
+  D3: M1同比趋势 (双因子融合)            — 权重35%  [流动性] ← 最关键因子  V2.1: 双因子Sigmoid
+  D4: 波动率指标 (PE滚动标准差)          — 权重 8%  [风险]  V2.1: 连续Sigmoid
   D5: 信用环境 (M1-M2剪刀差)            — 权重 7%  [风险]
+
+参数中心: erp_params.py (Single Source of Truth)
+评分版本: SCORING_VERSION = "v3" (Sigmoid) / "v2" (原始分段线性)
 
 买卖规则引擎:
   - 逆向加仓型止损策略 (大跌反而加仓)
@@ -32,6 +35,7 @@ from functools import wraps
 from concurrent.futures import ThreadPoolExecutor
 from config import TUSHARE_TOKEN as CONFIG_TOKEN
 from erp_signal_enhancer import adaptive_weights, multi_timeframe_confirmation
+import erp_params
 
 TUSHARE_TOKEN = os.environ.get("TUSHARE_TOKEN", CONFIG_TOKEN)
 ts.set_token(TUSHARE_TOKEN)
@@ -146,15 +150,16 @@ ENCYCLOPEDIA = {
 
 
 class ERPTimingEngine:
-    """宏观ERP择时引擎 V2.0"""
+    """宏观ERP择时引擎 V2.1"""
 
-    VERSION = "2.0"
+    VERSION = "2.1"
     INDEX_CODE = "000300.SH"
     BOND_CODE = "1001.CB"
 
-    # 五维权重 (经回测网格搜索优化: IS 2018-2023 + OOS 2024-2025)
+    # 五维权重 — 从参数中心读取 (O-F: Single Source of Truth)
     # 最优参数: Alpha +3.89% OOS, Sharpe 1.62, MDD -10.08%
-    W = {"erp_abs": 0.20, "erp_pct": 0.30, "m1_trend": 0.35, "volatility": 0.08, "credit": 0.07}
+    W = erp_params.WEIGHTS
+    SCORING_VERSION = erp_params.SCORING_VERSION  # "v2" or "v3"
 
     # 信号映射 (6级)
     SIGNAL_MAP = {
@@ -332,7 +337,10 @@ class ERPTimingEngine:
     # ========== 五维评分 ==========
 
     def _score_d1_erp_absolute(self, erp_val: float) -> tuple:
-        """D1: ERP绝对值 → 0-100"""
+        """D1: ERP绝对值 → 0-100 (支持 V2 分段线性 / V3 Sigmoid 平滑)"""
+        if self.SCORING_VERSION == "v3":
+            return self._score_d1_v3(erp_val)
+        # === V2: 原始5段分段线性 ===
         if erp_val >= 6.0:
             score, desc = 100, f"ERP {erp_val:.2f}% ≥ 6% → 极度低估，历史级加仓机会"
         elif erp_val >= 5.0:
@@ -347,19 +355,37 @@ class ERPTimingEngine:
             score, desc = 0, f"ERP {erp_val:.2f}% < 2% → 极度高估，警惕泡沫"
         return round(score, 1), desc
 
+    def _score_d1_v3(self, erp_val: float) -> tuple:
+        """O-A: D1 Sigmoid 平滑映射 (V2.1)
+        score = 100 / (1 + exp(-k * (erp - center)))
+        center=4.0 (A股ERP历史中位数), k=1.5 (10-90分覆盖~2.5%-5.5%)
+        """
+        import math
+        center = erp_params.D1_SIGMOID_CENTER
+        k = erp_params.D1_SIGMOID_K
+        score = 100.0 / (1.0 + math.exp(-k * (erp_val - center)))
+        score = round(min(100, max(0, score)), 1)
+        if score >= 80:   desc = f"ERP {erp_val:.2f}% → S评分{score} → 显著低估"
+        elif score >= 55:  desc = f"ERP {erp_val:.2f}% → S评分{score} → 中性偏低"
+        elif score >= 30:  desc = f"ERP {erp_val:.2f}% → S评分{score} → 中性偏高"
+        else:              desc = f"ERP {erp_val:.2f}% → S评分{score} → 显著高估"
+        return score, desc
+
     def _score_d2_erp_percentile(self, erp_val: float, erp_series: pd.Series) -> tuple:
-        """D2: ERP历史分位 → 0-100 (V2.1: 窗口对齐回测参数1008日)"""
-        window = erp_series.tail(1008)  # 对齐回测优化参数: ~4年
+        """D2: ERP历史分位 → 0-100 (窗口从参数中心读取)"""
+        window = erp_series.tail(erp_params.ERP_WINDOW)  # O-F: 从参数中心读取
         pct = (window < erp_val).mean() * 100
-        if pct >= 80:   desc = f"近4年{pct:.1f}%分位 → 历史极度低估区间"
-        elif pct >= 60: desc = f"近4年{pct:.1f}%分位 → 偏低估区间"
-        elif pct >= 40: desc = f"近4年{pct:.1f}%分位 → 估值中性"
-        elif pct >= 20: desc = f"近4年{pct:.1f}%分位 → 偏高估区间"
-        else:           desc = f"近4年{pct:.1f}%分位 → 历史极度高估区间"
-        return round(pct, 1), round(pct, 1), desc
+        yrs = round(erp_params.ERP_WINDOW / 252, 1)
+        if pct >= 80:   desc = f"近{yrs}年{pct:.1f}%分位 → 历史极度低估区间"
+        elif pct >= 60: desc = f"近{yrs}年{pct:.1f}%分位 → 偏低估区间"
+        elif pct >= 40: desc = f"近{yrs}年{pct:.1f}%分位 → 估值中性"
+        elif pct >= 20: desc = f"近{yrs}年{pct:.1f}%分位 → 偏高估区间"
+        else:           desc = f"近{yrs}年{pct:.1f}%分位 → 历史极度高估区间"
+        # P5 fix: score 就是 pct，不再返回冗余的第二个值
+        return round(pct, 1), desc
 
     def _score_d3_m1_trend(self) -> tuple:
-        """D3: M1同比趋势 → 0-100"""
+        """D3: M1同比趋势 → 0-100 (支持 V2 分支阶梯 / V3 双因子Sigmoid)"""
         m1_df = self._fetch_m1_history()
         if m1_df.empty:
             return 50.0, {"current": 0, "prev_month": 0, "3m_ago": 0, "m2_yoy": 0, "direction": "unknown", "3m_direction": "unknown", "scissor": 0}, "M1数据缺失"
@@ -386,26 +412,50 @@ class ERPTimingEngine:
             "data_month": str(latest['month']),     # M1 fix: 数据所属月份 (如 '202603')
         }
 
-        if is_positive and is_3m_rising:
-            score = 80 + min(20, m1_now * 2)
-            desc = f"M1同比{m1_now:.1f}% 正增长且3月趋势↑ → 流动性扩张"
-        elif is_positive and is_rising:
-            score = 60 + min(20, m1_now * 2)
-            desc = f"M1同比{m1_now:.1f}% 正增长，环比回升 → 流动性改善"
-        elif is_positive:
-            score = 40 + min(20, m1_now * 2)
-            desc = f"M1同比{m1_now:.1f}% 正增长但趋势↓ → 流动性收敛"
-        elif is_rising:
-            score = 30
-            desc = f"M1同比{m1_now:.1f}% 负增长但拐头 → 底部信号"
+        if self.SCORING_VERSION == "v3":
+            score, desc = self._score_d3_v3(m1_now, m1_3m)
         else:
-            score = max(0, 20 + m1_now * 2)
-            desc = f"M1同比{m1_now:.1f}% 负增长且下行 → 流动性收紧"
+            # === V2: 原始分支阶梯 ===
+            if is_positive and is_3m_rising:
+                score = 80 + min(20, m1_now * 2)
+                desc = f"M1同比{m1_now:.1f}% 正增长且3月趋势↑ → 流动性扩张"
+            elif is_positive and is_rising:
+                score = 60 + min(20, m1_now * 2)
+                desc = f"M1同比{m1_now:.1f}% 正增长，环比回升 → 流动性改善"
+            elif is_positive:
+                score = 40 + min(20, m1_now * 2)
+                desc = f"M1同比{m1_now:.1f}% 正增长但趋势↓ → 流动性收敛"
+            elif is_rising:
+                score = 30
+                desc = f"M1同比{m1_now:.1f}% 负增长但拐头 → 底部信号"
+            else:
+                score = max(0, 20 + m1_now * 2)
+                desc = f"M1同比{m1_now:.1f}% 负增长且下行 → 流动性收紧"
 
         return round(min(100, max(0, score)), 1), m1_info, desc
 
+    def _score_d3_v3(self, m1_now: float, m1_3m: float) -> tuple:
+        """O-D: D3 双因子 Sigmoid 连续融合 (V2.1)
+        因子1 — M1水位: Sigmoid(m1_now, center=0, k=0.4)
+        因子2 — M1动量: Sigmoid(m1_now - m1_3m, center=0, k=0.5)
+        融合: 水位60% + 动量40%
+        """
+        import math
+        lk = erp_params.D3_LEVEL_K
+        mk = erp_params.D3_MOMENTUM_K
+        lw = erp_params.D3_LEVEL_WEIGHT
+        mw = erp_params.D3_MOMENTUM_WEIGHT
+        level_score = 100.0 / (1.0 + math.exp(-lk * m1_now))
+        delta_3m = m1_now - m1_3m
+        momentum_score = 100.0 / (1.0 + math.exp(-mk * delta_3m))
+        score = round(level_score * lw + momentum_score * mw, 1)
+        if score >= 70:   desc = f"M1同比{m1_now:.1f}%(Δ3m {delta_3m:+.1f}) → S评分{score} → 流动性扩张"
+        elif score >= 45:  desc = f"M1同比{m1_now:.1f}%(Δ3m {delta_3m:+.1f}) → S评分{score} → 流动性中性"
+        else:              desc = f"M1同比{m1_now:.1f}%(Δ3m {delta_3m:+.1f}) → S评分{score} → 流动性收紧"
+        return score, desc
+
     def _score_d4_volatility(self, erp_df: pd.DataFrame) -> tuple:
-        """D4: 波动率指标 → 0-100 (逆向: 高波给低分但标记机会)"""
+        """D4: 波动率指标 → 0-100 (支持 V2 阶梯 / V3 Sigmoid 连续)"""
         pe_vol = erp_df['pe_vol_60d'].dropna()
         if pe_vol.empty:
             return 50.0, {"current": 0, "pct": 50, "regime": "normal"}, "波动率数据不足"
@@ -413,25 +463,39 @@ class ERPTimingEngine:
         current_vol = float(pe_vol.iloc[-1])
         vol_pct = (pe_vol < current_vol).mean() * 100  # 百分位
 
-        if vol_pct >= 90:
-            score = 15  # 极高波动→低分但标记为逆向机会
-            regime = "extreme_panic"
-            desc = f"PE波动率{current_vol:.2f}({vol_pct:.0f}%分位) → 极端恐慌，逆向加仓窗口"
-        elif vol_pct >= 70:
-            score = 35
-            regime = "high"
-            desc = f"PE波动率{current_vol:.2f}({vol_pct:.0f}%分位) → 市场波动加大，关注风险"
-        elif vol_pct >= 30:
-            score = 70
-            regime = "normal"
-            desc = f"PE波动率{current_vol:.2f}({vol_pct:.0f}%分位) → 波动正常"
+        # Regime 判定 (V2/V3 通用)
+        if vol_pct >= 90:   regime = "extreme_panic"
+        elif vol_pct >= 70: regime = "high"
+        elif vol_pct >= 30: regime = "normal"
+        else:               regime = "calm"
+
+        if self.SCORING_VERSION == "v3":
+            score, desc = self._score_d4_v3(current_vol, vol_pct, regime)
         else:
-            score = 90
-            regime = "calm"
-            desc = f"PE波动率{current_vol:.2f}({vol_pct:.0f}%分位) → 市场平静，适合配置"
+            # === V2: 原始4级阶梯 ===
+            if vol_pct >= 90:   score = 15
+            elif vol_pct >= 70: score = 35
+            elif vol_pct >= 30: score = 70
+            else:               score = 90
+            desc = f"PE波动率{current_vol:.2f}({vol_pct:.0f}%分位) → {regime}"
 
         vol_info = {"current": round(current_vol, 2), "pct": round(vol_pct, 1), "regime": regime}
         return round(score, 1), vol_info, desc
+
+    def _score_d4_v3(self, current_vol: float, vol_pct: float, regime: str) -> tuple:
+        """O-B: D4 反向 Sigmoid 连续化 (V2.1)
+        score = scale / (1 + exp(k * (vol_pct - center))) + floor
+        高波动 → 低分 (但 regime 标记逆向机会)
+        """
+        import math
+        scale = erp_params.D4_SIGMOID_SCALE
+        floor = erp_params.D4_SIGMOID_FLOOR
+        k = erp_params.D4_SIGMOID_K
+        center = erp_params.D4_SIGMOID_CENTER
+        score = scale / (1.0 + math.exp(k * (vol_pct - center))) + floor
+        score = round(min(100, max(0, score)), 1)
+        desc = f"PE波动率{current_vol:.2f}({vol_pct:.0f}%分位) → S评分{score} [{regime}]"
+        return score, desc
 
     def _score_d5_credit(self, m1_info: dict) -> tuple:
         """D5: 信用环境 (M1-M2剪刀差) → 0-100"""
@@ -477,11 +541,10 @@ class ERPTimingEngine:
             return -5, f"ERP 3月动量{momentum_pct:.0f}% → 估值恶化(-5)"
         return 0, f"ERP 3月动量{momentum_pct:+.0f}% → 中性"
 
-    # O8: EMA平滑
-    _prev_smooth_score = None
+    # O8: EMA平滑 (P6 fix: 移入 __init__ 初始化，避免类变量污染)
 
     def _smooth_composite(self, raw_score: float) -> float:
-        if self._prev_smooth_score is None:
+        if not hasattr(self, '_prev_smooth_score') or self._prev_smooth_score is None:
             self._prev_smooth_score = raw_score
             return raw_score
         alpha = 0.3
@@ -672,7 +735,8 @@ class ERPTimingEngine:
 
             # 五维评分
             d1_score, d1_desc = self._score_d1_erp_absolute(erp_val)
-            d2_score, d2_pct, d2_desc = self._score_d2_erp_percentile(erp_val, erp_df['erp'])
+            d2_score, d2_desc = self._score_d2_erp_percentile(erp_val, erp_df['erp'])  # P5: score=pct
+            d2_pct = d2_score  # P5 fix: d2_score 就是分位数，保持下游变量名兼容
             d3_score, m1_info, d3_desc = self._score_d3_m1_trend()
             d4_score, vol_info, d4_desc = self._score_d4_volatility(erp_df)
             d5_score, credit_info, d5_desc = self._score_d5_credit(m1_info)
