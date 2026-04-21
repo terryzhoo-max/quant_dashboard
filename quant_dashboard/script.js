@@ -171,11 +171,12 @@ function renderErpCard(erpData) {
     // 1. 主值 + Trend Badge
     if (valEl) {
         valEl.innerHTML = `${erpData.value} <span class="trend" id="trend-erp">${erpData.trend || '--'}</span>`;
-        // ERP 语义色: up=股票有吸引力=绿, down=股票贵=红
+        // V3.0: 阈值从后端 erp_thresholds 读取, 消除硬编码漂移
         const erpVal = parseFloat(erpData.value) || 0;
+        const thresh = erpData.erp_thresholds || { bullish: 5.0, bearish: 3.5 };
         let colorClass = 'erp-neutral';
-        if (erpVal >= 5.0) colorClass = 'erp-bullish';
-        else if (erpVal < 3.5) colorClass = 'erp-bearish';
+        if (erpVal >= thresh.bullish) colorClass = 'erp-bullish';
+        else if (erpVal < thresh.bearish) colorClass = 'erp-bearish';
         valEl.className = `stat-value ${colorClass}`;
     }
 

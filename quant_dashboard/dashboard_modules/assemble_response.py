@@ -7,6 +7,14 @@ Dashboard Module: 最终 JSON 响应组装
 from datetime import datetime
 from aiae_engine import REGIMES as AIAE_REGIMES
 
+# V3.0: 前端阈值从参数中心读取 (消除硬编码漂移)
+try:
+    from erp_params import FRONTEND_ERP_BULLISH as _ERP_BULLISH_THRESH
+    from erp_params import FRONTEND_ERP_BEARISH as _ERP_BEARISH_THRESH
+except ImportError:
+    _ERP_BULLISH_THRESH = 5.0
+    _ERP_BEARISH_THRESH = 3.5
+
 
 def _compute_signal_consensus(mr_overview, mom_overview, div_overview, erp_z, aiae_regime):
     """五策略共振计算器"""
@@ -256,7 +264,13 @@ def assemble_dashboard_response(
                     "desc": f"{erp_data.get('abs_label', '')} · 4Y分位{erp_data.get('erp_pct', '--')}%",
                     "status": "up" if erp_z > 0.5 else ("down" if erp_z < -0.5 else "neutral"),
                     "erp_pct": erp_data.get('erp_pct', 50),
-                    "signal_label": erp_data.get('signal_label', '--')
+                    "signal_label": erp_data.get('signal_label', '--'),
+                    # V3.0: 前端阈值透传 (消除 script.js 硬编码漂移)
+                    "erp_thresholds": {
+                        "bullish": _ERP_BULLISH_THRESH,
+                        "bearish": _ERP_BEARISH_THRESH,
+                        "source": "erp_params_v3"
+                    }
                 }
             },
             "sector_heatmap": sector_heatmap,

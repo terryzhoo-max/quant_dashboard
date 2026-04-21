@@ -150,9 +150,9 @@ ENCYCLOPEDIA = {
 
 
 class ERPTimingEngine:
-    """宏观ERP择时引擎 V2.1"""
+    """宏观ERP择时引擎 V3.0"""
 
-    VERSION = "2.1"
+    VERSION = "3.0"
     INDEX_CODE = "000300.SH"
     BOND_CODE = "1001.CB"
 
@@ -185,6 +185,7 @@ class ERPTimingEngine:
         self._prev_score_date = history.get("prev_score_date")
         self._score_high_water = history.get("score_high_water", 0.0)
         self._score_history = history.get("score_history", [])  # O6: 最近5天Score列表
+        self._prev_smooth_score = history.get("prev_smooth_score")  # V3.0: 持久化 EMA 状态
 
     def _load_history(self) -> dict:
         filepath = os.path.join(CACHE_DIR, "erp_daily_history.json")
@@ -203,6 +204,7 @@ class ERPTimingEngine:
             "prev_score_date": str(self._prev_score_date) if self._prev_score_date else None,
             "score_high_water": self._score_high_water,
             "score_history": self._score_history[-5:],  # O6: 保留最近5条
+            "prev_smooth_score": getattr(self, '_prev_smooth_score', None),  # V3.0: 持久化 EMA
         }
         tmp_path = filepath + ".tmp"
         try:
@@ -498,35 +500,59 @@ class ERPTimingEngine:
         return score, desc
 
     def _score_d5_credit(self, m1_info: dict) -> tuple:
-        """D5: 信用环境 (M1-M2剪刀差) → 0-100"""
+        """D5: 信用环境 (M1-M2剪刀差) → 0-100 (支持 V2 分段线性 / V3 Sigmoid 平滑)"""
         scissor = m1_info.get("scissor", 0)
         m1_dir = m1_info.get("3m_direction", "unknown")
 
-        if scissor >= 0:
-            score = 85 + min(15, scissor * 3)
-            desc = f"M1-M2剪刀差 {scissor:+.1f}% → 资金活化，信用环境极佳"
-        elif scissor >= -3:
-            score = 55 + (scissor + 3) * 10
-            desc = f"M1-M2剪刀差 {scissor:+.1f}% → 信用环境中性"
-        elif scissor >= -6:
-            score = 25 + (scissor + 6) * 10
-            desc = f"M1-M2剪刀差 {scissor:+.1f}% → 资金沉淀，信用偏弱"
+        if self.SCORING_VERSION == "v3":
+            score, desc = self._score_d5_v3(scissor, m1_dir)
         else:
-            score = max(0, 10 + scissor)
-            desc = f"M1-M2剪刀差 {scissor:+.1f}% → 信用冻结，防御为主"
+            # === V2: 原始4段分段线性 ===
+            if scissor >= 0:
+                score = 85 + min(15, scissor * 3)
+                desc = f"M1-M2剪刀差 {scissor:+.1f}% → 资金活化，信用环境极佳"
+            elif scissor >= -3:
+                score = 55 + (scissor + 3) * 10
+                desc = f"M1-M2剪刀差 {scissor:+.1f}% → 信用环境中性"
+            elif scissor >= -6:
+                score = 25 + (scissor + 6) * 10
+                desc = f"M1-M2剪刀差 {scissor:+.1f}% → 资金沉淀，信用偏弱"
+            else:
+                score = max(0, 10 + scissor)
+                desc = f"M1-M2剪刀差 {scissor:+.1f}% → 信用冻结，防御为主"
 
-        # 趋势加分
-        if m1_dir == "rising" and scissor < 0:
-            score = min(100, score + 10)
-            desc += "（剪刀差收窄中，边际改善）"
+            # 趋势加分
+            if m1_dir == "rising" and scissor < 0:
+                score = min(100, score + 10)
+                desc += "（剪刀差收窄中，边际改善）"
 
         credit_info = {"scissor": scissor, "trend": m1_dir}
         return round(min(100, max(0, score)), 1), credit_info, desc
 
+    def _score_d5_v3(self, scissor: float, m1_dir: str) -> tuple:
+        """V3.0: D5 Sigmoid 平滑映射 (消除分段线性跳变)
+        score = 100 / (1 + exp(-k * (scissor - center)))
+        center=-2.0 (历史剪刀差中位数), k=0.4
+        """
+        import math
+        center = erp_params.D5_SIGMOID_CENTER
+        k = erp_params.D5_SIGMOID_K
+        score = 100.0 / (1.0 + math.exp(-k * (scissor - center)))
+        # 趋势加分 (V3.0: 降至8分, 减少跳变风险)
+        if m1_dir == "rising" and scissor < 0:
+            score = min(100, score + erp_params.D5_TREND_BONUS)
+        score = round(min(100, max(0, score)), 1)
+        if score >= 70:   desc = f"M1-M2剪刀差 {scissor:+.1f}% → S评分{score} → 信用活化"
+        elif score >= 45:  desc = f"M1-M2剪刀差 {scissor:+.1f}% → S评分{score} → 信用中性"
+        else:              desc = f"M1-M2剪刀差 {scissor:+.1f}% → S评分{score} → 信用收缩"
+        if m1_dir == "rising" and scissor < 0:
+            desc += "（收窄中+{:.0f}）".format(erp_params.D5_TREND_BONUS)
+        return score, desc
+
 
     # ========== 买卖规则引擎 (逆向型) ==========
 
-    # O7: ERP动量修正
+    # O7: ERP动量修正 (V3.0: Sigmoid 连续化, 替代硬编码 ±5)
     def _erp_momentum_modifier(self, erp_series) -> tuple:
         if len(erp_series) < 63:
             return 0, "数据不足"
@@ -535,19 +561,29 @@ class ERPTimingEngine:
         if abs(past) < 0.01:
             return 0, "基准值过小"
         momentum_pct = (current - past) / abs(past) * 100
-        if momentum_pct > 10:
-            return 5, f"ERP 3月动量+{momentum_pct:.0f}% → 价值回归(+5)"
-        elif momentum_pct < -10:
-            return -5, f"ERP 3月动量{momentum_pct:.0f}% → 估值恶化(-5)"
-        return 0, f"ERP 3月动量{momentum_pct:+.0f}% → 中性"
+        # V3.0: Sigmoid 连续映射 [-SCALE, +SCALE]
+        import math
+        scale = erp_params.O7_MOMENTUM_SCALE
+        k = erp_params.O7_MOMENTUM_K
+        x = max(-30, min(30, momentum_pct))  # 防溢出
+        mod = scale * (2.0 / (1.0 + math.exp(-k * x)) - 1.0)
+        mod = round(mod, 1)
+        if mod > 0:
+            desc = f"ERP 3月动量+{momentum_pct:.0f}% → 价值回归({mod:+.1f})"
+        elif mod < 0:
+            desc = f"ERP 3月动量{momentum_pct:.0f}% → 估值恶化({mod:+.1f})"
+        else:
+            desc = f"ERP 3月动量{momentum_pct:+.0f}% → 中性"
+        return mod, desc
 
     # O8: EMA平滑 (P6 fix: 移入 __init__ 初始化，避免类变量污染)
 
     def _smooth_composite(self, raw_score: float) -> float:
-        if not hasattr(self, '_prev_smooth_score') or self._prev_smooth_score is None:
+        """O8: EMA 平滑 (V3.0: α从参数中心读取, 状态已持久化)"""
+        if self._prev_smooth_score is None:
             self._prev_smooth_score = raw_score
             return raw_score
-        alpha = 0.3
+        alpha = erp_params.O8_EMA_ALPHA
         smooth = alpha * raw_score + (1 - alpha) * self._prev_smooth_score
         self._prev_smooth_score = smooth
         return round(smooth, 1)
@@ -814,6 +850,12 @@ class ERPTimingEngine:
                 "alerts": alerts,
                 "diagnosis": diagnosis,
                 "encyclopedia": ENCYCLOPEDIA,
+                # V3.0: 前端阈值透传 (消除 script.js 硬编码)
+                "erp_thresholds": {
+                    "bullish": erp_params.FRONTEND_ERP_BULLISH,
+                    "bearish": erp_params.FRONTEND_ERP_BEARISH,
+                    "source": "erp_params_v3"
+                },
             }
 
         except Exception as e:

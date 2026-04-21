@@ -2,7 +2,11 @@
 ERP Signal Enhancement Module — O10 (Adaptive Weights) + O11 (Multi-Timeframe Confirmation)
 
 共享模块：四引擎统一调用，避免重复代码
+
+V3.0: O11 阈值从硬编码 ±5% 收紧为参数中心管理 (默认 ±10%)
 """
+
+import erp_params
 
 
 def adaptive_weights(base_weights: dict, vol_key: str, vol_regime: str) -> dict:
@@ -48,6 +52,9 @@ def multi_timeframe_confirmation(erp_series, current_score: float) -> dict:
 
     分别映射为看多(ERP > 中位数)/看空/中性, 然后计算一致性
 
+    V3.0: 阈值从 ±5% 收紧至 ±10% (erp_params.O11_BIAS_THRESHOLD)
+          降低日线 bias 翻转频率，提升信噪比
+
     返回:
         {
             "daily_bias": "bullish" / "bearish" / "neutral",
@@ -72,11 +79,14 @@ def multi_timeframe_confirmation(erp_series, current_score: float) -> dict:
     erp_monthly = float(erp_series.tail(63).mean())
     erp_median = float(erp_series.tail(252).median()) if len(erp_series) >= 252 else float(erp_series.median())
 
+    # V3.0: 阈值从参数中心读取 (默认 0.10 = ±10%)
+    bias_threshold = erp_params.O11_BIAS_THRESHOLD
+
     def _classify(val, median):
         """ERP高于中位数=低估=看多, 低于=看空"""
-        if val > median * 1.05:
+        if val > median * (1.0 + bias_threshold):
             return "bullish"
-        elif val < median * 0.95:
+        elif val < median * (1.0 - bias_threshold):
             return "bearish"
         return "neutral"
 

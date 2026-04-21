@@ -204,14 +204,16 @@ function renderERPSnapshot(data) {
     const m1 = dims.m1_trend?.m1_info || {};
     const vol = dims.volatility?.vol_info || {};
     const credit = dims.credit?.credit_info || {};
+    // V3.0: 阈值从后端读取, 消除硬编码
+    const thresh = data.erp_thresholds || { bullish: 5.0, bearish: 3.5 };
     // ERP
     const erpEl = document.getElementById('erp-val-erp');
     erpEl.textContent = (snap.erp_value || '--') + '%';
-    erpEl.style.color = snap.erp_value >= 5 ? '#10b981' : (snap.erp_value >= 3.5 ? '#f59e0b' : '#ef4444');
+    erpEl.style.color = snap.erp_value >= thresh.bullish ? '#10b981' : (snap.erp_value >= thresh.bearish ? '#f59e0b' : '#ef4444');
     document.getElementById('erp-sub-erp').textContent = '\u8FD14\u5E74 ' + (snap.erp_percentile || '--') + '% \u5206\u4F4D';
     const trendErp = document.getElementById('erp-trend-erp');
-    if (snap.erp_value >= 5) { trendErp.textContent = '\u2191'; trendErp.style.color = '#10b981'; }
-    else if (snap.erp_value < 3.5) { trendErp.textContent = '\u2193'; trendErp.style.color = '#ef4444'; }
+    if (snap.erp_value >= thresh.bullish) { trendErp.textContent = '\u2191'; trendErp.style.color = '#10b981'; }
+    else if (snap.erp_value < thresh.bearish) { trendErp.textContent = '\u2193'; trendErp.style.color = '#ef4444'; }
     else { trendErp.textContent = '\u2192'; trendErp.style.color = '#f59e0b'; }
     // PE
     document.getElementById('erp-val-pe').textContent = (snap.pe_ttm || '--') + 'x';
