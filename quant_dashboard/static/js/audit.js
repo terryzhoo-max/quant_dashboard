@@ -16,6 +16,9 @@ const GRADE_COLORS = { A: '#34d399', B: '#60a5fa', C: '#fbbf24', D: '#f87171' };
 
 let auditData = null;
 
+// V7.2: ECharts 生命周期管理 (防内存泄漏)
+let _gaugeChart = null, _radarChart = null, _timelineChart = null;
+
 // ═══════════════════════════════════════════════════════
 //  初始化
 // ═══════════════════════════════════════════════════════
@@ -37,6 +40,7 @@ async function runAudit() {
 
     try {
         const resp = await fetch('/api/v1/audit');
+        if (!resp.ok) throw new Error(`服务器错误 (HTTP ${resp.status})`);
         const data = await resp.json();
         if (data.status !== 'ok') throw new Error(data.message || '审计失败');
         auditData = data;
@@ -119,13 +123,16 @@ function renderTrustHero(data) {
     badge.textContent = grade;
     badge.className = `trust-grade-badge grade-${grade}`;
 
-    const verdicts = {
-        A: '系统运行正常，所有审计通过，可放心执行交易信号',
-        B: '系统整体健康，存在轻微瑕疵，建议关注警告项',
-        C: '存在风险因素，建议人工复核后再执行',
-        D: '严重问题检出，建议暂停自动执行并排查',
-    };
-    document.getElementById('trust-verdict').textContent = verdicts[grade] || '';
+    // V7.1: verdict 优先看 fail/warn 实际数量，避免高分掩盖问题
+    let verdict;
+    if (data.fail_count > 0) {
+        verdict = `检出 ${data.fail_count} 项严重问题，建议立即修复后再执行交易`;
+    } else if (data.warn_count > 0) {
+        verdict = `系统整体健康，${data.warn_count} 项需关注，建议人工复核`;
+    } else {
+        verdict = '系统运行正常，所有审计通过，可放心执行交易信号';
+    }
+    document.getElementById('trust-verdict').textContent = verdict;
     document.getElementById('stat-pass').textContent = `✅ ${data.pass_count} 通过`;
     document.getElementById('stat-warn').textContent = `⚠️ ${data.warn_count} 警告`;
     document.getElementById('stat-fail').textContent = `❌ ${data.fail_count} 失败`;
@@ -155,7 +162,9 @@ function renderTrustHero(data) {
     document.getElementById('trust-equalizer').innerHTML = eqHtml;
 
     // Gauge Chart (V7.0: no center number — score shown in center column)
-    const chart = echarts.init(document.getElementById('trust-gauge-chart'));
+    if (_gaugeChart) { AC.disposeChart(_gaugeChart); }
+    _gaugeChart = AC.registerChart(echarts.init(document.getElementById('trust-gauge-chart')));
+    const chart = _gaugeChart;
     chart.setOption({
         series: [{
             type: 'gauge', startAngle: 210, endAngle: -30,
@@ -187,7 +196,9 @@ function renderRadar(data) {
     const indicator = keys.map(k => ({ name: MODULE_META[k].label, max: 100 }));
     const values = keys.map(k => modules[k]?.score ?? 0);
 
-    const chart = echarts.init(document.getElementById('radar-chart'));
+    if (_radarChart) { AC.disposeChart(_radarChart); }
+    _radarChart = AC.registerChart(echarts.init(document.getElementById('radar-chart')));
+    const chart = _radarChart;
     chart.setOption({
         radar: {
             indicator, shape: 'polygon', radius: '72%',
@@ -239,7 +250,8 @@ function renderModuleCards(data) {
         const passC = checks.filter(c => c.status === 'pass').length;
         const warnC = checks.filter(c => c.status === 'warn').length;
         const failC = checks.filter(c => c.status === 'fail').length;
-        const r = 18, circ = 2 * Math.PI * r, dash = circ * (score / 100);
+        const r = 18, circ = 2 * Math.PI * r;
+        const dashOffset = circ * (1 - score / 100);
         const sorted = [...checks].sort((a, b) => (a.score ?? 100) - (b.score ?? 100));
         const worst = sorted[0];
         let worstHtml = '';
@@ -253,29 +265,38 @@ function renderModuleCards(data) {
             </div>`;
         }
         return `
-        <div class="module-card" style="--mod-color:${meta.color}" onclick="toggleDetail('${key}')" id="card-${key}">
+        <div class="module-card${failC > 0 ? ' has-fail' : ''}" style="--mod-color:${meta.color}" onclick="toggleDetail('${key}')" id="card-${key}"
+            title="${meta.label} ${score}/${grade} · ${passC}通过 ${warnC}警告 ${failC}失败 · 权重${meta.weight}">
             <div class="mod-header">
                 <span class="mod-label">${meta.icon} ${meta.label}</span>
                 <div class="mod-score-ring">
                     <svg viewBox="0 0 42 42">
                         <circle class="mod-ring-bg" cx="21" cy="21" r="${r}"/>
                         <circle class="mod-ring-fill" cx="21" cy="21" r="${r}"
-                            stroke="${gc}" stroke-dasharray="${circ}" stroke-dashoffset="${circ - dash}"/>
+                            stroke="${gc}" stroke-dasharray="${circ}" stroke-dashoffset="${circ}"
+                            data-target-offset="${dashOffset}"/>
                     </svg>
                     <span class="mod-score-text">${score}</span>
                     <span class="mod-grade-pill grade-${grade}">${grade}</span>
                 </div>
             </div>
             <div class="mod-checks-summary">
-                ${passC > 0 ? `<span style="color:#34d399">✅${passC}</span> ` : ''}
-                ${warnC > 0 ? `<span style="color:#fbbf24">⚠️${warnC}</span> ` : ''}
-                ${failC > 0 ? `<span style="color:#f87171">❌${failC}</span> ` : ''}
+                ${passC > 0 ? `<span style="color:#34d399">✅ ${passC}</span> ` : ''}
+                ${warnC > 0 ? `<span style="color:#fbbf24">⚠️ ${warnC}</span> ` : ''}
+                ${failC > 0 ? `<span style="color:#f87171">❌ ${failC}</span> ` : ''}
                 <span class="weight-tag">权重 ${meta.weight}</span>
             </div>
             ${worstHtml}
         </div>`;
     }).join('');
     container.innerHTML = html;
+
+    // V7.1: 延迟触发 ring 入场动画 (从满圆过渡到目标值)
+    setTimeout(() => {
+        container.querySelectorAll('.mod-ring-fill').forEach(ring => {
+            ring.style.strokeDashoffset = ring.dataset.targetOffset;
+        });
+    }, 100);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -550,6 +571,8 @@ function extractKPIs(data) {
 // ═══════════════════════════════════════════════════════
 function renderFooterUrgent(data) {
     const el = document.getElementById('footer-urgent');
+    el.style.background = '';
+    el.style.color = '';
     if (data.fail_count > 0) {
         el.className = 'footer-urgent has-issues';
         el.textContent = `🚨 ${data.fail_count} 项严重问题需修复`;
@@ -588,8 +611,9 @@ function renderTimeline(data) {
         document.getElementById('timeline-trend').textContent = '— 首次审计';
         document.getElementById('timeline-trend').className = 'timeline-trend stable';
         // Still render a single-point chart
-        const chart = echarts.init(document.getElementById('timeline-chart'));
-        chart.setOption({
+        if (_timelineChart) { AC.disposeChart(_timelineChart); }
+        _timelineChart = AC.registerChart(echarts.init(document.getElementById('timeline-chart')));
+        _timelineChart.setOption({
             grid: { top: 8, bottom: 24, left: 40, right: 16 },
             xAxis: { type: 'category', data: [data.audit_time?.split(' ')[1] || 'now'], axisLabel: { fontSize: 10, color: '#475569' }, axisLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } } },
             yAxis: { type: 'value', min: 0, max: 100, axisLabel: { fontSize: 10, color: '#475569' }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.04)' } } },
@@ -608,7 +632,9 @@ function renderTimeline(data) {
     else if (curr < prev) { trendEl.textContent = `↓ ${curr - prev}`; trendEl.className = 'timeline-trend down'; }
     else { trendEl.textContent = '→ 稳定'; trendEl.className = 'timeline-trend stable'; }
 
-    const chart = echarts.init(document.getElementById('timeline-chart'));
+    if (_timelineChart) { AC.disposeChart(_timelineChart); }
+    _timelineChart = AC.registerChart(echarts.init(document.getElementById('timeline-chart')));
+    const chart = _timelineChart;
     chart.setOption({
         grid: { top: 8, bottom: 24, left: 40, right: 16 },
         xAxis: {
@@ -916,3 +942,30 @@ function showNetworkError(msg) {
         </div>`;
     loading.style.display = 'block';
 }
+
+// ═══════════════════════════════════════════════════════
+//  V7.2: 全局键盘快捷键 + 弹窗遮罩关闭
+// ═══════════════════════════════════════════════════════
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        // 优先关闭弹窗, 其次关闭详情
+        if (document.getElementById('confirm-modal-overlay').classList.contains('visible')) {
+            closeConfirmModal();
+        } else if (activeModule) {
+            closeDetail();
+        }
+    }
+    if (e.key === 'r' && !e.ctrlKey && !e.metaKey && e.target.tagName !== 'INPUT') {
+        runAudit();
+    }
+});
+
+// 点击弹窗遮罩层关闭
+document.addEventListener('DOMContentLoaded', () => {
+    const overlay = document.getElementById('confirm-modal-overlay');
+    if (overlay) {
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) closeConfirmModal();
+        });
+    }
+});

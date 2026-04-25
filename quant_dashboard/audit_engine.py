@@ -912,7 +912,7 @@ def audit_system_status():
     })
 
     # ── 5.4 ECharts 前端资源 ──
-    echarts_path = os.path.join(BASE_DIR, "echarts.min.js")
+    echarts_path = os.path.join(BASE_DIR, "static", "vendor", "echarts.min.js")
     if os.path.exists(echarts_path):
         esize = os.path.getsize(echarts_path) / 1024
         scores.append(100)
