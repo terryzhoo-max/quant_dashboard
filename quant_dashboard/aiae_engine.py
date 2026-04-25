@@ -51,6 +51,7 @@ from typing import Optional, Dict, List, Tuple
 # ===== Token: 统一从 config 读取 =====
 from config import TUSHARE_TOKEN
 import aiae_params as AP  # V3.0: 参数中心 (Single Source of Truth)
+from services import db as ac_db
 ts.set_token(TUSHARE_TOKEN)
 pro = ts.pro_api()
 
@@ -100,7 +101,10 @@ def _cached(key: str, ttl_seconds: int, fetcher):
             if now - ts_cached < ttl_seconds:
                 return data
             else:
-                _bg_executor.submit(_refresh_cache, key, fetcher)
+                try:
+                    _bg_executor.submit(_refresh_cache, key, fetcher)
+                except RuntimeError:
+                    pass  # shutdown 阶段, 跳过后台刷新
                 return data
 
     return _refresh_cache(key, fetcher)
@@ -791,7 +795,14 @@ class AIAEEngine:
         return os.path.join(CACHE_DIR, "aiae_monthly_history.json")
 
     def _load_monthly_history(self) -> List[Dict]:
-        """C2: 加载月度 AIAE 历史记录"""
+        """C2: 加载月度 AIAE 历史记录 (SQLite 优先, JSON 降级)"""
+        try:
+            rows = ac_db.get_aiae_history()
+            if rows:
+                return rows
+        except Exception:
+            pass
+        # JSON fallback
         fp = self._get_monthly_history_file()
         if os.path.exists(fp):
             try:
@@ -802,13 +813,23 @@ class AIAEEngine:
         return []
 
     def _append_monthly_history(self, aiae_v1: float, regime: int):
-        """C2: 如果本月尚未记录，追加当月 AIAE 值"""
-        history = self._load_monthly_history()
+        """C2: 追加当月 AIAE 值 (SQLite + JSON 双写)"""
         current_month = datetime.now().strftime("%Y-%m")
-        
-        # 检查本月是否已有记录
+        # SQLite 主写入
+        try:
+            ac_db.upsert_aiae_monthly(current_month, aiae_v1, regime)
+        except Exception as e:
+            _log(f"SQLite upsert_aiae_monthly 失败: {e}", "WARN")
+        # JSON 备份写入
+        history = []
+        fp = self._get_monthly_history_file()
+        if os.path.exists(fp):
+            try:
+                with open(fp, 'r', encoding='utf-8') as f:
+                    history = json.load(f)
+            except Exception:
+                pass
         if history and history[-1].get("month") == current_month:
-            # 更新本月记录 (取最新值)
             history[-1]["aiae_v1"] = aiae_v1
             history[-1]["regime"] = regime
             history[-1]["updated_at"] = datetime.now().isoformat()
@@ -820,24 +841,30 @@ class AIAEEngine:
                 "recorded_at": datetime.now().isoformat(),
                 "updated_at": datetime.now().isoformat(),
             })
-        
-        fp = self._get_monthly_history_file()
         atomic_write_json(history, fp)
 
     def _get_prev_month_aiae(self) -> Optional[float]:
-        """C2: 获取上个月的 AIAE 值 (用于斜率计算)
-        V2.1: 冷启动时不再降级到 HISTORICAL_SNAPSHOTS (2024年数据会导致 +7.67 误报)
-        只有月度历史中有真实上月记录时才返回值, 否则返回 None → slope=0/flat
-        """
-        history = self._load_monthly_history()
+        """C2: 获取上个月的 AIAE 值 (SQLite 优先)"""
         current_month = datetime.now().strftime("%Y-%m")
-        
-        # 查找上个月 (排除本月)
+        # SQLite 优先
+        try:
+            val = ac_db.get_prev_month_aiae(current_month)
+            if val is not None:
+                return val
+        except Exception:
+            pass
+        # JSON fallback
+        history = []
+        fp = self._get_monthly_history_file()
+        if os.path.exists(fp):
+            try:
+                with open(fp, 'r', encoding='utf-8') as f:
+                    history = json.load(f)
+            except Exception:
+                pass
         for entry in reversed(history):
             if entry["month"] != current_month:
                 return entry["aiae_v1"]
-        
-        # V2.1: 冷启动 → 返回 None, compute_slope 会输出 flat (不再误报)
         _log("月度历史不足: 斜率计算将输出 flat (无上月对比数据)", "WARN")
         return None
 
@@ -920,14 +947,20 @@ class AIAEEngine:
         """生成 AIAE 完整报告 (V2.1: 并行数据获取 + 季度提醒 + 冷启动修复)"""
         t0 = time.time()
         try:
-            # 1. 并行获取三个数据源 (模块级线程池, 避免 with 块过早 shutdown)
-            f_mv = _bg_executor.submit(self._fetch_total_market_cap)
-            f_m2 = _bg_executor.submit(self._fetch_m2)
-            f_margin = _bg_executor.submit(self._fetch_margin_data)
-
-            mv_data = f_mv.result(timeout=30)
-            m2_data = f_m2.result(timeout=30)
-            margin_data = f_margin.result(timeout=30)
+            # 1. 并行获取三个数据源 (模块级线程池, 若 shutdown 则降级同步)
+            try:
+                f_mv = _bg_executor.submit(self._fetch_total_market_cap)
+                f_m2 = _bg_executor.submit(self._fetch_m2)
+                f_margin = _bg_executor.submit(self._fetch_margin_data)
+                mv_data = f_mv.result(timeout=30)
+                m2_data = f_m2.result(timeout=30)
+                margin_data = f_margin.result(timeout=30)
+            except RuntimeError:
+                # 解释器 shutdown 阶段, 降级为同步
+                _log("ThreadPool shutdown, 降级同步获取", "WARN")
+                mv_data = self._fetch_total_market_cap()
+                m2_data = self._fetch_m2()
+                margin_data = self._fetch_margin_data()
             _log(f"数据获取完成 ({time.time()-t0:.1f}s)")
 
             total_mv = mv_data.get("total_mv_wan_yi", 95.0)

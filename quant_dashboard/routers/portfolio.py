@@ -1,11 +1,13 @@
-"""AlphaCore 投资组合管理 API — 从 main.py 提取"""
+"""AlphaCore 投资组合管理 API — V15.1 标准化响应"""
 import asyncio
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, UploadFile, File
 
 from models.schemas import TradeRequest
+from models import response as R
 from portfolio_engine import get_portfolio_engine
+from services import db as ac_db
 
 router = APIRouter(prefix="/api/v1", tags=["portfolio"])
 executor = ThreadPoolExecutor(max_workers=4)
@@ -15,45 +17,54 @@ executor = ThreadPoolExecutor(max_workers=4)
 async def get_portfolio_valuation():
     try:
         engine = get_portfolio_engine()
-        return {"status": "success", "data": engine.get_valuation()}
+        return R.ok(engine.get_valuation())
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return R.error(str(e), "ERR_VALUATION")
 
 @router.get("/portfolio/risk")
 async def get_portfolio_risk():
     try:
         engine = get_portfolio_engine()
-        return {"status": "success", "data": engine.calculate_risk_metrics()}
+        return R.ok(engine.calculate_risk_metrics())
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return R.error(str(e), "ERR_RISK")
 
 @router.get("/portfolio/history")
 async def get_portfolio_history():
     try:
         engine = get_portfolio_engine()
-        return {"status": "success", "data": engine.get_trade_history(30)}
+        return R.ok(engine.get_trade_history(30))
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return R.error(str(e), "ERR_HISTORY")
 
 @router.get("/portfolio/nav")
 async def get_portfolio_nav():
     try:
         engine = get_portfolio_engine()
-        return {"status": "success", "data": engine.get_nav_history(120)}
+        return R.ok(engine.get_nav_history(120))
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return R.error(str(e), "ERR_NAV")
+
+@router.get("/portfolio/snapshots")
+async def get_portfolio_snapshots():
+    """获取组合每日净值快照 (SQLite, Batch 11)"""
+    try:
+        data = ac_db.get_portfolio_snapshots(90)
+        return R.ok(data, f"{len(data)} snapshots")
+    except Exception as e:
+        return R.error(str(e), "ERR_SNAPSHOTS")
 
 @router.post("/portfolio/trade")
 async def execute_trade(req: TradeRequest):
     try:
         if req.price <= 0:
-            return {"status": "error", "message": "价格必须大于 0"}
+            return R.error("价格必须大于 0", "ERR_INVALID_PRICE")
         if req.amount <= 0:
-            return {"status": "error", "message": "数量必须大于 0"}
+            return R.error("数量必须大于 0", "ERR_INVALID_AMOUNT")
         if req.action not in ("buy", "sell"):
-            return {"status": "error", "message": "操作类型必须为 buy 或 sell"}
+            return R.error("操作类型必须为 buy 或 sell", "ERR_INVALID_ACTION")
         if not req.ts_code or len(req.ts_code.strip()) < 3:
-            return {"status": "error", "message": "请输入有效的证券代码"}
+            return R.error("请输入有效的证券代码", "ERR_INVALID_CODE")
 
         engine = get_portfolio_engine()
         if req.action == "buy":
@@ -62,11 +73,11 @@ async def execute_trade(req: TradeRequest):
             success, msg = engine.reduce_position(req.ts_code.strip(), req.amount, req.price)
 
         if success:
-            return {"status": "success", "message": msg}
+            return R.ok(message=msg)
         else:
-            return {"status": "error", "message": msg}
+            return R.error(msg, "ERR_TRADE_REJECTED")
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return R.error(str(e), "ERR_TRADE")
 
 @router.post("/portfolio/import")
 async def import_portfolio(file: UploadFile = File(...)):
@@ -85,10 +96,13 @@ async def import_portfolio(file: UploadFile = File(...)):
 
         engine = get_portfolio_engine()
         result = engine.import_from_txt(text)
-        return {"status": "success" if result["success"] else "error", "data": result}
+        if result["success"]:
+            return R.ok(result)
+        else:
+            return R.error("导入解析失败", "ERR_IMPORT", data=result)
     except Exception as e:
         traceback.print_exc()
-        return {"status": "error", "message": str(e)}
+        return R.error(str(e), "ERR_IMPORT")
 
 @router.post("/portfolio/reset")
 async def reset_portfolio():
@@ -96,9 +110,9 @@ async def reset_portfolio():
     try:
         engine = get_portfolio_engine()
         result = engine.reset_portfolio()
-        return {"status": "success", "data": result}
+        return R.ok(result)
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return R.error(str(e), "ERR_RESET")
 
 @router.post("/portfolio/sync")
 async def sync_portfolio_prices():
@@ -107,7 +121,7 @@ async def sync_portfolio_prices():
         engine = get_portfolio_engine()
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(executor, engine.sync_prices)
-        return {"status": "success", "data": result}
+        return R.ok(result)
     except Exception as e:
         traceback.print_exc()
-        return {"status": "error", "message": str(e)}
+        return R.error(str(e), "ERR_SYNC")

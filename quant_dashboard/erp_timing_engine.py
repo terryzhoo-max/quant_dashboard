@@ -36,6 +36,7 @@ from concurrent.futures import ThreadPoolExecutor
 from config import TUSHARE_TOKEN as CONFIG_TOKEN
 from erp_signal_enhancer import adaptive_weights, multi_timeframe_confirmation
 import erp_params
+from services import db as ac_db
 
 TUSHARE_TOKEN = os.environ.get("TUSHARE_TOKEN", CONFIG_TOKEN)
 ts.set_token(TUSHARE_TOKEN)
@@ -63,16 +64,37 @@ def retry_with_backoff(max_retries=3, base_delay=2.0):
         return wrapper
     return decorator
 
-# ===== 原子性文件写入 =====
+# ===== 原子性文件写入 (V2.1: 线程安全 + Windows文件锁重试) =====
 def atomic_write_parquet(df, filepath):
-    tmp_path = filepath + ".tmp"
-    try:
-        df.to_parquet(tmp_path)
-        os.replace(tmp_path, filepath)
-    except Exception as e:
-        if os.path.exists(tmp_path):
+    """写入 parquet 文件，使用线程唯一的临时文件名避免并发冲突"""
+    tid = threading.get_ident()
+    tmp_path = f"{filepath}.{tid}.tmp"
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            df.to_parquet(tmp_path)
+            os.replace(tmp_path, filepath)
+            return
+        except PermissionError:
+            # Windows 文件锁延迟释放，等待后重试
+            if attempt < max_retries - 1:
+                time.sleep(0.5 * (attempt + 1))
+            else:
+                # 最终失败也不崩溃 — 下次请求会重新拉取
+                print(f"[atomic_write] 写入失败(3次重试): {filepath}, 跳过缓存更新")
+        except Exception as e:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+            raise e
+    # 清理残留 tmp
+    if os.path.exists(tmp_path):
+        try:
             os.remove(tmp_path)
-        raise e
+        except OSError:
+            pass
 
 # ===== 线程安全 + SWR 后台缓存 =====
 _cache = {}
@@ -102,7 +124,10 @@ def _cached(key: str, ttl_seconds: int, fetcher):
                 return data
             else:
                 # SWR 模式: 返回旧数据，并在后台异步刷新
-                _bg_executor.submit(_refresh_cache, key, fetcher)
+                try:
+                    _bg_executor.submit(_refresh_cache, key, fetcher)
+                except RuntimeError:
+                    pass  # shutdown 阶段, 跳过后台刷新
                 return data
 
     # 内存无数据，必须同步阻塞拉取（通常是冷启动或服务重启后）
@@ -203,9 +228,16 @@ class ERPTimingEngine:
             "prev_score": self._prev_score,
             "prev_score_date": str(self._prev_score_date) if self._prev_score_date else None,
             "score_high_water": self._score_high_water,
-            "score_history": self._score_history[-5:],  # O6: 保留最近5条
-            "prev_smooth_score": getattr(self, '_prev_smooth_score', None),  # V3.0: 持久化 EMA
+            "score_history": self._score_history[-5:],
+            "prev_smooth_score": getattr(self, '_prev_smooth_score', None),
         }
+        # SQLite 主写入 (每条 score_history 入库)
+        try:
+            for entry in self._score_history[-5:]:
+                ac_db.upsert_erp_daily(entry["date"], entry["score"])
+        except Exception:
+            pass
+        # JSON 备份写入
         tmp_path = filepath + ".tmp"
         try:
             with open(tmp_path, "w", encoding="utf-8") as f:

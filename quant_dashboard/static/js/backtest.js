@@ -321,7 +321,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (isPkMode && tsCodes.length > 1) {
                 setProgress(30, 'step-backtest');
-                const response = await fetch('/api/v1/batch-backtest', {
+                const response = await AC.secureFetch('/api/v1/batch-backtest', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ items: tsCodes.map(code => ({ ...basePayload, ts_code: code })) })
@@ -333,7 +333,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 else showError(result.message);
             } else {
                 setProgress(25, 'step-backtest');
-                const response = await fetch('/api/v1/backtest', {
+                const response = await AC.secureFetch('/api/v1/backtest', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ ...basePayload, ts_code: tsCodes[0] })

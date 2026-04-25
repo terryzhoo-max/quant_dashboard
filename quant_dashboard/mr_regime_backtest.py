@@ -124,8 +124,9 @@ def signal_state_machine(price_arr, p):
                 in_pos, entry_px, sig[i] = True, price_arr[i], 1.
         else:
             cumret = price_arr[i]/entry_px - 1
+            sl_val = abs(p.get("stop_loss", 0.08))
             if (rsi[i] >= p["rsi_sell"] or
-                cumret < -p["stop_loss"] or
+                cumret < -sl_val or
                 price_arr[i] < ma_t[i]*0.97):
                 in_pos = False
             else:

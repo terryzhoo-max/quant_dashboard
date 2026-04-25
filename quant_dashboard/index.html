@@ -7,13 +7,14 @@
     <meta name="theme-color" content="#07090e">
     <title>AlphaCore 投研量化终端</title>
     <!-- 引入外部样式 -->
-    <link rel="stylesheet" href="./styles.css?v=10">
+    <link rel="stylesheet" href="./static/css/styles.css?v=10">
     <!-- 引入高级无衬线字体 Inter -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Chart.js 移除 (极简主义与性能优化) -->
     <!-- ECharts 可视化引擎 -->
-    <script src="./echarts.min.js"></script>
-    <script src="./alphacore_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+    <script>window.echarts || document.write('<script src="./static/vendor/echarts.min.js"><\/script>')</script>
+    <script src="./static/js/alphacore_utils.js"></script>
 </head>
 <body>
     <!-- 左侧导航栏 -->
@@ -573,6 +574,6 @@
         </div>
     </main>
 
-    <script src="./script.js?v=10"></script>
+    <script src="./static/js/script.js?v=10"></script>
 </body>
 </html>

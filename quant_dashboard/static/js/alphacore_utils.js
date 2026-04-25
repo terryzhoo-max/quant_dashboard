@@ -101,4 +101,43 @@
         }, 200);
     });
 
+    // ── 安全通信封装 (Batch 6.1) ──
+    AC.secureFetch = async function(url, options = {}) {
+        let apiKey = localStorage.getItem('alphacore_api_key');
+        if (!apiKey) {
+            apiKey = prompt("⚠️ 安全拦截：请输入您的系统 API Key (X-API-Key) 以继续该操作：");
+            if (!apiKey) {
+                const err = new Error("未提供验证凭据，操作已取消。");
+                err.isCancelled = true;
+                alert(err.message);
+                throw err;
+            }
+            localStorage.setItem('alphacore_api_key', apiKey);
+        }
+
+        options.headers = options.headers || {};
+        options.headers['X-API-Key'] = apiKey;
+        
+        if (options.body && typeof options.body === 'string' && !options.headers['Content-Type']) {
+            options.headers['Content-Type'] = 'application/json';
+        }
+
+        const res = await fetch(url, options);
+
+        if (res.status === 401 || res.status === 403) {
+            localStorage.removeItem('alphacore_api_key');
+            let errMsg = "API Key 无效或已过期，请重新操作。";
+            try {
+                const errJson = await res.json();
+                if (errJson.message) errMsg = errJson.message;
+            } catch (e) {}
+            alert("🔒 安全拦截: " + errMsg);
+            const err = new Error(errMsg);
+            err.status = res.status;
+            throw err;
+        }
+
+        return res;
+    };
+
 })();

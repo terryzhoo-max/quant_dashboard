@@ -1,11 +1,10 @@
-import pandas as pd
-import os
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from core_etf_config import CORE_ETF_CODES
 
 # DATA_DIR in data_manager.py is "data_lake"
 DAILY_PRICE_DIR = "data_lake/daily_prices"
-etf_list = ["512760.SH", "512720.SH", "515880.SH", "562030.SH", "515030.SH", "512010.SH", 
-            "512690.SH", "512880.SH", "512800.SH", "512660.SH", "512400.SH", 
-            "159915.SZ"]
+etf_list = CORE_ETF_CODES
 
 print(f"Checking directory: {DAILY_PRICE_DIR}")
 if not os.path.exists(DAILY_PRICE_DIR):

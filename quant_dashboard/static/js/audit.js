@@ -751,7 +751,7 @@ async function toggleEnforcer() {
     const newState = !isActive;
 
     try {
-        const resp = await fetch(`/api/v1/audit/enforcer/toggle?enabled=${newState}`, { method: 'POST' });
+        const resp = await AC.secureFetch(`/api/v1/audit/enforcer/toggle?enabled=${newState}`, { method: 'POST' });
         const data = await resp.json();
         if (data.status === 'ok') {
             if (newState) {
@@ -777,7 +777,7 @@ async function toggleMute() {
     try {
         if (isMuted) {
             // 解除静音
-            await fetch('/api/v1/audit/mute', { method: 'DELETE' });
+            await AC.secureFetch('/api/v1/audit/mute', { method: 'DELETE' });
             btn.classList.remove('muted');
             btn.innerHTML = '🔇 静音';
             document.getElementById('mute-countdown').textContent = '';
@@ -785,7 +785,7 @@ async function toggleMute() {
             muteTimer = null;
         } else {
             // 设置静音 30 分钟
-            await fetch('/api/v1/audit/mute?minutes=30&degraded=true', { method: 'POST' });
+            await AC.secureFetch('/api/v1/audit/mute?minutes=30&degraded=true', { method: 'POST' });
             btn.classList.add('muted');
             btn.innerHTML = '🔔 解除静音';
             startMuteCountdown(30);

@@ -1,4 +1,4 @@
-﻿    <style>
+        /* ---- V6.0 产业深研终端 · 外部样式 ---- */
         /* ============================================ */
         /*  V4.0 产业深研终端 · Data-Honest 视觉系统    */
         /* ============================================ */
@@ -8,13 +8,11 @@
             flex-direction: column;
             gap: 20px;
             padding: 20px 24px;
-            height: calc(100vh - 80px);
-            overflow-y: auto;
         }
 
         /* --- V4.0 Regime Banner --- */
         .regime-banner {
-            margin: 0 24px;
+            margin: 20px 24px 10px;
             padding: 10px 18px;
             border-radius: 10px;
             border: 1px solid rgba(148,163,184,0.15);
@@ -28,7 +26,7 @@
         }
 
         /* --- 顶部行业脉冲导航 V4.0 --- */
-        .sector-pulse-nav { margin: 0 24px 0; padding: 10px 14px; overflow-x: auto; white-space: nowrap; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.08) transparent; }
+        .sector-pulse-nav { margin: 10px 24px 16px; padding: 10px 14px; overflow-x: auto; overflow-y: visible; white-space: nowrap; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.08) transparent; min-height: 90px; }
         .sector-pulse-nav::-webkit-scrollbar { height: 4px; }
         .sector-pulse-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
         #sector-nav-container { display: flex; gap: 8px; }
@@ -136,7 +134,7 @@
             padding: 6px 16px; border-radius: 8px; cursor: pointer;
             background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.2);
             color: #60a5fa; font-size: 0.82rem; font-weight: 600;
-            transition: all 0.3s; margin: 0 24px 0; width: fit-content;
+            transition: all 0.3s; margin: 0 24px 10px; width: fit-content;
         }
         .glossary-toggle:hover { background: rgba(59,130,246,0.15); transform: translateY(-1px); }
         .glossary-toggle.pulse-hint { animation: glossaryPulse 2s ease-in-out 3; }
@@ -191,7 +189,7 @@
         /* --- 主内容双栏 --- */
         .main-two-col {
             display: grid;
-            grid-template-columns: 420px 1fr;
+            grid-template-columns: 380px 1fr;
             gap: 20px;
         }
         /* V5.1 Fix P2#13: 合并到 L433 的统一 @media 块 */
@@ -420,8 +418,8 @@
         .skeleton-loading .stat-desc,
         .skeleton-loading .metric-threshold { opacity: 0.3; }
 
-        /* 响应式 (已与 L207 的 @media 合并) */
-        @media (max-width: 1200px) {
+        /* 响应式: 仅在极窄视口下才切换为单栏 */
+        @media (max-width: 900px) {
             .main-two-col { grid-template-columns: 1fr; }
             .chart-constituents-row { grid-template-columns: 1fr; }
             .metric-row { grid-template-columns: repeat(2, 1fr); }

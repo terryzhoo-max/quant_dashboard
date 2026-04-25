@@ -9,24 +9,35 @@ document.addEventListener('DOMContentLoaded', function() {
     let allSectorData = [];
 
     const SECTORS = [
+        // ── 硬科技·芯片算力 ──
         { code: "512760.SH", name: "半导体/芯片" },
         { code: "512720.SH", name: "计算机/AI" },
-        { code: "515880.SH", name: "通信设备/卫星互联" },
         { code: "562030.SH", name: "算力/AI基建" },
+        // ── 通信·星际 ──
+        { code: "515880.SH", name: "通信设备/卫星互联" },
+        { code: "159218.SZ", name: "卫星/商业航天" },
+        // ── 智造·装备 ──
+        { code: "562500.SH", name: "人形机器人/智能制造" },
+        { code: "159663.SZ", name: "工业母机/自主可控" },
+        // ── 新能源·新材料 ──
         { code: "515030.SH", name: "新能源车" },
-        { code: "512010.SH", name: "医药生物" },
-        { code: "512690.SH", name: "酒/自选消费" },
-        { code: "512880.SH", name: "证券/非银" },
-        { code: "512800.SH", name: "银行/金融" },
-        { code: "512660.SH", name: "军工龙头" },
+        { code: "516360.SH", name: "前沿新材料" },
         { code: "512400.SH", name: "有色金属" },
+        // ── 生物·医药 ──
+        { code: "512010.SH", name: "医药生物" },
+        { code: "159992.SZ", name: "创新药/生物制造" },
+        // ── 数字经济 ──
+        { code: "515400.SH", name: "数据要素/数字经济" },
+        // ── 国防·金融·成长 ──
+        { code: "512660.SH", name: "军工龙头" },
+        { code: "512880.SH", name: "证券/非银" },
         { code: "159915.SZ", name: "创业板/成长" }
     ];
 
     // === 指标百科数据 V4.0 ===
     const GLOSSARY = [
         { name: "Alpha Score (综合评分)", desc: "四因子加权的综合投资评分。热度30% + 动量25% + 估值安全25% + 趋势强度20%。分数越高越值得配置。", range: "60-80 优质", warn: "< 35 需回避" },
-        { name: "RPS (动态相对强度)", desc: "该行业ETF近20日收益率在12个核心ETF中的排名百分位。反映板块在同类中的相对表现。", range: "> 80 优秀", warn: "< 30 极弱，谨慎追入" },
+        { name: "RPS (动态相对强度)", desc: "该行业ETF近20日收益率在全部核心ETF池中的排名百分位。反映板块在同类中的相对表现。", range: "> 80 优秀", warn: "< 30 极弱，谨慎追入" },
         { name: "价格百分位 (估值代理)", desc: "当前价格在过去5年(1250个交易日)价格分布中的百分位。低=便宜=安全边际高，高=昂贵=回撤风险大。", range: "20-60 合理", warn: "> 80 极贵，< 15 极便宜" },
         { name: "成交拥挤度", desc: "当日成交额与20日平均成交额的比值。衡量场内资金的拥挤程度，过高表示追涨情绪浓厚。", range: "0.8-1.5x 健康", warn: "> 2.0x 极度拥挤，追高危险" },
         { name: "热度分 (Heat Score)", desc: "资金关注度综合评分。成交放量比40% + 5日动量35% + 拥挤度修正25%。反映市场资金对该行业的关注热情。", range: "45-70 活跃", warn: "> 85 过热，可能见顶" },
@@ -387,7 +398,13 @@ document.addEventListener('DOMContentLoaded', function() {
     // === V5.0 热力矩阵 (5维: +趋势强度) — Fix4 ===
     function renderHeatmapChart(data) {
         if (!data || data.length === 0) return;
-        const names = data.map(d => d.name);
+        // V6.0: 热力矩阵使用短名，避免16+标签在X轴挤压重叠
+        const names = data.map(d => {
+            const n = d.name;
+            if (n.includes('/')) return n.split('/')[0];
+            return n.length > 4 ? n.substring(0, 4) : n;
+        });
+        const fullNames = data.map(d => d.name);  // tooltip 用全名
         const dims = ['Alpha', '热度', '动量', '估值安全', '趋势强度'];
         const gradeLabels = { 0: '极弱', 20: '弱', 40: '偏弱', 50: '中性', 60: '偏强', 75: '强', 90: '极强' };
         const heatData = [];
@@ -420,14 +437,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 formatter: p => {
                     const val = p.data[2];
                     const grade = getGradeLabel(val);
-                    return `<b>${names[p.data[0]]}</b><br/>${dims[p.data[1]]}: <b>${val}</b> <span style="opacity:0.6">(${grade})</span>`;
+                    return `<b>${fullNames[p.data[0]]}</b><br/>${dims[p.data[1]]}: <b>${val}</b> <span style="opacity:0.6">(${grade})</span>`;
                 }
             },
-            grid: { top: 10, bottom: 60, left: 80, right: 20 },
+            grid: { top: 10, bottom: 70, left: 80, right: 20 },
             xAxis: {
                 type: 'category',
                 data: names,
-                axisLabel: { color: '#cbd5e1', fontSize: 10, rotate: 35 },
+                axisLabel: { color: '#cbd5e1', fontSize: 9, rotate: 45, interval: 0 },
                 splitArea: { show: false }
             },
             yAxis: {
@@ -464,6 +481,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 itemStyle: { borderColor: 'rgba(7,9,14,0.8)', borderWidth: 3, borderRadius: 4 }
             }]
         });
+        // V6.0: 延迟触发 resize 确保 16 只 ETF 尺寸计算准确
+        setTimeout(() => charts.heatmap.resize(), 200);
     }
 
     // === ECharts 仪表盘配置 (AIAE 温度计风格) ===
@@ -717,10 +736,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // === 同步数据 ===
     async function syncData() {
-        if (!confirm("确定要同步全量产业情报？\n将触发 12 个核心 ETF 数据深度抓取，约需 10-20 秒。")) return;
+        if (!confirm(`确定要同步全量产业情报？\n将触发 ${SECTORS.length} 个核心 ETF 数据深度抓取，约需 15-30 秒。`)) return;
+
         overlay.style.display = 'flex';
         try {
-            const res = await fetch('/api/v1/sync/industry', { method: 'POST' });
+            const res = await AC.secureFetch('/api/v1/sync/industry', { method: 'POST' });
+
             const result = await res.json();
             if (result.status === 'success') {
                 alert("同步成功！最新数据已就绪。");
@@ -731,6 +752,7 @@ document.addEventListener('DOMContentLoaded', function() {
             loadIndustryDetail(currentCode);
         } catch (err) {
             console.error("同步异常", err);
+            alert("网络或系统错误，同步异常。");
         } finally {
             overlay.style.display = 'none';
         }

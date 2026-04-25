@@ -284,7 +284,7 @@ async function submitFundPositionUpdate() {
     if (resultEl) { resultEl.textContent = '⏳ 正在更新...'; resultEl.style.color = '#f59e0b'; }
 
     try {
-        const resp = await fetch('/api/v1/aiae/update_fund_position', {
+        const resp = await AC.secureFetch('/api/v1/aiae/update_fund_position', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ value: value, date: date })

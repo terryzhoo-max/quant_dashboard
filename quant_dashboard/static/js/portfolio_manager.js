@@ -590,7 +590,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         try {
-            const res = await fetch('/api/v1/portfolio/trade', {
+            const res = await AC.secureFetch('/api/v1/portfolio/trade', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -834,7 +834,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const formData = new FormData();
             formData.append('file', pendingImportFile);
 
-            const res = await fetch('/api/v1/portfolio/import', {
+            const res = await AC.secureFetch('/api/v1/portfolio/import', {
                 method: 'POST',
                 body: formData
             });
@@ -926,7 +926,7 @@ document.addEventListener('DOMContentLoaded', function () {
         resetExecBtn.disabled = true;
         resetExecBtn.textContent = '⏳ 清零中...';
         try {
-            const res = await fetch('/api/v1/portfolio/reset', { method: 'POST' });
+            const res = await AC.secureFetch('/api/v1/portfolio/reset', { method: 'POST' });
             const result = await res.json();
             if (result.status === 'success') {
                 resetModal.style.display = 'none';
@@ -963,7 +963,7 @@ document.addEventListener('DOMContentLoaded', function () {
         showToast('正在从 Tushare 拉取最新行情数据...', 'info', 4000);
 
         try {
-            const res = await fetch('/api/v1/portfolio/sync', { method: 'POST' });
+            const res = await AC.secureFetch('/api/v1/portfolio/sync', { method: 'POST' });
             const result = await res.json();
 
             if (result.status === 'success' && result.data.success) {

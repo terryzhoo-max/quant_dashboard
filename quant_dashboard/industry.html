@@ -5,11 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AlphaCore | 产业深研终端 V5.0</title>
     <meta name="description" content="AlphaCore 产业追踪深研终端 - 12大前沿产业ETF实时Alpha Score综合评分、动态RPS排名、真实价格百分位、买入止盈策略建议与风险警示 (覆盖半导体/AI/卫星互联/算力基建/新能源车/军工/有色等核心赛道)">
-    <link rel="stylesheet" href="./styles.css?v=6">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
-    <script src="./echarts.min.js"></script>
-    <script src="./alphacore_utils.js"></script>
-    <link rel="stylesheet" href="./industry.css?v=1">
+    <link rel="stylesheet" href="./static/css/styles.css?v=11">
+    <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+    <script>window.echarts || document.write('<script src="./static/vendor/echarts.min.js"><\/script>')</script>
+    <script src="./static/js/alphacore_utils.js"></script>
+    <link rel="stylesheet" href="./static/css/industry.css?v=6">
 </head>
 <body class="industry-scope">
     <aside class="sidebar">
@@ -173,7 +174,7 @@
             <!-- V4.0: 热力矩阵 (替代雷达图) -->
             <div class="heatmap-section glass-panel">
                 <h3 style="font-size: 1rem; margin-bottom: 16px;">🔥 行业多维热力矩阵 (Alpha × Heat × Momentum × Valuation × Trend)</h3>
-                <div id="heatmap-chart" style="height: 280px;"></div>
+                <div id="heatmap-chart" style="height: 320px;"></div>
             </div>
         </div>
     </main>
@@ -183,6 +184,6 @@
         <p style="color: #fff; font-weight: 500; margin-top: 20px;">AlphaCore V5.0 正在计算 Alpha Score 综合评分矩阵...</p>
     </div>
 
-    <script src="./industry.js?v=6"></script>
+    <script src="./static/js/industry.js?v=7"></script>
 </body>
 </html>

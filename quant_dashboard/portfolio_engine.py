@@ -15,6 +15,7 @@ import json
 import os
 from datetime import datetime
 from data_manager import FactorDataManager
+from services import db as ac_db
 
 # ─── 全局单例 ───
 _engine_instance = None
@@ -109,8 +110,8 @@ class PortfolioEngine:
             json.dump(self.trade_history, f, indent=4, ensure_ascii=False)
 
     def _record_trade(self, action: str, ts_code: str, name: str, amount: int, price: float, success: bool, msg: str):
-        """追加交易记录"""
-        self.trade_history.append({
+        """追加交易记录 (SQLite 主存储 + JSON 备份)"""
+        trade = {
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "action": action,
             "ts_code": ts_code,
@@ -120,8 +121,14 @@ class PortfolioEngine:
             "total": safe_round(amount * price, 2),
             "success": success,
             "message": msg
-        })
-        # 保留最近 200 条
+        }
+        # SQLite 主写入
+        try:
+            ac_db.add_trade(trade)
+        except Exception:
+            pass  # SQLite 失败不阻塞交易
+        # JSON 备份写入 (双写期)
+        self.trade_history.append(trade)
         if len(self.trade_history) > 200:
             self.trade_history = self.trade_history[-200:]
         self._save_history()
@@ -557,7 +564,14 @@ class PortfolioEngine:
     # ──────────────────────────────────────
 
     def get_trade_history(self, limit: int = 30):
-        """返回最近 N 条交易记录"""
+        """返回最近 N 条交易记录 (SQLite 优先, JSON 降级)"""
+        try:
+            rows = ac_db.get_trades(limit=limit)
+            if rows:
+                return rows
+        except Exception:
+            pass
+        # JSON fallback
         records = self.trade_history[-limit:] if len(self.trade_history) > limit else self.trade_history
         return list(reversed(records))  # 最新的在前
 

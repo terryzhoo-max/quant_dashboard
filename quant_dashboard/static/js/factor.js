@@ -249,7 +249,7 @@ document.addEventListener('DOMContentLoaded', function () {
         try {
             showLoading('正在计算 Alpha Score V5.0...', 35);
 
-            const response = await fetch('/api/v1/factor-analysis', {
+            const response = await AC.secureFetch('/api/v1/factor-analysis', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)

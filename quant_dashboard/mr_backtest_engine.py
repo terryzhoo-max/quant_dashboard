@@ -196,7 +196,7 @@ def signal_state_machine(price_arr: np.ndarray, p: dict) -> Tuple[np.ndarray, np
     rb  = p["rsi_buy"]
     rs  = p["rsi_sell"]
     bb  = p["bias_buy"]
-    sl  = p["stop_loss"]
+    sl  = abs(p["stop_loss"]) if "stop_loss" in p else 0.08
 
     if n < nt + rp + 5:
         return np.zeros(n), np.ones(n)
@@ -253,7 +253,7 @@ def signal_state_machine(price_arr: np.ndarray, p: dict) -> Tuple[np.ndarray, np
             cumret     = px / entry_px - 1
 
             sell_trig  = (rsi[i] >= rs or
-                          cumret < -sl or
+                          cumret < -abs(sl) or
                           px < ma_t[i] * 0.97)  # 跌破趋势线3%以上强制出场
 
             if sell_trig:
@@ -324,7 +324,8 @@ def portfolio_backtest(price_mat: pd.DataFrame, bm_series: pd.Series, p: dict) -
     bm_eq   = (1 + bm_ret).cumprod()
 
     result = _calc_metrics(equity, bm_eq,
-                           pd.Series(net_ret, index=price_mat.index), bm_ret)
+                           pd.Series(net_ret, index=price_mat.index), bm_ret,
+                           final_w)
     if result["valid"]:
         # 附带净值序列（用于验证集 JSON 输出）
         result["equity_dates"]  = [d.strftime("%Y-%m-%d") for d in equity.index.tolist()]
@@ -337,7 +338,8 @@ def portfolio_backtest(price_mat: pd.DataFrame, bm_series: pd.Series, p: dict) -
 # ─── 指标计算 ─────────────────────────────────────────────────────────────────
 
 def _calc_metrics(eq: pd.Series, bm_eq: pd.Series,
-                  port_ret: pd.Series, bm_ret: pd.Series) -> dict:
+                  port_ret: pd.Series, bm_ret: pd.Series,
+                  final_w: np.ndarray = None) -> dict:
     n = len(eq)
     if n < 50:
         return {"valid": False}
@@ -365,13 +367,20 @@ def _calc_metrics(eq: pd.Series, bm_eq: pd.Series,
     wk        = port_ret.resample("W").sum()
     win_rate  = float((wk > 0).sum() / max(len(wk), 1))
 
-    # 复合优化得分（与预案一致）
+    # V4.3: coverage 统计（与 optimizer 对齐）
+    if final_w is not None:
+        total_pos_days = (final_w.sum(axis=1) > 0.01).sum()
+        coverage = total_pos_days / max(n, 1)
+    else:
+        coverage = 0.5  # 无权重矩阵时给中性值
+
+    # V4.3: 修复 opt_score — 回撤项线性化 + coverage 提权至25%
     opt_score = (
-        0.40 * min(max(alpha / 0.15, 0), 1.0)           # Alpha 贡献
-      + 0.25 * min(max(sharpe / 2.0, 0), 1.0)           # Sharpe
-      + 0.20 * min(max(1 + max_dd, 0.70), 1.0) / 0.30  # 回撤（-30%=0，0%=1）
-        * 0.30
-      + 0.15 * min(max(calmar / 1.5, 0), 1.0)           # Calmar
+        0.30 * min(max(alpha / 0.20, 0), 1.0)               # Alpha 占30%
+      + 0.20 * min(max(sharpe / 2.0, 0), 1.0)               # Sharpe 占20%
+      + 0.15 * max(min((max_dd + 0.30) / 0.30, 1.0), 0)     # 回撤：-30%→0, 0%→1
+      + 0.10 * min(max(calmar / 1.5, 0), 1.0)               # Calmar 占10%
+      + 0.25 * min(max(coverage / 0.30, 0), 1.0)            # Coverage 占25%
     )
 
     return {
@@ -386,6 +395,7 @@ def _calc_metrics(eq: pd.Series, bm_eq: pd.Series,
         "calmar":     round(calmar,  3),
         "ir":         round(ir,      3),
         "win_rate":   round(win_rate * 100, 1),
+        "coverage":   round(coverage * 100, 1),
         "opt_score":  round(opt_score, 4),
     }
 

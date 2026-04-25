@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AlphaCore · 海外策略终端</title>
     <meta name="description" content="AlphaCore 海外策略终端 - 美债利率择时 · 全球ERP跨市场配置决策">
-    <link rel="stylesheet" href="./styles.css">
-    <link rel="stylesheet" href="./strategy.css">
-    <link rel="stylesheet" href="./treasury.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./static/css/styles.css">
+    <link rel="stylesheet" href="./static/css/strategy.css">
+    <link rel="stylesheet" href="./static/css/treasury.css">
+    <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 </head>
 <body>
     <aside class="sidebar">
@@ -958,9 +958,10 @@
         </div>
     </main>
 
-    <script src="./echarts.min.js"></script>
-    <script src="./alphacore_utils.js"></script>
-    <script src="./treasury.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+    <script>window.echarts || document.write('<script src="./static/vendor/echarts.min.js"><\/script>')</script>
+    <script src="./static/js/alphacore_utils.js"></script>
+    <script src="./static/js/treasury.js"></script>
 
     <script>
     // V2.0: 页面打开自动加载
@@ -986,7 +987,7 @@
         const btn = document.getElementById('jp-margin-btn');
         btn.disabled = true; btn.textContent = '⏳ 提交中...';
         try {
-            const resp = await fetch('/api/v1/aiae_jp/update_margin', {
+            const resp = await AC.secureFetch('/api/v1/aiae_jp/update_margin', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({margin_buying_trillion_jpy: val})
@@ -1021,7 +1022,7 @@
         const btn = document.getElementById('jp-foreign-btn');
         btn.disabled = true; btn.textContent = '⏳ 提交中...';
         try {
-            const resp = await fetch('/api/v1/aiae_jp/update_foreign', {
+            const resp = await AC.secureFetch('/api/v1/aiae_jp/update_foreign', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(body)
@@ -1074,7 +1075,7 @@
         const btn = document.getElementById('hk-sb-btn');
         btn.disabled = true; btn.textContent = '⏳ 提交中...';
         try {
-            const resp = await fetch('/api/v1/aiae_hk/update_southbound', {
+            const resp = await AC.secureFetch('/api/v1/aiae_hk/update_southbound', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(body)
@@ -1103,7 +1104,7 @@
         const btn = document.getElementById('hk-ah-btn');
         btn.disabled = true; btn.textContent = '⏳ 提交中...';
         try {
-            const resp = await fetch('/api/v1/aiae_hk/update_ah_premium', {
+            const resp = await AC.secureFetch('/api/v1/aiae_hk/update_ah_premium', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({index_value: val})

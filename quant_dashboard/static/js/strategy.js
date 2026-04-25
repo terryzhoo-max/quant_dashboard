@@ -68,7 +68,7 @@ function calcSignalScore() {
 
     // ── 市场状态自适应门槛 ──
     let gate;
-    if (reg === 20)      gate = 75;  // BULL牛市：门槛降低（回调即机会）
+    if (reg === 20)      gate = 60;  // BULL牛市 — V4.3: 与引擎 REGIME_SCORE_GATE 对齐
     else if (reg === 12) gate = 68;  // RANGE震荡：标准
     else                 gate = 78;  // BEAR熊市：严格（防接飞刀）
     const halfGate = Math.round(gate * 0.85);
@@ -347,7 +347,7 @@ function _renderMrActiveParams(data) {
     _t('mr-ap-rsibuy', params.rsi_buy  != null ? String(params.rsi_buy)          : '—', '#34d399');
     _t('mr-ap-rsisell',params.rsi_sell != null ? String(params.rsi_sell)         : '—', '#f87171');
     _t('mr-ap-bias',   params.bias_buy != null ? `${params.bias_buy}%`           : '—', '#fbbf24');
-    _t('mr-ap-sl',     params.stop_loss!= null ? `-${(params.stop_loss*100).toFixed(0)}%` : '—', '#f87171');
+    _t('mr-ap-sl',     params.stop_loss!= null ? `-${Math.abs(params.stop_loss*100).toFixed(0)}%` : '—', '#f87171');
     _t('mr-ap-poscap', `${Math.round(posCap*100)}%`, '#34d399');
     _t('mr-ap-gate',   `${gate}分`, '#fbbf24');
     _t('mr-ap-time',   new Date().toLocaleTimeString('zh-CN'));
@@ -369,7 +369,7 @@ function _renderMrActiveParams(data) {
                 <td>${p.rsi_buy  !=null?'≤'+p.rsi_buy:'—'}</td>
                 <td>${p.rsi_sell !=null?'≥'+p.rsi_sell:'—'}</td>
                 <td>${p.bias_buy !=null?p.bias_buy+'%':'—'}</td>
-                <td>${p.stop_loss!=null?'-'+(p.stop_loss*100).toFixed(0)+'%':'—'}</td>
+                <td>${p.stop_loss!=null?'-'+Math.abs(p.stop_loss*100).toFixed(0)+'%':'—'}</td>
                 <td>${capMap[r]||'—'}%</td>
             </tr>`;
         }).join('');

@@ -3,10 +3,14 @@ import asyncio
 import time
 import json
 import os
+import threading
 import traceback
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter
+from services.logger import get_logger
+
+logger = get_logger("aiae")
 
 from models.schemas import (
     FundPositionUpdate, HKSouthboundUpdate, HKAHPremiumUpdate,
@@ -18,9 +22,11 @@ from aiae_jp_engine import get_jp_aiae_engine
 from aiae_hk_engine import get_hk_aiae_engine
 from erp_hk_engine import get_hk_erp_engine
 from mean_reversion_engine import detect_regime, get_all_regime_params, needs_reoptimize
-from services.cache_store import (
-    AIAE_GLOBAL_CACHE, _AIAE_GLOBAL_LOCK, get_global_aiae_ttl,
-)
+# Batch 7: 统一缓存层 — 消除 cache_store 双写, 全部走 cache_manager
+from services.cache_service import cache_manager
+from services.dashboard_builder import _get_global_aiae_ttl
+
+_AIAE_GLOBAL_LOCK = threading.Lock()
 
 router = APIRouter(prefix="/api/v1", tags=["aiae"])
 executor = ThreadPoolExecutor(max_workers=6)
@@ -37,7 +43,7 @@ async def get_aiae_report():
         report = await loop.run_in_executor(executor, engine.generate_report)
         return {"status": "success", "data": report, "timestamp": datetime.now().isoformat()}
     except Exception as e:
-        print(f"[AIAE API] report error: {e}")
+        logger.error(f"AIAE report error: {e}")
         return {"status": "error", "message": str(e)}
 
 @router.get("/aiae/chart")
@@ -83,14 +89,14 @@ async def update_fund_position(req: FundPositionUpdate):
 async def get_aiae_global_report():
     """海外 AIAE 全球报告: L1缓存 + 并行执行 US + JP + HK 引擎, 含四地对比 V2.0"""
     current_time = time.time()
-    ttl = get_global_aiae_ttl()
+    ttl = _get_global_aiae_ttl()
     with _AIAE_GLOBAL_LOCK:
-        _aiae_g_ts = AIAE_GLOBAL_CACHE["last_update"]
-        _aiae_g_data = AIAE_GLOBAL_CACHE["report_data"]
+        _aiae_g_ts = cache_manager.get_json("aiae_global_last_update")
+        _aiae_g_data = cache_manager.get_json("aiae_global_report_data")
     if _aiae_g_ts and (current_time - _aiae_g_ts < ttl):
         age = int(current_time - _aiae_g_ts)
         ttl_label = "美股盘中30min" if ttl == 1800 else ("周末24h" if ttl == 86400 else "盘后4h")
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] Global AIAE Cache Hit [{ttl_label}] ({age}s ago)")
+        logger.info(f"Global AIAE Cache Hit [{ttl_label}] ({age}s ago)")
         return _aiae_g_data
 
     try:
@@ -115,7 +121,7 @@ async def get_aiae_global_report():
                 cn_aiae_v1 = cn_report["current"]["aiae_v1"]
                 cn_regime = cn_report["current"]["regime"]
         except Exception as e:
-            print(f"[GlobalAIAE] CN engine fallback: {e}")
+            logger.warning(f"CN engine fallback: {e}")
 
         us_v1 = us_report.get("current", {}).get("aiae_v1", 25.0)
         jp_v1 = jp_report.get("current", {}).get("aiae_v1", 17.0)
@@ -147,9 +153,9 @@ async def get_aiae_global_report():
         }
 
         with _AIAE_GLOBAL_LOCK:
-            AIAE_GLOBAL_CACHE["last_update"] = current_time
-            AIAE_GLOBAL_CACHE["report_data"] = data
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] Global AIAE Cache Miss -> 已重建 (US={us_v1:.1f}% JP={jp_v1:.1f}% HK={hk_v1:.1f}%)")
+            cache_manager.set_json("aiae_global_last_update", current_time)
+            cache_manager.set_json("aiae_global_report_data", data)
+        logger.info(f"Global AIAE Cache Miss -> 已重建 (US={us_v1:.1f}% JP={jp_v1:.1f}% HK={hk_v1:.1f}%)")
 
         return data
     except Exception as e:
@@ -160,8 +166,8 @@ async def get_aiae_global_report():
 async def refresh_aiae_global():
     """强制刷新海外 AIAE 数据: 清除L1+L2缓存后重建"""
     try:
-        AIAE_GLOBAL_CACHE["last_update"] = None
-        AIAE_GLOBAL_CACHE["report_data"] = None
+        cache_manager.set_json("aiae_global_last_update", None)
+        cache_manager.set_json("aiae_global_report_data", None)
         us_engine = get_us_aiae_engine()
         jp_engine = get_jp_aiae_engine()
         hk_engine = get_hk_aiae_engine()
@@ -202,7 +208,7 @@ async def get_erp_hk(market: str = "HSI"):
         report = await loop.run_in_executor(executor, engine.generate_report)
         return {"status": "success", "data": report}
     except Exception as e:
-        print(f"[HK ERP API] Error: {traceback.format_exc()}")
+        logger.error(f"HK ERP Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
 
 
@@ -217,7 +223,7 @@ async def get_aiae_hk_report():
         report = await loop.run_in_executor(executor, engine.generate_report)
         return {"status": "success", "data": report, "timestamp": datetime.now().isoformat()}
     except Exception as e:
-        print(f"[HK AIAE API] report error: {e}")
+        logger.error(f"HK AIAE report error: {e}")
         return {"status": "error", "message": str(e)}
 
 @router.get("/aiae_hk/refresh")
@@ -228,8 +234,8 @@ async def refresh_aiae_hk():
         engine.refresh()
         loop = asyncio.get_event_loop()
         report = await loop.run_in_executor(executor, engine.generate_report)
-        AIAE_GLOBAL_CACHE["last_update"] = None
-        AIAE_GLOBAL_CACHE["report_data"] = None
+        cache_manager.set_json("aiae_global_last_update", None)
+        cache_manager.set_json("aiae_global_report_data", None)
         return {"status": "success", "data": report, "timestamp": datetime.now().isoformat()}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -263,8 +269,8 @@ async def update_hk_southbound(req: HKSouthboundUpdate):
                 req.monthly_net_buy_billion_rmb,
                 req.cumulative_12m_billion_rmb
             )
-        AIAE_GLOBAL_CACHE["last_update"] = None
-        AIAE_GLOBAL_CACHE["report_data"] = None
+        cache_manager.set_json("aiae_global_last_update", None)
+        cache_manager.set_json("aiae_global_report_data", None)
         return {"status": "success", "message": f"南向资金已更新: 周净买入={req.weekly_net_buy_billion_rmb}亿RMB"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -275,8 +281,8 @@ async def update_hk_ah_premium(req: HKAHPremiumUpdate):
     try:
         engine = get_hk_aiae_engine()
         engine.update_ah_premium(req.index_value)
-        AIAE_GLOBAL_CACHE["last_update"] = None
-        AIAE_GLOBAL_CACHE["report_data"] = None
+        cache_manager.set_json("aiae_global_last_update", None)
+        cache_manager.set_json("aiae_global_report_data", None)
         return {"status": "success", "message": f"AH溢价指数已更新为 {req.index_value}"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -290,8 +296,8 @@ async def update_jp_margin(req: JPMarginUpdate):
     try:
         engine = get_jp_aiae_engine()
         engine.update_jp_margin(req.margin_buying_trillion_jpy)
-        AIAE_GLOBAL_CACHE["last_update"] = None
-        AIAE_GLOBAL_CACHE["report_data"] = None
+        cache_manager.set_json("aiae_global_last_update", None)
+        cache_manager.set_json("aiae_global_report_data", None)
         return {"status": "success", "message": f"信用取引残高已更新为 {req.margin_buying_trillion_jpy}兆円"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -302,8 +308,8 @@ async def update_jp_foreign(req: JPForeignUpdate):
     try:
         engine = get_jp_aiae_engine()
         engine.update_jp_foreign(req.net_buy_billion_jpy, req.cumulative_12m_billion_jpy)
-        AIAE_GLOBAL_CACHE["last_update"] = None
-        AIAE_GLOBAL_CACHE["report_data"] = None
+        cache_manager.set_json("aiae_global_last_update", None)
+        cache_manager.set_json("aiae_global_report_data", None)
         return {"status": "success", "message": f"外資流向已更新: 周次净買越={req.net_buy_billion_jpy}億円"}
     except Exception as e:
         return {"status": "error", "message": str(e)}

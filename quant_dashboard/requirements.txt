@@ -1,3 +1,4 @@
+# ── 核心运行时 ──
 fastapi==0.110.0
 uvicorn==0.28.0
 pandas==2.2.1
@@ -9,3 +10,9 @@ scipy>=1.10.0
 requests>=2.31.0
 python-dotenv>=1.0.0
 fredapi>=0.5.0
+redis>=5.0.0
+apscheduler>=3.10.0
+
+# ── 测试 (CI/CD) ──
+pytest>=9.0.0
+httpx>=0.23,<0.28

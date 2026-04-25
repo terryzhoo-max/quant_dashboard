@@ -24,5 +24,8 @@ data_lake/
 .vscode/
 *.swp
 
+# SSL 证书 (Batch 6: 严禁入库!)
+nginx/ssl/
+
 # 系统文件
 Thumbs.db

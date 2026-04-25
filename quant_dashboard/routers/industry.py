@@ -1,4 +1,4 @@
-﻿"""AlphaCore 产业/回测/因子/动量 API — 从 main.py 提取"""
+"""AlphaCore 产业/回测/因子/动量 API — 从 main.py 提取"""
 import asyncio
 import traceback
 from datetime import datetime, timedelta
@@ -22,8 +22,10 @@ from strategies_backtest import (
 )
 from erp_backtest_data import prepare_erp_backtest_data
 from momentum_backtest_engine import run_momentum_backtest, run_momentum_optimize
+from core_etf_config import CORE_ETFS, CORE_ETF_CODES, ETF_CONSTITUENTS, FALLBACK_MOMENTUM
+from industry_engine import IndustryEngine
 from services.industry_tracker import (
-    _tracking_cache_get, _tracking_cache_set,
+    _tracking_cache_get, _tracking_cache_set, _get_tracking_ttl,
     compute_price_percentile, compute_dynamic_rps, compute_momentum_20d,
     compute_sector_heat_score, compute_alpha_score, compute_risk_alerts,
     generate_sector_advice
@@ -41,7 +43,7 @@ def get_etf_constituents(ts_code):
 # 宏观ERP择时引擎 V1.0 API
 # ─────────────────────────────────────────────
 
-@router.get("/api/v1/industry-detail")
+@router.get("/industry-detail")
 async def get_industry_detail(code: str):
     """
     V4.0 产业深度追踪接口: 复用tracking缓存 + 补充图表数据
@@ -125,7 +127,7 @@ async def get_industry_detail(code: str):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-@router.post("/api/v1/backtest")
+@router.post("/backtest")
 async def run_backtest_api(req: BacktestRequest):
     """
     工业级回测执行接口 - 强化版 (支持 QFQ, POV, Trade Log)
@@ -192,7 +194,7 @@ async def run_backtest_api(req: BacktestRequest):
         print(f"Backtest Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
 
-@router.post("/api/v1/batch-backtest")
+@router.post("/batch-backtest")
 async def run_batch_backtest(req: BatchBacktestRequest):
     """
     多策略对比 (Strategy PK) 接口
@@ -201,7 +203,7 @@ async def run_batch_backtest(req: BatchBacktestRequest):
     results = await asyncio.gather(*tasks)
     return {"status": "success", "data": results}
 
-@router.post("/api/v1/factor-analysis")
+@router.post("/factor-analysis")
 async def run_factor_analysis(req: FactorAnalysisRequest):
     """
     因子看板核心 API V2.0：IC分布 + 分组收益 + 质量评级
@@ -293,7 +295,7 @@ async def run_factor_analysis(req: FactorAnalysisRequest):
         print(f"Factor Analysis Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
 
-@router.get("/api/v1/strategy/momentum-backtest")
+@router.get("/strategy/momentum-backtest")
 async def get_momentum_backtest(
     start_date: str = "2021-01-01",
     end_date: str = None,
@@ -329,7 +331,7 @@ async def get_momentum_backtest(
         return {"status": "error", "message": str(e)}
 
 
-@router.get("/api/v1/strategy/momentum-optimize")
+@router.get("/strategy/momentum-optimize")
 async def get_momentum_optimize(
     in_sample_end: str = "2023-12-31",
     out_sample_start: str = "2024-01-01"
@@ -346,7 +348,7 @@ async def get_momentum_optimize(
         print(f"Momentum Optimize Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
 
-@router.get("/api/v1/market/regime")
+@router.get("/market/regime")
 async def get_market_regime():
     """自动识别市场状态 BULL/RANGE/BEAR — 与 V4.0 激活参数面板使用相同算法"""
     from mean_reversion_engine import _classify_regime_from_series
@@ -425,7 +427,7 @@ async def get_market_regime():
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-@router.get("/api/v1/industry-tracking")
+@router.get("/industry-tracking")
 async def get_industry_tracking(date: Optional[str] = None):
     """
     V4.0 行业追踪核心 API: Data-Honest Alpha Score + 动态RPS + 真实价格百分位
@@ -611,9 +613,9 @@ async def get_industry_tracking(date: Optional[str] = None):
         print(f"Industry Analysis Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
 
-@router.post("/api/v1/sync/industry")
+@router.post("/sync/industry")
 async def sync_industry_data():
-    """手动触发行业数据同步 (同步 12 个核心 ETF 及相关成分股)"""
+    """手动触发行业数据同步 (同步全部核心 ETF 及相关成分股)"""
     try:
         # V5.1 Fix P0#2: 统一引用 core_etf_config (Single Source of Truth)
         etf_codes = CORE_ETF_CODES

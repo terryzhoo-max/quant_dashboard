@@ -39,11 +39,11 @@ DAILY_PRICE_DIR = "data_lake/daily_prices"
 PARAMS_FILE     = "mr_per_regime_params.json"
 
 # 默认回退参数（若 JSON 不存在）
-# stop_loss：负数表示止损幅度，如 -0.05 = 浮亏 > 5% 触发止损
+# stop_loss：正数表示止损幅度，如 0.05 = 浮亏 > 5% 触发止损（V4.3统一正数约定）
 FALLBACK_PARAMS = {
-    "BEAR":  {"N_trend": 40, "rsi_period": 14, "rsi_buy": 45, "rsi_sell": 65, "bias_buy": -3.0, "stop_loss": -0.05},
-    "RANGE": {"N_trend": 90, "rsi_period": 14, "rsi_buy": 40, "rsi_sell": 70, "bias_buy": -2.0, "stop_loss": -0.07},
-    "BULL":  {"N_trend": 120,"rsi_period": 14, "rsi_buy": 45, "rsi_sell": 75, "bias_buy": -1.5, "stop_loss": -0.06},
+    "BEAR":  {"N_trend": 40, "rsi_period": 14, "rsi_buy": 45, "rsi_sell": 65, "bias_buy": -3.0, "stop_loss": 0.05},
+    "RANGE": {"N_trend": 90, "rsi_period": 14, "rsi_buy": 40, "rsi_sell": 70, "bias_buy": -2.0, "stop_loss": 0.07},
+    "BULL":  {"N_trend": 120,"rsi_period": 14, "rsi_buy": 45, "rsi_sell": 75, "bias_buy": -1.5, "stop_loss": 0.06},
 }
 
 # 各态仓位上限
@@ -368,10 +368,16 @@ def calculate_indicators(df: pd.DataFrame, regime_info: dict = None) -> dict:
     }
 
 
+def _sigmoid_score(x, center, steepness, max_score):
+    """V4.3 通用Sigmoid映射：center=半分位, steepness=斜率（正值=越小x越高分）"""
+    return float(max_score / (1 + np.exp(steepness * (x - center))))
+
+
 def calculate_score(indicators: dict) -> dict:
     """
-    V4.2 评分：7维度100分制，返回总分和各维度明细
-    新增：② RSI动量方向（Δ RSI₅反转检测）、⑦ K线形态（锤子线/下影线/十字星）
+    V4.3 评分：7维度100分制 · Sigmoid连续映射（消除断崖效应）
+    升级：① ~ ⑥ 全部从离散阶梯升级为Sigmoid连续函数
+    保留：⑦ K线形态（离散分类本身不适合连续化）
     """
     p = indicators.get("regime_params", FALLBACK_PARAMS["RANGE"])
     rsi_buy_opt  = p.get("rsi_buy", 40)
@@ -386,91 +392,52 @@ def calculate_score(indicators: dict) -> dict:
     rsi_slope5 = indicators.get("rsi_slope5", 0.0)
     kline_sc   = indicators.get("kline_score", 0)
 
-    # ① RSI 超卖深度（0-25）—— 基于 Regime 专属阈值
-    s1 = 0
-    if rsi <= rsi_buy_opt:
-        s1 = 25
-    elif rsi <= rsi_buy_opt + 5:
-        s1 = 17
-    elif rsi <= rsi_buy_opt + 10:
-        s1 = 10
-    elif rsi <= rsi_buy_opt + 20:
-        s1 = 4
+    # ① RSI 超卖深度（0-25）—— Sigmoid：以 rsi_buy_opt+5 为中心，RSI越低分越高
+    s1 = _sigmoid_score(rsi, center=rsi_buy_opt + 5, steepness=0.3, max_score=25)
 
-    # ② RSI 动量方向（0-15）—— 5日斜率：判断超卖区底部反转
-    s2 = 0
-    if rsi_slope5 >= 3.0:
-        s2 = 15    # 明确向上反转
-    elif rsi_slope5 >= 1.0:
-        s2 = 8     # 开始改善
-    elif rsi_slope5 >= 0:
-        s2 = 3     # 持平/微升
-    # 负斜率（继续恶化）：0分，防止飞刀
+    # ② RSI 动量方向（0-15）—— 反向Sigmoid：slope越大越好（底部反转信号）
+    s2 = float(15 / (1 + np.exp(-1.5 * (rsi_slope5 - 1.5))))
 
-    # ③ BIAS 乖离率（0-20）
-    s3 = 0
-    if bias <= bias_buy_opt:
-        s3 = 20
-    elif bias <= bias_buy_opt / 2:
-        s3 = 13
-    elif bias <= 0:
-        s3 = 6
+    # ③ BIAS 乖离率（0-20）—— Sigmoid：以 bias_buy_opt*0.6 为中心，BIAS越负分越高
+    s3 = _sigmoid_score(bias, center=bias_buy_opt * 0.6, steepness=0.8, max_score=20)
 
-    # ④ 布林带 %B（0-15）
-    s4 = 0
-    if pb <= 0.10:
-        s4 = 15
-    elif pb <= 0.25:
-        s4 = 10
-    elif pb <= 0.40:
-        s4 = 5
+    # ④ 布林带 %B（0-15）—— Sigmoid：%B越低分越高
+    s4 = _sigmoid_score(pb, center=0.25, steepness=8.0, max_score=15)
 
-    # ⑤ 成交量信号（0-10）—— 恐慌放量 or 缩量筑底
-    s5 = 0
-    if vr >= 2.0:
-        s5 = 10    # 恐慌性放量，典型底部特征
-    elif vr >= 1.5:
-        s5 = 6
-    elif vr <= 0.5:
-        s5 = 10    # 绝望性缩量，另一种底部特征
-    elif vr <= 0.7:
-        s5 = 6
-    elif 0.8 <= vr <= 1.3:
-        s5 = 3     # 平量震荡，中性
+    # ⑤ 成交量信号（0-10）—— V型Sigmoid：恐慌放量 OR 绝望缩量都给高分
+    s5_high = float(10 / (1 + np.exp(-3.0 * (vr - 1.8))))   # 放量信号
+    s5_low  = float(10 / (1 + np.exp(5.0 * (vr - 0.55))))   # 缩量信号
+    s5_mid  = 3.0 if 0.8 <= vr <= 1.3 else 0.0               # 平量中性
+    s5 = max(s5_high, s5_low, s5_mid)
 
-    # ⑥ 趋势位置（0-10）—— 5档细化
-    s6 = 0
-    if close >= ma_n * 1.02:
-        s6 = 10    # 强势区间回调，高质量均值回归
-    elif close >= ma_n:
-        s6 = 7     # 均线上方
-    elif close >= ma_n * 0.97:
-        s6 = 4     # 轻度破位
-    elif close >= ma_n * 0.94:
-        s6 = 1     # 破位较深
-    # 深度破位（< ma_n*0.94）：0分
+    # ⑥ 趋势位置（0-10）—— Sigmoid：close vs ma_n 的百分比偏离
+    trend_pct = (close / ma_n - 1) * 100 if ma_n > 0 else 0
+    s6 = float(10 / (1 + np.exp(-1.5 * (trend_pct + 1))))
 
-    # ⑦ K线形态（0-5）
+    # ⑦ K线形态（0-5）—— 保持离散（形态分类天然离散）
     s7 = min(5, kline_sc)
 
-    total = min(100, s1 + s2 + s3 + s4 + s5 + s6 + s7)
+    total = min(100, round(s1 + s2 + s3 + s4 + s5 + s6 + s7))
 
     return {
         "total":       total,
         "breakdown": {
-            "rsi_depth":   s1,   # ① RSI超卖深度
-            "rsi_momentum":s2,   # ② RSI动量方向
-            "bias":        s3,   # ③ BIAS乖离率
-            "boll":        s4,   # ④ 布林带%B
-            "volume":      s5,   # ⑤ 成交量
-            "trend":       s6,   # ⑥ 趋势位置
-            "kline":       s7,   # ⑦ K线形态
+            "rsi_depth":   round(s1, 1),   # ① RSI超卖深度
+            "rsi_momentum":round(s2, 1),   # ② RSI动量方向
+            "bias":        round(s3, 1),   # ③ BIAS乖离率
+            "boll":        round(s4, 1),   # ④ 布林带%B
+            "volume":      round(s5, 1),   # ⑤ 成交量
+            "trend":       round(s6, 1),   # ⑥ 趋势位置
+            "kline":       round(s7, 1),   # ⑦ K线形态
         }
     }
 
 
 def generate_signal(indicators: dict, score: int) -> str:
-    """V4.2 信号生成 — score 为总分整数，从 Regime 专属参数读取阈值"""
+    """
+    V4.3 信号生成 — score 为总分整数，从 Regime 专属参数读取阈值
+    升级：trend_ok 按 Regime 差异化宽度 + stop_loss 正负兼容
+    """
     p = indicators.get("regime_params", FALLBACK_PARAMS["RANGE"])
 
     close    = indicators["close"]
@@ -485,7 +452,7 @@ def generate_signal(indicators: dict, score: int) -> str:
     rsi_buy  = p["rsi_buy"]
     rsi_sell = p["rsi_sell"]
     bias_buy = p["bias_buy"]
-    sl       = p.get("stop_loss", -0.07)
+    sl       = abs(p.get("stop_loss", 0.07))   # V4.3: abs() 兼容正负号
 
     # CRASH：全面禁入
     if regime == "CRASH":
@@ -493,13 +460,23 @@ def generate_signal(indicators: dict, score: int) -> str:
     if regime == "BULL" and score < score_gate:
         return "hold"
 
+    # V4.3: stop_loss 统一用 abs 比较
     cost_price = indicators.get("cost_price")
     if cost_price and cost_price > 0:
         ret = (close / cost_price) - 1
-        if ret <= sl:
+        if ret <= -sl:
             return "stop_loss"
 
-    trend_ok = close > ma_n
+    # V4.3: trend_ok 按 Regime 差异化宽度
+    #   BEAR: 允许5%偏离（熊市超跌是主战场，不能过滤掉）
+    #   RANGE: 标准（必须站上均线）
+    #   BULL: 收紧（必须站上均线2%以上，确认趋势后才做回归）
+    if regime == "BEAR":
+        trend_ok = close > ma_n * 0.95
+    elif regime == "BULL":
+        trend_ok = close > ma_n * 1.02
+    else:
+        trend_ok = close > ma_n
 
     if trend_ok and (rsi <= rsi_buy or bias <= bias_buy) and score >= score_gate:
         return "buy"

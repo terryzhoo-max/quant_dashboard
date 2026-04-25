@@ -25,13 +25,13 @@ OUTPUT_FILE     = "mr_per_regime_params.json"
 # 每段都要足够长：≥120个交易日
 REGIME_PERIODS = {
     "BEAR": {
-        "train": ("2022-01-01", "2022-09-30"),   # 单边熊市（CSI300 -21%）
-        "valid": ("2022-10-01", "2022-12-31"),   # 熊市末段（超跌反弹）
+        "train": ("2023-07-01", "2024-01-31"),   # V4.3: CSI300 -20%，91%在MA120下方
+        "valid": ("2024-02-01", "2024-04-30"),   # 熊市末段→修复转折
         "desc": "熊市·大幅下跌期",
     },
     "RANGE": {
-        "train": ("2023-01-01", "2023-09-30"),   # 震荡修复
-        "valid": ("2023-10-01", "2023-12-31"),   # 年末震荡验证
+        "train": ("2023-01-01", "2023-06-30"),   # V4.3: 调整为H1震荡修复
+        "valid": ("2024-05-01", "2024-09-23"),   # 震荡验证（924前）
         "desc": "震荡·横盘修复期",
     },
     "BULL": {
@@ -164,7 +164,8 @@ def signal_state_machine(price_arr, p):
                 in_pos, entry_px, sig[i] = True, price_arr[i], 1.
         else:
             cumret = price_arr[i]/entry_px - 1
-            if rsi[i] >= p["rsi_sell"] or cumret < -p["stop_loss"] or price_arr[i] < ma_t[i]*0.97:
+            sl_val = abs(p.get("stop_loss", 0.07))
+            if rsi[i] >= p["rsi_sell"] or cumret < -sl_val or price_arr[i] < ma_t[i]*0.97:
                 in_pos = False
             else:
                 sig[i] = 1.
@@ -223,12 +224,13 @@ def portfolio_backtest(price_mat, bm_series, p):
     total_pos_days = (final_w.sum(axis=1) > 0.01).sum()
     coverage = total_pos_days / max(n, 1)
 
+    # V4.3: 修复 opt_score — 回撤项线性化 + coverage 提权至25%
     opt_score = (
-        0.35 * min(max(alpha / 0.20, 0), 1.0)
-      + 0.25 * min(max(sharpe / 2.0, 0), 1.0)
-      + 0.20 * min(max(1 + max_dd, 0.70), 1.0) / 0.30 * 0.30
-      + 0.10 * min(max(calmar / 1.5, 0), 1.0)
-      + 0.10 * min(coverage * 3, 1.0)           # 覆盖率惩罚：空仓太多扣分
+        0.30 * min(max(alpha / 0.20, 0), 1.0)               # Alpha 占30%
+      + 0.20 * min(max(sharpe / 2.0, 0), 1.0)               # Sharpe 占20%
+      + 0.15 * max(min((max_dd + 0.30) / 0.30, 1.0), 0)     # 回撤：-30%→0, 0%→1
+      + 0.10 * min(max(calmar / 1.5, 0), 1.0)               # Calmar 占10%
+      + 0.25 * min(max(coverage / 0.30, 0), 1.0)            # Coverage 占25%（空仓严惩）
     )
 
     return {
