@@ -197,7 +197,15 @@ def audit_data_quality():
         checks.append({"name": "财务指标时效", "status": "warn", "detail": "财务目录为空", "score": 30, "explanation": "基本面因子依赖季报数据，目录为空意味着红利策略和因子分析模块无法运行。", "threshold": "🟢 ≤90天 | 🟡 91-180天 | 🔴 空目录", "action": "首次部署需执行 python data_manager.py 初始化财务数据"})
 
     # ── 1.3 ERP 缓存新鲜度 ──
-    erp_files = glob.glob(os.path.join(DATA_LAKE, "erp_*.parquet"))
+    # V7.2: 只检查核心高频 ERP 文件 (PE/Yield/Rates)
+    # 排除低频历史数据 (M1/history/score) 避免月度数据误报
+    _ERP_SKIP_PATTERNS = ("_history", "_score", "_m1_", "_current_pe")
+    all_erp_files = glob.glob(os.path.join(DATA_LAKE, "erp_*.parquet"))
+    erp_files = [f for f in all_erp_files
+                 if not any(p in os.path.basename(f) for p in _ERP_SKIP_PATTERNS)]
+    # 如果过滤后无文件则回退到全量
+    if not erp_files:
+        erp_files = all_erp_files
     if erp_files:
         erp_ages = []
         for f in erp_files:
@@ -213,10 +221,10 @@ def audit_data_quality():
         checks.append({
             "name": "ERP 缓存新鲜度",
             "status": status,
-            "detail": f"最旧缓存: {max_age:.1f} 天前",
-            "meta": f"共 {len(erp_files)} 个 ERP 数据文件",
+            "detail": f"最旧核心缓存: {max_age:.1f} 天前",
+            "meta": f"共 {len(erp_files)} 个核心 ERP 文件 (排除 {len(all_erp_files) - len(erp_files)} 个低频历史)",
             "score": s,
-            "explanation": "ERP(股权风险溢价)是股债性价比的核心指标，由全市场PE和10年国债收益率计算。过期数据会导致宏观择时引擎的仓位建议失准，可能在高估值时重仓或低估值时空仓。",
+            "explanation": "ERP(股权风险溢价)是股债性价比的核心指标，由全市场PE和10年国债收益率计算。过期数据会导致宏观择时引擎的仓位建议失准。仅检查核心高频文件 (PE-TTM/Yield/Rates)，M1等月度数据不纳入新鲜度判定。",
             "threshold": "🟢 ≤3天: 择时信号可靠 | 🟡 4-7天: 信号参考性下降 | 🔴 >7天: 择时建议不可用",
             "action": "重启服务器触发 ERP 预热，或等待每日 15:35 自动刷新",
         })
