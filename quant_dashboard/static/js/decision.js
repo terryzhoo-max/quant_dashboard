@@ -49,45 +49,39 @@ function drawJCSRing(score, level) {
     const cx = size / 2, cy = size / 2, r = 72, lw = 10;
     const colors = { high: '#34d399', medium: '#fbbf24', low: '#f87171' };
     const color = colors[level] || '#94a3b8';
-    const pct = Math.min(score / 100, 1);
+    const targetPct = Math.min(score / 100, 1);
     const startAngle = -Math.PI / 2;
-    const endAngle = startAngle + pct * 2 * Math.PI;
-
-    // 背景轨道
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, 2 * Math.PI);
-    ctx.strokeStyle = 'rgba(148,163,184,0.08)';
-    ctx.lineWidth = lw;
-    ctx.stroke();
-
-    // 进度弧
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, startAngle, endAngle);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = lw;
-    ctx.lineCap = 'round';
-    ctx.stroke();
-
-    // 发光效果
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, startAngle, endAngle);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = lw + 6;
-    ctx.globalAlpha = 0.15;
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-
-    // 数值
     const el = document.getElementById('jcs-value');
-    if (el) el.textContent = score.toFixed(1);
-
-    // 徽章
     const badge = document.getElementById('jcs-badge');
     if (badge) {
         badge.className = 'jcs-level-badge ' + level;
         const labels = { high: '高置信', medium: '中置信', low: '低置信' };
         badge.textContent = labels[level] || level;
     }
+    // A4: 缓动动画
+    let current = 0;
+    const duration = 800;
+    const startTime = performance.now();
+    function animate(now) {
+        const elapsed = now - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const ease = 1 - Math.pow(1 - progress, 3); // easeOutCubic
+        current = targetPct * ease;
+        ctx.clearRect(0, 0, size, size);
+        // 背景轨道
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+        ctx.strokeStyle = 'rgba(148,163,184,0.08)'; ctx.lineWidth = lw; ctx.stroke();
+        // 进度弧
+        const endAngle = startAngle + current * 2 * Math.PI;
+        ctx.beginPath(); ctx.arc(cx, cy, r, startAngle, endAngle);
+        ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.stroke();
+        // 发光
+        ctx.beginPath(); ctx.arc(cx, cy, r, startAngle, endAngle);
+        ctx.strokeStyle = color; ctx.lineWidth = lw + 6; ctx.globalAlpha = 0.15; ctx.stroke(); ctx.globalAlpha = 1;
+        if (el) el.textContent = (score * ease).toFixed(1);
+        if (progress < 1) requestAnimationFrame(animate);
+    }
+    requestAnimationFrame(animate);
 }
 
 // ═══════════════════════════════════════════════════
@@ -98,22 +92,23 @@ function renderConflicts(data) {
     const panel = document.getElementById('conflict-list');
     const summary = document.getElementById('conflict-summary');
     if (!panel || !summary) return;
-
-    // 摘要
     const cls = data.has_severe ? 'danger' : (data.conflict_count > 0 ? 'warn' : 'ok');
     summary.className = 'conflict-summary ' + cls;
     summary.textContent = data.matrix_summary;
-
-    // 列表
     if (data.conflicts.length === 0) {
-        panel.innerHTML = '<div style="text-align:center;padding:20px;color:#64748b;font-size:0.85rem;">✅ 所有引擎信号对齐，无矛盾</div>';
+        panel.innerHTML = `<div class="no-conflict-badge"><span class="pulse-dot"></span> 所有引擎信号对齐，无矛盾</div>
+        <div class="pair-list">
+            <div class="pair-item"><span class="pair-check">✓</span><span class="pair-engines">AIAE ↔ ERP</span> 方向一致</div>
+            <div class="pair-item"><span class="pair-check">✓</span><span class="pair-engines">VIX ↔ MR</span> 方向一致</div>
+            <div class="pair-item"><span class="pair-check">✓</span><span class="pair-engines">ERP ↔ VIX</span> 方向一致</div>
+            <div class="pair-item"><span class="pair-check">✓</span><span class="pair-engines">AIAE ↔ MR</span> 方向一致</div>
+        </div>`;
         return;
     }
-
     panel.innerHTML = data.conflicts.map(c => `
         <div class="conflict-item">
-            <div class="conflict-severity ${c.severity}"></div>
-            <div>
+            <div class="conflict-color-band ${c.severity}"></div>
+            <div class="conflict-body">
                 <div class="conflict-desc">${c.desc}</div>
                 <div class="conflict-action">💡 ${c.action}</div>
             </div>
@@ -130,7 +125,7 @@ function renderDirections(directions) {
     if (!grid) return;
 
     const labels = { aiae: 'AIAE', erp: 'ERP', vix: 'VIX', mr: 'MR' };
-    const arrows = { '1': '▲', '-1': '▼', '0': '●' };
+    const arrows = { '1': '▲', '-1': '▼', '0': '━' };
     const cls = { '1': 'up', '-1': 'down', '0': 'neutral' };
 
     grid.innerHTML = Object.entries(directions).map(([key, dir]) => `
@@ -153,7 +148,7 @@ function renderScenarioCards(scenarios) {
     if (!grid) return;
 
     grid.innerHTML = Object.entries(scenarios).map(([id, s]) => `
-        <div class="scenario-card" data-id="${id}" onclick="runSimulation('${id}')">
+        <div class="scenario-card sev-${s.severity}" data-id="${id}" onclick="runSimulation('${id}')">
             <div class="scenario-icon">${s.icon}</div>
             <div class="scenario-name">${s.name}</div>
             <div class="scenario-desc">${s.desc}</div>
@@ -246,6 +241,7 @@ async function loadTimeline() {
                 <div class="empty-state">
                     <div class="icon">📋</div>
                     <p>暂无决策日志数据<br>系统将在每日 15:35 收盘后自动记录</p>
+                    <div class="placeholder-chart">── 趋势图将在此展示 ──</div>
                 </div>`;
         }
     } catch (e) {
@@ -346,36 +342,27 @@ async function loadRiskMatrix() {
 function renderOverlapMatrix(data) {
     const el = document.getElementById('overlap-matrix');
     if (!el) return;
-
     const names = data.strategy_names;
-    if (names.length === 0) {
-        el.innerHTML = '<div style="text-align:center;padding:20px;color:#64748b;">暂无策略数据</div>';
-        return;
-    }
+    if (names.length === 0) { el.innerHTML = '<div style="text-align:center;padding:20px;color:#64748b;">暂无策略数据</div>'; return; }
     const labels = { mr: 'MR趋势', div: 'DIV红利', mom: 'MOM动量' };
     let html = '<table class="overlap-table"><tr><th></th>';
     names.forEach(n => html += `<th>${labels[n] || n}</th>`);
     html += '</tr>';
     data.overlap_matrix.forEach((row, i) => {
         html += `<tr><th>${labels[names[i]] || names[i]}</th>`;
-        row.forEach(cell => {
+        row.forEach((cell, ci) => {
             const j = cell.jaccard;
-            const bg = i === row.indexOf(cell) && j === 1
-                ? 'rgba(139,92,246,0.2)'
-                : `rgba(${j > 0.3 ? '239,68,68' : (j > 0 ? '245,158,11' : '16,185,129')},${0.1 + j * 0.3})`;
-            html += `<td class="overlap-cell" style="background:${bg}">${(j * 100).toFixed(0)}%<br><span style="font-size:0.65rem;color:#94a3b8">${cell.shared}个</span></td>`;
+            const isDiag = i === ci;
+            const cls = isDiag ? 'overlap-cell diagonal' : 'overlap-cell';
+            const bg = isDiag ? '' : `background:rgba(${j>0.3?'239,68,68':(j>0?'245,158,11':'16,185,129')},${0.08+j*0.25})`;
+            html += `<td class="${cls}" style="${bg}">${(j*100).toFixed(0)}%<br><span style="font-size:0.65rem;color:#94a3b8">${cell.shared}个</span></td>`;
         });
         html += '</tr>';
     });
     html += '</table>';
-
-    // 多策略共有标的
     if (data.multi_strategy_codes.length > 0) {
-        html += '<div style="margin-top:12px;font-size:0.8rem;color:#e2e8f0;">🔗 多策略共有标的:</div>';
-        html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">';
-        data.multi_strategy_codes.forEach(c => {
-            html += `<span style="background:rgba(139,92,246,0.1);border:1px solid rgba(139,92,246,0.2);padding:3px 8px;border-radius:6px;font-size:0.72rem;color:#a78bfa;">${c.code} (${c.count}策略)</span>`;
-        });
+        html += '<div style="margin-top:12px;font-size:0.8rem;color:#e2e8f0;">🔗 多策略共有标的:</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">';
+        data.multi_strategy_codes.forEach(c => { html += `<span style="background:rgba(139,92,246,0.1);border:1px solid rgba(139,92,246,0.2);padding:3px 8px;border-radius:6px;font-size:0.72rem;color:#a78bfa;">${c.code} (${c.count}策略)</span>`; });
         html += '</div>';
     }
     el.innerHTML = html;
@@ -402,29 +389,67 @@ function renderTailRisk(tail) {
     const el = document.getElementById('tail-risk');
     if (!el) return;
     const comps = tail.components;
-    const colors = { concentration: '#a78bfa', vix: '#fbbf24', conflict: '#f87171' };
-    const labels = { concentration: '集中', vix: 'VIX', conflict: '矛盾' };
+    const cColors = { concentration: '#a78bfa', vix: '#fbbf24', conflict: '#f87171' };
+    const cLabels = { concentration: '集中', vix: 'VIX', conflict: '矛盾' };
+    const lvlColor = tail.level === 'high' ? '#f87171' : (tail.level === 'medium' ? '#fbbf24' : '#34d399');
     el.innerHTML = `
         <div class="tail-risk-wrap">
-            <div class="tail-risk-score ${tail.level}">${tail.score.toFixed(1)}</div>
-            <div class="tail-risk-label" style="color:${tail.level === 'high' ? '#f87171' : (tail.level === 'medium' ? '#fbbf24' : '#34d399')}">${tail.label}</div>
-            <div class="tail-risk-bars">
-                ${Object.entries(comps).map(([k, v]) => `
-                    <div class="tail-bar-row">
-                        <span class="tail-bar-name">${labels[k]}</span>
-                        <div class="tail-bar-bg"><div class="tail-bar-fill" style="width:${v}%;background:${colors[k]}"></div></div>
-                    </div>
-                `).join('')}
+            <div class="tail-gauge-container"><canvas id="tail-gauge-canvas"></canvas>
+                <div class="tail-gauge-value ${tail.level}">${tail.score.toFixed(1)}</div>
             </div>
-        </div>
-    `;
+            <div class="tail-risk-label" style="color:${lvlColor}">${tail.label}</div>
+            <div class="tail-risk-bars">
+                ${Object.entries(comps).map(([k, v]) => `<div class="tail-bar-row"><span class="tail-bar-name">${cLabels[k]}</span><div class="tail-bar-bg"><div class="tail-bar-fill" style="width:${v}%;background:${cColors[k]}"></div></div></div>`).join('')}
+            </div>
+        </div>`;
+    // B1: 半圆 Gauge Canvas
+    setTimeout(() => drawTailGauge(tail.score), 50);
+}
+function drawTailGauge(score) {
+    const canvas = document.getElementById('tail-gauge-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const w = 240, h = 130;
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+    ctx.scale(dpr, dpr);
+    const cx = w/2, cy = h - 10, r = 90, lw = 14;
+    const pct = Math.min(score / 100, 1);
+    // 背景弧
+    ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 0);
+    ctx.strokeStyle = 'rgba(148,163,184,0.08)'; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.stroke();
+    // 渐变弧 (绿→黄→红)
+    const grad = ctx.createLinearGradient(cx - r, cy, cx + r, cy);
+    grad.addColorStop(0, '#34d399'); grad.addColorStop(0.5, '#fbbf24'); grad.addColorStop(1, '#f87171');
+    const endAngle = Math.PI + pct * Math.PI;
+    let cur = 0; const dur = 700; const st = performance.now();
+    function anim(now) {
+        const p = Math.min((now - st) / dur, 1);
+        const e = 1 - Math.pow(1-p, 3); cur = pct * e;
+        ctx.clearRect(0, 0, w, h);
+        ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 0);
+        ctx.strokeStyle = 'rgba(148,163,184,0.08)'; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.stroke();
+        ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, Math.PI + cur * Math.PI);
+        ctx.strokeStyle = grad; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.stroke();
+        // 发光
+        ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, Math.PI + cur * Math.PI);
+        ctx.strokeStyle = grad; ctx.lineWidth = lw + 6; ctx.globalAlpha = 0.12; ctx.stroke(); ctx.globalAlpha = 1;
+        if (p < 1) requestAnimationFrame(anim);
+    }
+    requestAnimationFrame(anim);
 }
 
 function renderAccuracy(data) {
     const el = document.getElementById('accuracy-panel');
     if (!el) return;
     if (!data.has_data) {
-        el.innerHTML = '<div style="text-align:center;padding:16px;color:#64748b;font-size:0.85rem;">📊 积累 5 天以上数据后展示准确率</div>';
+        el.innerHTML = `<div class="skeleton-grid">
+            <div class="skeleton-card"><div class="skeleton-bar"></div><div class="skeleton-text"></div></div>
+            <div class="skeleton-card"><div class="skeleton-bar"></div><div class="skeleton-text"></div></div>
+            <div class="skeleton-card"><div class="skeleton-bar"></div><div class="skeleton-text"></div></div>
+        </div>
+        <div style="text-align:center;padding:12px 0 0;color:#64748b;font-size:0.78rem;">📊 系统正在积累信号准确率数据 (T+5)...</div>`;
         return;
     }
     el.innerHTML = `
@@ -473,48 +498,41 @@ function changeMonth(delta) {
     loadCalendar();
 }
 
+function jcsToColor(score) {
+    // B3: 连续色温 (0=红, 50=黄, 100=绿)
+    const s = Math.max(0, Math.min(100, score));
+    if (s >= 50) { const t = (s - 50) / 50; return { r: Math.round(251*(1-t)+52*t), g: Math.round(191*(1-t)+211*t), b: Math.round(36*(1-t)+153*t) }; }
+    const t = s / 50; return { r: Math.round(248*(1-t)+251*t), g: Math.round(113*(1-t)+191*t), b: Math.round(113*(1-t)+36*t) };
+}
 function renderCalendar(data, year, month) {
     const el = document.getElementById('calendar-grid');
     const titleEl = document.getElementById('calendar-title');
     if (!el) return;
     if (titleEl) titleEl.textContent = `${year}年${month}月`;
-
-    // 构建日期 -> 数据 的映射
-    const dataMap = {};
-    data.forEach(d => { if (d.date) dataMap[d.date] = d; });
-
-    // 计算月历
-    const firstDay = new Date(year, month - 1, 1).getDay(); // 0=周日
+    const dataMap = {}; data.forEach(d => { if (d.date) dataMap[d.date] = d; });
+    const firstDay = new Date(year, month - 1, 1).getDay();
     const daysInMonth = new Date(year, month, 0).getDate();
     const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
-
     let html = weekdays.map(w => `<div class="calendar-weekday">${w}</div>`).join('');
-
-    // 空白填充
     for (let i = 0; i < firstDay; i++) html += '<div class="calendar-day empty"></div>';
-
-    // 日期格子
     for (let d = 1; d <= daysInMonth; d++) {
         const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
         const entry = dataMap[dateStr];
-
         if (entry) {
-            const jcsLevel = entry.jcs_level || 'medium';
-            const jcs = entry.jcs_score != null ? entry.jcs_score.toFixed(1) : '--';
+            const jcs = entry.jcs_score != null ? entry.jcs_score : 50;
+            const jcsStr = jcs.toFixed(1);
+            const c = jcsToColor(jcs);
+            const bg = `rgba(${c.r},${c.g},${c.b},0.15)`;
+            const fg = `rgb(${c.r},${c.g},${c.b})`;
             const pos = entry.suggested_position != null ? entry.suggested_position + '%' : '--';
             const correct = entry.signal_correct;
-            const correctIcon = correct === 1 ? '✅' : (correct === 0 ? '❌' : '');
-            html += `
-                <div class="calendar-day has-data jcs-${jcsLevel}">
-                    <span class="day-num">${d}</span>
-                    <span class="day-jcs">${jcs}</span>
-                    <div class="calendar-tooltip">
-                        JCS: ${jcs} | 仓位: ${pos}<br>
-                        AIAE: R${entry.aiae_regime || '-'} | 矛盾: ${entry.conflict_count || 0}${correctIcon ? '<br>信号: ' + correctIcon : ''}
-                    </div>
-                </div>`;
+            const ci = correct === 1 ? '✅' : (correct === 0 ? '❌' : '');
+            html += `<div class="calendar-day has-data" style="background:${bg};box-shadow:inset 0 0 12px rgba(${c.r},${c.g},${c.b},0.08)">
+                <span class="day-num">${d}</span><span class="day-jcs" style="color:${fg}">${jcsStr}</span>
+                <div class="calendar-tooltip">JCS: ${jcsStr} | 仓位: ${pos}<br>AIAE: R${entry.aiae_regime||'-'} | 矛盾: ${entry.conflict_count||0}${ci?'<br>信号: '+ci:''}</div>
+            </div>`;
         } else {
-            html += `<div class="calendar-day"><span class="day-num" style="color:#334155">${d}</span></div>`;
+            html += `<div class="calendar-day no-data"><span class="day-num" style="color:#334155">${d}</span></div>`;
         }
     }
     el.innerHTML = html;

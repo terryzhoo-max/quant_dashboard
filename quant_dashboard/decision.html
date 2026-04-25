@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#07090e">
     <title>决策中枢 · AlphaCore</title>
     <link rel="stylesheet" href="./static/css/styles.css?v=10">
-    <link rel="stylesheet" href="./static/css/decision.css?v=2">
+    <link rel="stylesheet" href="./static/css/decision.css?v=4">
     <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
     <script>window.echarts || document.write('<script src="./static/vendor/echarts.min.js"><\/script>')</script>
@@ -98,7 +98,7 @@
             <!-- 页面标题 -->
             <div class="decision-header">
                 <h2>🧠 科学辅助决策中枢</h2>
-                <span class="version-pill">V16.0 Phase 2</span>
+                <span class="version-pill">V16.2 Premium</span>
             </div>
 
             <!-- Tab 切换 -->
@@ -115,7 +115,7 @@
                 <!-- JCS + 矛盾矩阵 -->
                 <div class="jcs-section">
                     <!-- 左: JCS 仪表盘 -->
-                    <div class="jcs-gauge-wrap">
+                    <div class="jcs-gauge-wrap glass-decision">
                         <div class="jcs-ring">
                             <canvas id="jcs-canvas"></canvas>
                             <div class="jcs-ring-value" id="jcs-value">--</div>
@@ -126,7 +126,7 @@
                     </div>
 
                     <!-- 右: 矛盾矩阵 -->
-                    <div class="conflict-panel">
+                    <div class="conflict-panel glass-decision">
                         <h3>⚡ 信号矛盾检测</h3>
                         <div class="conflict-summary ok" id="conflict-summary">分析中...</div>
                         <div id="conflict-list">
@@ -150,7 +150,7 @@
 
             <!-- ═══ Tab 2: 决策时间线 ═══ -->
             <div class="tab-panel" id="tab-timeline">
-                <div class="timeline-chart-wrap">
+                <div class="timeline-chart-wrap glass-decision">
                     <h3>📈 近 30 天 JCS 与仓位趋势</h3>
                     <div id="timeline-chart"></div>
                 </div>
@@ -165,7 +165,7 @@
             <!-- ═══ Tab 3: 风险矩阵 ═══ -->
             <div class="tab-panel" id="tab-risk">
                 <!-- 准确率卡片 -->
-                <div class="accuracy-card">
+                <div class="accuracy-card glass-decision">
                     <h3 style="font-size:0.95rem;color:#e2e8f0;margin:0 0 16px;">🎯 信号准确率追踪 (T+5)</h3>
                     <div id="accuracy-panel">
                         <div class="loading-spinner">✨ 加载中...</div>
@@ -174,13 +174,13 @@
 
                 <div class="risk-grid">
                     <!-- 左: 重叠矩阵 + 板块集中度 -->
-                    <div class="risk-panel">
+                    <div class="risk-panel glass-decision">
                         <h3>🔗 策略标的重叠 (Jaccard)</h3>
                         <div id="overlap-matrix">
                             <div class="loading-spinner">✨ 加载中...</div>
                         </div>
                     </div>
-                    <div class="risk-panel">
+                    <div class="risk-panel glass-decision">
                         <h3>🏯 板块集中度</h3>
                         <div id="sector-concentration">
                             <div class="loading-spinner">✨ 加载中...</div>
@@ -189,7 +189,7 @@
                 </div>
 
                 <!-- 尾部风险仪表 -->
-                <div class="risk-panel">
+                <div class="risk-panel glass-decision">
                     <h3>⚠️ 尾部风险仪表</h3>
                     <div id="tail-risk">
                         <div class="loading-spinner">✨ 加载中...</div>
@@ -199,7 +199,7 @@
 
             <!-- ═══ Tab 4: 复盘日历 ═══ -->
             <div class="tab-panel" id="tab-calendar">
-                <div class="calendar-wrap">
+                <div class="calendar-wrap glass-decision">
                     <div class="calendar-header">
                         <h3 id="calendar-title">加载中...</h3>
                         <div class="calendar-nav">
@@ -222,6 +222,6 @@
         </div>
     </main>
 
-    <script src="./static/js/decision.js?v=2"></script>
+    <script src="./static/js/decision.js?v=4"></script>
 </body>
 </html>
