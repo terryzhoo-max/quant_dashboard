@@ -85,6 +85,24 @@ def init_db():
             position_count INTEGER,
             recorded_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS decision_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL UNIQUE,
+            aiae_regime INTEGER,
+            aiae_v1 REAL,
+            erp_score REAL,
+            erp_val REAL,
+            vix_val REAL,
+            mr_regime TEXT,
+            hub_composite REAL,
+            jcs_score REAL,
+            jcs_level TEXT,
+            suggested_position REAL,
+            conflict_count INTEGER,
+            degraded_modules TEXT,
+            recorded_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
     """)
     conn.commit()
     logger.info("SQLite 数据库初始化完成 · %s", DB_PATH)
@@ -330,3 +348,161 @@ def get_portfolio_snapshot_count() -> int:
     """快照总数"""
     conn = _get_conn()
     return conn.execute("SELECT COUNT(*) FROM portfolio_snapshots").fetchone()[0]
+
+
+# ══════════════════════════════════════════════════════════
+#  决策日志 (V16.0: 科学辅助决策模块)
+# ══════════════════════════════════════════════════════════
+
+def upsert_decision_log(data: dict):
+    """插入或更新每日决策快照 (按 date UNIQUE 键, 幂等)"""
+    conn = _get_conn()
+    now = datetime.now().isoformat()
+    conn.execute(
+        """INSERT INTO decision_log
+           (date, aiae_regime, aiae_v1, erp_score, erp_val, vix_val, mr_regime,
+            hub_composite, jcs_score, jcs_level, suggested_position,
+            conflict_count, degraded_modules, recorded_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(date) DO UPDATE SET
+             aiae_regime = excluded.aiae_regime,
+             aiae_v1 = excluded.aiae_v1,
+             erp_score = excluded.erp_score,
+             erp_val = excluded.erp_val,
+             vix_val = excluded.vix_val,
+             mr_regime = excluded.mr_regime,
+             hub_composite = excluded.hub_composite,
+             jcs_score = excluded.jcs_score,
+             jcs_level = excluded.jcs_level,
+             suggested_position = excluded.suggested_position,
+             conflict_count = excluded.conflict_count,
+             degraded_modules = excluded.degraded_modules,
+             recorded_at = excluded.recorded_at""",
+        (
+            data.get("date"),
+            data.get("aiae_regime"),
+            data.get("aiae_v1"),
+            data.get("erp_score"),
+            data.get("erp_val"),
+            data.get("vix_val"),
+            data.get("mr_regime"),
+            data.get("hub_composite"),
+            data.get("jcs_score"),
+            data.get("jcs_level"),
+            data.get("suggested_position"),
+            data.get("conflict_count", 0),
+            data.get("degraded_modules", ""),
+            now,
+        ),
+    )
+    conn.commit()
+
+
+def get_decision_history(days: int = 30) -> List[Dict]:
+    """获取最近 N 天的决策日志 (按日期正序)"""
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT * FROM decision_log ORDER BY date DESC LIMIT ?", (days,)
+    ).fetchall()
+    return [dict(r) for r in reversed(rows)]
+
+
+def cleanup_old_decisions(keep_days: int = 365):
+    """清理超过 keep_days 的旧决策记录"""
+    conn = _get_conn()
+    cutoff = (datetime.now() - __import__('datetime').timedelta(days=keep_days)).strftime("%Y-%m-%d")
+    deleted = conn.execute(
+        "DELETE FROM decision_log WHERE date < ?", (cutoff,)
+    ).rowcount
+    conn.commit()
+    if deleted > 0:
+        logger.info("清理旧决策记录: 删除 %d 条 (保留 %d 天)", deleted, keep_days)
+
+
+def migrate_decision_log_v2():
+    """V16.0 Phase 2: 安全添加准确率追踪字段 (幂等)"""
+    conn = _get_conn()
+    existing = [row[1] for row in conn.execute("PRAGMA table_info(decision_log)").fetchall()]
+    added = []
+    for col, typ in [("market_return_5d", "REAL"), ("signal_correct", "INTEGER")]:
+        if col not in existing:
+            conn.execute(f"ALTER TABLE decision_log ADD COLUMN {col} {typ}")
+            added.append(col)
+    if added:
+        conn.commit()
+        logger.info("decision_log 迁移完成: 新增列 %s", added)
+
+
+def backfill_accuracy(date: str, market_return_5d: float):
+    """回填 T+5 市场收益率并判断信号正确性"""
+    conn = _get_conn()
+    row = conn.execute("SELECT suggested_position FROM decision_log WHERE date = ?", (date,)).fetchone()
+    if not row:
+        return
+    pos = row[0] or 55
+    # 信号正确: 建议多(pos>=55) 且 市场涨 / 建议空(pos<45) 且 市场跌 / 中性不判断
+    if pos >= 55:
+        correct = 1 if market_return_5d > 0 else 0
+    elif pos < 45:
+        correct = 1 if market_return_5d < 0 else 0
+    else:
+        correct = -1  # 中性区不计入
+    conn.execute(
+        "UPDATE decision_log SET market_return_5d = ?, signal_correct = ? WHERE date = ?",
+        (round(market_return_5d, 4), correct, date),
+    )
+    conn.commit()
+
+
+def get_accuracy_stats() -> Dict:
+    """计算信号准确率统计"""
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT signal_correct, COUNT(*) as cnt FROM decision_log "
+        "WHERE signal_correct IS NOT NULL AND signal_correct >= 0 "
+        "GROUP BY signal_correct"
+    ).fetchall()
+    total, correct = 0, 0
+    for r in rows:
+        total += r[1]
+        if r[0] == 1:
+            correct = r[1]
+    accuracy = round(correct / total * 100, 1) if total > 0 else None
+    # 近10次准确率
+    recent = conn.execute(
+        "SELECT signal_correct FROM decision_log "
+        "WHERE signal_correct IS NOT NULL AND signal_correct >= 0 "
+        "ORDER BY date DESC LIMIT 10"
+    ).fetchall()
+    recent_correct = sum(1 for r in recent if r[0] == 1)
+    recent_total = len(recent)
+    recent_accuracy = round(recent_correct / recent_total * 100, 1) if recent_total > 0 else None
+    return {
+        "total_decisions": total,
+        "correct_decisions": correct,
+        "accuracy_pct": accuracy,
+        "recent_10_accuracy": recent_accuracy,
+        "recent_10_total": recent_total,
+        "has_data": total >= 5,
+    }
+
+
+def get_calendar_data(year: int = None, month: int = None) -> List[Dict]:
+    """获取月历数据 (每日 JCS + 仓位 + 矛盾数)"""
+    conn = _get_conn()
+    if year and month:
+        prefix = f"{year:04d}-{month:02d}"
+        rows = conn.execute(
+            "SELECT date, jcs_score, jcs_level, suggested_position, conflict_count, "
+            "aiae_regime, market_return_5d, signal_correct "
+            "FROM decision_log WHERE date LIKE ? ORDER BY date",
+            (prefix + "%",)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT date, jcs_score, jcs_level, suggested_position, conflict_count, "
+            "aiae_regime, market_return_5d, signal_correct "
+            "FROM decision_log ORDER BY date DESC LIMIT 62"
+        ).fetchall()
+    return [dict(r) for r in rows]
+

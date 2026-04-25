@@ -59,6 +59,7 @@ async def lifespan(app: FastAPI):
     # ── SQLite 初始化 + 旧 JSON 迁移 (Batch 10) ──
     from services import db as ac_db
     ac_db.init_db()
+    ac_db.migrate_decision_log_v2()  # V16.0 Phase 2: 安全添加准确率字段
     mig = ac_db.migrate_from_json()
     _logger.info("SQLite 迁移完成 · trades=%d aiae=%d erp=%d", mig["trades"], mig["aiae"], mig["erp"])
 
@@ -246,13 +247,14 @@ async def get_dashboard_data():
 #  Router 模块注册 (Batch 7: 策略路由独立)
 # ═══════════════════════════════════════════════════════════════════
 
-from routers import portfolio, audit, aiae, market, industry, strategy
+from routers import portfolio, audit, aiae, market, industry, strategy, decision
 app.include_router(portfolio.router)
 app.include_router(audit.router)
 app.include_router(aiae.router)
 app.include_router(market.router)
 app.include_router(industry.router)
 app.include_router(strategy.router)
+app.include_router(decision.router)
 
 
 # ═══════════════════════════════════════════════════════════════════

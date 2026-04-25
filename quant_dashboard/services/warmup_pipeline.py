@@ -288,6 +288,19 @@ def daily_warmup_callback():
             sched_logger.info(f"📸 组合快照已存档: {today} · 资产={val['total_asset']:,.0f}")
     except Exception as e:
         sched_logger.warning(f"组合快照存档失败 (非致命): {e}")
+    # V16.0: 决策快照 (科学辅助决策模块)
+    try:
+        from dashboard_modules.decision_engine import log_daily_decision
+        log_daily_decision()
+        sched_logger.info("📋 决策快照已存档")
+    except Exception as e:
+        sched_logger.warning(f"决策快照存档失败 (非致命): {e}")
+    # V16.0 Phase 2: 准确率回填 (T+5 市场收益)
+    try:
+        from dashboard_modules.decision_engine import backfill_signal_accuracy
+        backfill_signal_accuracy()
+    except Exception as e:
+        sched_logger.warning(f"准确率回填失败 (非致命): {e}")
     sched_logger.info("收盘预热流水线完成")
 
 
