@@ -1,44 +1,44 @@
 {
-  "generated_at": "2026-03-27T23:05:58.900241",
-  "next_optimize_after": "2026-05-26",
+  "generated_at": "2026-04-21T23:53:07.839750",
+  "next_optimize_after": "2026-06-20",
   "regimes": {
     "BEAR": {
       "regime": "BEAR",
       "desc": "熊市·大幅下跌期",
       "params": {
-        "N_trend": 40,
+        "N_trend": 60,
         "rsi_period": 14,
-        "rsi_buy": 45,
+        "rsi_buy": 50,
         "rsi_sell": 65,
         "bias_buy": -3.0,
-        "stop_loss": -0.05
+        "stop_loss": 0.05
       },
       "train_kpi": {
         "valid": true,
-        "ann_ret": -2.35,
-        "ann_bm": -29.72,
-        "alpha": 27.37,
-        "max_dd": -1.88,
-        "sharpe": -2.783,
-        "calmar": -1.252,
-        "ir": 1.555,
-        "coverage": 33.5,
-        "opt_score": 0.6462
+        "ann_ret": -6.45,
+        "ann_bm": -28.93,
+        "alpha": 22.49,
+        "max_dd": -4.38,
+        "sharpe": -2.485,
+        "calmar": -1.473,
+        "ir": 1.97,
+        "coverage": 30.8,
+        "opt_score": 0.6781
       },
       "valid_kpi": {
         "valid": true,
         "ann_ret": 0.0,
-        "ann_bm": 17.59,
-        "alpha": -17.59,
+        "ann_bm": 65.25,
+        "alpha": -65.25,
         "max_dd": 0.0,
         "sharpe": 0.0,
         "calmar": 0.0,
-        "ir": -0.91,
+        "ir": -3.574,
         "coverage": 0.0,
-        "opt_score": 0.2
+        "opt_score": 0.15
       },
-      "combined_score": 0.3562,
-      "optimized_at": "2026-03-27T23:05:50.548551"
+      "combined_score": 0.3348,
+      "optimized_at": "2026-04-21T23:52:52.906938"
     },
     "RANGE": {
       "regime": "RANGE",
@@ -47,115 +47,115 @@
         "N_trend": 90,
         "rsi_period": 14,
         "rsi_buy": 40,
-        "rsi_sell": 70,
+        "rsi_sell": 65,
         "bias_buy": -2.0,
-        "stop_loss": -0.07
+        "stop_loss": 0.07
       },
       "train_kpi": {
         "valid": true,
-        "ann_ret": -0.19,
-        "ann_bm": -6.43,
-        "alpha": 6.23,
-        "max_dd": -0.96,
-        "sharpe": -2.054,
-        "calmar": -0.201,
-        "ir": 0.417,
-        "coverage": 40.7,
-        "opt_score": 0.4072
+        "ann_ret": 0.07,
+        "ann_bm": -3.59,
+        "alpha": 3.65,
+        "max_dd": -0.28,
+        "sharpe": -7.019,
+        "calmar": 0.235,
+        "ir": 0.221,
+        "coverage": 21.2,
+        "opt_score": 0.3956
       },
       "valid_kpi": {
         "valid": true,
         "ann_ret": 0.0,
-        "ann_bm": -25.58,
-        "alpha": 25.58,
+        "ann_bm": -23.74,
+        "alpha": 23.74,
         "max_dd": 0.0,
         "sharpe": 0.0,
         "calmar": 0.0,
-        "ir": 2.306,
+        "ir": 2.532,
         "coverage": 0.0,
-        "opt_score": 0.55
+        "opt_score": 0.45
       },
-      "combined_score": 0.5,
-      "optimized_at": "2026-03-27T23:05:55.112069"
+      "combined_score": 0.431,
+      "optimized_at": "2026-04-21T23:53:03.334625"
     },
     "BULL": {
       "regime": "BULL",
       "desc": "牛市·趋势上涨期",
       "params": {
-        "N_trend": 120,
+        "N_trend": 90,
         "rsi_period": 14,
-        "rsi_buy": 45,
+        "rsi_buy": 40,
         "rsi_sell": 75,
         "bias_buy": -1.5,
-        "stop_loss": -0.06
+        "stop_loss": 0.08
       },
       "train_kpi": {
         "valid": true,
-        "ann_ret": -10.2,
+        "ann_ret": -7.04,
         "ann_bm": 22.96,
-        "alpha": -33.16,
-        "max_dd": -10.2,
-        "sharpe": -1.196,
-        "calmar": -1.0,
-        "ir": -1.421,
-        "coverage": 33.9,
-        "opt_score": 0.2796
+        "alpha": -30.0,
+        "max_dd": -6.92,
+        "sharpe": -1.389,
+        "calmar": -1.018,
+        "ir": -1.291,
+        "coverage": 28.4,
+        "opt_score": 0.3522
       },
       "valid_kpi": {
         "valid": true,
-        "ann_ret": -8.25,
-        "ann_bm": 17.98,
-        "alpha": -26.23,
+        "ann_ret": 10.09,
+        "ann_bm": 18.72,
+        "alpha": -8.63,
         "max_dd": -9.29,
-        "sharpe": -1.184,
-        "calmar": -0.888,
-        "ir": -1.866,
-        "coverage": 33.3,
-        "opt_score": 0.2814
+        "sharpe": 0.718,
+        "calmar": 1.086,
+        "ir": -0.548,
+        "coverage": 49.4,
+        "opt_score": 0.4977
       },
-      "combined_score": 0.2808,
-      "optimized_at": "2026-03-27T23:05:58.900241"
+      "combined_score": 0.4468,
+      "optimized_at": "2026-04-21T23:53:07.839750"
     }
   },
   "summary": {
     "BEAR": {
       "params": {
-        "N_trend": 40,
+        "N_trend": 60,
         "rsi_period": 14,
-        "rsi_buy": 45,
+        "rsi_buy": 50,
         "rsi_sell": 65,
         "bias_buy": -3.0,
-        "stop_loss": -0.05
+        "stop_loss": 0.05
       },
-      "train_alpha": 27.37,
-      "valid_alpha": -17.59,
-      "score": 0.3562
+      "train_alpha": 22.49,
+      "valid_alpha": -65.25,
+      "score": 0.3348
     },
     "RANGE": {
       "params": {
         "N_trend": 90,
         "rsi_period": 14,
         "rsi_buy": 40,
-        "rsi_sell": 70,
+        "rsi_sell": 65,
         "bias_buy": -2.0,
-        "stop_loss": -0.07
+        "stop_loss": 0.07
       },
-      "train_alpha": 6.23,
-      "valid_alpha": 25.58,
-      "score": 0.5
+      "train_alpha": 3.65,
+      "valid_alpha": 23.74,
+      "score": 0.431
     },
     "BULL": {
       "params": {
-        "N_trend": 120,
+        "N_trend": 90,
         "rsi_period": 14,
-        "rsi_buy": 45,
+        "rsi_buy": 40,
         "rsi_sell": 75,
         "bias_buy": -1.5,
-        "stop_loss": -0.06
+        "stop_loss": 0.08
       },
-      "train_alpha": -33.16,
-      "valid_alpha": -26.23,
-      "score": 0.2808
+      "train_alpha": -30.0,
+      "valid_alpha": -8.63,
+      "score": 0.4468
     }
   }
 }
