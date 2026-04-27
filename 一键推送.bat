@@ -121,7 +121,7 @@ if %errorlevel%==0 (
 echo   [WARN] SSH failed, trying origin...
 git push origin main
 if %errorlevel%==0 (
-    echo   [OK] NEWS push success (via origin)
+    echo   [OK] NEWS push success via origin
     set /a PUSH_COUNT+=1
 ) else (
     echo   [FAIL] NEWS push failed
@@ -141,9 +141,9 @@ echo.
 echo.
 echo ========================================
 if !FAIL_COUNT!==0 (
-    echo  [OK] Done! Pushed !PUSH_COUNT! repo(s)
+    echo  [OK] All done - pushed !PUSH_COUNT! repos
 ) else (
-    echo  [WARN] Done with !FAIL_COUNT! error(s)
+    echo  [WARN] Done with !FAIL_COUNT! errors
 )
 echo.
 if !PUSH_COUNT! gtr 0 (
