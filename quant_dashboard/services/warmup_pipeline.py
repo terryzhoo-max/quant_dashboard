@@ -22,8 +22,8 @@ logger = get_logger("warmup")
 #  基础工具
 # ═══════════════════════════════════════════════════
 
-def with_retry(func, name, max_retries=3, delay=300):
-    """柔性重试机制: 避免 Tushare 等接口拥堵导致的单点故障"""
+def with_retry(func, name, max_retries=3, delay=60):
+    """柔性重试机制: 避免 Tushare 等接口拥堵导致的单点故障 (V2: delay 60s 防阻塞)"""
     for i in range(max_retries):
         try:
             func()
@@ -264,11 +264,11 @@ sched_logger = get_logger("scheduler")
 def daily_warmup_callback():
     """定时回调: 每日 15:35 收盘预热"""
     sched_logger.info(f"⏰ 收盘真实主动预热流水线启动")
-    with_retry(warmup_erp_cache, "ERP_Warmup", 3, 300)
-    with_retry(warmup_aiae_cache, "AIAE_Warmup", 3, 300)
-    with_retry(warmup_industry_tracking, "Industry_Warmup", 2, 120)
-    with_retry(warmup_dashboard_cache, "Dashboard_Warmup", 3, 300)
-    with_retry(warmup_factor_data, "Factor_Sync", 3, 300)
+    with_retry(warmup_erp_cache, "ERP_Warmup", 3, 60)
+    with_retry(warmup_aiae_cache, "AIAE_Warmup", 3, 60)
+    with_retry(warmup_industry_tracking, "Industry_Warmup", 2, 60)
+    with_retry(warmup_dashboard_cache, "Dashboard_Warmup", 3, 60)
+    with_retry(warmup_factor_data, "Factor_Sync", 3, 60)
     # Batch 11: 收盘后自动存档组合净值快照
     try:
         from portfolio_engine import get_portfolio_engine
@@ -307,22 +307,22 @@ def daily_warmup_callback():
 def morning_warmup_callback():
     """盘前数据补偿拉取"""
     sched_logger.info(f"🌅 早间数据补偿流水线启动")
-    with_retry(warmup_aiae_cache, "AIAE_Morning_Warmup", 3, 300)
-    with_retry(warmup_industry_tracking, "Industry_Morning_Warmup", 2, 120)
-    with_retry(warmup_dashboard_cache, "Dashboard_Morning_Warmup", 3, 300)
+    with_retry(warmup_aiae_cache, "AIAE_Morning_Warmup", 3, 60)
+    with_retry(warmup_industry_tracking, "Industry_Morning_Warmup", 2, 60)
+    with_retry(warmup_dashboard_cache, "Dashboard_Morning_Warmup", 3, 60)
     sched_logger.info("早间补偿流水线完成")
 
 
 def fred_daily_callback():
     """每日18:30 刷新FRED数据"""
     sched_logger.info("FRED 利率刷新触发")
-    with_retry(warmup_rates_cache, "Rates_Warmup", 3, 300)
+    with_retry(warmup_rates_cache, "Rates_Warmup", 3, 60)
 
 
 def us_aiae_warmup_callback():
     """美股AIAE定时预热 + 全球对比更新"""
     sched_logger.info("US AIAE 定时预热启动")
-    with_retry(warmup_us_aiae_cache, "US_AIAE_Warmup", 3, 300)
+    with_retry(warmup_us_aiae_cache, "US_AIAE_Warmup", 3, 60)
     warmup_global_aiae_cache()
     sched_logger.info("US AIAE 预热完成")
 
@@ -330,7 +330,7 @@ def us_aiae_warmup_callback():
 def jp_aiae_warmup_callback():
     """日股AIAE定时预热 + 全球对比更新"""
     sched_logger.info("JP AIAE 定时预热启动")
-    with_retry(warmup_jp_aiae_cache, "JP_AIAE_Warmup", 3, 300)
+    with_retry(warmup_jp_aiae_cache, "JP_AIAE_Warmup", 3, 60)
     warmup_global_aiae_cache()
     sched_logger.info("JP AIAE 预热完成")
 
@@ -338,4 +338,4 @@ def jp_aiae_warmup_callback():
 def aaii_crawl_callback():
     """AAII Sentiment 每周五自动爬取"""
     sched_logger.info("AAII Sentiment 自动爬取启动")
-    with_retry(warmup_aaii_sentiment, "AAII_Crawl", 2, 600)
+    with_retry(warmup_aaii_sentiment, "AAII_Crawl", 2, 120)

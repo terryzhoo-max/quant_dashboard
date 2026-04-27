@@ -167,6 +167,11 @@ async function runSimulation(scenarioId) {
     if (resultEl) { resultEl.classList.remove('visible'); resultEl.innerHTML = '<div class="loading-spinner">⏳ 模拟推演中...</div>'; resultEl.classList.add('visible'); }
 
     try {
+        if (typeof AC === 'undefined' || typeof AC.secureFetch !== 'function') {
+            if (resultEl) resultEl.innerHTML = '<div class="loading-spinner">🔒 安全模块未就绪，请刷新页面 (Ctrl+Shift+R)</div>';
+            console.error('AC.secureFetch not available - alphacore_utils.js may not be loaded');
+            return;
+        }
         const resp = await AC.secureFetch(`${API_BASE}/simulate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -179,7 +184,7 @@ async function runSimulation(scenarioId) {
             resultEl.innerHTML = `<div class="loading-spinner">❌ ${data.error || '模拟失败'}</div>`;
         }
     } catch (e) {
-        if (resultEl) resultEl.innerHTML = `<div class="loading-spinner">❌ 网络错误: ${e.message}</div>`;
+        if (resultEl) resultEl.innerHTML = `<div class="loading-spinner">❌ ${e.isCancelled ? '操作已取消' : '网络错误: ' + e.message}</div>`;
     }
 }
 

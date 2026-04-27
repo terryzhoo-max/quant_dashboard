@@ -31,6 +31,7 @@ _logger = get_logger("main")
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from concurrent.futures import ThreadPoolExecutor as _SchedPoolExecutor
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -76,7 +77,11 @@ async def lifespan(app: FastAPI):
     threading.Thread(target=warmup_hk_aiae_cache, daemon=True).start()
 
     # ── Init APScheduler ──
-    scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
+    scheduler = BackgroundScheduler(
+        timezone="Asia/Shanghai",
+        executors={'default': {'type': 'threadpool', 'max_workers': 5}},
+        job_defaults={'misfire_grace_time': 120, 'coalesce': True},
+    )
 
     # 1. 盘中高频热点 (每2分钟)
     scheduler.add_job(_hot_data_reactor_tick, IntervalTrigger(seconds=120), id="hot_data")
