@@ -751,8 +751,16 @@ document.addEventListener('DOMContentLoaded', function() {
             await loadRotationMatrix();
             loadIndustryDetail(currentCode);
         } catch (err) {
-            console.error("同步异常", err);
-            alert("网络或系统错误，同步异常。");
+            if (err.isCancelled) {
+                // 用户主动取消了 API Key 输入，不弹额外错误
+                console.log("同步已取消 (用户未输入API Key)");
+            } else if (err.status === 401 || err.status === 403) {
+                // API Key 无效，secureFetch 已弹窗提示，再次点击会重新要求输入
+                console.log("API Key 无效，请重试");
+            } else {
+                console.error("同步异常", err);
+                alert("网络或系统错误，同步异常：" + (err.message || err));
+            }
         } finally {
             overlay.style.display = 'none';
         }

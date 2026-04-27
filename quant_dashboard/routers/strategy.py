@@ -58,7 +58,7 @@ async def get_strategy():
         if isinstance(cached, dict) and "status" in cached:
             return cached
         return wrap_mr_results(cached)
-    raw = await asyncio.get_event_loop().run_in_executor(executor, run_strategy)
+    raw = await asyncio.get_running_loop().run_in_executor(executor, run_strategy)
     wrapped = wrap_mr_results(raw)
     _sr = cache_manager.get_json("strategy_results", {}); _sr["mr"] = wrapped; cache_manager.set_json("strategy_results", _sr)
     return wrapped
@@ -69,7 +69,7 @@ async def get_dividend_strategy(regime: str = None):
     """红利增强策略详情 V3.1 · 支持市场状态参数"""
     if not regime and cache_manager.get_json("strategy_results", {}).get("div"):
         return cache_manager.get_json("strategy_results", {}).get("div")
-    result = await asyncio.get_event_loop().run_in_executor(
+    result = await asyncio.get_running_loop().run_in_executor(
         executor, lambda: run_dividend_strategy(regime=regime)
     )
     if not regime:
@@ -82,7 +82,7 @@ async def get_momentum_strategy():
     """行业动量策略详情"""
     if cache_manager.get_json("strategy_results", {}).get("mom"):
         return cache_manager.get_json("strategy_results", {}).get("mom")
-    return await asyncio.get_event_loop().run_in_executor(executor, run_momentum_strategy)
+    return await asyncio.get_running_loop().run_in_executor(executor, run_momentum_strategy)
 
 
 # ─────────────────────────────────────────────
@@ -142,14 +142,14 @@ def _run_erp_strategy() -> dict:
             },
         }
     except Exception as e:
-        import traceback; traceback.print_exc()
+        logger.error(f"ERP Strategy Error: {e}", exc_info=True)
         return {"status": "error", "message": str(e)}
 
 
 @router.get("/erp_strategy")
 async def get_erp_strategy():
     """ERP宏观择时策略实时信号"""
-    return await asyncio.get_event_loop().run_in_executor(executor, _run_erp_strategy)
+    return await asyncio.get_running_loop().run_in_executor(executor, _run_erp_strategy)
 
 
 # ─────────────────────────────────────────────
@@ -203,8 +203,7 @@ def _run_aiae_strategy() -> dict:
             },
         }
     except Exception as e:
-        import traceback; traceback.print_exc()
-        logger.error(f"AIAE Strategy Error: {e}")
+        logger.error(f"AIAE Strategy Error: {e}", exc_info=True)
         try:
             engine = get_aiae_engine()
             fallback_signals = engine.generate_etf_signals(3)
@@ -227,7 +226,7 @@ def _run_aiae_strategy() -> dict:
 @router.get("/aiae_strategy")
 async def get_aiae_strategy():
     """AIAE ETF标的池实时信号"""
-    return await asyncio.get_event_loop().run_in_executor(executor, _run_aiae_strategy)
+    return await asyncio.get_running_loop().run_in_executor(executor, _run_aiae_strategy)
 
 
 # ═══════════════════════════════════════════════
@@ -332,7 +331,7 @@ async def run_all_strategies_api(override_cap: int = None):
     """V4.0 五策略并行执行 (MR+DIV+MOM+ERP+AIAE_ETF)
     + AIAE主控仓位Cap + 动态权重 + 共振分析
     """
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     try:
         # ── 并行执行5策略 ──

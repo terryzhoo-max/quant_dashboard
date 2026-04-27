@@ -16,7 +16,7 @@ import sqlite3
 import json
 import os
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 from services.logger import get_logger
 
@@ -410,7 +410,7 @@ def get_decision_history(days: int = 30) -> List[Dict]:
 def cleanup_old_decisions(keep_days: int = 365):
     """清理超过 keep_days 的旧决策记录"""
     conn = _get_conn()
-    cutoff = (datetime.now() - __import__('datetime').timedelta(days=keep_days)).strftime("%Y-%m-%d")
+    cutoff = (datetime.now() - timedelta(days=keep_days)).strftime("%Y-%m-%d")
     deleted = conn.execute(
         "DELETE FROM decision_log WHERE date < ?", (cutoff,)
     ).rowcount

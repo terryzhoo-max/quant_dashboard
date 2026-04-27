@@ -1,6 +1,7 @@
 """AlphaCore 审计/执行器 API — 从 main.py 提取"""
 import asyncio
 import traceback
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter
 
@@ -8,18 +9,19 @@ from audit_engine import run_full_audit
 
 router = APIRouter(prefix="/api/v1", tags=["audit"])
 executor = ThreadPoolExecutor(max_workers=4)
+logger = logging.getLogger("alphacore.audit")
 
 
 @router.get("/audit")
 async def api_audit():
     """V4.0 五维系统审计 + Enforcer 执行 + 静音/降级"""
     try:
-        report = await asyncio.get_event_loop().run_in_executor(
+        report = await asyncio.get_running_loop().run_in_executor(
             executor, run_full_audit
         )
         return {"status": "ok", **report}
     except Exception as e:
-        traceback.print_exc()
+        logger.error(f"[Audit] Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
 
 

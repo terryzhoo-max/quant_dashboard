@@ -416,5 +416,27 @@
         "total": 0.0,
         "success": true,
         "message": "从券商TXT文件覆盖导入 19 只持仓，可用资金 ¥797.85"
+    },
+    {
+        "timestamp": "2026-04-27 22:24:05",
+        "action": "import",
+        "ts_code": "SYSTEM",
+        "name": "TXT导入 19 只持仓",
+        "amount": 19,
+        "price": 0,
+        "total": 0.0,
+        "success": true,
+        "message": "从券商TXT文件覆盖导入 19 只持仓，可用资金 ¥561.27"
+    },
+    {
+        "timestamp": "2026-04-28 01:01:19",
+        "action": "reset",
+        "ts_code": "SYSTEM",
+        "name": "清零 19 只持仓",
+        "amount": 19,
+        "price": 0,
+        "total": 0.0,
+        "success": true,
+        "message": "组合清零: 原 19 只持仓 + 现金 ¥561.27 → 归零"
     }
 ]

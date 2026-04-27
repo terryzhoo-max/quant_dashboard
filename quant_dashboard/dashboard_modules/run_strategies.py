@@ -5,6 +5,7 @@ Dashboard Module: 三大策略引擎并行执行
 """
 
 import asyncio
+import logging
 from mean_reversion_engine import run_strategy
 from dividend_trend_engine import run_dividend_strategy
 from momentum_rotation_engine import run_momentum_strategy
@@ -12,9 +13,9 @@ from momentum_rotation_engine import run_momentum_strategy
 
 async def run_all_strategies(executor):
     """并行运行三大策略引擎 → 返回 (mr_res, div_res, mom_res)"""
-    from datetime import datetime
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] Starting Real-time Strategy Engines...")
-    loop = asyncio.get_event_loop()
+    logger = logging.getLogger("alphacore.strategies")
+    logger.info("Starting Real-time Strategy Engines...")
+    loop = asyncio.get_running_loop()
     mr_future = loop.run_in_executor(executor, run_strategy)
     div_future = loop.run_in_executor(executor, run_dividend_strategy)
     mom_future = loop.run_in_executor(executor, run_momentum_strategy)

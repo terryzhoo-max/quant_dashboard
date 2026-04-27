@@ -125,7 +125,7 @@ async def _build_dashboard_data_full():
     ts.set_token(TUSHARE_TOKEN)
     pro = ts.pro_api()
     today_str = datetime.now().strftime('%Y%m%d')
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     try:
         # 第一层: 并发执行 I/O 和独立计算

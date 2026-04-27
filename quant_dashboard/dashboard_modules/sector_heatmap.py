@@ -5,9 +5,12 @@ V4.7: 12只核心ETF并行拉取 + RPS排名 + 策略信号交叉标注。
 """
 
 import asyncio
+import logging
 import tushare as ts
 import pandas as pd
 from core_etf_config import CORE_ETFS, CORE_ETF_NAME_MAP, FALLBACK_MOMENTUM
+
+logger = logging.getLogger("alphacore.heatmap")
 
 
 async def compute_sector_heatmap(executor, mr_res, mom_res):
@@ -19,7 +22,7 @@ async def compute_sector_heatmap(executor, mr_res, mom_res):
     sector_heatmap = []
 
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         def fetch_etf_history(code):
             try:
@@ -28,7 +31,7 @@ async def compute_sector_heatmap(executor, mr_res, mom_res):
                     return df.sort_values('trade_date', ascending=True)
                 return pd.DataFrame()
             except Exception as e:
-                print(f"Fetch Error {code}: {e}")
+                logger.warning(f"Fetch Error {code}: {e}")
                 return pd.DataFrame()
 
         # 并行加速
@@ -80,7 +83,7 @@ async def compute_sector_heatmap(executor, mr_res, mom_res):
         sector_heatmap = comparison_list
 
     except Exception as e:
-        print(f"Heatmap V4.0 Logic Error: {e}")
+        logger.error(f"Heatmap V4.0 Logic Error: {e}")
 
     # 兜底逻辑
     if not sector_heatmap:

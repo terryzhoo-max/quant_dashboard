@@ -6,7 +6,10 @@ Dashboard Module: 宏观数据抓取 (VIX / CNY)
 
 import requests
 import re
+import logging
 from datetime import datetime, timedelta
+
+logger = logging.getLogger("alphacore.fetch_macro")
 
 
 def fetch_vix_for_dashboard():
@@ -41,7 +44,7 @@ def _fetch_vix_cnbc():
             if match:
                 return float(match.group(1))
     except Exception as e:
-        print(f"SCRAPER ERROR: {e}")
+        logger.warning(f"SCRAPER ERROR: {e}")
     return None
 
 
@@ -59,7 +62,7 @@ def fetch_cny_for_dashboard():
 async def fetch_macro_data(executor):
     """异步并行抓取 VIX + CNY → 返回 (latest_vix, prev_vix, latest_cny)"""
     import asyncio
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     vix_result, cny_result = await asyncio.gather(
         loop.run_in_executor(executor, fetch_vix_for_dashboard),
         loop.run_in_executor(executor, fetch_cny_for_dashboard)

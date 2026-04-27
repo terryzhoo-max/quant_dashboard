@@ -1,6 +1,7 @@
 """AlphaCore 产业/回测/因子/动量 API — 从 main.py 提取"""
 import asyncio
 import traceback
+import logging
 from datetime import datetime, timedelta
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor
@@ -33,6 +34,7 @@ from services.industry_tracker import (
 
 router = APIRouter(prefix="/api/v1", tags=["industry"])
 executor = ThreadPoolExecutor(max_workers=6)
+logger = logging.getLogger("alphacore.industry")
 
 def get_etf_constituents(ts_code):
     """V5.1 Fix P0#2: 统一引用 core_etf_config.ETF_CONSTITUENTS (Single Source of Truth)"""
@@ -69,7 +71,7 @@ async def get_industry_detail(code: str):
                         p_df = df_live.sort_values('trade_date')
                         p_df['trade_date'] = p_df['trade_date'].astype(str)
                 except Exception as e:
-                    print(f"[industry-detail] Tushare fallback failed for {code}: {e}")
+                    logger.warning(f"[industry-detail] Tushare fallback failed for {code}: {e}")
 
             if p_df.empty:
                 return {"code": code, "metrics": {"rps": 50, "pe_percentile": 50, "crowding": 1.0,
@@ -121,7 +123,7 @@ async def get_industry_detail(code: str):
             }
             return detail_data
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(executor, fetch_data)
         return {"status": "success", "data": result}
     except Exception as e:
@@ -136,8 +138,8 @@ async def run_backtest_api(req: BacktestRequest):
         bt = AlphaBacktester(initial_cash=req.initial_cash, benchmark_code=req.benchmark_code)
         
         # 1. 获取数据 (Fund 日线数据 + Adj Factors)
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] Backtest Req: {req.ts_code} ({req.strategy})")
-        df = await asyncio.get_event_loop().run_in_executor(
+        logger.info(f"Backtest Req: {req.ts_code} ({req.strategy})")
+        df = await asyncio.get_running_loop().run_in_executor(
             executor, bt.fetch_tushare_data, req.ts_code, req.start_date, req.end_date, req.adj
         )
         
@@ -170,7 +172,7 @@ async def run_backtest_api(req: BacktestRequest):
             filtered_p = {k: v for k, v in p.items() if k in valid_keys}
             # 提前1年拉数据作为ERP分位回溯期
             macro_start = (datetime.strptime(req.start_date, '%Y%m%d') - timedelta(days=400)).strftime('%Y%m%d')
-            macro_df = await asyncio.get_event_loop().run_in_executor(
+            macro_df = await asyncio.get_running_loop().run_in_executor(
                 executor, prepare_erp_backtest_data, macro_start, req.end_date
             )
             signals = erp_timing_strategy_vectorized(df, macro_df=macro_df, **filtered_p)
@@ -191,7 +193,7 @@ async def run_backtest_api(req: BacktestRequest):
         }
         
     except Exception as e:
-        print(f"Backtest Error: {traceback.format_exc()}")
+        logger.error(f"Backtest Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
 
 @router.post("/batch-backtest")
@@ -219,14 +221,14 @@ async def run_factor_analysis(req: FactorAnalysisRequest):
         else:
             sample_codes = all_stocks.head(100)["ts_code"].tolist()
             
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] Factor Analysis V5.0: {req.factor_name} on {len(sample_codes)} stocks")
+        logger.info(f"Factor Analysis V5.0: {req.factor_name} on {len(sample_codes)} stocks")
         
         def run_analysis():
             # V5.0: 按需检查数据新鲜度, 过期则自动同步
             freshness = dm.check_data_freshness(sample_codes)
             sync_result = None
             if freshness['is_stale']:
-                print(f"[Factor] 数据过期 {freshness['stale_days']} 天, 触发智能同步...")
+                logger.info(f"[Factor] 数据过期 {freshness['stale_days']} 天, 触发智能同步...")
                 sync_result = dm.smart_sync(sample_codes)
                 freshness = sync_result.get('freshness', freshness)
 
@@ -277,7 +279,7 @@ async def run_factor_analysis(req: FactorAnalysisRequest):
                 }
             }
             
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         results = await loop.run_in_executor(executor, run_analysis)
         
         if "error" in results:
@@ -292,7 +294,7 @@ async def run_factor_analysis(req: FactorAnalysisRequest):
             "data_freshness": freshness_info
         }
     except Exception as e:
-        print(f"Factor Analysis Error: {traceback.format_exc()}")
+        logger.error(f"Factor Analysis Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
 
 @router.get("/strategy/momentum-backtest")
@@ -323,11 +325,11 @@ async def get_momentum_backtest(
         def do_backtest():
             return run_momentum_backtest(start_date, end_date, params)
         
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(executor, do_backtest)
         return result
     except Exception as e:
-        print(f"Momentum Backtest Error: {traceback.format_exc()}")
+        logger.error(f"Momentum Backtest Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
 
 
@@ -341,11 +343,11 @@ async def get_momentum_optimize(
         def do_optimize():
             return run_momentum_optimize(in_sample_end, out_sample_start)
         
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(executor, do_optimize)
         return result
     except Exception as e:
-        print(f"Momentum Optimize Error: {traceback.format_exc()}")
+        logger.error(f"Momentum Optimize Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
 
 @router.get("/market/regime")
@@ -422,7 +424,7 @@ async def get_market_regime():
             },
         }
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(executor, _detect)
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -574,7 +576,7 @@ async def get_industry_tracking(date: Optional[str] = None):
                 engine = IndustryEngine()
                 rotation = engine.get_industry_rotation(base_date=date)
             except Exception as e:
-                print(f"[industry-tracking] Rotation matrix error: {e}")
+                logger.warning(f"[industry-tracking] Rotation matrix error: {e}")
                 rotation = {}
 
             result = {
@@ -598,7 +600,7 @@ async def get_industry_tracking(date: Optional[str] = None):
 
             return result
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         results = await loop.run_in_executor(executor, run_ind_analysis)
 
         # V6.0: freshness 从 latest 缓存读取
@@ -610,7 +612,7 @@ async def get_industry_tracking(date: Optional[str] = None):
                     "cache_ttl_sec": _get_tracking_ttl()
                 }}
     except Exception as e:
-        print(f"Industry Analysis Error: {traceback.format_exc()}")
+        logger.error(f"Industry Analysis Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
 
 @router.post("/sync/industry")
@@ -631,11 +633,11 @@ async def sync_industry_data():
                 mgr.sync_daily_prices(stocks.head(10)['ts_code'].tolist())
             return mgr.get_last_sync_date(etf_codes)
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         last_date = await loop.run_in_executor(executor, do_sync)
         return {"status": "success", "last_date": last_date}
     except Exception as e:
-        print(f"Sync Error: {traceback.format_exc()}")
+        logger.error(f"Sync Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
 
 # --- Portfolio Management API V2.0 (Singleton + Validation) ---

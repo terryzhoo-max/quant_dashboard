@@ -1,6 +1,7 @@
 """AlphaCore 投资组合管理 API — V15.1 标准化响应"""
 import asyncio
 import traceback
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, UploadFile, File
 
@@ -10,6 +11,7 @@ from portfolio_engine import get_portfolio_engine
 from services import db as ac_db
 
 router = APIRouter(prefix="/api/v1", tags=["portfolio"])
+logger = logging.getLogger("alphacore.portfolio")
 executor = ThreadPoolExecutor(max_workers=4)
 
 
@@ -119,9 +121,9 @@ async def sync_portfolio_prices():
     """同步持仓行情: 从 Tushare 拉取最新日线数据到 data_lake"""
     try:
         engine = get_portfolio_engine()
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(executor, engine.sync_prices)
         return R.ok(result)
     except Exception as e:
-        traceback.print_exc()
+        logger.error(f"[Portfolio Sync] Error: {traceback.format_exc()}")
         return R.error(str(e), "ERR_SYNC")

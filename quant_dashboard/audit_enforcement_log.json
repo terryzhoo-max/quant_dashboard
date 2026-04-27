@@ -3,48 +3,6 @@
     "action": "enforcer_skipped",
     "reason": "执行器总开关已关闭",
     "status": "skipped",
-    "timestamp": "2026-04-07 19:06:08"
-  },
-  {
-    "action": "enforcer_skipped",
-    "reason": "执行器总开关已关闭",
-    "status": "skipped",
-    "timestamp": "2026-04-07 20:26:07"
-  },
-  {
-    "action": "enforcer_skipped",
-    "reason": "执行器总开关已关闭",
-    "status": "skipped",
-    "timestamp": "2026-04-07 21:06:25"
-  },
-  {
-    "action": "enforcer_skipped",
-    "reason": "执行器总开关已关闭",
-    "status": "skipped",
-    "timestamp": "2026-04-07 21:07:34"
-  },
-  {
-    "action": "enforcer_skipped",
-    "reason": "执行器总开关已关闭",
-    "status": "skipped",
-    "timestamp": "2026-04-07 22:14:13"
-  },
-  {
-    "action": "enforcer_skipped",
-    "reason": "执行器总开关已关闭",
-    "status": "skipped",
-    "timestamp": "2026-04-08 00:20:46"
-  },
-  {
-    "action": "enforcer_skipped",
-    "reason": "执行器总开关已关闭",
-    "status": "skipped",
-    "timestamp": "2026-04-08 11:00:37"
-  },
-  {
-    "action": "enforcer_skipped",
-    "reason": "执行器总开关已关闭",
-    "status": "skipped",
     "timestamp": "2026-04-08 15:50:50"
   },
   {
@@ -1198,5 +1156,47 @@
     "reason": "执行器总开关已关闭",
     "status": "skipped",
     "timestamp": "2026-04-27 20:20:52"
+  },
+  {
+    "action": "enforcer_skipped",
+    "reason": "执行器总开关已关闭",
+    "status": "skipped",
+    "timestamp": "2026-04-27 22:21:02"
+  },
+  {
+    "action": "enforcer_skipped",
+    "reason": "执行器总开关已关闭",
+    "status": "skipped",
+    "timestamp": "2026-04-27 22:25:01"
+  },
+  {
+    "action": "enforcer_skipped",
+    "reason": "执行器总开关已关闭",
+    "status": "skipped",
+    "timestamp": "2026-04-27 22:50:19"
+  },
+  {
+    "action": "enforcer_skipped",
+    "reason": "执行器总开关已关闭",
+    "status": "skipped",
+    "timestamp": "2026-04-28 01:21:39"
+  },
+  {
+    "action": "enforcer_skipped",
+    "reason": "执行器总开关已关闭",
+    "status": "skipped",
+    "timestamp": "2026-04-28 01:34:59"
+  },
+  {
+    "action": "enforcer_skipped",
+    "reason": "执行器总开关已关闭",
+    "status": "skipped",
+    "timestamp": "2026-04-28 01:35:42"
+  },
+  {
+    "action": "enforcer_skipped",
+    "reason": "执行器总开关已关闭",
+    "status": "skipped",
+    "timestamp": "2026-04-28 01:36:59"
   }
 ]

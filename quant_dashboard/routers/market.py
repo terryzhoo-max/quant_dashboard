@@ -1,6 +1,7 @@
 """AlphaCore 市场/ERP/利率/个股查询 API — 从 main.py 提取"""
 import asyncio
 import traceback
+import logging
 from datetime import datetime
 from typing import Dict
 from concurrent.futures import ThreadPoolExecutor
@@ -13,6 +14,7 @@ from erp_hk_engine import get_hk_erp_engine
 
 router = APIRouter(prefix="/api/v1", tags=["market"])
 executor = ThreadPoolExecutor(max_workers=4)
+logger = logging.getLogger("alphacore.market")
 
 # 个股名称本地缓存
 _NAME_CACHE: Dict[str, str] = {}
@@ -23,10 +25,10 @@ async def get_erp_timing():
     """宏观ERP择时引擎 — 三维信号 + 历史走势"""
     try:
         engine = get_erp_engine()
-        report = await asyncio.get_event_loop().run_in_executor(executor, engine.generate_report)
+        report = await asyncio.get_running_loop().run_in_executor(executor, engine.generate_report)
         return {"status": "success", "data": report}
     except Exception as e:
-        print(f"[ERP API] Error: {traceback.format_exc()}")
+        logger.error(f"[ERP API] Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
 
 
@@ -37,7 +39,7 @@ async def get_erp_global():
         from erp_us_engine import get_us_erp_engine
         from erp_jp_engine import get_jp_erp_engine
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         us_engine = get_us_erp_engine()
         jp_engine = get_jp_erp_engine()
         cn_engine = get_erp_engine()
@@ -109,7 +111,7 @@ async def get_erp_global():
                 "hk_hsi": hk_hsi_report, "hk_tech": hk_tech_report,
                 "global_comparison": global_comparison, "updated_at": datetime.now().isoformat()}
     except Exception as e:
-        print(f"[Global ERP] Error: {traceback.format_exc()}")
+        logger.error(f"[Global ERP] Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
 
 
@@ -119,10 +121,10 @@ async def get_rates_strategy():
     try:
         from rates_strategy_engine import get_rates_engine
         engine = get_rates_engine()
-        report = await asyncio.get_event_loop().run_in_executor(executor, engine.generate_report)
+        report = await asyncio.get_running_loop().run_in_executor(executor, engine.generate_report)
         return {"status": "success", "data": report}
     except Exception as e:
-        print(f"[Rates API] Error: {traceback.format_exc()}")
+        logger.error(f"[Rates API] Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
 
 
@@ -169,9 +171,9 @@ async def get_stock_name(ts_code: str):
         return {"ts_code": ts_code, "name": ts_code, "type": "unknown"}
 
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(executor, do_lookup)
         return result
     except Exception as e:
-        print(f"[StockName] Error for {ts_code}: {e}")
+        logger.error(f"[StockName] Error for {ts_code}: {e}")
         return {"ts_code": ts_code, "name": ts_code, "type": "unknown"}

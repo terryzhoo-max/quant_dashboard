@@ -38,7 +38,7 @@ executor = ThreadPoolExecutor(max_workers=6)
 async def get_aiae_report():
     """AIAE 完整报告: 当前AIAE值、五档状态、仓位矩阵、子策略配额、信号"""
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         engine = get_aiae_engine()
         report = await loop.run_in_executor(executor, engine.generate_report)
         return {"status": "success", "data": report, "timestamp": datetime.now().isoformat()}
@@ -60,7 +60,7 @@ async def get_aiae_chart():
 async def refresh_aiae():
     """强制刷新AIAE数据(清除缓存)"""
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         engine = get_aiae_engine()
         engine.refresh()
         report = await loop.run_in_executor(executor, engine.generate_report)
@@ -100,7 +100,7 @@ async def get_aiae_global_report():
         return _aiae_g_data
 
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         us_engine = get_us_aiae_engine()
         jp_engine = get_jp_aiae_engine()
         hk_engine = get_hk_aiae_engine()
@@ -159,7 +159,7 @@ async def get_aiae_global_report():
 
         return data
     except Exception as e:
-        traceback.print_exc()
+        logger.error(f"Global AIAE Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
 
 @router.get("/aiae_global/refresh")
@@ -204,7 +204,7 @@ async def get_erp_hk(market: str = "HSI"):
         if market not in ("HSI", "HSTECH"):
             return {"status": "error", "message": "market must be HSI or HSTECH"}
         engine = get_hk_erp_engine(market)
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         report = await loop.run_in_executor(executor, engine.generate_report)
         return {"status": "success", "data": report}
     except Exception as e:
@@ -219,7 +219,7 @@ async def get_aiae_hk_report():
     """港股 AIAE 完整报告"""
     try:
         engine = get_hk_aiae_engine()
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         report = await loop.run_in_executor(executor, engine.generate_report)
         return {"status": "success", "data": report, "timestamp": datetime.now().isoformat()}
     except Exception as e:
@@ -232,7 +232,7 @@ async def refresh_aiae_hk():
     try:
         engine = get_hk_aiae_engine()
         engine.refresh()
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         report = await loop.run_in_executor(executor, engine.generate_report)
         cache_manager.set_json("aiae_global_last_update", None)
         cache_manager.set_json("aiae_global_report_data", None)
