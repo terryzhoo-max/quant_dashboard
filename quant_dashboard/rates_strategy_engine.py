@@ -24,7 +24,7 @@ from typing import Optional
 logger = logging.getLogger("alphacore.rates")
 
 # FRED API Key: 优先从环境变量读取，fallback 到内置默认值
-FRED_API_KEY = __import__('config').FRED_API_KEY
+from config import FRED_API_KEY
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
 

@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 # FRED API for all Japan data
-FRED_API_KEY = __import__('config').FRED_API_KEY
+from config import FRED_API_KEY
 
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)

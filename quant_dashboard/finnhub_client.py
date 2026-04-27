@@ -19,7 +19,10 @@ import threading
 from typing import Optional, Dict
 from datetime import datetime
 
-FINNHUB_API_KEY = "d7c76p9r01qsv375ifbgd7c76p9r01qsv375ifc0"
+from config import FINNHUB_API_KEY
+from services.logger import get_logger
+
+logger = get_logger("finnhub")
 FINNHUB_BASE = "https://finnhub.io/api/v1"
 
 # ===== 简易速率限制器 (60 req/min) =====
@@ -40,8 +43,12 @@ def _rate_limit():
 
 
 def _log(msg: str, level: str = "INFO"):
-    ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-    print(f"[{ts}] [{level}] [Finnhub] {msg}")
+    if level == "WARN":
+        logger.warning(msg)
+    elif level == "ERROR":
+        logger.error(msg)
+    else:
+        logger.info(msg)
 
 
 # ===== 报价接口 =====

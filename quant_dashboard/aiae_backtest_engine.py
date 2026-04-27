@@ -16,7 +16,7 @@ from aiae_engine import AIAE_ETF_POOL, AIAE_ETF_MATRIX, AIAEEngine, REGIMES, HIS
 import aiae_params as AP
 
 # ─── 配置 ─────────────────────────────────────────────────────────────────────
-TUSHARE_TOKEN    = __import__('config').TUSHARE_TOKEN
+from config import TUSHARE_TOKEN
 DAILY_PRICE_DIR  = "data_lake/daily_prices"
 BENCHMARK_CODE   = "510300.SH"
 RISK_FREE_RATE   = 0.02

@@ -34,7 +34,7 @@ import json
 from datetime import datetime, timedelta
 from typing import Optional, Dict
 
-FRED_API_KEY = __import__('config').FRED_API_KEY
+from config import FRED_API_KEY
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
 from erp_signal_enhancer import adaptive_weights, multi_timeframe_confirmation
@@ -194,15 +194,107 @@ class HKERPTimingEngine:
 
     # ========== 南向资金管理 ==========
 
+    def _fetch_southbound_tushare(self) -> Optional[Dict]:
+        """Tushare moneyflow_hsgt 自动拉取南向资金 (T+1盘后数据)
+        
+        字段说明 (单位: 万元):
+          south_money: 南向资金累计净买入 (港股通沪+深)
+          ggt_ss: 港股通(沪) 当日成交净买入
+          ggt_sz: 港股通(深) 当日成交净买入
+        
+        算法: 差分 south_money 得到每日净买入, 然后汇总为 weekly/monthly
+        """
+        try:
+            from config import TUSHARE_TOKEN
+            import tushare as ts
+            ts.set_token(TUSHARE_TOKEN)
+            pro = ts.pro_api()
+            
+            end_date = datetime.now().strftime('%Y%m%d')
+            start_date = (datetime.now() - timedelta(days=60)).strftime('%Y%m%d')
+            
+            df = pro.moneyflow_hsgt(start_date=start_date, end_date=end_date, limit=40)
+            if df is None or df.empty:
+                print("[HK-ERP] Tushare moneyflow_hsgt: 无数据")
+                return None
+            
+            df = df.sort_values('trade_date', ascending=True).reset_index(drop=True)
+            
+            # south_money 是累计值(万元), Tushare返回为字符串类型, 需转float
+            import pandas as pd
+            df['south_money'] = pd.to_numeric(df['south_money'], errors='coerce')
+            df = df.dropna(subset=['south_money'])
+            
+            # 差分得到每日净买入
+            df['daily_net_wan'] = df['south_money'].diff()
+            df = df.dropna(subset=['daily_net_wan'])
+            
+            if df.empty:
+                print("[HK-ERP] Tushare 南向: 差分后无有效数据")
+                return None
+            
+            # south_money 单位已是亿元 (对照东方财富累计5251亿 ≈ Tushare 53573)
+            # 差分值直接即为每日净买入(亿元)
+            df['daily_net_billion'] = df['daily_net_wan']
+            
+            # 最近5个交易日 = 周净买入, 最近20个交易日 = 月净买入
+            recent = df.tail(30)
+            weekly = round(float(recent.tail(5)['daily_net_billion'].sum()), 1)
+            monthly = round(float(recent.tail(20)['daily_net_billion'].sum()), 1)
+            cumulative = round(float(df['daily_net_billion'].sum()), 1)
+            latest_date = str(df['trade_date'].iloc[-1])
+            
+            result = {
+                "weekly_net_buy_billion_rmb": weekly,
+                "monthly_net_buy_billion_rmb": monthly,
+                "cumulative_12m_billion_rmb": cumulative,
+                "direction": "inflow" if weekly > 0 else "outflow",
+                "date": f"{latest_date[:4]}-{latest_date[4:6]}-{latest_date[6:]}",
+                "source": "tushare_auto",
+            }
+            
+            # 持久化到JSON (供 fallback 使用)
+            with open(SOUTHBOUND_FILE, 'w', encoding='utf-8') as f:
+                json.dump(result, f, ensure_ascii=False, indent=2)
+            
+            print(f"[HK-ERP] 南向资金(Tushare自动): weekly={weekly:+.1f}亿, monthly={monthly:+.1f}亿 ({latest_date})")
+            return result
+            
+        except Exception as e:
+            print(f"[HK-ERP] Tushare南向拉取失败: {e}")
+            return None
+
     def _load_southbound(self) -> Dict:
+        """三级南向资金加载: Tushare自动 → JSON缓存 → 默认值"""
+        
+        # Tier 1: Tushare 自动拉取 (TTL 6小时, 避免频繁调用)
+        cache_fresh = False
+        if os.path.exists(SOUTHBOUND_FILE):
+            try:
+                mtime = os.path.getmtime(SOUTHBOUND_FILE)
+                cache_age_hours = (time.time() - mtime) / 3600
+                cache_fresh = cache_age_hours < 6  # 6小时内视为新鲜
+            except Exception:
+                pass
+        
+        if not cache_fresh:
+            tushare_data = self._fetch_southbound_tushare()
+            if tushare_data:
+                return tushare_data
+        
+        # Tier 2: JSON 缓存 (手动更新或上次Tushare拉取的)
         if os.path.exists(SOUTHBOUND_FILE):
             try:
                 with open(SOUTHBOUND_FILE, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                print(f"[HK-ERP] 南向资金 loaded: weekly={data.get('weekly_net_buy_billion_rmb', 0):.1f}B")
+                src = data.get('source', 'unknown')
+                print(f"[HK-ERP] 南向资金(缓存/{src}): weekly={data.get('weekly_net_buy_billion_rmb', 0):.1f}亿")
                 return data
             except Exception:
                 pass
+        
+        # Tier 3: 默认值
+        print("[HK-ERP] 南向资金: 使用默认值")
         return DEFAULT_SOUTHBOUND.copy()
 
     def update_southbound(self, weekly_net: float, monthly_net: float = None, cumulative_12m: float = None):

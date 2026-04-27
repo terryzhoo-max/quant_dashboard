@@ -19,7 +19,7 @@ import os
 from datetime import datetime, timedelta
 from typing import Optional
 
-FRED_API_KEY = __import__('config').FRED_API_KEY
+from config import FRED_API_KEY
 from erp_signal_enhancer import adaptive_weights, multi_timeframe_confirmation
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)

@@ -53,6 +53,9 @@ tushare.pro.client.requests.post = _patched_post
 # ── FRED API (VIX / 国债收益率 / M1 / 美股宏观) ──
 FRED_API_KEY = os.environ.get("FRED_API_KEY", "")
 
+# ── Finnhub API (美股ETF实时报价) ──
+FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY", "")
+
 # ── 数据缓存 TTL ──
 CACHE_TTL_INTRADAY    = 300       # 盘中5分钟（09:30-15:00 工作日）
 CACHE_TTL_AFTERHOURS  = 3600      # 盘后1小时
