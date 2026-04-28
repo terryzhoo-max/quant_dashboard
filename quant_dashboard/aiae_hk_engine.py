@@ -41,19 +41,20 @@ TTL_SOUTHBOUND = 6 * 3600    # 6h (日频数据, 盘后更新)
 TTL_AH_PREMIUM = 6 * 3600    # 6h (日频数据)
 
 # ===== AH溢价篮子: A+H 双上市核心股票 =====
+# A股: Tushare代码 | H股: yfinance代码 (零限频批量取价)
 AH_BASKET = [
-    # (A股代码, H股代码, 权重, 名称)
-    ("601318.SH", "02318.HK", 0.15, "中国平安"),
-    ("601398.SH", "01398.HK", 0.12, "工商银行"),
-    ("600036.SH", "03968.HK", 0.10, "招商银行"),
-    ("601288.SH", "01288.HK", 0.08, "农业银行"),
-    ("601328.SH", "03328.HK", 0.08, "交通银行"),
-    ("600028.SH", "00386.HK", 0.08, "中国石化"),
-    ("601088.SH", "01088.HK", 0.08, "中国神华"),
-    ("601628.SH", "02628.HK", 0.08, "中国人寿"),
-    ("600585.SH", "00914.HK", 0.08, "海螺水泥"),
-    ("601857.SH", "00857.HK", 0.07, "中国石油"),
-    ("601939.SH", "01939.HK", 0.08, "建设银行"),
+    # (A股Tushare, H股yfinance, 权重, 名称)
+    ("601318.SH", "2318.HK", 0.15, "中国平安"),
+    ("601398.SH", "1398.HK", 0.12, "工商银行"),
+    ("600036.SH", "3968.HK", 0.10, "招商银行"),
+    ("601288.SH", "1288.HK", 0.08, "农业银行"),
+    ("601328.SH", "3328.HK", 0.08, "交通银行"),
+    ("600028.SH", "0386.HK", 0.08, "中国石化"),
+    ("601088.SH", "1088.HK", 0.08, "中国神华"),
+    ("601628.SH", "2628.HK", 0.08, "中国人寿"),
+    ("600585.SH", "0914.HK", 0.08, "海螺水泥"),
+    ("601857.SH", "0857.HK", 0.07, "中国石油"),
+    ("601939.SH", "0939.HK", 0.08, "建设银行"),
 ]
 
 # ===== 工业级重试装饰器 =====
@@ -339,35 +340,53 @@ class AIAEHKEngine:
                 except Exception:
                     pass
 
-            # Tier 1: Tushare 自主计算
+            # Tier 1: 混合取价 — H股yfinance(零限频) + A股Tushare(宽松限频)
             try:
+                import yfinance as yf
                 import tushare as ts
                 pro = ts.pro_api()
                 today = datetime.now().strftime('%Y%m%d')
                 start = (datetime.now() - timedelta(days=10)).strftime('%Y%m%d')
 
                 # 汇率: RMB/HKD
-                rmb_hkd = 0.92  # 1 HKD ≈ 0.92 RMB → 1 RMB ≈ 1.087 HKD
+                rmb_hkd = 0.92  # 1 HKD ≈ 0.92 RMB
 
+                # Step 1: yfinance 一次性批量取全部 H 股收盘价
+                h_tickers = [h_code for _, h_code, _, _ in AH_BASKET]
+                _log(f"AH篮子: yfinance批量取H股 {len(h_tickers)}只...")
+                h_data = yf.download(h_tickers, period="5d", progress=False, threads=True)
+                h_prices = {}
+                if h_data is not None and not h_data.empty:
+                    close = h_data.get("Close", h_data)
+                    if hasattr(close, 'columns'):
+                        for ticker in h_tickers:
+                            if ticker in close.columns:
+                                last = close[ticker].dropna()
+                                if not last.empty:
+                                    h_prices[ticker] = float(last.iloc[-1])
+                    else:
+                        # 单只股票时 close 是 Series
+                        last = close.dropna()
+                        if not last.empty:
+                            h_prices[h_tickers[0]] = float(last.iloc[-1])
+
+                _log(f"AH篮子: H股取价完成 {len(h_prices)}/{len(h_tickers)}只")
+
+                # Step 2: Tushare 逐只取 A 股价格 + 计算溢价
                 weighted_premium = 0.0
                 total_weight = 0.0
                 details = []
 
                 for a_code, h_code, weight, name in AH_BASKET:
                     try:
-                        # A 股价格 (daily 接口无严格频率限制)
+                        h_price = h_prices.get(h_code)
+                        if h_price is None or h_price <= 0:
+                            continue
+
                         df_a = pro.daily(ts_code=a_code, start_date=start, end_date=today, limit=5)
                         if df_a is None or df_a.empty:
                             continue
                         a_price = float(df_a.sort_values('trade_date').iloc[-1]['close'])
-
-                        # H 股价格 (hk_daily 限频 2次/分钟, 需间隔31s)
-                        if details:  # 第一次不需要等
-                            time.sleep(31)
-                        df_h = pro.hk_daily(ts_code=h_code, start_date=start, end_date=today, limit=5)
-                        if df_h is None or df_h.empty:
-                            continue
-                        h_price = float(df_h.sort_values('trade_date').iloc[-1]['close'])
 
                         # AH溢价 = A价(RMB) / (H价(HKD) × rmb_hkd)
                         premium = a_price / (h_price * rmb_hkd)
@@ -384,7 +403,7 @@ class AIAEHKEngine:
                     result = {
                         "index_value": ah_index,
                         "date": datetime.now().strftime("%Y-%m-%d"),
-                        "source": "tushare_basket",
+                        "source": "yf_tushare_basket",
                         "interpretation": interp,
                         "basket_coverage": round(total_weight * 100, 0),
                         "basket_count": len(details),

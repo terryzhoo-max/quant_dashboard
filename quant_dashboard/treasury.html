@@ -182,10 +182,10 @@
                             <div class="gaiae-factor-explain"><span class="fe-weight">権重 50%</span> · 核心指標<br>TOPIX推計時価総額 / 日本M2<br><span class="fe-warn">警戒: &gt;25% 過熱 (vs 美股30%)</span><br><span class="fe-safe">&lt;12% = 歴史的底値</span><br>日本M2/GDPが世界最高→閾値が低い</div>
                         </div>
                         <div class="gaiae-factor-card"><div class="gaiae-factor-label">信用取引熱度</div><div class="gaiae-factor-value" id="gaiae-jp-margin">--</div><div class="gaiae-factor-unit">融資残高/時価 · 権重20%</div>
-                            <div class="gaiae-factor-explain"><span class="fe-weight">権重 20%</span> · レバレッジ温度計<br>東証信用買残 / 全市場時価総額<br><span class="fe-warn">警戒: &gt;0.6% 個人レバレッジ過度</span><br><span class="fe-safe">&lt;0.25% = 去杠杆完了</span><br>V1.0固定推定値 · 手動更新可</div>
+                            <div class="gaiae-factor-explain"><span class="fe-weight">権重 20%</span> · レバレッジ温度計<br>東証信用買残 / 全市場時価総額<br><span class="fe-warn">警戒: &gt;0.6% 個人レバレッジ過度</span><br><span class="fe-safe">&lt;0.25% = 去杠杆完了</span><br>✅ JPX XLS自動取得 · 手動override可</div>
                         </div>
                         <div class="gaiae-factor-card"><div class="gaiae-factor-label">外資流向</div><div class="gaiae-factor-value" id="gaiae-jp-foreign">--</div><div class="gaiae-factor-unit">外國人買い越し · 権重30%</div>
-                            <div class="gaiae-factor-explain"><span class="fe-weight">権重 30%</span> · 日本市場最重要指標<br>外国人投資家の週次フロー<br><span class="fe-warn">警戒: 週&gt;3000億円買越=追高風險</span><br><span class="fe-safe">大幅売越=逆向投資チャンス</span><br>V1.0固定推定值 · 手動更新可</div>
+                            <div class="gaiae-factor-explain"><span class="fe-weight">権重 30%</span> · 日本市場最重要指標<br>外国人投資家の週次フロー<br><span class="fe-warn">警戒: 週&gt;3000億円買越=追高風險</span><br><span class="fe-safe">大幅売越=逆向投資チャンス</span><br>✅ JPX XLS自動取得 · 手動override可</div>
                         </div>
                     </div>
                     <!-- ② 警示指标面板 -->
@@ -216,7 +216,7 @@
                             <div class="gaiae-factor-explain"><span class="fe-weight">权重 50%</span> · 核心指标<br>恒指总市值 / (CN M2×0.15)<br><span class="fe-warn">警戒: &gt;25% 港股过热区</span><br><span class="fe-safe">&lt;10% = 历史底部区域</span><br>港股自由流通特殊性</div>
                         </div>
                         <div class="gaiae-factor-card"><div class="gaiae-factor-label">南向热度</div><div class="gaiae-factor-value" id="gaiae-hk-southbound">--</div><div class="gaiae-factor-unit">南向资金12M累计 · 权重20%</div>
-                            <div class="gaiae-factor-explain"><span class="fe-weight">权重 20%</span> · 内地资金温度计<br>港股通南向资金12个月累计<br><span class="fe-warn">警戒: 周净买&gt;200亿RMB 过热</span><br><span class="fe-safe">周净卖出 = 恐慌底部信号</span><br>手动更新 · 数据源:港交所</div>
+                            <div class="gaiae-factor-explain"><span class="fe-weight">权重 20%</span> · 内地资金温度计<br>港股通南向资金12个月累计<br><span class="fe-warn">警戒: 周净买&gt;200亿RMB 过热</span><br><span class="fe-safe">周净卖出 = 恐慌底部信号</span><br>✅ Tushare自动获取 · 手动override可</div>
                         </div>
                         <div class="gaiae-factor-card"><div class="gaiae-factor-label">AH溢价</div><div class="gaiae-factor-value" id="gaiae-hk-ahpremium">--</div><div class="gaiae-factor-unit">AH Premium Index · 权重30%</div>
                             <div class="gaiae-factor-explain"><span class="fe-weight">权重 30%</span> · 估值偏差指标<br>恒生AH股溢价指数<br><span class="fe-warn">警戒: &gt;145 H股极度低估</span><br><span class="fe-safe">&lt;115 = AH收敛，港股偏贵</span><br>中性: 125-140</div>
@@ -392,13 +392,13 @@
             <!-- ===== V1.1: 日股手動データ更新パネル ===== -->
             <div class="gaiae-accordion-trigger" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open');">
                 <span style="font-size:1rem;">🇯🇵</span>
-                <span class="acc-title">日股手动数据更新 · 信用取引 / 外資流向</span>
+                <span class="acc-title">日股数据覆盖 · 信用取引 / 外資流向 <span style="font-size:0.6rem;color:#10b981;">✅ 已自动化</span></span>
                 <span class="acc-arrow">›</span>
             </div>
             <div class="gaiae-accordion-body">
                 <div style="background:rgba(15,23,42,0.6);border-radius:12px;padding:20px;border:1px solid rgba(220,38,38,0.15);margin-bottom:14px;">
                     <div style="font-size:0.72rem;color:#94a3b8;margin-bottom:14px;line-height:1.6;">
-                        💡 日股の信用取引残高と外国人投資家フローは自動取得不可のため、手動更新が必要です。<br>
+                        ✅ 信用取引残高と外國人投資家フローは <b style="color:#10b981;">JPX XLS自動取得</b> に移行済み。以下は手動override用です。<br>
                         データソース: <a href="https://www.jpx.co.jp/markets/statistics-equities/margin/index.html" target="_blank" style="color:#60a5fa;">東証·信用取引統計</a> / 
                         <a href="https://www.jpx.co.jp/markets/statistics-equities/investor-type/index.html" target="_blank" style="color:#60a5fa;">投資部門別統計</a>
                     </div>
@@ -441,16 +441,16 @@
                 </div>
             </div>
 
-            <!-- ===== V2.0: 港股手动数据更新面板 ===== -->
+            <!-- ===== V2.0: 港股数据覆盖面板 ===== -->
             <div class="gaiae-accordion-trigger" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open');">
                 <span style="font-size:1rem;">🇭🇰</span>
-                <span class="acc-title">港股手动数据更新 · 南向资金 / AH溢价指数</span>
+                <span class="acc-title">港股数据覆盖 · 南向资金 / AH溢价指数 <span style="font-size:0.6rem;color:#10b981;">✅ 已自动化</span></span>
                 <span class="acc-arrow">›</span>
             </div>
             <div class="gaiae-accordion-body">
                 <div style="background:rgba(15,23,42,0.6);border-radius:12px;padding:20px;border:1px solid rgba(168,85,247,0.15);margin-bottom:14px;">
                     <div style="font-size:0.72rem;color:#94a3b8;margin-bottom:14px;line-height:1.6;">
-                        💡 港股南向资金和AH溢价指数无法自动获取，需手动更新。<br>
+                        ✅ 南向资金 <b style="color:#10b981;">Tushare自动获取</b>，AH溢价 <b style="color:#10b981;">A+H篮子自动计算</b>。以下为手动override用。<br>
                         数据源: <a href="https://www.hkex.com.hk/Mutual-Market/Stock-Connect/Statistics" target="_blank" style="color:#a78bfa;">港交所·互联互通统计</a> / 
                         <a href="https://www.wind.com.cn" target="_blank" style="color:#a78bfa;">Wind·AH溢价</a>
                     </div>
