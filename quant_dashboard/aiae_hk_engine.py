@@ -25,6 +25,7 @@ import os
 import json
 import time
 import threading
+import pandas as pd
 from functools import wraps
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
@@ -34,6 +35,26 @@ from config import FRED_API_KEY as CONFIG_FRED_API_KEY
 FRED_API_KEY = os.environ.get("FRED_API_KEY", CONFIG_FRED_API_KEY)
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
+
+# ===== 自动数据源 TTL =====
+TTL_SOUTHBOUND = 6 * 3600    # 6h (日频数据, 盘后更新)
+TTL_AH_PREMIUM = 6 * 3600    # 6h (日频数据)
+
+# ===== AH溢价篮子: A+H 双上市核心股票 =====
+AH_BASKET = [
+    # (A股代码, H股代码, 权重, 名称)
+    ("601318.SH", "02318.HK", 0.15, "中国平安"),
+    ("601398.SH", "01398.HK", 0.12, "工商银行"),
+    ("600036.SH", "03968.HK", 0.10, "招商银行"),
+    ("601288.SH", "01288.HK", 0.08, "农业银行"),
+    ("601328.SH", "03328.HK", 0.08, "交通银行"),
+    ("600028.SH", "00386.HK", 0.08, "中国石化"),
+    ("601088.SH", "01088.HK", 0.08, "中国神华"),
+    ("601628.SH", "02628.HK", 0.08, "中国人寿"),
+    ("600585.SH", "00914.HK", 0.08, "海螺水泥"),
+    ("601857.SH", "00857.HK", 0.07, "中国石油"),
+    ("601939.SH", "01939.HK", 0.08, "建设银行"),
+]
 
 # ===== 工业级重试装饰器 =====
 def retry_with_backoff(max_retries=3, base_delay=2.0):
@@ -165,9 +186,12 @@ SUB_STRATEGY_ALLOC_HK = {
     5: {"hsi": 10, "hstech":  0, "dividend": 90},
 }
 
-# ===== 手动数据文件 =====
+# ===== 手动数据文件 (override层) =====
 SOUTHBOUND_FILE = os.path.join(CACHE_DIR, "hk_southbound_flow.json")
 AH_PREMIUM_FILE = os.path.join(CACHE_DIR, "hk_ah_premium.json")
+# 自动数据缓存文件
+SOUTHBOUND_AUTO_CACHE = os.path.join(CACHE_DIR, "hk_southbound_auto.json")
+AH_PREMIUM_AUTO_CACHE = os.path.join(CACHE_DIR, "hk_ah_premium_auto.json")
 
 DEFAULT_SOUTHBOUND = {
     "weekly_net_buy_billion_rmb": 15.0,
@@ -213,6 +237,189 @@ class AIAEHKEngine:
         self._southbound = self._load_json(SOUTHBOUND_FILE, DEFAULT_SOUTHBOUND)
         self._ah_premium = self._load_json(AH_PREMIUM_FILE, DEFAULT_AH_PREMIUM)
         _log(f"缓存已清除")
+
+    # ========== 自动数据源: 南向资金 (Tushare) ==========
+
+    def _fetch_southbound_auto(self) -> Dict:
+        """Tushare moneyflow_hsgt 自动拉取南向资金
+        Fallback: 磁盘手动文件 → 默认值
+
+        ⚠️ south_money 是累计持仓余额(百万RMB), 不是日净买入!
+        必须用 diff() 提取日净买入, 再滚动求和计算周/月/12M
+        """
+        def _fetch():
+            # Tier 0: 手动文件优先 (override)
+            if os.path.exists(SOUTHBOUND_FILE):
+                try:
+                    with open(SOUTHBOUND_FILE, 'r', encoding='utf-8') as f:
+                        manual = json.load(f)
+                    if manual.get('source') == 'manual':
+                        _log(f"南向资金: 手动override生效 ({manual.get('date', '?')})")
+                        return manual
+                except Exception:
+                    pass
+
+            # Tier 1: Tushare 自动拉取
+            try:
+                import tushare as ts
+                pro = ts.pro_api()
+                today = datetime.now().strftime('%Y%m%d')
+                start_1y = (datetime.now() - timedelta(days=365)).strftime('%Y%m%d')
+
+                df = pro.moneyflow_hsgt(start_date=start_1y, end_date=today)
+                if df is not None and not df.empty:
+                    df = df.copy()
+                    df['south_money'] = pd.to_numeric(df['south_money'], errors='coerce')
+                    df = df.sort_values('trade_date').dropna(subset=['south_money'])
+
+                    # 日净买入 = 累计余额的日变化量
+                    df['daily_net'] = df['south_money'].diff()
+
+                    weekly_net = df.tail(5)['daily_net'].sum() / 100   # 百万→亿
+                    monthly_net = df.tail(20)['daily_net'].sum() / 100
+                    cum_12m = df['daily_net'].dropna().sum() / 100
+                    latest_date = df['trade_date'].iloc[-1]
+
+                    result = {
+                        "weekly_net_buy_billion_rmb": round(weekly_net, 1),
+                        "monthly_net_buy_billion_rmb": round(monthly_net, 1),
+                        "cumulative_12m_billion_rmb": round(cum_12m, 1),
+                        "direction": "inflow" if weekly_net > 0 else "outflow",
+                        "date": latest_date,
+                        "source": "tushare_auto",
+                        "data_points": len(df),
+                    }
+                    atomic_write_json(result, SOUTHBOUND_AUTO_CACHE)
+                    _log(f"南向资金(自动): 周={weekly_net:.1f}亿 月={monthly_net:.1f}亿 12M={cum_12m:.1f}亿")
+                    return result
+            except Exception as e:
+                _log(f"Tushare 南向资金拉取失败: {e}", "WARN")
+
+            # Tier 2: 自动缓存文件
+            if os.path.exists(SOUTHBOUND_AUTO_CACHE):
+                try:
+                    with open(SOUTHBOUND_AUTO_CACHE, 'r', encoding='utf-8') as f:
+                        _log("南向资金: 自动缓存", "WARN")
+                        return json.load(f)
+                except Exception:
+                    pass
+
+            # Tier 3: 手动文件 (任何来源)
+            if os.path.exists(SOUTHBOUND_FILE):
+                try:
+                    with open(SOUTHBOUND_FILE, 'r', encoding='utf-8') as f:
+                        return json.load(f)
+                except Exception:
+                    pass
+
+            # Tier 4: 默认值
+            _log("南向资金: 默认值", "WARN")
+            return DEFAULT_SOUTHBOUND.copy()
+
+        return _cached("hk_aiae_southbound", TTL_SOUTHBOUND, _fetch)
+
+    # ========== 自动数据源: AH溢价指数 (自主计算) ==========
+
+    def _compute_ah_premium_auto(self) -> Dict:
+        """自主计算 AH 溢价指数: Tushare A+H 双上市篮子加权
+        Fallback: 磁盘手动文件 → 默认值 135
+
+        计算逻辑: AH_Premium = Σ weight_i × (A_price_i / (H_price_i × 汇率))
+        指数化: × 100 (100 = A/H 平价)
+        """
+        def _fetch():
+            # Tier 0: 手动文件优先 (override)
+            if os.path.exists(AH_PREMIUM_FILE):
+                try:
+                    with open(AH_PREMIUM_FILE, 'r', encoding='utf-8') as f:
+                        manual = json.load(f)
+                    if manual.get('source') == 'manual':
+                        _log(f"AH溢价: 手动override生效 ({manual.get('index_value', '?')})")
+                        return manual
+                except Exception:
+                    pass
+
+            # Tier 1: Tushare 自主计算
+            try:
+                import tushare as ts
+                pro = ts.pro_api()
+                today = datetime.now().strftime('%Y%m%d')
+                start = (datetime.now() - timedelta(days=10)).strftime('%Y%m%d')
+
+                # 汇率: RMB/HKD
+                rmb_hkd = 0.92  # 1 HKD ≈ 0.92 RMB → 1 RMB ≈ 1.087 HKD
+
+                weighted_premium = 0.0
+                total_weight = 0.0
+                details = []
+
+                for a_code, h_code, weight, name in AH_BASKET:
+                    try:
+                        # A 股价格 (daily 接口无严格频率限制)
+                        df_a = pro.daily(ts_code=a_code, start_date=start, end_date=today, limit=5)
+                        if df_a is None or df_a.empty:
+                            continue
+                        a_price = float(df_a.sort_values('trade_date').iloc[-1]['close'])
+
+                        # H 股价格 (hk_daily 限频 2次/分钟, 需间隔31s)
+                        if details:  # 第一次不需要等
+                            time.sleep(31)
+                        df_h = pro.hk_daily(ts_code=h_code, start_date=start, end_date=today, limit=5)
+                        if df_h is None or df_h.empty:
+                            continue
+                        h_price = float(df_h.sort_values('trade_date').iloc[-1]['close'])
+
+                        # AH溢价 = A价(RMB) / (H价(HKD) × rmb_hkd)
+                        premium = a_price / (h_price * rmb_hkd)
+                        weighted_premium += weight * premium
+                        total_weight += weight
+                        details.append({"name": name, "a": a_price, "h": h_price, "premium": round(premium * 100, 1)})
+                    except Exception as e:
+                        _log(f"AH篮子 {name} 失败: {e}", "DEBUG")
+                        continue
+
+                if total_weight > 0.3:  # 至少30%权重的股票有数据
+                    ah_index = round(weighted_premium / total_weight * 100, 1)
+                    interp = f"A股平均比H股贵{ah_index - 100:.0f}%" if ah_index > 100 else f"H股比A股贵{100 - ah_index:.0f}%"
+                    result = {
+                        "index_value": ah_index,
+                        "date": datetime.now().strftime("%Y-%m-%d"),
+                        "source": "tushare_basket",
+                        "interpretation": interp,
+                        "basket_coverage": round(total_weight * 100, 0),
+                        "basket_count": len(details),
+                        "details": details,
+                    }
+                    atomic_write_json(result, AH_PREMIUM_AUTO_CACHE)
+                    _log(f"AH溢价(自动): {ah_index} ({len(details)}只, 覆盖{total_weight*100:.0f}%)")
+                    return result
+                else:
+                    _log(f"AH篮子覆盖不足: {total_weight*100:.0f}%", "WARN")
+            except Exception as e:
+                _log(f"AH溢价自动计算失败: {e}", "WARN")
+
+            # Tier 2: 自动缓存
+            if os.path.exists(AH_PREMIUM_AUTO_CACHE):
+                try:
+                    with open(AH_PREMIUM_AUTO_CACHE, 'r', encoding='utf-8') as f:
+                        _log("AH溢价: 自动缓存", "WARN")
+                        return json.load(f)
+                except Exception:
+                    pass
+
+            # Tier 3: 手动文件
+            if os.path.exists(AH_PREMIUM_FILE):
+                try:
+                    with open(AH_PREMIUM_FILE, 'r', encoding='utf-8') as f:
+                        return json.load(f)
+                except Exception:
+                    pass
+
+            # Tier 4: 默认值
+            _log("AH溢价: 默认值", "WARN")
+            return DEFAULT_AH_PREMIUM.copy()
+
+        return _cached("hk_aiae_ah_premium", TTL_AH_PREMIUM, _fetch)
 
     # ========== 手动数据更新 ==========
 
@@ -550,10 +757,15 @@ class AIAEHKEngine:
 
             aiae_core = self.compute_aiae_core(mktcap_usd, effective_m2)
 
-            sb_cumulative = self._southbound.get("cumulative_12m_billion_rmb", 350)
+            # V1.1: 自动数据源优先, 手动override兜底
+            sb_data = self._fetch_southbound_auto()
+            self._southbound = sb_data  # 更新实例变量供信号系统使用
+            sb_cumulative = sb_data.get("cumulative_12m_billion_rmb", 350)
             sb_heat = self.compute_southbound_heat(sb_cumulative, mktcap_usd)
 
-            ah_index = self._ah_premium.get("index_value", 135.0)
+            ah_data = self._compute_ah_premium_auto()
+            self._ah_premium = ah_data
+            ah_index = ah_data.get("index_value", 135.0)
             ah_score = self.compute_ah_premium_score(ah_index)
 
             aiae_v1 = self.compute_hk_aiae_v1(aiae_core, sb_heat, ah_score)

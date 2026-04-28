@@ -334,9 +334,31 @@ class AIAEJPEngine:
         return _cached("jp_aiae_m2", TTL_JP_M2, _fetch)
 
     def _load_jp_margin(self) -> Dict:
-        """信用取引残高（手動更新 / 时间衰减デフォルト）
-        V1.2: 超过60天的默认值自动向中性衰减, 避免陈旧偏差
+        """信用取引残高: JPX自動 → 手動ファイル → 時間減衰デフォルト
+        V1.2: JPX XLS 自動取得を最優先、手動ファイルはoverride用
         """
+        # Tier 0: 手動override優先
+        if os.path.exists(JP_MARGIN_FILE):
+            try:
+                with open(JP_MARGIN_FILE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                if data.get('source') == 'manual':
+                    _log(f"JP Margin: 手動override生効 {data.get('margin_buying_trillion_jpy', 0)}兆円")
+                    return data
+            except Exception:
+                pass
+
+        # Tier 1: JPX 自動取得
+        try:
+            from jpx_data_fetcher import fetch_jpx_margin
+            jpx = fetch_jpx_margin()
+            if jpx and 'margin_buying_trillion_jpy' in jpx:
+                _log(f"JP Margin (JPX自動): {jpx['margin_buying_trillion_jpy']}兆円")
+                return jpx
+        except Exception as e:
+            _log(f"JPX Margin 自動取得失敗: {e}", "WARN")
+
+        # Tier 2: 手動ファイル (任意ソース)
         if os.path.exists(JP_MARGIN_FILE):
             try:
                 with open(JP_MARGIN_FILE, 'r', encoding='utf-8') as f:
@@ -345,13 +367,14 @@ class AIAEJPEngine:
                 return data
             except Exception:
                 pass
-        # 时间衰减: 默认值随时间向中性值 (3.5兆円) 衰减
+
+        # Tier 3: 時間減衰デフォルト
         default = DEFAULT_JP_MARGIN.copy()
         try:
             age_days = (datetime.now() - datetime.strptime(default['date'], '%Y-%m-%d')).days
             if age_days > 60:
-                neutral = 3.5  # 历史中位数
-                decay = min(age_days / 365, 0.5)  # 最多衰减 50%
+                neutral = 3.5
+                decay = min(age_days / 365, 0.5)
                 original = default['margin_buying_trillion_jpy']
                 default['margin_buying_trillion_jpy'] = round(original + (neutral - original) * decay, 2)
                 default['decayed'] = True
@@ -361,9 +384,31 @@ class AIAEJPEngine:
         return default
 
     def _load_jp_foreign(self) -> Dict:
-        """外国人投資家フロー（手動更新 / 时间衰减デフォルト）
-        V1.2: 超过60天自动向中性(0)衰减
+        """外国人投資家フロー: JPX自動 → 手動ファイル → 時間減衰デフォルト
+        V1.2: JPX XLS 自動取得を最優先
         """
+        # Tier 0: 手動override優先
+        if os.path.exists(JP_FOREIGN_FILE):
+            try:
+                with open(JP_FOREIGN_FILE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                if data.get('source') == 'manual':
+                    _log(f"JP Foreign: 手動override生効 net={data.get('net_buy_billion_jpy', 0)}億円")
+                    return data
+            except Exception:
+                pass
+
+        # Tier 1: JPX 自動取得
+        try:
+            from jpx_data_fetcher import fetch_jpx_foreign_flow
+            jpx = fetch_jpx_foreign_flow()
+            if jpx and 'net_buy_billion_jpy' in jpx:
+                _log(f"JP Foreign (JPX自動): net={jpx['net_buy_billion_jpy']}億円")
+                return jpx
+        except Exception as e:
+            _log(f"JPX Foreign 自動取得失敗: {e}", "WARN")
+
+        # Tier 2: 手動ファイル (任意ソース)
         if os.path.exists(JP_FOREIGN_FILE):
             try:
                 with open(JP_FOREIGN_FILE, 'r', encoding='utf-8') as f:
@@ -372,11 +417,13 @@ class AIAEJPEngine:
                 return data
             except Exception:
                 pass
+
+        # Tier 3: 時間減衰デフォルト
         default = DEFAULT_JP_FOREIGN.copy()
         try:
             age_days = (datetime.now() - datetime.strptime(default['date'], '%Y-%m-%d')).days
             if age_days > 60:
-                decay = min(age_days / 365, 0.8)  # 外资流向衰减更快
+                decay = min(age_days / 365, 0.8)
                 default['net_buy_billion_jpy'] = round(default['net_buy_billion_jpy'] * (1 - decay))
                 default['decayed'] = True
         except Exception:

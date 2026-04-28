@@ -1,0 +1,32 @@
+{
+  "tushare_southbound": {
+    "status": "FAIL",
+    "reason": "unsupported operand type(s) for /: 'str' and 'int'"
+  },
+  "yfinance_hsahp": {
+    "status": "FAIL",
+    "reason": "DataFrame为空"
+  },
+  "jpx_margin": {
+    "status": "PASS",
+    "page_accessible": true,
+    "page_size_kb": 26.3,
+    "csv_links_found": 1,
+    "sample_links": [
+      "/markets/statistics-equities/margin/tvdivq0000001r92-att/mtdailyk2026042700.xls"
+    ]
+  },
+  "jpx_investor": {
+    "status": "PASS",
+    "page_accessible": true,
+    "page_size_kb": 33.7,
+    "csv_links_found": 11,
+    "sample_links": [
+      "/markets/statistics-equities/investor-type/t13vrt0000013geb-att/stock_vol_1_260403.xls",
+      "/markets/statistics-equities/investor-type/t13vrt0000013geb-att/stock_val_1_260403.xls",
+      "/markets/statistics-equities/investor-type/t13vrt0000010rya-att/stock_vol_1_260402.xls",
+      "/markets/statistics-equities/investor-type/t13vrt0000010rya-att/stock_val_1_260402.xls",
+      "/markets/statistics-equities/investor-type/t13vrt000000xp6y-att/stock_vol_1_260401.xls"
+    ]
+  }
+}
