@@ -157,6 +157,44 @@ function renderScenarioCards(scenarios) {
     `).join('');
 }
 
+// ═══════════════════════════════════════════════════
+//  V17.0 C2: 执行建议卡片渲染
+// ═══════════════════════════════════════════════════
+
+function renderActionPlan(plan) {
+    const card = document.getElementById('action-plan-card');
+    if (!card || !plan) return;
+
+    // 置信度样式
+    card.className = 'action-plan-card glass-decision confidence-' + (plan.confidence || 'medium');
+    card.style.display = 'block';
+
+    const iconEl = document.getElementById('action-icon');
+    const labelEl = document.getElementById('action-label');
+    const confEl = document.getElementById('action-confidence');
+    const reasonEl = document.getElementById('action-reasoning');
+    const signalsEl = document.getElementById('action-signals');
+    const nextEl = document.getElementById('action-next-val');
+    const posEl = document.getElementById('action-pos-val');
+    const riskEl = document.getElementById('action-risk');
+
+    if (iconEl) iconEl.textContent = plan.action_icon || '👁️';
+    if (labelEl) labelEl.textContent = plan.action_label || '--';
+    if (confEl) {
+        const confMap = { high: '高置信', medium: '中置信', low: '低置信' };
+        confEl.innerHTML = `<span class="conf-dot ${plan.confidence}"></span> ${confMap[plan.confidence] || '中置信'}`;
+    }
+    if (reasonEl) reasonEl.textContent = plan.reasoning || '';
+    if (signalsEl) {
+        signalsEl.innerHTML = (plan.top_signals || []).map(s =>
+            `<span class="action-signal-tag">• ${s}</span>`
+        ).join('');
+    }
+    if (nextEl) nextEl.textContent = plan.next_check || '--';
+    if (posEl) posEl.textContent = (plan.position_target != null ? plan.position_target + '%' : '--%');
+    if (riskEl) riskEl.textContent = '⚠️ ' + (plan.risk_note || '');
+}
+
 async function runSimulation(scenarioId) {
     // 高亮选中卡片
     document.querySelectorAll('.scenario-card').forEach(c => c.classList.remove('active'));
@@ -234,7 +272,7 @@ let timelineLoaded = false;
 async function loadTimeline() {
     if (timelineLoaded) return;
     try {
-        const resp = await fetch(`${API_BASE}/history?days=30`);
+        const resp = await AC.secureFetch(`${API_BASE}/history?days=30`);
         const data = await resp.json();
         if (data.status === 'success' && data.data.length > 0) {
             renderTimelineChart(data.data);
@@ -263,6 +301,31 @@ function renderTimelineChart(data) {
     const jcsData = data.map(d => d.jcs_score);
     const posData = data.map(d => d.suggested_position);
 
+    // V17.0 C3: AIAE Regime 色带 (markArea)
+    const _regimeColors = {
+        1: 'rgba(16,185,129,0.06)',   // 极度恐慌 (绿 = 加仓机会)
+        2: 'rgba(16,185,129,0.04)',   // 低配置区
+        3: 'rgba(148,163,184,0.03)',  // 中性
+        4: 'rgba(245,158,11,0.06)',   // 偏热
+        5: 'rgba(239,68,68,0.06)',    // 极度过热
+    };
+    const markAreas = [];
+    let prevRegime = null, areaStart = null;
+    data.forEach((d, i) => {
+        const r = d.aiae_regime || 3;
+        if (r !== prevRegime) {
+            if (prevRegime !== null && areaStart !== null) {
+                markAreas.push([{ xAxis: areaStart, itemStyle: { color: _regimeColors[prevRegime] || _regimeColors[3] } }, { xAxis: dates[i - 1] }]);
+            }
+            areaStart = dates[i];
+            prevRegime = r;
+        }
+    });
+    // 最后一段
+    if (prevRegime !== null && areaStart !== null) {
+        markAreas.push([{ xAxis: areaStart, itemStyle: { color: _regimeColors[prevRegime] || _regimeColors[3] } }, { xAxis: dates[dates.length - 1] }]);
+    }
+
     chart.setOption({
         tooltip: { trigger: 'axis' },
         legend: { data: ['JCS 置信度', '建议仓位'], textStyle: { color: '#94a3b8', fontSize: 11 }, top: 0 },
@@ -279,6 +342,7 @@ function renderTimelineChart(data) {
                 itemStyle: { color: '#a78bfa' },
                 areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(167,139,250,0.15)' }, { offset: 1, color: 'rgba(167,139,250,0)' }] } },
                 smooth: true,
+                markArea: markAreas.length > 0 ? { silent: true, data: markAreas } : undefined,
             },
             {
                 name: '建议仓位', type: 'line', data: posData, yAxisIndex: 1,
@@ -328,8 +392,8 @@ async function loadRiskMatrix() {
     if (riskLoaded) return;
     try {
         const [riskResp, accResp] = await Promise.all([
-            fetch(`${API_BASE}/risk-matrix`),
-            fetch(`${API_BASE}/accuracy`),
+            AC.secureFetch(`${API_BASE}/risk-matrix`),
+            AC.secureFetch(`${API_BASE}/accuracy`),
         ]);
         const riskData = await riskResp.json();
         const accData = await accResp.json();
@@ -486,7 +550,7 @@ async function loadCalendar() {
     const now = new Date();
     if (!calendarYear) { calendarYear = now.getFullYear(); calendarMonth = now.getMonth() + 1; }
     try {
-        const resp = await fetch(`${API_BASE}/calendar?year=${calendarYear}&month=${calendarMonth}`);
+        const resp = await AC.secureFetch(`${API_BASE}/calendar?year=${calendarYear}&month=${calendarMonth}`);
         const data = await resp.json();
         if (data.status === 'success') {
             renderCalendar(data.data, calendarYear, calendarMonth);
@@ -551,7 +615,7 @@ async function initDecisionHub() {
     initTabs();
 
     try {
-        const resp = await fetch(`${API_BASE}/hub`);
+        const resp = await AC.secureFetch(`${API_BASE}/hub`);
         const data = await resp.json();
 
         if (data.status === 'success') {
@@ -565,6 +629,9 @@ async function initDecisionHub() {
 
             // 方向
             renderDirections(data.jcs.directions);
+
+            // V17.0: 执行建议
+            if (data.action_plan) renderActionPlan(data.action_plan);
 
             // 情景
             renderScenarioCards(data.scenarios);

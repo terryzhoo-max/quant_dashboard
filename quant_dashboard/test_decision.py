@@ -1,9 +1,9 @@
-"""AlphaCore V16.0 Phase 2 — 本地验证脚本"""
+"""AlphaCore V17.0 Phase A — 本地验证脚本 (JCS加法模型 + 新矛盾规则 + 准确率修正)"""
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 print("=" * 60)
-print("  AlphaCore V16.0 Phase 2 - Local Verification")
+print("  AlphaCore V17.0 Phase A - Local Verification")
 print("=" * 60)
 
 # 1. 语法检查
@@ -22,9 +22,10 @@ print(f"\n[1] Syntax check: ALL {len(files)} files PASSED")
 # 2. 模块导入
 from dashboard_modules.decision_engine import (
     compute_conflict_matrix, compute_jcs, simulate_scenario,
-    SCENARIOS, compute_risk_matrix, backfill_signal_accuracy
+    SCENARIOS, compute_risk_matrix, backfill_signal_accuracy,
+    _signal_direction,
 )
-print("[2] Import (Phase 2 functions): PASSED")
+print("[2] Import (Phase A functions): PASSED")
 
 # 3. DB 迁移测试
 from services import db as ac_db
@@ -38,7 +39,7 @@ assert "signal_correct" in cols, f"Missing signal_correct column, got: {cols}"
 print(f"[3] DB migration v2: PASSED  ({len(cols)} columns)")
 conn.close()
 
-# 4. 准确率回填测试
+# 4. 准确率回填测试 (DB 逻辑, 不依赖 Tushare)
 test_data = {
     "date": "2098-12-01", "aiae_regime": 3, "aiae_v1": 22.0,
     "erp_score": 60.0, "erp_val": 4.5, "vix_val": 20.0,
@@ -99,17 +100,104 @@ test_remaining = [r for r in remaining if r.get("date", "").startswith("2098")]
 assert len(test_remaining) == 0, "Test data should be cleaned up"
 print("[10] Cleanup: PASSED")
 
-# 11. Phase 1 回归 (确保 P1 功能不受影响)
-snap = {"aiae_regime": 2, "erp_score": 75, "vix_val": 16, "vix_score": 73.1,
-        "mr_regime": "BULL", "suggested_position": 55, "liquidity_score": 50, "macro_temp_score": 50}
-jcs = compute_jcs(snap)
-assert jcs["score"] > 50, "JCS should be > 50 for aligned signals"
-sim = simulate_scenario("vix_spike_40", snap)
+# ═══════════════════════════════════════════════════
+#  V17.0 新增: JCS 加法模型验证
+# ═══════════════════════════════════════════════════
+
+# 11. 全看多场景 → JCS 应 >= 80 (旧版只有 ~55)
+snap_all_bull = {
+    "aiae_regime": 2, "erp_score": 75, "vix_val": 16, "vix_score": 73.1,
+    "mr_regime": "BULL", "suggested_position": 55, "liquidity_score": 50,
+    "macro_temp_score": 50
+}
+jcs_bull = compute_jcs(snap_all_bull)
+assert jcs_bull["score"] >= 80, f"All-bull JCS should be >= 80, got {jcs_bull['score']}"
+print(f"[11] JCS all-bull: PASSED  score={jcs_bull['score']} level={jcs_bull['level']}")
+
+# 12. 全中性场景 → JCS 应在 40-60 (有信号但无方向)
+snap_neutral = {
+    "aiae_regime": 3, "erp_score": 50, "vix_val": 22,
+    "mr_regime": "RANGE", "suggested_position": 55
+}
+jcs_neutral = compute_jcs(snap_neutral)
+assert 35 <= jcs_neutral["score"] <= 65, f"All-neutral JCS should be 35-65, got {jcs_neutral['score']}"
+print(f"[12] JCS all-neutral: PASSED  score={jcs_neutral['score']} level={jcs_neutral['level']}")
+
+# 13. 对冲矛盾场景 → JCS 应 < 40 (明确方向冲突)
+snap_conflict = {
+    "aiae_regime": 1, "erp_score": 80, "vix_val": 40,  # AIAE+ERP看多 vs VIX恐慌
+    "mr_regime": "CRASH", "suggested_position": 55
+}
+jcs_conflict = compute_jcs(snap_conflict)
+assert jcs_conflict["score"] < 45, f"Conflict JCS should be < 45, got {jcs_conflict['score']}"
+print(f"[13] JCS conflict: PASSED  score={jcs_conflict['score']} level={jcs_conflict['level']}")
+
+# 14. 新矛盾规则: MR BULL × AIAE 过热
+snap_mr_aiae = {
+    "aiae_regime": 4, "erp_score": 50, "vix_val": 20,
+    "mr_regime": "BULL"
+}
+conflicts_mr = compute_conflict_matrix(snap_mr_aiae)
+rule_ids = [c["id"] for c in conflicts_mr["conflicts"]]
+assert "mr_bull_vs_aiae_hot" in rule_ids, f"Missing mr_bull_vs_aiae_hot rule, got {rule_ids}"
+print(f"[14] MR×AIAE conflict: PASSED  rules={rule_ids}")
+
+# 15. 新矛盾规则: 全中性 → info 级别
+snap_all_n = {"aiae_regime": 3, "erp_score": 50, "vix_val": 22, "mr_regime": "RANGE"}
+conflicts_n = compute_conflict_matrix(snap_all_n)
+neutral_rules = [c for c in conflicts_n["conflicts"] if c["id"] == "all_neutral"]
+assert len(neutral_rules) == 1, f"Expected all_neutral rule, got {conflicts_n['conflicts']}"
+assert neutral_rules[0]["severity"] == "info", "all_neutral should be info severity"
+print(f"[15] All-neutral info: PASSED  severity={neutral_rules[0]['severity']}")
+
+# 16. info 级别矛盾不应惩罚 JCS
+jcs_with_info = compute_jcs(snap_all_n)
+# 全中性: base=30 + health=20 + bonus=0 = 50 (info不扣分)
+assert jcs_with_info["score"] >= 45, f"Info conflicts should not penalize, got {jcs_with_info['score']}"
+print(f"[16] Info no penalty: PASSED  score={jcs_with_info['score']}")
+
+# 17. 情景模拟回归
+sim = simulate_scenario("vix_spike_40", snap_all_bull)
 assert "error" not in sim, "VIX spike should work"
-conflicts = compute_conflict_matrix(snap)
-assert conflicts["conflict_count"] == 0, "Aligned signals should have 0 conflicts"
-print(f"[11] Phase 1 regression: PASSED  jcs={jcs['score']} sim_ok=True conflicts=0")
+print(f"[17] Scenario sim: PASSED  pos_delta={sim.get('position_delta', '?')}")
+
+# 18. JCS 返回值结构检查 (V17.0新字段)
+assert "data_health" in jcs_bull, "Missing data_health in JCS output"
+assert "consensus_bonus" in jcs_bull, "Missing consensus_bonus in JCS output"
+assert "agreement_pct" in jcs_bull, "Missing agreement_pct in JCS output"
+print(f"[18] JCS schema: PASSED  keys={list(jcs_bull.keys())}")
+
+# 19. 数据缺失场景 → data_health 扣分
+snap_stale = {"erp_score": 70, "vix_val": 16}  # 缺 aiae_regime, mr_regime
+jcs_stale = compute_jcs(snap_stale)
+assert jcs_stale["data_health"] < 20, f"Missing 2 engines should reduce data_health, got {jcs_stale['data_health']}"
+print(f"[19] Data health: PASSED  health={jcs_stale['data_health']} score={jcs_stale['score']}")
+
+# ═══════════════════════════════════════════════════
+#  V17.0 Phase C: 执行建议生成器验证
+# ═══════════════════════════════════════════════════
+
+from dashboard_modules.decision_engine import generate_action_plan
+
+# 20. 高置信看多 → 积极加仓
+plan_bull = generate_action_plan(snap_all_bull, jcs_bull, compute_conflict_matrix(snap_all_bull))
+assert plan_bull["action_label"] == "积极加仓", f"Expected 积极加仓, got {plan_bull['action_label']}"
+assert plan_bull["confidence"] == "high"
+assert len(plan_bull["top_signals"]) > 0
+print(f"[20] Action plan (bull): PASSED  action={plan_bull['action_label']} conf={plan_bull['confidence']}")
+
+# 21. 矛盾场景 → 暂停操作
+plan_conflict = generate_action_plan(snap_conflict, jcs_conflict, compute_conflict_matrix(snap_conflict))
+assert plan_conflict["action_label"] == "暂停操作", f"Expected 暂停操作, got {plan_conflict['action_label']}"
+assert plan_conflict["confidence"] == "low"
+print(f"[21] Action plan (conflict): PASSED  action={plan_conflict['action_label']} pos={plan_conflict['position_target']}")
+
+# 22. 中性场景 → 持仓观望
+plan_neutral = generate_action_plan(snap_all_n, jcs_with_info, conflicts_n)
+assert plan_neutral["action_label"] == "持仓观望", f"Expected 持仓观望, got {plan_neutral['action_label']}"
+assert plan_neutral["confidence"] == "medium"
+print(f"[22] Action plan (neutral): PASSED  action={plan_neutral['action_label']} conf={plan_neutral['confidence']}")
 
 print("\n" + "=" * 60)
-print("  ALL 11 TESTS PASSED — Phase 2 Ready")
+print("  ALL 22 TESTS PASSED — V17.0 Phase A+B+C Complete")
 print("=" * 60)

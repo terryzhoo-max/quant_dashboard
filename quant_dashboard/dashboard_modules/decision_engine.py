@@ -116,6 +116,23 @@ _CONFLICT_RULES = [
         "desc": "MR技术面崩盘 × ERP估值便宜",
         "action": "技术面优先，等待MR转RANGE后再考虑ERP加仓信号",
     },
+    # ── V17.0 新增规则 ──
+    {
+        "id": "mr_bull_vs_aiae_hot",
+        "a_check": lambda s: s.get("mr_regime", "RANGE") == "BULL",
+        "b_check": lambda s: s.get("aiae_regime", 3) >= 4,
+        "severity": "high",
+        "desc": "MR技术面看多 × AIAE配置过热(Ⅳ/Ⅴ)",
+        "action": "技术面可能是最后一涨，AIAE为锚，严控追高仓位",
+    },
+    {
+        "id": "all_neutral",
+        "a_check": lambda s: all(d == 0 for d in _signal_direction(s).values()),
+        "b_check": lambda s: True,
+        "severity": "info",
+        "desc": "所有引擎处于中性，无明确方向信号",
+        "action": "维持现有仓位，等待信号出现再行动",
+    },
 ]
 
 
@@ -161,16 +178,15 @@ def compute_conflict_matrix(snapshot: dict) -> dict:
 
 
 # ═══════════════════════════════════════════════════════════
-#  联合置信度引擎 (JCS)
+#  联合置信度引擎 (JCS) — V17.0 加法模型
 # ═══════════════════════════════════════════════════════════
 
-# 引擎权重
+# 引擎权重 (用于方向一致性加权)
 _JCS_WEIGHTS = {
     "aiae": 0.35,
     "erp": 0.25,
     "vix": 0.15,
     "mr": 0.15,
-    "degraded": 0.10,  # 数据完整度惩罚项
 }
 
 
@@ -191,8 +207,12 @@ def _signal_direction(snapshot: dict) -> dict:
 
 def compute_jcs(snapshot: dict) -> dict:
     """
-    联合置信度引擎:
-    JCS = Direction_Agreement × Data_Freshness × Engine_Health
+    V17.0 联合置信度引擎 (加法模型, 替代旧版乘法连乘):
+
+    JCS = base_agreement (60%) + data_health (20%) + consensus_bonus (20%)
+
+    旧版问题: agreement × freshness × health 三乘数连乘导致分值被压缩到 30-50 区间,
+              "中置信" 成为常态, 丧失信号区分价值.
 
     返回:
     {
@@ -201,26 +221,37 @@ def compute_jcs(snapshot: dict) -> dict:
         "label": str,
         "directions": {engine: direction},
         "agreement_pct": float,
-        "freshness_factor": float,
-        "health_factor": float,
+        "data_health": float,
+        "consensus_bonus": float,
+        "conflict_count": int,
     }
     """
     directions = _signal_direction(snapshot)
+    dir_vals = list(directions.values())  # [+1, 0, -1, ...]
 
-    # 1. Direction Agreement (方向一致性)
-    # 计算加权方向得分的绝对值 (0-1, 越高越一致)
-    weighted_sum = (
-        directions["aiae"] * _JCS_WEIGHTS["aiae"] +
-        directions["erp"] * _JCS_WEIGHTS["erp"] +
-        directions["vix"] * _JCS_WEIGHTS["vix"] +
-        directions["mr"] * _JCS_WEIGHTS["mr"]
-    )
-    # 归一化到 0-1 (最大值 = 所有方向相同 × 权重和)
-    max_weight = sum(v for k, v in _JCS_WEIGHTS.items() if k != "degraded")
-    agreement = abs(weighted_sum) / max_weight if max_weight > 0 else 0
+    # ── 1. Base Agreement (占 60 分) ──
+    # 有明确方向的引擎数量 (非中性)
+    active_count = sum(1 for d in dir_vals if d != 0)
+    # 所有有方向引擎的方向是否一致 (全+1 或全-1)
+    active_dirs = [d for d in dir_vals if d != 0]
+    if active_count == 0:
+        # 全部中性 → 无信号, 基础分 30 (不应高也不应低)
+        base_agreement = 30.0
+    elif all(d == active_dirs[0] for d in active_dirs):
+        # 所有有方向的引擎一致
+        # 4引擎全一致=60, 3一致1中性=52, 2一致2中性=42
+        base_agreement = 30.0 + active_count * 7.5
+    else:
+        # 存在方向对冲: 按加权方向计算衰减
+        weighted_sum = sum(
+            directions[k] * _JCS_WEIGHTS[k] for k in _JCS_WEIGHTS
+        )
+        max_weight = sum(_JCS_WEIGHTS.values())
+        agreement_ratio = abs(weighted_sum) / max_weight if max_weight > 0 else 0
+        # 对冲越严重分越低: 完全对冲→10, 弱对冲→25
+        base_agreement = 10.0 + agreement_ratio * 20.0
 
-    # 2. Data Freshness (数据新鲜度)
-    # 简化版: 检查各引擎是否有有效数据
+    # ── 2. Data Health (占 20 分) ──
     stale_count = 0
     if snapshot.get("aiae_regime") is None:
         stale_count += 1
@@ -228,26 +259,44 @@ def compute_jcs(snapshot: dict) -> dict:
         stale_count += 1
     if snapshot.get("vix_val") is None:
         stale_count += 1
-    freshness = 1.0 - (stale_count / 4.0) * 0.3
+    if snapshot.get("mr_regime") is None:
+        stale_count += 1
 
-    # 3. Engine Health (引擎健康度)
     degraded = snapshot.get("degraded_modules", [])
     if isinstance(degraded, str):
         degraded = [d.strip() for d in degraded.split(",") if d.strip()]
-    health = max(0.4, 1.0 - len(degraded) * 0.12)
+    degraded_count = len(degraded)
 
-    # 合成 JCS (0-100)
-    raw_jcs = agreement * freshness * health * 100
+    # 每个缺失引擎扣 4 分, 每个降级模块扣 2 分
+    data_health = max(0.0, 20.0 - stale_count * 4.0 - degraded_count * 2.0)
+
+    # ── 3. Consensus Bonus (占 20 分) ──
+    # 全方向一致且无中性 → +20; 有中性但无矛盾 → +10; 其他 → 0
+    if active_count == 4 and all(d == active_dirs[0] for d in active_dirs):
+        consensus_bonus = 20.0
+    elif active_count >= 2 and all(d == active_dirs[0] for d in active_dirs):
+        consensus_bonus = 10.0
+    else:
+        consensus_bonus = 0.0
+
+    # ── 合成 JCS ──
+    raw_jcs = base_agreement + data_health + consensus_bonus
+
+    # ── 矛盾惩罚 (减法, 不再用乘法) ──
+    conflicts = compute_conflict_matrix(snapshot)
+    # 过滤掉 info 级别 (如 all_neutral) 不计入惩罚
+    penalty_conflicts = [c for c in conflicts["conflicts"] if c["severity"] != "info"]
+    has_severe = any(c["severity"] == "high" for c in penalty_conflicts)
+    penalty_count = len(penalty_conflicts)
+
+    if has_severe:
+        raw_jcs -= 25.0  # 严重矛盾扣 25 分
+    elif penalty_count > 0:
+        raw_jcs -= penalty_count * 10.0  # 每个中度矛盾扣 10 分
+
     jcs = round(min(100, max(0, raw_jcs)), 1)
 
-    # 矛盾惩罚
-    conflicts = compute_conflict_matrix(snapshot)
-    if conflicts["has_severe"]:
-        jcs = round(jcs * 0.6, 1)
-    elif conflicts["conflict_count"] > 0:
-        jcs = round(jcs * 0.8, 1)
-
-    # 分级
+    # ── 分级 ──
     if jcs >= 70:
         level, label = "high", "🟢 高置信 — 多引擎方向一致"
     elif jcs >= 40:
@@ -260,9 +309,9 @@ def compute_jcs(snapshot: dict) -> dict:
         "level": level,
         "label": label,
         "directions": directions,
-        "agreement_pct": round(agreement * 100, 1),
-        "freshness_factor": round(freshness, 2),
-        "health_factor": round(health, 2),
+        "agreement_pct": round(base_agreement / 60.0 * 100, 1),
+        "data_health": round(data_health, 1),
+        "consensus_bonus": round(consensus_bonus, 1),
         "conflict_count": conflicts["conflict_count"],
     }
 
@@ -331,9 +380,19 @@ def simulate_scenario(scenario_id: str, current_snapshot: dict) -> dict:
         after["suggested_position"] = _REGIME_CAP_MAP.get(new_regime, 55)
         after["aiae_regime_cn"] = _REGIME_CN_MAP.get(new_regime, "中性均衡")
 
+    # V17.0: ERP 值变化时联动重算 erp_score (Sigmoid 映射)
+    if "erp_val" in deltas:
+        erp_v = after["erp_val"]
+        # 复用 ERP 绝对值→分位的近似映射: ERP 3%→20分, 4.5%→50分, 6%→80分
+        _erp_x = max(-20, min(20, 2.5 * (erp_v - 4.5)))
+        after["erp_score"] = round(100.0 / (1.0 + math.exp(-_erp_x)), 1)
+
     if deltas.get("is_circuit_breaker"):
         after["suggested_position"] = 0
         after["is_circuit_breaker"] = True
+        # V17.0: 流动性熔断联动
+        after["liquidity_score"] = 0
+        after["macro_temp_score"] = max(0, after.get("macro_temp_score", 50) - 30)
 
     # 重算 hub composite
     after["hub_composite"] = _recalc_hub_composite(after)
@@ -439,12 +498,130 @@ def _build_snapshot_from_cache() -> dict:
     return snapshot
 
 
+# ═══════════════════════════════════════════════════════════
+#  V17.0 C1: 执行建议生成器
+# ═══════════════════════════════════════════════════════════
+
+def generate_action_plan(snapshot: dict, jcs: dict, conflicts: dict) -> dict:
+    """
+    根据 JCS + 矛盾状态 + 快照数据 → 生成可执行的操作建议。
+
+    返回:
+    {
+        "action_label": str,       # 核心行动标签
+        "action_icon": str,        # 图标
+        "confidence": str,         # high/medium/low
+        "reasoning": str,          # 一句话推理逻辑
+        "top_signals": [str],      # 最强信号摘要 (最多3个)
+        "next_check": str,         # 下次检查条件
+        "position_target": float,  # 目标仓位
+        "risk_note": str,          # 风控提示
+    }
+    """
+    jcs_score = jcs.get("score", 50)
+    jcs_level = jcs.get("level", "medium")
+    directions = jcs.get("directions", {})
+    has_severe = conflicts.get("has_severe", False)
+    conflict_count = conflicts.get("conflict_count", 0)
+    pos = snapshot.get("suggested_position", 55)
+    aiae_regime = snapshot.get("aiae_regime", 3)
+    mr_regime = snapshot.get("mr_regime", "RANGE")
+    erp_score = snapshot.get("erp_score", 50)
+    vix_val = snapshot.get("vix_val", 20)
+
+    top_signals = []
+    risk_note = ""
+
+    # ── 高置信场景 ──
+    if jcs_level == "high" and not has_severe:
+        # 判断方向
+        bullish = sum(1 for d in directions.values() if d == 1)
+        bearish = sum(1 for d in directions.values() if d == -1)
+
+        if bullish >= 3:
+            action_label = "积极加仓"
+            action_icon = "🚀"
+            reasoning = f"JCS {jcs_score}分，{bullish}/4引擎看多，方向明确"
+            if mr_regime == "BULL":
+                top_signals.append("MR技术面处于牛市区间")
+            if erp_score > 60:
+                top_signals.append(f"ERP估值偏低({erp_score:.0f}分)")
+            if aiae_regime <= 2:
+                top_signals.append(f"AIAE处于冷配区(R{aiae_regime})")
+            next_check = "AIAE升至R4或VIX突破28时减仓"
+            risk_note = f"仓位上限 {pos}%，注意单票不超过20%"
+        elif bearish >= 3:
+            action_label = "防御减仓"
+            action_icon = "🛡️"
+            reasoning = f"JCS {jcs_score}分但方向偏空，{bearish}/4引擎看空"
+            if aiae_regime >= 4:
+                top_signals.append(f"AIAE过热(R{aiae_regime})")
+            if erp_score < 40:
+                top_signals.append("ERP估值偏高")
+            if vix_val > 28:
+                top_signals.append(f"VIX恐慌({vix_val:.1f})")
+            next_check = "VIX回落至25以下 或 AIAE降至R3"
+            risk_note = "严格止损，不抄底"
+        else:
+            action_label = "持仓优化"
+            action_icon = "⚖️"
+            reasoning = f"JCS {jcs_score}分，信号方向一致但力度温和"
+            top_signals.append("多引擎无对冲，可小幅调仓")
+            next_check = "明日收盘后复查"
+            risk_note = "维持现有仓位结构"
+
+        return {
+            "action_label": action_label, "action_icon": action_icon,
+            "confidence": "high", "reasoning": reasoning,
+            "top_signals": top_signals[:3], "next_check": next_check,
+            "position_target": pos, "risk_note": risk_note,
+        }
+
+    # ── 矛盾场景 ──
+    if has_severe or conflict_count >= 2:
+        action_label = "暂停操作"
+        action_icon = "⏸️"
+        reasoning = f"检测到{conflict_count}个矛盾(含{'严重矛盾' if has_severe else '中度矛盾'})，JCS={jcs_score}"
+        for c in conflicts.get("conflicts", [])[:2]:
+            top_signals.append(c["desc"])
+        next_check = conflicts.get("conflicts", [{}])[0].get("action", "等待矛盾消解")
+        risk_note = "不新建仓位，已有持仓设严格止损"
+
+        return {
+            "action_label": action_label, "action_icon": action_icon,
+            "confidence": "low", "reasoning": reasoning,
+            "top_signals": top_signals[:3], "next_check": next_check,
+            "position_target": min(pos, 30), "risk_note": risk_note,
+        }
+
+    # ── 中置信 / 默认场景 ──
+    action_label = "持仓观望"
+    action_icon = "👁️"
+    reasoning = f"JCS {jcs_score}分，信号不够强烈，等待明确方向"
+    neutral_count = sum(1 for d in directions.values() if d == 0)
+    if neutral_count >= 3:
+        top_signals.append(f"{neutral_count}/4引擎中性，市场缺乏方向")
+    if conflict_count == 1:
+        top_signals.append("存在轻度矛盾，不宜大幅调仓")
+    top_signals.append(f"当前仓位目标: {pos}%")
+    next_check = "明日收盘后复查 或 VIX出现异动"
+    risk_note = "维持现有仓位，不追涨杀跌"
+
+    return {
+        "action_label": action_label, "action_icon": action_icon,
+        "confidence": "medium", "reasoning": reasoning,
+        "top_signals": top_signals[:3], "next_check": next_check,
+        "position_target": pos, "risk_note": risk_note,
+    }
+
+
 def get_hub_data() -> dict:
     """决策中枢全量数据 (供 API 返回)"""
     snapshot = _build_snapshot_from_cache()
 
     conflicts = compute_conflict_matrix(snapshot)
     jcs = compute_jcs(snapshot)
+    action_plan = generate_action_plan(snapshot, jcs, conflicts)
 
     return {
         "status": "success",
@@ -452,6 +629,7 @@ def get_hub_data() -> dict:
         "snapshot": snapshot,
         "conflicts": conflicts,
         "jcs": jcs,
+        "action_plan": action_plan,
         "scenarios": {k: {"name": v["name"], "desc": v["desc"], "icon": v["icon"], "severity": v["severity"]}
                       for k, v in SCENARIOS.items()},
     }
@@ -604,48 +782,87 @@ def compute_risk_matrix() -> dict:
 
 
 # ═══════════════════════════════════════════════════════════
-#  Phase 2: 准确率回填 (T+5 市场收益)
+#  Phase 2: 准确率回填 (T+5 真实市场收益) — V17.0 修正
 # ═══════════════════════════════════════════════════════════
+
+def _get_index_close(trade_date: str, index_code: str = "000300.SH") -> Optional[float]:
+    """
+    从 Tushare 获取指定日期的指数收盘价。
+    支持交易日回溯: 若当日非交易日则查前一交易日。
+    返回 None 表示无法获取。
+    """
+    try:
+        import tushare as ts
+        pro = ts.pro_api()
+        # trade_date 格式: YYYY-MM-DD → YYYYMMDD
+        dt_str = trade_date.replace("-", "")
+        dt = datetime.strptime(dt_str, "%Y%m%d")
+        from datetime import timedelta
+        for offset in range(5):  # 最多回溯5天
+            try:
+                try_date = (dt - timedelta(days=offset)).strftime("%Y%m%d")
+                df = pro.index_daily(ts_code=index_code, trade_date=try_date)
+                if df is not None and not df.empty:
+                    return float(df.iloc[0]["close"])
+            except Exception:
+                continue
+    except Exception as e:
+        logger.warning("获取指数收盘价失败 (%s, %s): %s", trade_date, index_code, e)
+    return None
+
 
 def backfill_signal_accuracy():
     """
-    检查 5 天前的决策记录是否已回填市场收益。
-    如果未回填，尝试从缓存中获取市场数据计算 T+5 收益。
+    V17.0: 使用沪深300真实收盘价计算 T+5 收益率, 替代旧版 ERP 代理.
+    
+    逻辑:
+      1. 查找 5-30 天前 market_return_5d 为空的决策记录
+      2. 对每条记录, 获取 T 日和 T+5 日的沪深300收盘价
+      3. 计算真实 5 日收益率 = (close_T5 - close_T) / close_T
+      4. 回填到 decision_log
     """
     from services import db as ac_db
-    from services.cache_service import cache_manager
     from datetime import timedelta
 
-    # 查找 5-10 天前未回填的记录
     today = datetime.now()
     conn = ac_db._get_conn()
     rows = conn.execute(
         "SELECT date FROM decision_log WHERE market_return_5d IS NULL "
-        "AND date <= ? ORDER BY date DESC LIMIT 10",
+        "AND date <= ? ORDER BY date DESC LIMIT 15",
         ((today - timedelta(days=5)).strftime("%Y-%m-%d"),)
     ).fetchall()
 
     if not rows:
         return
 
-    # 尝试从 dashboard 缓存获取当前市场温度作为近似收益指标
-    dashboard = cache_manager.get_json("dashboard_data")
-    if not dashboard or not dashboard.get("data"):
-        return
-
-    # 使用 ERP 变化作为市场方向的代理
-    macro = dashboard.get("data", {}).get("macro_cards", {})
-    erp_change = macro.get("erp", {}).get("change")
-    if erp_change is None:
-        return
-
-    # 简化: 用当前 ERP 变化作为 T+5 收益的近似 (方向性判断)
-    # 更精确的方法需要接入真实行情API，这里先用代理指标
+    filled_count = 0
     for row in rows:
-        log_date = row[0]
-        # 这里使用一个简化的收益估算
-        # 实际生产中应对接 Tushare 指数日线来获取真实收益
-        approx_return = round(erp_change * 0.5, 4)  # 简化近似
-        ac_db.backfill_accuracy(log_date, approx_return)
-        logger.info("准确率回填: %s -> return_5d=%.4f", log_date, approx_return)
+        log_date = row[0]  # YYYY-MM-DD
+        try:
+            # 获取 T 日收盘价
+            close_t = _get_index_close(log_date)
+            if close_t is None:
+                logger.debug("准确率回填跳过 %s: T日收盘价不可用", log_date)
+                continue
+
+            # 获取 T+5 交易日收盘价
+            dt = datetime.strptime(log_date, "%Y-%m-%d")
+            # T+5 交易日 ≈ T+7 自然日 (跳过周末)
+            t5_date = (dt + timedelta(days=7)).strftime("%Y-%m-%d")
+            close_t5 = _get_index_close(t5_date)
+            if close_t5 is None:
+                logger.debug("准确率回填跳过 %s: T+5日收盘价不可用", log_date)
+                continue
+
+            market_return = round((close_t5 - close_t) / close_t, 4)
+            ac_db.backfill_accuracy(log_date, market_return)
+            filled_count += 1
+            logger.info("准确率回填: %s -> return_5d=%.4f (%.2f->%.2f)",
+                        log_date, market_return, close_t, close_t5)
+        except Exception as e:
+            logger.warning("准确率回填异常 %s: %s", log_date, e)
+            continue
+
+    if filled_count > 0:
+        logger.info("准确率回填完成: %d/%d 条", filled_count, len(rows))
 
