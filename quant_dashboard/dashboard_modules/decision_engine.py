@@ -522,11 +522,17 @@ def _build_snapshot_from_cache() -> dict:
                          snapshot.get("erp_score", 0), snapshot.get("vix_score", 0),
                          snapshot.get("hub_composite", 0), snapshot.get("suggested_position"))
 
-    # AIAE 上下文
+    # AIAE 上下文 (V17.5: 扩展完整字段供仪表卡片使用)
     aiae_ctx = cache_manager.get_json("aiae_ctx")
     if aiae_ctx:
         snapshot["aiae_regime"] = aiae_ctx.get("regime", 3)
         snapshot["aiae_v1"] = aiae_ctx.get("aiae_v1", 22)
+        snapshot["aiae_regime_cn"] = aiae_ctx.get("regime_cn", "中性均衡")
+        snapshot["aiae_cap"] = aiae_ctx.get("cap", 55)
+        snapshot["aiae_slope"] = aiae_ctx.get("slope", 0)
+        snapshot["aiae_slope_dir"] = aiae_ctx.get("slope_direction", "flat")
+        snapshot["margin_heat"] = aiae_ctx.get("margin_heat", 2.0)
+        snapshot["fund_position"] = aiae_ctx.get("fund_position", 80)
 
     # 策略结果
     strategy_results = cache_manager.get_json("strategy_results") or {}

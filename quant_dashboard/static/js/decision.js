@@ -239,6 +239,148 @@ function renderAlerts(alerts) {
     `).join('');
 }
 
+// ═══════════════════════════════════════════════════
+//  V17.5 K: AIAE 宏观仓位管控仪表
+// ═══════════════════════════════════════════════════
+
+const _REGIME_DEFS = [
+    { r: 1, emoji: '🟢', name: 'Ⅰ级', cn: '极度恐慌', range: '<12.5%', pos: '90-95%', color: '#10b981' },
+    { r: 2, emoji: '🟥', name: 'Ⅱ级', cn: '低配置区', range: '12.5-17%', pos: '70-85%', color: '#3b82f6' },
+    { r: 3, emoji: '🟡', name: 'Ⅲ级', cn: '中性均衡', range: '17-23%', pos: '50-65%', color: '#eab308' },
+    { r: 4, emoji: '🟠', name: 'Ⅳ级', cn: '偏热区域', range: '23-30%', pos: '25-40%', color: '#f97316' },
+    { r: 5, emoji: '🔴', name: 'Ⅴ级', cn: '极度过热', range: '>30%', pos: '0-15%', color: '#ef4444' },
+];
+
+function renderAIAEHub(snapshot) {
+    const panel = document.getElementById('aiae-hub-panel');
+    if (!panel) return;
+
+    const regime = snapshot.aiae_regime || 3;
+    const v1 = snapshot.aiae_v1 || 22;
+    const regimeCn = snapshot.aiae_regime_cn || '中性均衡';
+    const cap = snapshot.aiae_cap || 55;
+    const slope = snapshot.aiae_slope || 0;
+    const slopeDir = snapshot.aiae_slope_dir || 'flat';
+    const marginHeat = snapshot.margin_heat || 2.0;
+    const fundPos = snapshot.fund_position || 80;
+    const rd = _REGIME_DEFS.find(d => d.r === regime) || _REGIME_DEFS[2];
+
+    panel.style.display = 'block';
+
+    // ── ECharts 半环仪表 ──
+    const chartEl = document.getElementById('aiae-hub-gauge-chart');
+    if (chartEl && typeof echarts !== 'undefined') {
+        const chart = echarts.init(chartEl);
+        chart.setOption({
+            series: [{
+                type: 'gauge',
+                startAngle: 200,
+                endAngle: -20,
+                min: 0,
+                max: 40,
+                radius: '90%',
+                center: ['50%', '60%'],
+                splitNumber: 8,
+                axisLine: {
+                    lineStyle: {
+                        width: 14,
+                        color: [
+                            [0.3125, '#10b981'],  // 0-12.5: 绿
+                            [0.425, '#3b82f6'],   // 12.5-17: 蓝
+                            [0.575, '#eab308'],   // 17-23: 黄
+                            [0.75, '#f97316'],     // 23-30: 橙
+                            [1, '#ef4444'],        // 30-40: 红
+                        ]
+                    }
+                },
+                pointer: {
+                    length: '55%', width: 4,
+                    itemStyle: { color: rd.color }
+                },
+                axisTick: { show: false },
+                splitLine: { show: false },
+                axisLabel: {
+                    distance: -20, fontSize: 9, color: '#475569',
+                    formatter: v => v % 10 === 0 ? v + '%' : ''
+                },
+                title: { show: false },
+                detail: {
+                    valueAnimation: true,
+                    formatter: '{value}%',
+                    fontSize: 22, fontWeight: 700,
+                    color: rd.color,
+                    offsetCenter: [0, '10%']
+                },
+                data: [{ value: Math.round(v1 * 10) / 10 }]
+            }]
+        });
+        if (typeof AC !== 'undefined') AC._charts?.add(chart);
+    }
+
+    // ── Regime 标签 + 斜率 ──
+    const regimeEl = document.getElementById('aiae-hub-regime');
+    if (regimeEl) {
+        regimeEl.textContent = `${rd.emoji} ${rd.name} · ${regimeCn}`;
+        regimeEl.style.color = rd.color;
+    }
+    const slopeEl = document.getElementById('aiae-hub-slope');
+    if (slopeEl) {
+        const arrow = slopeDir === 'up' ? '↗' : slopeDir === 'down' ? '↘' : '→';
+        const sign = slope > 0 ? '+' : '';
+        slopeEl.textContent = `月环比斜率: ${arrow} ${sign}${slope.toFixed(2)}`;
+        slopeEl.style.color = Math.abs(slope) >= 1.5 ? '#ef4444' : '#94a3b8';
+    }
+
+    // ── 五档状态条 ──
+    const strip = document.getElementById('aiae-hub-regime-strip');
+    if (strip) {
+        strip.innerHTML = _REGIME_DEFS.map(d => `
+            <div class="aiae-hub-regime-item${d.r === regime ? ' active' : ''}" style="${d.r === regime ? 'background:rgba(255,255,255,0.04);border-color:' + d.color + '30;' : ''}">
+                <div class="aiae-hub-ri-emoji">${d.emoji}</div>
+                <div class="aiae-hub-ri-name" style="${d.r === regime ? 'color:' + d.color : ''}">${d.name}</div>
+                <div class="aiae-hub-ri-range">${d.range}</div>
+                <div class="aiae-hub-ri-pos">仓位 ${d.pos}</div>
+            </div>
+        `).join('');
+    }
+
+    // ── 三警示指标 ──
+    const warns = document.getElementById('aiae-hub-warnings');
+    if (warns) {
+        const items = [
+            {
+                label: '🔥 融资热度', val: marginHeat.toFixed(2) + '%',
+                pct: Math.min(100, (marginHeat / 5) * 100),
+                danger: marginHeat >= 3.5,
+                color: marginHeat >= 3.5 ? '#ef4444' : '#10b981',
+                threshold: '警戒: >3.5%'
+            },
+            {
+                label: '📐 月环比斜率', val: (slope > 0 ? '+' : '') + slope.toFixed(2),
+                pct: Math.min(100, (Math.abs(slope) / 3) * 100),
+                danger: Math.abs(slope) >= 1.5,
+                color: Math.abs(slope) >= 1.5 ? '#ef4444' : '#10b981',
+                threshold: '警戒: |±1.5|'
+            },
+            {
+                label: '🏦 基金仓位', val: fundPos + '%',
+                pct: Math.min(100, fundPos),
+                danger: fundPos >= 90,
+                color: fundPos >= 90 ? '#ef4444' : '#10b981',
+                threshold: '警戒: >90%'
+            },
+        ];
+        warns.innerHTML = items.map(w => `
+            <div class="aiae-hub-warn-item">
+                <div class="aiae-hub-warn-label">${w.label}</div>
+                <div class="aiae-hub-warn-val" style="color:${w.color}">${w.val}</div>
+                <div class="aiae-hub-warn-bar"><div class="aiae-hub-warn-bar-fill" style="width:${w.pct}%;background:${w.color}"></div></div>
+                <div class="aiae-hub-warn-status ${w.danger ? 'danger' : 'ok'}">${w.danger ? '⚠️' : 'OK'}</div>
+            </div>
+        `).join('');
+    }
+}
+
 async function runSimulation(scenarioId) {
     // 高亮选中卡片
     document.querySelectorAll('.scenario-card').forEach(c => c.classList.remove('active'));
@@ -682,6 +824,9 @@ async function initDecisionHub() {
 
             // V17.3: 警示系统
             renderAlerts(data.alerts || []);
+
+            // V17.5: AIAE 宏观仓位管控
+            if (data.snapshot) renderAIAEHub(data.snapshot);
 
             // 情景
             renderScenarioCards(data.scenarios);

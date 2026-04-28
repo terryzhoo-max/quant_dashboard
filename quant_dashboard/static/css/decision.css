@@ -261,6 +261,88 @@
     border: 1px solid rgba(148,163,184,0.05);
 }
 
+/* ═══════════════════════════════════════════════════
+   V17.5 K: AIAE 宏观仓位管控卡片
+   ═══════════════════════════════════════════════════ */
+
+.aiae-hub-panel { margin-top: 20px; padding: 20px 24px; }
+.aiae-hub-grid {
+    display: grid; grid-template-columns: 220px 1fr; gap: 20px;
+    align-items: start;
+}
+@media (max-width: 768px) {
+    .aiae-hub-grid { grid-template-columns: 1fr; }
+}
+
+/* 左: 仪表盘列 */
+.aiae-hub-gauge-col { text-align: center; }
+.aiae-hub-meta { margin-top: 4px; }
+.aiae-hub-regime-label {
+    font-size: 0.82rem; font-weight: 700; letter-spacing: 0.5px;
+}
+.aiae-hub-slope {
+    font-size: 0.72rem; color: #94a3b8; margin-top: 4px;
+}
+
+/* 右: 详情列 */
+.aiae-hub-detail-col {}
+.aiae-hub-section-label {
+    font-size: 0.68rem; color: #64748b; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 1px;
+    margin-bottom: 8px;
+}
+
+/* 五档状态条 */
+.aiae-hub-regime-strip {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;
+}
+.aiae-hub-regime-item {
+    padding: 8px 4px; border-radius: 8px; text-align: center;
+    background: rgba(15,23,42,0.4);
+    border: 1px solid rgba(148,163,184,0.06);
+    transition: all 0.3s ease;
+}
+.aiae-hub-regime-item.active {
+    border-color: rgba(255,255,255,0.2);
+    box-shadow: 0 0 12px rgba(255,255,255,0.05);
+    animation: regimeGlow 2.5s ease-in-out infinite;
+}
+@keyframes regimeGlow {
+    0%, 100% { box-shadow: 0 0 8px rgba(255,255,255,0.03); }
+    50% { box-shadow: 0 0 16px rgba(255,255,255,0.08); }
+}
+.aiae-hub-ri-emoji { font-size: 1rem; }
+.aiae-hub-ri-name { font-size: 0.68rem; font-weight: 700; color: #e2e8f0; margin-top: 2px; }
+.aiae-hub-ri-range { font-size: 0.58rem; color: #64748b; margin-top: 1px; }
+.aiae-hub-ri-pos { font-size: 0.58rem; color: #94a3b8; margin-top: 1px; }
+
+/* 警示指标 */
+.aiae-hub-warnings { display: flex; flex-direction: column; gap: 8px; }
+.aiae-hub-warn-item {
+    display: grid; grid-template-columns: 90px 60px 1fr 40px;
+    gap: 6px; align-items: center;
+    padding: 6px 10px; border-radius: 8px;
+    background: rgba(15,23,42,0.3);
+    border: 1px solid rgba(148,163,184,0.04);
+}
+.aiae-hub-warn-label { font-size: 0.68rem; color: #94a3b8; }
+.aiae-hub-warn-val { font-size: 0.78rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+.aiae-hub-warn-bar {
+    height: 4px; border-radius: 2px;
+    background: rgba(148,163,184,0.1);
+    overflow: hidden;
+}
+.aiae-hub-warn-bar-fill {
+    height: 100%; border-radius: 2px;
+    transition: width 0.8s ease;
+}
+.aiae-hub-warn-status {
+    font-size: 0.62rem; font-weight: 600; text-align: center;
+    padding: 2px 6px; border-radius: 4px;
+}
+.aiae-hub-warn-status.ok { color: #10b981; background: rgba(16,185,129,0.1); }
+.aiae-hub-warn-status.danger { color: #ef4444; background: rgba(239,68,68,0.1); }
+
 /* ── A3: 情景模拟器 + Hover光晕 ── */
 .scenario-section { margin-top: 24px; }
 .scenario-section h3 {
