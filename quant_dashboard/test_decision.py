@@ -198,6 +198,37 @@ assert plan_neutral["action_label"] == "持仓观望", f"Expected 持仓观望, 
 assert plan_neutral["confidence"] == "medium"
 print(f"[22] Action plan (neutral): PASSED  action={plan_neutral['action_label']} conf={plan_neutral['confidence']}")
 
+# ═══════════════════════════════════════════════════
+#  V17.1 Phase D: 数据通路修复验证
+# ═══════════════════════════════════════════════════
+
+from dashboard_modules.decision_engine import _parse_erp_value
+
+# 23. ERP 值解析: 字符串 "4.5%" → 4.5
+assert _parse_erp_value("4.5%") == 4.5, f"String parse failed: {_parse_erp_value('4.5%')}"
+assert _parse_erp_value(4.5) == 4.5, f"Float passthrough failed"
+assert _parse_erp_value("  6.2 %  ") == 6.2, f"Whitespace parse failed: {_parse_erp_value('  6.2 %  ')}"
+assert _parse_erp_value(None) == 4.5, f"None fallback failed"
+assert _parse_erp_value("invalid") == 4.5, f"Invalid fallback failed"
+print(f"[23] ERP parse safety: PASSED  '4.5%'→{_parse_erp_value('4.5%')}  None→{_parse_erp_value(None)}")
+
+# 24. 快照函数签名验证 (确认新函数存在)
+from dashboard_modules.decision_engine import _build_snapshot_from_cache
+import inspect
+src = inspect.getsource(_build_snapshot_from_cache)
+assert "market_temp" in src, "Snapshot should read from market_temp, not hub"
+assert "hub_factors" in src, "Snapshot should read hub_factors"
+assert "regime_banner" in src, "Snapshot should read regime_banner for position"
+assert "d.get(\"hub\"" not in src, "Old broken path d['hub'] should be removed"
+assert "d.get(\"temperature\"" not in src, "Old broken path d['temperature'] should be removed"
+print("[24] Snapshot path fix: PASSED  reads market_temp/hub_factors/regime_banner")
+
+# 25. 版本号验证
+with open("dashboard_modules/decision_engine.py", "r", encoding="utf-8") as f:
+    header = f.readline() + f.readline()
+assert "V17.1" in header, f"Version should be V17.1, got: {header.strip()}"
+print(f"[25] Version header: PASSED  V17.1")
+
 print("\n" + "=" * 60)
-print("  ALL 22 TESTS PASSED — V17.0 Phase A+B+C Complete")
+print("  ALL 25 TESTS PASSED — V17.1 Phase A+B+C+D+E Complete")
 print("=" * 60)

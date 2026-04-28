@@ -256,7 +256,8 @@ def assemble_dashboard_response(
                     "hub_confidence": hub_result["confidence"],
                     "hub_composite": hub_result["composite_score"],
                     "hub_signal_detail": hub_result["signal_detail"],
-                    "z_capital": round(total_money_z, 2)
+                    "z_capital": round(total_money_z, 2),
+                    "degraded_modules": temp_data.get("degraded_modules", []),
                 },
                 "erp": {
                     "value": f"{round(erp_val, 2)}%",

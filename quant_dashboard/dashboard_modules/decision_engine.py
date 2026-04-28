@@ -1,10 +1,11 @@
 """
-AlphaCore V16.0 · 决策智能中枢 (Decision Intelligence Hub)
+AlphaCore V17.1 · 决策智能中枢 (Decision Intelligence Hub)
 ==========================================================
 核心功能:
   - 信号矛盾检测器 (Conflict Detector)
-  - 联合置信度引擎 (Joint Confidence Score / JCS)
+  - 联合置信度引擎 (Joint Confidence Score / JCS) — V17.0 加法模型
   - 情景模拟器 (Scenario Simulator) — 纯数学推演, 零API调用
+  - 执行建议生成器 (Action Plan Generator)
   - 每日决策快照写入 SQLite
 
 数据来源: 100% 从缓存读取, 不直接调用任何引擎
@@ -455,29 +456,71 @@ def simulate_scenario(scenario_id: str, current_snapshot: dict) -> dict:
 #  决策中枢主入口 + 每日快照
 # ═══════════════════════════════════════════════════════════
 
+def _parse_erp_value(raw) -> float:
+    """安全解析 ERP 值: '4.5%' → 4.5, 4.5 → 4.5, None → 4.5"""
+    if raw is None:
+        return 4.5
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    try:
+        return float(str(raw).replace('%', '').strip())
+    except (ValueError, TypeError):
+        return 4.5
+
+
 def _build_snapshot_from_cache() -> dict:
-    """从缓存组装当前系统快照 (不调引擎, 纯读取)"""
+    """
+    V17.1: 从缓存组装当前系统快照 (不调引擎, 纯读取)
+    
+    缓存结构 (由 assemble_response.py 写入):
+      data.macro_cards.vix.value          → vix_val (float)
+      data.macro_cards.erp.value          → erp_val (字符串 '4.5%', 需解析)
+      data.macro_cards.market_temp.hub_factors.{key}.score  → 各因子得分
+      data.macro_cards.market_temp.hub_composite             → 综合得分
+      data.macro_cards.regime_banner.aiae_cap                → 建议仓位
+      data.macro_cards.market_temp.degraded_modules          → 降级模块
+    """
     from services.cache_service import cache_manager
 
     snapshot = {}
 
-    # Dashboard 数据 (含市场温度、VIX、ERP 等)
+    # Dashboard 数据 (V17.1: 修正读取路径, 从 macro_cards.market_temp 读取)
     dashboard = cache_manager.get_json("dashboard_data")
     if dashboard and dashboard.get("data"):
         d = dashboard["data"]
         macro = d.get("macro_cards", {})
-        hub = d.get("hub", {})
-        temp = d.get("temperature", {})
+        market_temp = macro.get("market_temp", {})
+        regime_banner = macro.get("regime_banner", {})
 
+        # VIX — 从 macro_cards.vix.value 读取 (float)
         snapshot["vix_val"] = macro.get("vix", {}).get("value")
-        snapshot["erp_val"] = macro.get("erp", {}).get("value")
-        snapshot["erp_score"] = hub.get("factors", {}).get("erp_value", {}).get("score", 50)
-        snapshot["vix_score"] = hub.get("factors", {}).get("vix_fear", {}).get("score", 50)
-        snapshot["liquidity_score"] = hub.get("factors", {}).get("capital_flow", {}).get("score", 50)
-        snapshot["macro_temp_score"] = hub.get("factors", {}).get("macro_temp", {}).get("score", 50)
-        snapshot["hub_composite"] = hub.get("composite_score", 50)
-        snapshot["suggested_position"] = hub.get("position", 55)
-        snapshot["degraded_modules"] = temp.get("degraded_modules", [])
+
+        # ERP — value 是字符串 "4.5%", 需解析为浮点数
+        snapshot["erp_val"] = _parse_erp_value(macro.get("erp", {}).get("value"))
+
+        # Hub 因子得分 — 从 market_temp.hub_factors 读取
+        hub_factors = market_temp.get("hub_factors", {})
+        snapshot["erp_score"] = hub_factors.get("erp_value", {}).get("score", 50)
+        snapshot["vix_score"] = hub_factors.get("vix_fear", {}).get("score", 50)
+        snapshot["liquidity_score"] = hub_factors.get("capital_flow", {}).get("score", 50)
+        snapshot["macro_temp_score"] = hub_factors.get("macro_temp", {}).get("score", 50)
+
+        # Hub composite + position
+        snapshot["hub_composite"] = market_temp.get("hub_composite", 50)
+        snapshot["suggested_position"] = regime_banner.get("aiae_cap", 55)
+
+        # 降级模块
+        snapshot["degraded_modules"] = market_temp.get("degraded_modules", [])
+
+        # V17.1: 快照完整性日志
+        _real_count = sum(1 for k in ["erp_score", "vix_score", "hub_composite"]
+                         if snapshot.get(k) != 50)
+        if _real_count == 0 and not hub_factors:
+            logger.warning("快照警告: hub_factors 为空, 可能缓存未预热")
+        else:
+            logger.debug("快照组装: erp=%.1f vix_s=%.1f comp=%.1f pos=%s",
+                         snapshot.get("erp_score", 0), snapshot.get("vix_score", 0),
+                         snapshot.get("hub_composite", 0), snapshot.get("suggested_position"))
 
     # AIAE 上下文
     aiae_ctx = cache_manager.get_json("aiae_ctx")

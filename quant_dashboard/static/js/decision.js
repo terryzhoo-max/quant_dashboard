@@ -1,10 +1,11 @@
 /**
- * AlphaCore V16.0 · 决策中枢 JS
+ * AlphaCore V17.1 · 决策中枢 JS
  * ================================
  * - JCS 环形仪表盘 (Canvas)
  * - 矛盾矩阵渲染
+ * - 执行建议卡片 (V17.0)
  * - 情景模拟器交互
- * - 决策时间线图 (ECharts)
+ * - 决策时间线图 (ECharts) + AIAE Regime 色带
  */
 
 const API_BASE = '/api/v1/decision';
