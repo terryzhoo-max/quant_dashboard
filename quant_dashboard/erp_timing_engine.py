@@ -237,16 +237,30 @@ class ERPTimingEngine:
                 ac_db.upsert_erp_daily(entry["date"], entry["score"])
         except Exception:
             pass
-        # JSON 备份写入
-        tmp_path = filepath + ".tmp"
-        try:
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False)
-            os.replace(tmp_path, filepath)
-        except Exception as e:
-            if os.path.exists(tmp_path):
+        # JSON 备份写入 (V2.2: 线程安全 + Windows文件锁重试)
+        tid = threading.get_ident()
+        tmp_path = f"{filepath}.{tid}.tmp"
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False)
+                os.replace(tmp_path, filepath)
+                return
+            except PermissionError:
+                if attempt < max_retries - 1:
+                    time.sleep(0.3 * (attempt + 1))
+                else:
+                    print(f"[ERP Engine] 保存状态失败(文件锁, {max_retries}次重试): {filepath}")
+            except Exception as e:
+                print(f"[ERP Engine] 保存状态失败: {e}")
+                break
+        # 清理残留 tmp
+        if os.path.exists(tmp_path):
+            try:
                 os.remove(tmp_path)
-            print(f"[ERP Engine] 保存状态失败: {e}")
+            except OSError:
+                pass
 
     # ========== 数据获取层 (带TTL缓存+磁盘持久化) ==========
 
