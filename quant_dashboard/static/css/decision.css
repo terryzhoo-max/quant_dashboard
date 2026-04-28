@@ -850,6 +850,152 @@
     border: 1px solid rgba(245,158,11,0.1);
 }
 
+/* ═══════════════════════════════════════════════════
+   V19.0: 全球市场温度仪表板
+   ═══════════════════════════════════════════════════ */
+
+.global-temp-dashboard {
+    padding: 20px 24px 16px;
+    margin-bottom: 24px;
+    position: relative;
+    overflow: hidden;
+}
+.global-temp-dashboard::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: linear-gradient(90deg, #10b981, #3b82f6, #eab308, #f97316);
+    opacity: 0.7;
+}
+
+.global-temp-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 16px;
+}
+.global-temp-title {
+    font-size: 1rem; font-weight: 700; color: #e2e8f0; margin: 0;
+    display: flex; align-items: center; gap: 8px;
+    letter-spacing: 0.3px;
+}
+.global-temp-time {
+    font-size: 0.68rem; color: #475569;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.global-temp-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+}
+
+/* 单个市场卡片 */
+.global-temp-card {
+    padding: 16px 14px 14px;
+    border-radius: 14px;
+    background: rgba(15,23,42,0.5);
+    border: 1px solid rgba(148,163,184,0.06);
+    text-align: center;
+    transition: all 0.35s cubic-bezier(0.4,0,0.2,1);
+    position: relative;
+    overflow: hidden;
+    animation: tabFadeIn 0.5s ease-out backwards;
+}
+.global-temp-card:nth-child(1) { animation-delay: 0s; }
+.global-temp-card:nth-child(2) { animation-delay: 0.08s; }
+.global-temp-card:nth-child(3) { animation-delay: 0.16s; }
+.global-temp-card:nth-child(4) { animation-delay: 0.24s; }
+
+.global-temp-card:hover {
+    border-color: rgba(148,163,184,0.15);
+    background: rgba(15,23,42,0.7);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 28px rgba(0,0,0,0.25);
+}
+
+/* 顶部色带 (跟随档位颜色) */
+.global-temp-card::after {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    transition: opacity 0.3s ease; opacity: 0.7;
+}
+.global-temp-card:hover::after { opacity: 1; }
+
+/* 市场名称头 */
+.global-temp-market-name {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    font-size: 0.82rem; font-weight: 600; color: #e2e8f0;
+    margin-bottom: 8px;
+}
+.global-temp-flag { font-size: 1rem; }
+
+/* ECharts 半环仪表容器 */
+.global-temp-gauge {
+    width: 100%; height: 130px;
+    margin: 0 auto 6px;
+}
+
+/* 档位徽章 */
+.global-temp-regime-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 12px; border-radius: 16px;
+    font-size: 0.75rem; font-weight: 600;
+    margin-bottom: 8px;
+    animation: regimeGlow 2.5s ease-in-out infinite;
+}
+
+/* 仓位进度条 */
+.global-temp-pos-row {
+    display: flex; align-items: center; gap: 6px;
+    margin-bottom: 6px; padding: 0 4px;
+}
+.global-temp-pos-label {
+    font-size: 0.62rem; color: #64748b; white-space: nowrap;
+}
+.global-temp-pos-bar {
+    flex: 1; height: 6px; border-radius: 3px;
+    background: rgba(148,163,184,0.08);
+    overflow: hidden;
+}
+.global-temp-pos-fill {
+    height: 100%; border-radius: 3px;
+    transition: width 1s cubic-bezier(0.34,1.56,0.64,1);
+}
+.global-temp-pos-val {
+    font-size: 0.72rem; font-weight: 700; color: #e2e8f0;
+    font-variant-numeric: tabular-nums;
+    min-width: 30px; text-align: right;
+}
+
+/* 操作指令 */
+.global-temp-action {
+    font-size: 0.68rem; color: #94a3b8;
+    padding: 4px 8px; border-radius: 6px;
+    background: rgba(148,163,184,0.04);
+    border: 1px solid rgba(148,163,184,0.04);
+}
+
+/* 加载中骨架 */
+.global-temp-card-loading {
+    padding: 20px 14px;
+    border-radius: 14px;
+    background: rgba(15,23,42,0.3);
+    border: 1px solid rgba(148,163,184,0.04);
+    text-align: center;
+}
+.global-temp-card-loading .skeleton-bar {
+    width: 60%; height: 22px; margin: 10px auto;
+}
+
+/* 底部全球推荐条 */
+.global-temp-recommendation {
+    margin-top: 12px; padding: 10px 16px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, rgba(59,130,246,0.06), rgba(16,185,129,0.06));
+    border: 1px solid rgba(59,130,246,0.1);
+    font-size: 0.78rem; color: #cbd5e1;
+    display: none; /* JS 控制显隐 */
+    animation: tabFadeIn 0.5s ease-out 0.3s backwards;
+}
+.global-temp-recommendation.visible { display: block; }
+.global-temp-rec-icon { margin-right: 6px; }
+
 /* ── 响应式 ── */
 @media (max-width: 1024px) {
     .jcs-section { grid-template-columns: 1fr; }
@@ -858,8 +1004,10 @@
     .sim-arrow { transform: rotate(90deg); }
     .risk-grid { grid-template-columns: 1fr; }
     .action-footer { flex-direction: column; }
+    .global-temp-grid { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 640px) {
     .scenario-grid { grid-template-columns: 1fr; }
     .direction-grid { grid-template-columns: repeat(2, 1fr); }
+    .global-temp-grid { grid-template-columns: 1fr; }
 }

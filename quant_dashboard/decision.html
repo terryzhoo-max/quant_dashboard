@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#07090e">
     <title>决策中枢 · AlphaCore</title>
     <link rel="stylesheet" href="./static/css/styles.css?v=10">
-    <link rel="stylesheet" href="./static/css/decision.css?v=20">
+    <link rel="stylesheet" href="./static/css/decision.css?v=21">
     <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
     <script>window.echarts || document.write('<script src="./static/vendor/echarts.min.js"><\/script>')</script>
@@ -115,6 +115,18 @@
 
                 <!-- V17.3: 警示容器 -->
                 <div id="alert-container"></div>
+
+                <!-- V19.0: 全球市场温度仪表板 -->
+                <div class="global-temp-dashboard glass-decision" id="global-temp-dashboard">
+                    <div class="global-temp-header">
+                        <h3 class="global-temp-title">🌐 全球市场温度 · 当日决策</h3>
+                        <span class="global-temp-time" id="global-temp-time">--</span>
+                    </div>
+                    <div class="global-temp-grid" id="global-temp-grid">
+                        <div class="loading-spinner">⏳ 同步全球市场温度...</div>
+                    </div>
+                    <div class="global-temp-recommendation" id="global-temp-rec"></div>
+                </div>
 
                 <!-- JCS + 矛盾矩阵 -->
                 <div class="jcs-section">
@@ -315,6 +327,6 @@
         </div>
     </main>
 
-    <script src="./static/js/decision.js?v=20"></script>
+    <script src="./static/js/decision.js?v=21"></script>
 </body>
 </html>

@@ -845,6 +845,155 @@ function renderJCSComponents(jcs) {
 }
 
 // ═══════════════════════════════════════════════════
+//  V19.0: 全球市场温度仪表板
+// ═══════════════════════════════════════════════════
+
+const _globalTempCharts = {};
+
+function renderGlobalTemperature(gt) {
+    const gridEl = document.getElementById('global-temp-grid');
+    const recEl = document.getElementById('global-temp-rec');
+    const timeEl = document.getElementById('global-temp-time');
+    if (!gridEl) return;
+
+    // 时间戳
+    if (timeEl) {
+        const now = new Date();
+        timeEl.textContent = now.toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit'}) + ' 更新';
+    }
+
+    const markets = gt.markets || [];
+    if (markets.length === 0) {
+        gridEl.innerHTML = '<div class="loading-spinner">暂无全球市场数据</div>';
+        return;
+    }
+
+    // 渲染卡片
+    gridEl.innerHTML = markets.map(m => {
+        if (m.status === 'loading') {
+            return `<div class="global-temp-card-loading">
+                <div class="global-temp-market-name"><span class="global-temp-flag">${m.flag}</span> ${m.name}</div>
+                <div class="skeleton-bar"></div>
+                <div style="font-size:0.72rem;color:#475569">加载中...</div>
+            </div>`;
+        }
+        const color = m.regime_color || '#eab308';
+        const aiae = typeof m.aiae_v1 === 'number' ? m.aiae_v1.toFixed(1) : '--';
+        const cap = m.cap || 55;
+        return `<div class="global-temp-card" style="--regime-color:${color}">
+            <div style="position:absolute;top:0;left:0;right:0;height:3px;background:${color};opacity:0.7"></div>
+            <div class="global-temp-market-name">
+                <span class="global-temp-flag">${m.flag}</span> ${m.name}
+            </div>
+            <div class="global-temp-gauge" id="gt-gauge-${m.key}"></div>
+            <div class="global-temp-regime-badge" style="background:${color}15;color:${color};border:1px solid ${color}30">
+                ${m.emoji} R${m.regime} · ${m.regime_cn}
+            </div>
+            <div class="global-temp-pos-row">
+                <span class="global-temp-pos-label">仓位</span>
+                <div class="global-temp-pos-bar">
+                    <div class="global-temp-pos-fill" style="width:${cap}%;background:${color}"></div>
+                </div>
+                <span class="global-temp-pos-val">${cap}%</span>
+            </div>
+            <div class="global-temp-action">📋 ${m.action}</div>
+        </div>`;
+    }).join('');
+
+    // 初始化 ECharts Gauge (延迟确保 DOM 已渲染)
+    requestAnimationFrame(() => {
+        markets.forEach(m => {
+            if (m.status === 'loading') return;
+            const gaugeEl = document.getElementById(`gt-gauge-${m.key}`);
+            if (!gaugeEl) return;
+
+            // 销毁旧实例
+            if (_globalTempCharts[m.key]) {
+                _globalTempCharts[m.key].dispose();
+            }
+            const chart = echarts.init(gaugeEl);
+            _globalTempCharts[m.key] = chart;
+
+            const bands = m.gauge_bands || [15, 20, 27, 34, 45];
+            const maxVal = bands[4];
+            const aiae = typeof m.aiae_v1 === 'number' ? m.aiae_v1 : 22;
+
+            chart.setOption({
+                series: [{
+                    type: 'gauge',
+                    startAngle: 200, endAngle: -20,
+                    radius: '90%', center: ['50%', '65%'],
+                    min: 0, max: maxVal,
+                    splitNumber: 5,
+                    axisLine: {
+                        lineStyle: {
+                            width: 12,
+                            color: [
+                                [bands[0]/maxVal, '#10b981'],
+                                [bands[1]/maxVal, '#3b82f6'],
+                                [bands[2]/maxVal, '#eab308'],
+                                [bands[3]/maxVal, '#f97316'],
+                                [1, '#ef4444'],
+                            ]
+                        }
+                    },
+                    pointer: {
+                        icon: 'path://M12.8,0.7l12,40.1H0.7L12.8,0.7z',
+                        length: '55%', width: 6,
+                        offsetCenter: [0, '-10%'],
+                        itemStyle: { color: m.regime_color || '#eab308' }
+                    },
+                    axisTick: { show: false },
+                    splitLine: { show: false },
+                    axisLabel: {
+                        distance: 14, fontSize: 9,
+                        color: '#475569',
+                        formatter: v => v % Math.round(maxVal/4) === 0 ? v + '%' : ''
+                    },
+                    detail: {
+                        valueAnimation: true,
+                        fontSize: 18, fontWeight: 700,
+                        color: m.regime_color || '#e2e8f0',
+                        offsetCenter: [0, '30%'],
+                        formatter: v => v.toFixed(1) + '%'
+                    },
+                    data: [{ value: aiae }]
+                }]
+            });
+        });
+
+        // Resize 监听
+        const resizeAll = () => Object.values(_globalTempCharts).forEach(c => c && c.resize());
+        window.removeEventListener('resize', resizeAll);
+        window.addEventListener('resize', resizeAll);
+    });
+
+    // 全球推荐条
+    if (recEl && gt.comparison) {
+        const comp = gt.comparison;
+        const names = {cn: 'A股', us: '美股', hk: '港股', jp: '日股'};
+        let recHtml = '';
+        if (comp.coldest && comp.hottest) {
+            // coldest/hottest 可能是字符串 "hk" 或对象 {region, aiae_v1}
+            const coldKey = typeof comp.coldest === 'string' ? comp.coldest : comp.coldest.region;
+            const hotKey = typeof comp.hottest === 'string' ? comp.hottest : comp.hottest.region;
+            const coldName = names[coldKey] || coldKey;
+            const hotName = names[hotKey] || hotKey;
+            // 从 comparison 的 xx_aiae 字段获取值
+            const coldV = comp[coldKey + '_aiae'] != null ? Number(comp[coldKey + '_aiae']).toFixed(1) : '--';
+            const hotV = comp[hotKey + '_aiae'] != null ? Number(comp[hotKey + '_aiae']).toFixed(1) : '--';
+            recHtml = `<span class="global-temp-rec-icon">🧊</span> 当前 <b>${coldName}</b>(AIAE=${coldV}%) 配置热度最低, 超配优先; <b>${hotName}</b>(AIAE=${hotV}%) 最高, 谨慎配置`;
+        } else if (comp.recommendation) {
+            recHtml = `<span class="global-temp-rec-icon">💡</span> ${comp.recommendation}`;
+        }
+        if (recHtml) {
+            recEl.innerHTML = recHtml;
+            recEl.classList.add('visible');
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════
 //  页面初始化
 // ═══════════════════════════════════════════════════
 
@@ -874,6 +1023,9 @@ async function initDecisionHub() {
 
             // V17.3: 警示系统
             renderAlerts(data.alerts || []);
+
+            // V19.0: 全球市场温度仪表板
+            if (data.global_temperature) renderGlobalTemperature(data.global_temperature);
 
             // V17.5: AIAE 宏观仓位管控
             if (data.snapshot) renderAIAEHub(data.snapshot);
