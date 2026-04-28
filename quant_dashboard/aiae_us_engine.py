@@ -405,44 +405,74 @@ class AIAEUSEngine:
         return DEFAULT_AAII.copy()
 
     def _crawl_aaii_sentiment(self) -> Optional[Dict]:
-        """自动爬取 AAII Sentiment Survey (公开数据)"""
+        """获取散户情绪数据 (多源 fallback)
+        V1.2: AAII 网站反爬严格(403), 新增 FRED UMich 消费者信心指数作为代理
+        Fallback 链: AAII 网页 → FRED UMCSENT → 磁盘缓存 → 默认值
+
+        映射逻辑 (UMich → AAII Spread):
+          UMich 范围 50~100, 均值≈75
+          AAII Spread 范围 -30~+30, 均值≈+5
+          spread = (umich - 75) / 25 × 30 + 5
+        """
+        # === 方案1: 直接爬 AAII (保留, 万一恢复) ===
         try:
             import urllib.request
             import re
             url = "https://www.aaii.com/sentimentsurvey"
             req = urllib.request.Request(url, headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept": "text/html",
+                "Accept-Language": "en-US,en;q=0.9",
             })
-            @retry_with_backoff(max_retries=3, base_delay=2.0)
-            def _fetch_html():
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    return resp.read().decode('utf-8', errors='replace')
-            html = _fetch_html()
-            if not html: return None
-
-            # 尝试从页面提取 Bullish / Bearish / Neutral 百分比
-            bull_match = re.search(r'Bullish[:\s]*?([\d.]+)\s*%', html, re.IGNORECASE)
-            bear_match = re.search(r'Bearish[:\s]*?([\d.]+)\s*%', html, re.IGNORECASE)
-            neut_match = re.search(r'Neutral[:\s]*?([\d.]+)\s*%', html, re.IGNORECASE)
-
-            if bull_match and bear_match:
-                bull = float(bull_match.group(1))
-                bear = float(bear_match.group(1))
-                neutral = float(neut_match.group(1)) if neut_match else (100 - bull - bear)
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                html = resp.read().decode('utf-8', errors='replace')
+            bull_m = re.search(r'Bullish[:\s]*?([\d.]+)\s*%', html, re.IGNORECASE)
+            bear_m = re.search(r'Bearish[:\s]*?([\d.]+)\s*%', html, re.IGNORECASE)
+            neut_m = re.search(r'Neutral[:\s]*?([\d.]+)\s*%', html, re.IGNORECASE)
+            if bull_m and bear_m:
+                bull = float(bull_m.group(1))
+                bear = float(bear_m.group(1))
+                neutral = float(neut_m.group(1)) if neut_m else (100 - bull - bear)
                 spread = bull - bear
                 data = {
-                    "bull_pct": round(bull, 1),
-                    "bear_pct": round(bear, 1),
-                    "neutral_pct": round(neutral, 1),
-                    "spread": round(spread, 1),
-                    "date": datetime.now().strftime("%Y-%m-%d"),
-                    "source": "aaii_crawl"
+                    "bull_pct": round(bull, 1), "bear_pct": round(bear, 1),
+                    "neutral_pct": round(neutral, 1), "spread": round(spread, 1),
+                    "date": datetime.now().strftime("%Y-%m-%d"), "source": "aaii_crawl"
                 }
                 atomic_write_json(data, AAII_SENTIMENT_FILE)
                 _log(f"AAII crawled: Bull={bull:.1f}% Bear={bear:.1f}% Spread={spread:.1f}%")
                 return data
         except Exception as e:
-            _log(f"AAII crawl failed (non-critical): {e}", "WARN")
+            _log(f"AAII crawl failed: {e}", "DEBUG")
+
+        # === 方案2: FRED UMich Consumer Sentiment (月频, 零反爬) ===
+        try:
+            fred = _get_fred()
+            if fred:
+                series = fred.get_series("UMCSENT",
+                                         observation_start=datetime.now() - timedelta(days=90))
+                if series is not None and not series.empty:
+                    series = series.dropna()
+                    umich = float(series.iloc[-1])
+                    umich_date = series.index[-1].strftime("%Y-%m-%d")
+                    # 线性映射: UMich [50, 100] → AAII Spread [-25, +35]
+                    spread = (umich - 75) / 25 * 30 + 5
+                    spread = max(-30.0, min(30.0, spread))
+                    bull = round(35 + spread / 2, 1)
+                    bear = round(35 - spread / 2, 1)
+                    neutral = round(100 - bull - bear, 1)
+                    data = {
+                        "bull_pct": bull, "bear_pct": bear,
+                        "neutral_pct": neutral, "spread": round(spread, 1),
+                        "date": umich_date, "source": "fred_umcsent",
+                        "umich_raw": round(umich, 1),
+                    }
+                    atomic_write_json(data, AAII_SENTIMENT_FILE)
+                    _log(f"AAII (UMich proxy): {umich:.1f} → spread={spread:.1f}% ({umich_date})")
+                    return data
+        except Exception as e:
+            _log(f"FRED UMich fallback failed: {e}", "WARN")
+
         return None
 
     def update_aaii_sentiment(self, bull_pct: float, bear_pct: float, neutral_pct: float = None):

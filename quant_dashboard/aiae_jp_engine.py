@@ -334,7 +334,9 @@ class AIAEJPEngine:
         return _cached("jp_aiae_m2", TTL_JP_M2, _fetch)
 
     def _load_jp_margin(self) -> Dict:
-        """信用取引残高（固定推定値 / 手動更新）"""
+        """信用取引残高（手動更新 / 时间衰减デフォルト）
+        V1.2: 超过60天的默认值自动向中性衰减, 避免陈旧偏差
+        """
         if os.path.exists(JP_MARGIN_FILE):
             try:
                 with open(JP_MARGIN_FILE, 'r', encoding='utf-8') as f:
@@ -343,11 +345,25 @@ class AIAEJPEngine:
                 return data
             except Exception:
                 pass
-        _log("JP Margin: 使用デフォルト推定値", "WARN")
-        return DEFAULT_JP_MARGIN.copy()
+        # 时间衰减: 默认值随时间向中性值 (3.5兆円) 衰减
+        default = DEFAULT_JP_MARGIN.copy()
+        try:
+            age_days = (datetime.now() - datetime.strptime(default['date'], '%Y-%m-%d')).days
+            if age_days > 60:
+                neutral = 3.5  # 历史中位数
+                decay = min(age_days / 365, 0.5)  # 最多衰减 50%
+                original = default['margin_buying_trillion_jpy']
+                default['margin_buying_trillion_jpy'] = round(original + (neutral - original) * decay, 2)
+                default['decayed'] = True
+        except Exception:
+            pass
+        _log(f"JP Margin: デフォルト推定値 {default['margin_buying_trillion_jpy']}兆円")
+        return default
 
     def _load_jp_foreign(self) -> Dict:
-        """外国人投資家フロー（固定推定値 / 手動更新）"""
+        """外国人投資家フロー（手動更新 / 时间衰减デフォルト）
+        V1.2: 超过60天自动向中性(0)衰减
+        """
         if os.path.exists(JP_FOREIGN_FILE):
             try:
                 with open(JP_FOREIGN_FILE, 'r', encoding='utf-8') as f:
@@ -356,8 +372,17 @@ class AIAEJPEngine:
                 return data
             except Exception:
                 pass
-        _log("JP Foreign: 使用デフォルト推定値", "WARN")
-        return DEFAULT_JP_FOREIGN.copy()
+        default = DEFAULT_JP_FOREIGN.copy()
+        try:
+            age_days = (datetime.now() - datetime.strptime(default['date'], '%Y-%m-%d')).days
+            if age_days > 60:
+                decay = min(age_days / 365, 0.8)  # 外资流向衰减更快
+                default['net_buy_billion_jpy'] = round(default['net_buy_billion_jpy'] * (1 - decay))
+                default['decayed'] = True
+        except Exception:
+            pass
+        _log(f"JP Foreign: デフォルト推定値 net={default['net_buy_billion_jpy']}億円")
+        return default
 
     def update_jp_margin(self, margin_buying_trillion_jpy: float):
         """手動更新 信用取引残高"""
