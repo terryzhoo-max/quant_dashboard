@@ -229,6 +229,34 @@ with open("dashboard_modules/decision_engine.py", "r", encoding="utf-8") as f:
 assert "V17.1" in header, f"Version should be V17.1, got: {header.strip()}"
 print(f"[25] Version header: PASSED  V17.1")
 
+# ═══════════════════════════════════════════════════
+#  V17.3 Phase I: 警示系统验证
+# ═══════════════════════════════════════════════════
+
+from dashboard_modules.decision_engine import generate_alerts
+
+# 26. VIX 极端恐慌 → critical 警报
+snap_vix_extreme = {"vix_val": 38.0, "aiae_regime": 3, "erp_score": 50, "mr_regime": "RANGE"}
+alerts_vix = generate_alerts(snap_vix_extreme)
+vix_alerts = [a for a in alerts_vix if a["type"] == "vix_extreme"]
+assert len(vix_alerts) == 1, f"Expected 1 vix alert, got {len(vix_alerts)}"
+assert vix_alerts[0]["severity"] == "critical"
+print(f"[26] Alert VIX extreme: PASSED  severity={vix_alerts[0]['severity']}")
+
+# 27. AIAE R5 → warning 警报
+snap_r5 = {"vix_val": 20.0, "aiae_regime": 5, "erp_score": 30, "mr_regime": "RANGE"}
+alerts_r5 = generate_alerts(snap_r5)
+overheat_alerts = [a for a in alerts_r5 if a["type"] == "aiae_overheat"]
+assert len(overheat_alerts) == 1, f"Expected 1 overheat alert, got {len(overheat_alerts)}"
+assert overheat_alerts[0]["severity"] == "warning"
+print(f"[27] Alert AIAE R5: PASSED  severity={overheat_alerts[0]['severity']}")
+
+# 28. 正常市场 → 零警报
+snap_normal = {"vix_val": 18.0, "aiae_regime": 3, "erp_score": 50, "mr_regime": "RANGE", "degraded_modules": []}
+alerts_normal = generate_alerts(snap_normal)
+assert len(alerts_normal) == 0, f"Expected 0 alerts, got {len(alerts_normal)}: {[a['type'] for a in alerts_normal]}"
+print(f"[28] Alert normal: PASSED  count=0")
+
 print("\n" + "=" * 60)
-print("  ALL 25 TESTS PASSED — V17.1 Phase A+B+C+D+E Complete")
+print("  ALL 28 TESTS PASSED — V17.3 Phase A~I Complete")
 print("=" * 60)

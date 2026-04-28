@@ -201,6 +201,42 @@ function renderActionPlan(plan) {
     if (nextEl) nextEl.textContent = plan.next_check || '--';
     if (posEl) posEl.textContent = (plan.position_target != null ? plan.position_target + '%' : '--%');
     if (riskEl) riskEl.textContent = '⚠️ ' + (plan.risk_note || '');
+
+    // V17.3 H3: 规则引用
+    const ruleMap = {
+        high: 'JCS≥70 + 无严重矛盾 → 可积极执行',
+        medium: 'JCS 40-70 或存在分歧 → 谨慎操作、不追涨杀跌',
+        low: 'JCS<40 或严重矛盾 → 暂停操作、等待信号清晰',
+    };
+    const existingRule = card.querySelector('.action-rule-ref');
+    if (existingRule) existingRule.remove();
+    const ruleDiv = document.createElement('div');
+    ruleDiv.className = 'action-rule-ref';
+    ruleDiv.textContent = '📐 ' + (ruleMap[plan.confidence] || '');
+    card.appendChild(ruleDiv);
+}
+
+// ═══════════════════════════════════════════════════
+//  V17.3 I: 警示卡片渲染
+// ═══════════════════════════════════════════════════
+
+function renderAlerts(alerts) {
+    const container = document.getElementById('alert-container');
+    if (!container) return;
+    if (!alerts || alerts.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+    container.innerHTML = alerts.map(a => `
+        <div class="alert-card alert-${a.severity}">
+            <div class="alert-header">
+                <span class="alert-icon">${a.icon}</span>
+                <span class="alert-title">${a.title}</span>
+            </div>
+            <div class="alert-detail">${a.detail}</div>
+            <span class="alert-rule">${a.rule}</span>
+        </div>
+    `).join('');
 }
 
 async function runSimulation(scenarioId) {
@@ -643,6 +679,9 @@ async function initDecisionHub() {
 
             // V17.0: 执行建议
             if (data.action_plan) renderActionPlan(data.action_plan);
+
+            // V17.3: 警示系统
+            renderAlerts(data.alerts || []);
 
             // 情景
             renderScenarioCards(data.scenarios);

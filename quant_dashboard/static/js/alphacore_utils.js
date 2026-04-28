@@ -101,23 +101,30 @@
         }, 200);
     });
 
-    // ── 安全通信封装 (Batch 6.1) ──
+    // ── 安全通信封装 (Batch 6.1, V17.3: GET免认证) ──
     AC.secureFetch = async function(url, options = {}) {
-        let apiKey = localStorage.getItem('alphacore_api_key');
-        if (!apiKey) {
-            apiKey = prompt("⚠️ 安全拦截：请输入您的系统 API Key (X-API-Key) 以继续该操作：");
-            if (!apiKey) {
-                const err = new Error("未提供验证凭据，操作已取消。");
-                err.isCancelled = true;
-                alert(err.message);
-                throw err;
-            }
-            localStorage.setItem('alphacore_api_key', apiKey);
-        }
+        const method = (options.method || 'GET').toUpperCase();
+        const isReadOnly = (method === 'GET' || method === 'HEAD');
 
         options.headers = options.headers || {};
-        options.headers['X-API-Key'] = apiKey;
-        
+
+        // GET/HEAD 请求免认证 (与后端 auth_middleware 一致)
+        // 仅 POST/PUT/DELETE 需要 API Key
+        if (!isReadOnly) {
+            let apiKey = localStorage.getItem('alphacore_api_key');
+            if (!apiKey) {
+                apiKey = prompt("⚠️ 安全拦截：请输入您的系统 API Key (X-API-Key) 以继续该操作：");
+                if (!apiKey) {
+                    const err = new Error("未提供验证凭据，操作已取消。");
+                    err.isCancelled = true;
+                    alert(err.message);
+                    throw err;
+                }
+                localStorage.setItem('alphacore_api_key', apiKey);
+            }
+            options.headers['X-API-Key'] = apiKey;
+        }
+
         if (options.body && typeof options.body === 'string' && !options.headers['Content-Type']) {
             options.headers['Content-Type'] = 'application/json';
         }

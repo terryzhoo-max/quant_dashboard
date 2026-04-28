@@ -658,6 +658,86 @@ def generate_action_plan(snapshot: dict, jcs: dict, conflicts: dict) -> dict:
     }
 
 
+# ═════════════════════════════════════════════════════════
+#  V17.3 主动警示系统 (Alert Generator)
+# ═════════════════════════════════════════════════════════
+
+def generate_alerts(snapshot: dict) -> list:
+    """
+    扫描快照，生成市场警报列表。
+    只在极端或异常条件下触发，正常市场不产生警报。
+    
+    返回: [{type, severity, icon, title, detail, rule}]
+    severity: critical / warning / caution
+    """
+    alerts = []
+    vix = snapshot.get("vix_val") or 20
+    aiae_regime = snapshot.get("aiae_regime") or 3
+    directions = _signal_direction(snapshot)
+    degraded = snapshot.get("degraded_modules", [])
+    if isinstance(degraded, str):
+        degraded = [d.strip() for d in degraded.split(",") if d.strip()]
+
+    # 1. VIX 极端恐慌
+    if vix >= 35:
+        alerts.append({
+            "type": "vix_extreme",
+            "severity": "critical",
+            "icon": "🚨",
+            "title": f"VIX 极端恐慌 ({vix:.1f})",
+            "detail": "全球恐慌指数超过 35，触发全策略风控降权",
+            "rule": "规则: VIX ≥ 35 → 仓位上限 30%，禁止新建仓",
+        })
+
+    # 2. 流动性熔断
+    if snapshot.get("is_circuit_breaker"):
+        alerts.append({
+            "type": "circuit_breaker",
+            "severity": "critical",
+            "icon": "🛑",
+            "title": "流动性熔断触发",
+            "detail": "个股跌停占比超限，市场流动性极度恶化",
+            "rule": "规则: 熔断触发 → 仓位归零，等待流动性恢复",
+        })
+
+    # 3. 多引擎共振看空 (≥3 个引擎 -1)
+    bear_count = sum(1 for d in directions.values() if d == -1)
+    if bear_count >= 3:
+        bear_names = [k.upper() for k, v in directions.items() if v == -1]
+        alerts.append({
+            "type": "multi_bear",
+            "severity": "warning",
+            "icon": "⚠️",
+            "title": f"{bear_count} 引擎共振看空",
+            "detail": f"{', '.join(bear_names)} 同时发出看空信号",
+            "rule": "规则: ≥3 引擎看空 → 降至防御仓位，严格止损",
+        })
+
+    # 4. 数据降级警告
+    if len(degraded) >= 2:
+        alerts.append({
+            "type": "data_degraded",
+            "severity": "caution",
+            "icon": "⚡",
+            "title": f"{len(degraded)} 个模块数据降级",
+            "detail": f"{', '.join(degraded)} 数据过期，JCS 置信度可能偏离",
+            "rule": "规则: ≥2 模块降级 → 不依据 JCS 执行，等待数据恢复",
+        })
+
+    # 5. AIAE 极度过热
+    if aiae_regime >= 5:
+        alerts.append({
+            "type": "aiae_overheat",
+            "severity": "warning",
+            "icon": "🔥",
+            "title": "市场极度过热 (Ⅴ级)",
+            "detail": "AIAE 配置热度达到极端，历史回撤概率最高",
+            "rule": "规则: AIAE R5 → 仓位上限 15%，禁止追涨",
+        })
+
+    return alerts
+
+
 def get_hub_data() -> dict:
     """决策中枢全量数据 (供 API 返回)"""
     snapshot = _build_snapshot_from_cache()
@@ -673,6 +753,7 @@ def get_hub_data() -> dict:
         "conflicts": conflicts,
         "jcs": jcs,
         "action_plan": action_plan,
+        "alerts": generate_alerts(snapshot),
         "scenarios": {k: {"name": v["name"], "desc": v["desc"], "icon": v["icon"], "severity": v["severity"]}
                       for k, v in SCENARIOS.items()},
     }

@@ -157,6 +157,110 @@
     letter-spacing: 0.3px;
 }
 
+/* ═══════════════════════════════════════════════════
+   V17.3 H1: JCS 分级规则参考
+   ═══════════════════════════════════════════════════ */
+
+.jcs-rules {
+    display: flex; gap: 12px; margin-top: 14px;
+    padding: 8px 12px; border-radius: 8px;
+    background: rgba(15,23,42,0.3);
+    border: 1px solid rgba(148,163,184,0.05);
+}
+.jcs-rule {
+    font-size: 0.68rem; color: #94a3b8;
+    display: flex; align-items: center; gap: 5px;
+}
+.rule-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    flex-shrink: 0;
+}
+.rule-dot.high { background: #34d399; box-shadow: 0 0 4px rgba(16,185,129,0.4); }
+.rule-dot.medium { background: #fbbf24; box-shadow: 0 0 4px rgba(245,158,11,0.4); }
+.rule-dot.low { background: #f87171; box-shadow: 0 0 4px rgba(239,68,68,0.4); }
+
+/* ═══════════════════════════════════════════════════
+   V17.3 H2: 方向阈值参考
+   ═══════════════════════════════════════════════════ */
+
+.threshold-ref {
+    display: flex; flex-wrap: wrap; gap: 8px 16px;
+    padding: 8px 10px; margin-top: 16px; margin-bottom: 4px;
+    border-top: 1px solid rgba(148,163,184,0.06);
+    font-size: 0.62rem; color: #475569;
+    letter-spacing: 0.2px;
+}
+
+/* ═══════════════════════════════════════════════════
+   V17.3 I: 警示卡片
+   ═══════════════════════════════════════════════════ */
+
+.alert-card {
+    padding: 14px 18px; margin-bottom: 12px;
+    border-radius: 12px; position: relative;
+    overflow: hidden;
+    animation: tabFadeIn 0.4s ease-out;
+}
+.alert-card::before {
+    content: ''; position: absolute; top: 0; left: 0; bottom: 0; width: 4px;
+}
+
+/* Critical — 红色脉冲 */
+.alert-card.alert-critical {
+    background: rgba(239,68,68,0.06);
+    border: 1px solid rgba(239,68,68,0.15);
+}
+.alert-card.alert-critical::before {
+    background: linear-gradient(180deg, #f87171, #ef4444);
+    box-shadow: 2px 0 12px rgba(239,68,68,0.3);
+    animation: alertPulse 2s ease-in-out infinite;
+}
+
+/* Warning — 橙色 */
+.alert-card.alert-warning {
+    background: rgba(245,158,11,0.05);
+    border: 1px solid rgba(245,158,11,0.12);
+}
+.alert-card.alert-warning::before {
+    background: linear-gradient(180deg, #fbbf24, #f59e0b);
+    box-shadow: 2px 0 8px rgba(245,158,11,0.2);
+}
+
+/* Caution — 黄色 */
+.alert-card.alert-caution {
+    background: rgba(250,204,21,0.04);
+    border: 1px solid rgba(250,204,21,0.1);
+}
+.alert-card.alert-caution::before {
+    background: linear-gradient(180deg, #fde047, #facc15);
+    box-shadow: 2px 0 6px rgba(250,204,21,0.15);
+}
+
+.alert-header {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 6px;
+}
+.alert-icon { font-size: 1.3rem; }
+.alert-title { font-size: 0.9rem; font-weight: 700; color: #e2e8f0; }
+.alert-detail { font-size: 0.8rem; color: #cbd5e1; margin-bottom: 6px; padding-left: 2px; }
+.alert-rule {
+    font-size: 0.68rem; color: #64748b; padding: 4px 8px;
+    background: rgba(15,23,42,0.3); border-radius: 4px;
+    display: inline-block;
+}
+
+@keyframes alertPulse {
+    0%, 100% { opacity: 0.8; }
+    50% { opacity: 1; box-shadow: 3px 0 16px rgba(239,68,68,0.5); }
+}
+
+/* H3: 执行建议规则引用 */
+.action-rule-ref {
+    font-size: 0.68rem; color: #64748b; padding: 5px 10px;
+    margin-top: 10px; border-radius: 6px;
+    background: rgba(15,23,42,0.3);
+    border: 1px solid rgba(148,163,184,0.05);
+}
+
 /* ── A3: 情景模拟器 + Hover光晕 ── */
 .scenario-section { margin-top: 24px; }
 .scenario-section h3 {
