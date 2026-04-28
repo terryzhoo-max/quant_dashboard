@@ -7,11 +7,11 @@
     <meta name="theme-color" content="#07090e">
     <title>决策中枢 · AlphaCore</title>
     <link rel="stylesheet" href="./static/css/styles.css?v=10">
-    <link rel="stylesheet" href="./static/css/decision.css?v=18">
+    <link rel="stylesheet" href="./static/css/decision.css?v=20">
     <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
     <script>window.echarts || document.write('<script src="./static/vendor/echarts.min.js"><\/script>')</script>
-    <script src="./static/js/alphacore_utils.js?v=18"></script>
+    <script src="./static/js/alphacore_utils.js?v=20"></script>
 </head>
 <body>
     <!-- 左侧导航栏 (复用系统导航结构) -->
@@ -99,7 +99,7 @@
             <!-- 页面标题 -->
             <div class="decision-header">
                 <h2>🧠 科学辅助决策中枢</h2>
-                <span class="version-pill">V17.1</span>
+                <span class="version-pill">V18.0</span>
             </div>
 
             <!-- Tab 切换 -->
@@ -133,6 +133,8 @@
                             <div class="jcs-rule"><span class="rule-dot medium"></span> 40-70 谨慎</div>
                             <div class="jcs-rule"><span class="rule-dot low"></span> &lt;40 观望</div>
                         </div>
+                        <!-- V18.0 M: JCS 成分拆解 -->
+                        <div id="jcs-components" class="jcs-components"></div>
                     </div>
 
                     <!-- 右: 矛盾矩阵 -->
@@ -258,6 +260,34 @@
                         <div class="loading-spinner">✨ 加载中...</div>
                     </div>
                 </div>
+
+                <!-- V18.0 L: 绩效分析 (沪深300基准) -->
+                <div class="perf-section" id="perf-section" style="display:none;">
+                    <h3 class="action-plan-section-title">📊 沪深300基准绩效分析 <span style="font-size:0.7rem;color:#64748b;font-weight:400;">— 近 2 年日线 · 零外部依赖</span></h3>
+
+                    <!-- 核心指标摘要条 -->
+                    <div class="perf-metrics-bar" id="perf-metrics-bar"></div>
+
+                    <div class="perf-charts-grid">
+                        <!-- 月度收益热力图 -->
+                        <div class="perf-chart-card glass-decision">
+                            <h4>🗓️ 月度收益热力图</h4>
+                            <div id="perf-heatmap-chart" style="width:100%;height:240px;"></div>
+                        </div>
+                        <!-- 历史回撤 -->
+                        <div class="perf-chart-card glass-decision">
+                            <h4>📉 历史回撤瀑布图</h4>
+                            <div id="perf-drawdown-chart" style="width:100%;height:200px;"></div>
+                        </div>
+                    </div>
+
+                    <!-- 滚动 Sharpe -->
+                    <div class="perf-chart-card glass-decision" style="margin-top:12px;">
+                        <h4>📈 滚动 Sharpe (60日窗口)</h4>
+                        <div id="perf-sharpe-chart" style="width:100%;height:200px;"></div>
+                    </div>
+                </div>
+
             </div>
 
             <!-- ═══ Tab 4: 复盘日历 ═══ -->
@@ -285,6 +315,6 @@
         </div>
     </main>
 
-    <script src="./static/js/decision.js?v=18"></script>
+    <script src="./static/js/decision.js?v=20"></script>
 </body>
 </html>

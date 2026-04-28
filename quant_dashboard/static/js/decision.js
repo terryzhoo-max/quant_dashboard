@@ -121,11 +121,24 @@ function renderConflicts(data) {
 //  方向指示器
 // ═══════════════════════════════════════════════════
 
-function renderDirections(directions) {
+function renderDirections(directions, snapshot) {
     const grid = document.getElementById('direction-grid');
     if (!grid) return;
 
-    const labels = { aiae: 'AIAE', erp: 'ERP', vix: 'VIX', mr: 'MR' };
+    const engines = {
+        aiae: { label: 'AIAE', weight: 35, unit: '%',
+            val: snapshot ? snapshot.aiae_v1 : null,
+            fmt: v => v != null ? v.toFixed(1) + '%' : '--' },
+        erp:  { label: 'ERP', weight: 25, unit: '%',
+            val: snapshot ? snapshot.erp_val : null,
+            fmt: v => v != null ? v.toFixed(2) + '%' : '--' },
+        vix:  { label: 'VIX', weight: 15, unit: '',
+            val: snapshot ? snapshot.vix_val : null,
+            fmt: v => v != null ? v.toFixed(1) : '--' },
+        mr:   { label: 'MR', weight: 15, unit: '',
+            val: snapshot ? snapshot.mr_regime : null,
+            fmt: v => v || '--' },
+    };
     const arrows = { '1': '▲', '-1': '▼', '0': '━' };
     const cls = { '1': 'up', '-1': 'down', '0': 'neutral' };
     const meanings = {
@@ -135,14 +148,25 @@ function renderDirections(directions) {
         mr:   { '1': '技术看多', '-1': '技术看空', '0': '区间震荡' },
     };
 
-    grid.innerHTML = Object.entries(directions).map(([key, dir]) => `
-        <div class="direction-item">
-            <div class="direction-label">${labels[key] || key}</div>
-            <div class="direction-arrow ${cls[String(dir)] || 'neutral'}">${arrows[String(dir)] || '●'}</div>
-            <div class="direction-meaning">${(meanings[key] || {})[String(dir)] || ''}</div>
-        </div>
-    `).join('');
+    grid.innerHTML = Object.entries(directions).map(([key, dir]) => {
+        const eng = engines[key] || {};
+        const dirStr = String(dir);
+        const arrowCls = cls[dirStr] || 'neutral';
+        return `
+        <div class="direction-item dir-${arrowCls}">
+            <div class="dir-header">
+                <span class="direction-label">${eng.label || key}</span>
+                <span class="dir-weight">${eng.weight || 10}%</span>
+            </div>
+            <div class="dir-center">
+                <div class="direction-arrow ${arrowCls}">${arrows[dirStr] || '●'}</div>
+                <div class="dir-realval">${eng.fmt ? eng.fmt(eng.val) : '--'}</div>
+            </div>
+            <div class="direction-meaning">${(meanings[key] || {})[dirStr] || ''}</div>
+        </div>`;
+    }).join('');
 }
+
 
 // ═══════════════════════════════════════════════════
 //  情景模拟器
@@ -593,6 +617,8 @@ async function loadRiskMatrix() {
             renderTailRisk(riskData.tail_risk);
         }
         if (accData.status === 'success') renderAccuracy(accData);
+        // V18.0 Phase L: 绩效分析 (独立请求, 不阻塞主流程)
+        loadPerformanceAnalytics();
         riskLoaded = true;
     } catch (e) { console.error('Risk matrix load error:', e); }
 }
@@ -797,6 +823,28 @@ function renderCalendar(data, year, month) {
 }
 
 // ═══════════════════════════════════════════════════
+//  V18.0 M: JCS 成分拆解 (Koyfin 风格因子条)
+// ═══════════════════════════════════════════════════
+
+function renderJCSComponents(jcs) {
+    const el = document.getElementById('jcs-components');
+    if (!el) return;
+    const items = [
+        { label: '一致性', val: jcs.agreement_pct, max: 100, color: '#a78bfa', suffix: '%' },
+        { label: '数据健康', val: jcs.data_health, max: 20, color: '#34d399', suffix: '/20' },
+        { label: '共识加成', val: jcs.consensus_bonus, max: 20, color: '#fbbf24', suffix: '/20' },
+    ];
+    el.innerHTML = items.map(it => {
+        const pct = Math.min(100, (it.val / it.max) * 100);
+        return `<div class="jcs-comp-row">
+            <span class="jcs-comp-label">${it.label}</span>
+            <div class="jcs-comp-bar-bg"><div class="jcs-comp-bar-fill" style="width:${pct}%;background:${it.color}"></div></div>
+            <span class="jcs-comp-val">${it.val != null ? (typeof it.val === 'number' ? it.val.toFixed(1) : it.val) : '--'}${it.suffix}</span>
+        </div>`;
+    }).join('');
+}
+
+// ═══════════════════════════════════════════════════
 //  页面初始化
 // ═══════════════════════════════════════════════════
 
@@ -812,12 +860,14 @@ async function initDecisionHub() {
             drawJCSRing(data.jcs.score, data.jcs.level);
             const labelEl = document.getElementById('jcs-label');
             if (labelEl) labelEl.textContent = data.jcs.label;
+            // V18.0 M: JCS 成分拆解条
+            renderJCSComponents(data.jcs);
 
             // 矛盾
             renderConflicts(data.conflicts);
 
             // 方向
-            renderDirections(data.jcs.directions);
+            renderDirections(data.jcs.directions, data.snapshot);
 
             // V17.0: 执行建议
             if (data.action_plan) renderActionPlan(data.action_plan);
@@ -839,5 +889,204 @@ async function initDecisionHub() {
     }
 }
 
+// ═══════════════════════════════════════════════════
+//  V18.0 Phase L: 绩效分析渲染 (沪深300基准)
+// ═══════════════════════════════════════════════════
+
+let perfLoaded = false;
+async function loadPerformanceAnalytics() {
+    if (perfLoaded) return;
+    try {
+        const resp = await AC.secureFetch(`${API_BASE}/performance`);
+        const data = await resp.json();
+        if (data.status === 'success' && data.metrics) {
+            const sec = document.getElementById('perf-section');
+            if (sec) sec.style.display = 'block';
+            renderPerfMetrics(data.metrics, data.drawdown);
+            renderPerfHeatmap(data.monthly_heatmap);
+            renderPerfDrawdown(data.drawdown);
+            renderPerfSharpe(data.rolling_sharpe);
+            perfLoaded = true;
+        }
+    } catch (e) { console.error('Performance analytics load error:', e); }
+}
+
+function renderPerfMetrics(m, dd) {
+    const bar = document.getElementById('perf-metrics-bar');
+    if (!bar) return;
+    const maxDD = dd && dd.max_drawdown ? dd.max_drawdown : 0;
+    const items = [
+        { label: '年化收益', value: m.annual_return + '%', cls: m.annual_return >= 0 ? 'positive' : 'negative' },
+        { label: '年化波动率', value: m.annual_volatility + '%', cls: '' },
+        { label: 'Sharpe', value: m.sharpe_ratio, cls: m.sharpe_ratio >= 1 ? 'positive' : (m.sharpe_ratio < 0 ? 'negative' : '') },
+        { label: 'Sortino', value: m.sortino_ratio, cls: m.sortino_ratio >= 1 ? 'positive' : '' },
+        { label: 'Calmar', value: m.calmar_ratio, cls: '' },
+        { label: '最大回撤', value: maxDD + '%', cls: 'negative' },
+    ];
+    bar.innerHTML = items.map(it => `
+        <div class="perf-metric-item">
+            <div class="perf-metric-value ${it.cls}">${it.value}</div>
+            <div class="perf-metric-label">${it.label}</div>
+        </div>
+    `).join('');
+}
+
+function renderPerfHeatmap(heatmapData) {
+    const el = document.getElementById('perf-heatmap-chart');
+    if (!el || !heatmapData || heatmapData.length === 0) return;
+    const chart = echarts.init(el);
+
+    // 提取年份和月份
+    const years = [...new Set(heatmapData.map(d => d[0]))].sort();
+    const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+
+    const data = heatmapData.map(d => [d[1] - 1, years.indexOf(d[0]), d[2]]);
+    const maxAbs = Math.max(...heatmapData.map(d => Math.abs(d[2])), 5);
+
+    chart.setOption({
+        tooltip: {
+            formatter: p => {
+                const yr = years[p.value[1]];
+                const mn = months[p.value[0]];
+                return `${yr}年${mn}<br/>收益: <b>${p.value[2] > 0 ? '+' : ''}${p.value[2]}%</b>`;
+            }
+        },
+        grid: { left: 48, right: 12, top: 12, bottom: 46 },
+        xAxis: {
+            type: 'category', data: months,
+            axisLabel: { color: '#64748b', fontSize: 10 },
+            axisTick: { show: false }, axisLine: { show: false },
+            splitArea: { show: true, areaStyle: { color: ['rgba(15,23,42,0.2)', 'rgba(15,23,42,0.4)'] } }
+        },
+        yAxis: {
+            type: 'category', data: years.map(String),
+            axisLabel: { color: '#64748b', fontSize: 10 },
+            axisTick: { show: false }, axisLine: { show: false }
+        },
+        visualMap: {
+            min: -maxAbs, max: maxAbs, calculable: false,
+            orient: 'horizontal', left: 'center', bottom: 2,
+            inRange: { color: ['#f87171', '#fca5a5', '#1e293b', '#6ee7b7', '#34d399'] },
+            textStyle: { color: '#64748b', fontSize: 9 },
+            itemWidth: 12, itemHeight: 80,
+        },
+        series: [{
+            type: 'heatmap', data: data,
+            label: {
+                show: true,
+                formatter: p => (p.value[2] > 0 ? '+' : '') + p.value[2] + '%',
+                fontSize: 9, color: '#cbd5e1'
+            },
+            itemStyle: { borderColor: '#0f172a', borderWidth: 2, borderRadius: 3 },
+            emphasis: { itemStyle: { borderColor: '#a78bfa', borderWidth: 2 } }
+        }]
+    });
+    window.addEventListener('resize', () => chart.resize());
+}
+
+function renderPerfDrawdown(dd) {
+    const el = document.getElementById('perf-drawdown-chart');
+    if (!el || !dd || !dd.series || dd.series.length === 0) return;
+    const chart = echarts.init(el);
+
+    chart.setOption({
+        tooltip: {
+            trigger: 'axis',
+            formatter: p => `${p[0].axisValue}<br/>回撤: <b style="color:#f87171">${p[0].value}%</b>`
+        },
+        grid: { left: 52, right: 16, top: 16, bottom: 38 },
+        xAxis: {
+            type: 'category',
+            data: dd.series.map(d => d.date),
+            axisLabel: { color: '#475569', fontSize: 9, rotate: 0,
+                formatter: v => v.substring(5) },
+            axisTick: { show: false }, axisLine: { lineStyle: { color: '#1e293b' } },
+            boundaryGap: false
+        },
+        yAxis: {
+            type: 'value',
+            axisLabel: { color: '#475569', fontSize: 9, formatter: '{value}%' },
+            splitLine: { lineStyle: { color: 'rgba(148,163,184,0.06)' } },
+            max: 0
+        },
+        series: [{
+            type: 'line', data: dd.series.map(d => d.drawdown),
+            areaStyle: {
+                color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                    colorStops: [
+                        { offset: 0, color: 'rgba(248,113,113,0.01)' },
+                        { offset: 1, color: 'rgba(248,113,113,0.25)' }
+                    ]
+                }
+            },
+            lineStyle: { color: '#f87171', width: 1.5 },
+            itemStyle: { color: '#f87171' },
+            symbol: 'none', smooth: true,
+            markLine: {
+                silent: true, symbol: 'none',
+                data: [{
+                    yAxis: dd.max_drawdown,
+                    lineStyle: { color: '#ef4444', type: 'dashed', width: 1 },
+                    label: { formatter: `最大回撤 ${dd.max_drawdown}%`, color: '#fca5a5', fontSize: 9, position: 'insideEndTop' }
+                }]
+            }
+        }]
+    });
+    window.addEventListener('resize', () => chart.resize());
+}
+
+function renderPerfSharpe(sharpeData) {
+    const el = document.getElementById('perf-sharpe-chart');
+    if (!el || !sharpeData || sharpeData.length === 0) return;
+    const chart = echarts.init(el);
+
+    chart.setOption({
+        tooltip: {
+            trigger: 'axis',
+            formatter: p => `${p[0].axisValue}<br/>Sharpe: <b>${p[0].value}</b>`
+        },
+        grid: { left: 46, right: 16, top: 16, bottom: 38 },
+        xAxis: {
+            type: 'category',
+            data: sharpeData.map(d => d.date),
+            axisLabel: { color: '#475569', fontSize: 9, formatter: v => v.substring(5) },
+            axisTick: { show: false }, axisLine: { lineStyle: { color: '#1e293b' } },
+            boundaryGap: false
+        },
+        yAxis: {
+            type: 'value',
+            axisLabel: { color: '#475569', fontSize: 9 },
+            splitLine: { lineStyle: { color: 'rgba(148,163,184,0.06)' } }
+        },
+        series: [{
+            type: 'line', data: sharpeData.map(d => d.sharpe),
+            lineStyle: { width: 1.5 },
+            areaStyle: {
+                color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                    colorStops: [
+                        { offset: 0, color: 'rgba(167,139,250,0.2)' },
+                        { offset: 1, color: 'rgba(167,139,250,0.01)' }
+                    ]
+                }
+            },
+            itemStyle: {
+                color: p => p.value >= 1 ? '#34d399' : (p.value < 0 ? '#f87171' : '#a78bfa')
+            },
+            symbol: 'none', smooth: true,
+            markLine: {
+                silent: true, symbol: 'none',
+                data: [
+                    { yAxis: 1, lineStyle: { color: '#34d399', type: 'dashed', width: 1 },
+                      label: { formatter: 'Sharpe=1 优秀', color: '#6ee7b7', fontSize: 9, position: 'insideEndTop' } },
+                    { yAxis: 0, lineStyle: { color: '#475569', type: 'solid', width: 1 },
+                      label: { show: false } }
+                ]
+            }
+        }]
+    });
+    window.addEventListener('resize', () => chart.resize());
+}
+
 // 启动
 document.addEventListener('DOMContentLoaded', initDecisionHub);
+

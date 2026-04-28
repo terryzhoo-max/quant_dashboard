@@ -81,3 +81,13 @@ async def get_calendar(year: int = Query(default=None), month: int = Query(defau
     data = ac_db.get_calendar_data(year, month)
     return {"status": "success", "count": len(data), "data": data}
 
+
+# ── V18.0 Phase L: 绩效分析 ──
+
+@router.get("/performance")
+async def get_performance():
+    """沪深300基准绩效分析 (月度热力图 + 回撤 + 滚动Sharpe)"""
+    from dashboard_modules.performance_analytics import compute_performance_analytics
+    data = compute_performance_analytics()
+    return {"status": "success", **data}
+

@@ -134,28 +134,60 @@
     box-shadow: 0 0 8px rgba(16,185,129,0.4);
 }
 
-/* ── 方向指示器 + A4脉冲 ── */
+/* ── V18.0 M: Koyfin 风格方向指示器 ── */
 .direction-grid {
     display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
     margin-top: 16px; padding-top: 16px;
     border-top: 1px solid rgba(148,163,184,0.08);
 }
 .direction-item {
-    text-align: center; padding: 12px 8px; border-radius: 10px;
+    text-align: center; padding: 10px 8px 8px; border-radius: 10px;
     background: rgba(15,23,42,0.4);
     border: 1px solid rgba(148,163,184,0.06);
     transition: all 0.25s ease;
+    position: relative;
+    overflow: hidden;
 }
-.direction-item:hover { background: rgba(15,23,42,0.6); border-color: rgba(148,163,184,0.12); transform: translateY(-2px); }
-.direction-label { font-size: 0.72rem; color: #94a3b8; margin-bottom: 6px; font-weight: 600; letter-spacing: 0.5px; }
-.direction-arrow { font-size: 1.6rem; font-weight: 700; }
+/* 方向色带 (左边框) */
+.direction-item.dir-up { border-left: 3px solid #34d399; }
+.direction-item.dir-down { border-left: 3px solid #f87171; }
+.direction-item.dir-neutral { border-left: 3px solid #475569; }
+.direction-item:hover { background: rgba(15,23,42,0.6); transform: translateY(-2px); }
+
+/* 头部行: 引擎名 + 权重 */
+.dir-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 6px;
+}
+.direction-label {
+    font-size: 0.72rem; color: #94a3b8; font-weight: 600; letter-spacing: 0.5px;
+}
+.dir-weight {
+    font-size: 0.58rem; color: #475569; font-weight: 500;
+    background: rgba(71,85,105,0.2); padding: 1px 5px; border-radius: 4px;
+    letter-spacing: 0.3px;
+}
+
+/* 中间行: 方向箭头 + 实际数值 */
+.dir-center {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    margin-bottom: 4px;
+}
+.direction-arrow { font-size: 1.2rem; font-weight: 700; }
 .direction-arrow.up { color: #34d399; text-shadow: 0 0 8px rgba(16,185,129,0.4); }
 .direction-arrow.down { color: #f87171; text-shadow: 0 0 8px rgba(239,68,68,0.4); }
 .direction-arrow.neutral { color: #64748b; }
-.direction-meaning {
-    font-size: 0.62rem; color: #64748b; margin-top: 3px;
-    letter-spacing: 0.3px;
+
+.dir-realval {
+    font-size: 0.82rem; font-weight: 600; color: #e2e8f0;
+    font-variant-numeric: tabular-nums;
 }
+
+/* 底部含义 */
+.direction-meaning {
+    font-size: 0.6rem; color: #64748b; letter-spacing: 0.3px;
+}
+
 
 /* ═══════════════════════════════════════════════════
    V17.3 H1: JCS 分级规则参考
@@ -178,6 +210,32 @@
 .rule-dot.high { background: #34d399; box-shadow: 0 0 4px rgba(16,185,129,0.4); }
 .rule-dot.medium { background: #fbbf24; box-shadow: 0 0 4px rgba(245,158,11,0.4); }
 .rule-dot.low { background: #f87171; box-shadow: 0 0 4px rgba(239,68,68,0.4); }
+
+/* V18.0 M: JCS 成分拆解条 */
+.jcs-components {
+    margin-top: 10px; width: 100%;
+}
+.jcs-comp-row {
+    display: flex; align-items: center; gap: 6px;
+    margin-bottom: 4px;
+}
+.jcs-comp-label {
+    font-size: 0.6rem; color: #64748b; width: 44px;
+    flex-shrink: 0; text-align: right;
+}
+.jcs-comp-bar-bg {
+    flex: 1; height: 5px; border-radius: 3px;
+    background: rgba(148,163,184,0.08);
+    overflow: hidden;
+}
+.jcs-comp-bar-fill {
+    height: 100%; border-radius: 3px;
+    transition: width 0.6s ease;
+}
+.jcs-comp-val {
+    font-size: 0.58rem; color: #94a3b8; width: 36px;
+    font-variant-numeric: tabular-nums;
+}
 
 /* ═══════════════════════════════════════════════════
    V17.3 H2: 方向阈值参考
@@ -548,6 +606,55 @@
 .accuracy-metric:hover { border-color: rgba(148,163,184,0.12); transform: translateY(-2px); }
 .accuracy-value { font-size: 1.8rem; font-weight: 700; color: #e2e8f0; font-variant-numeric: tabular-nums; }
 .accuracy-label { font-size: 0.75rem; color: #64748b; margin-top: 4px; }
+/* ═══════════════════════════════════════════════════
+   V18.0 L: 绩效分析卡片
+   ═══════════════════════════════════════════════════ */
+
+.perf-section { margin-top: 20px; }
+
+/* 指标摘要条 */
+.perf-metrics-bar {
+    display: flex; gap: 8px; flex-wrap: wrap;
+    margin-bottom: 16px; padding: 14px 16px;
+    background: rgba(15,23,42,0.5);
+    border: 1px solid rgba(148,163,184,0.06);
+    border-radius: 12px; backdrop-filter: blur(8px);
+}
+.perf-metric-item {
+    flex: 1; min-width: 100px; text-align: center;
+    padding: 6px 4px;
+    border-right: 1px solid rgba(148,163,184,0.08);
+}
+.perf-metric-item:last-child { border-right: none; }
+.perf-metric-value {
+    font-size: 1.15rem; font-weight: 700; color: #e2e8f0;
+    font-variant-numeric: tabular-nums;
+}
+.perf-metric-value.positive { color: #34d399; }
+.perf-metric-value.negative { color: #f87171; }
+.perf-metric-label {
+    font-size: 0.65rem; color: #64748b; margin-top: 2px;
+    letter-spacing: 0.02em;
+}
+
+/* 图表网格 */
+.perf-charts-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+}
+.perf-chart-card {
+    padding: 16px; border-radius: 12px;
+    background: rgba(15,23,42,0.4);
+    border: 1px solid rgba(148,163,184,0.06);
+    backdrop-filter: blur(8px);
+}
+.perf-chart-card h4 {
+    font-size: 0.82rem; color: #94a3b8; margin: 0 0 10px;
+    font-weight: 500;
+}
+
+@media (max-width: 900px) {
+    .perf-charts-grid { grid-template-columns: 1fr; }
+}
 
 /* ═══════════════════════════════════════════════════
    B3: 复盘日历 (连续色温升级)
