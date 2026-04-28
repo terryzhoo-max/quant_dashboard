@@ -84,7 +84,11 @@ _bg_executor = ThreadPoolExecutor(max_workers=3)
 
 def _log(msg: str, level: str = "INFO"):
     ts_str = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-    print(f"[{ts_str}] [{level}] [US-AIAE] {msg}")
+    try:
+        print(f"[{ts_str}] [{level}] [US-AIAE] {msg}")
+    except UnicodeEncodeError:
+        safe_msg = msg.encode('ascii', errors='replace').decode('ascii')
+        print(f"[{ts_str}] [{level}] [US-AIAE] {safe_msg}")
 
 def _refresh_cache(key: str, fetcher):
     try:
@@ -287,31 +291,48 @@ class AIAEUSEngine:
                         latest_val = float(series.iloc[-1])
                         # 单位: Millions → Trillions
                         market_cap_trillion = round(latest_val / 1000000, 2)
-                        # 反推 Wilshire 指数近似值 (1T ≈ 指数 1000)
-                        wilshire_approx = round(market_cap_trillion * 1000, 2)
-                        result = {
-                            "trade_date": series.index[-1].strftime("%Y-%m-%d"),
-                            "wilshire_index": wilshire_approx,
-                            "market_cap_trillion_usd": market_cap_trillion,
-                            "source": "fred_quarterly",
-                            "fetched_at": datetime.now().isoformat()
-                        }
-                        atomic_write_json(result, cache_file)
-                        _log(f"Wilshire (FRED quarterly proxy): ≈${market_cap_trillion}T", "WARN")
-                        return result
+                        # V1.3: FRED 数据也需要校验
+                        if market_cap_trillion < _MKTCAP_MIN_T:
+                            _log(f"⛔ FRED quarterly MktCap=${market_cap_trillion}T < ${_MKTCAP_MIN_T}T, 数据异常", "ERROR")
+                        else:
+                            # 反推 Wilshire 指数近似值 (1T ≈ 指数 1000)
+                            wilshire_approx = round(market_cap_trillion * 1000, 2)
+                            result = {
+                                "trade_date": series.index[-1].strftime("%Y-%m-%d"),
+                                "wilshire_index": wilshire_approx,
+                                "market_cap_trillion_usd": market_cap_trillion,
+                                "source": "fred_quarterly",
+                                "fetched_at": datetime.now().isoformat()
+                            }
+                            atomic_write_json(result, cache_file)
+                            _log(f"Wilshire (FRED quarterly proxy): ≈${market_cap_trillion}T", "WARN")
+                            return result
                 except Exception as e:
                     _log(f"FRED quarterly proxy error: {e}", "WARN")
 
+            # === V1.3: 磁盘缓存读取 + 合理性校验 ===
             if os.path.exists(cache_file):
-                with open(cache_file, 'r', encoding='utf-8') as f:
-                    _log("Wilshire: 使用磁盘缓存", "WARN")
-                    return json.load(f)
+                try:
+                    with open(cache_file, 'r', encoding='utf-8') as f:
+                        cached = json.load(f)
+                    cached_mktcap = cached.get("market_cap_trillion_usd", 0)
+                    cached_wilshire = cached.get("wilshire_index", 0)
+                    if cached_mktcap >= _MKTCAP_MIN_T and _WILSHIRE_MIN <= cached_wilshire <= _WILSHIRE_MAX:
+                        _log(f"Wilshire: 使用磁盘缓存 (${cached_mktcap}T, idx={cached_wilshire:.0f})", "WARN")
+                        return cached
+                    else:
+                        # 磁盘缓存数据已损坏, 删除并 fall through
+                        _log(f"⛔ 磁盘缓存数据异常: MktCap=${cached_mktcap}T, Wilshire={cached_wilshire}, 已删除", "ERROR")
+                        os.remove(cache_file)
+                except Exception as e:
+                    _log(f"磁盘缓存读取失败: {e}", "ERROR")
 
-            _log("Wilshire: 硬编码估算", "ERROR")
+            # === 终极 fallback: 硬编码估算 (基于 2026-04 美股总市值约 $55-75T) ===
+            _log("Wilshire: 所有数据源失败, 使用硬编码保守估算 $55T", "ERROR")
             return {
                 "trade_date": datetime.now().strftime("%Y-%m-%d"),
-                "wilshire_index": 48000,
-                "market_cap_trillion_usd": 48.0,
+                "wilshire_index": 55000,
+                "market_cap_trillion_usd": 55.0,
                 "fetched_at": datetime.now().isoformat(),
                 "is_fallback": True
             }
@@ -524,8 +545,7 @@ class AIAEUSEngine:
         US_AIAE_Core = MktCap / M2 比值 → 归一化到 AIAE 标度
 
         V1.1 优化: 区间从 [0.8, 3.0] → [0.7, 2.6]
-        旧上限 3.0 以 2000年互联网泡沫(百年极端事件)为锚, 导致正常牛熊区间
-        (ratio=2.0-2.5) 灵敏度不足. 新上限 2.6 覆盖99%历史数据(2021顶 ratio=2.29).
+        V1.3: 增加输入合理性校验
 
         历史锚点:
           ratio=0.7  (极端底部余量)      → AIAE=10%  (Ⅰ级恐慌区间)
@@ -535,7 +555,19 @@ class AIAEUSEngine:
         """
         if m2_trillion <= 0:
             return 25.0
+
+        # V1.3: 输入合理性校验
+        if mktcap_trillion < 10.0:
+            _log(f"⛔ compute_aiae_core: MktCap=${mktcap_trillion}T 不合理 (< $10T), 使用中性默认值 25%", "ERROR")
+            return 25.0
+
         ratio = mktcap_trillion / m2_trillion
+
+        # V1.3: ratio 合理性校验 (历史范围 0.8-3.2, < 0.3 说明数据异常)
+        if ratio < 0.3:
+            _log(f"⛔ MktCap/M2 ratio={ratio:.3f} 不合理 (MktCap=${mktcap_trillion}T, M2=${m2_trillion}T), 使用中性默认值 25%", "ERROR")
+            return 25.0
+
         # 线性归一化: [0.7, 2.6] → [10%, 45%]
         aiae_core = 10.0 + (ratio - 0.7) / (2.6 - 0.7) * 35.0
         return round(max(5.0, min(50.0, aiae_core)), 2)
