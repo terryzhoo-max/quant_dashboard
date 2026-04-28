@@ -209,6 +209,7 @@ class AIAEUSEngine:
     def _fetch_wilshire5000_market_cap(self) -> Dict:
         """获取 Wilshire 5000 指数值 (代理美股总市值)
         V1.2: FRED WILL5000INDFC 已下架, 改用 yfinance ^W5000 (日频实时)
+        V1.3: 数据合理性校验 (防止云端 yfinance 返回异常数据导致 AIAE 灾难性偏移)
         Fallback 链: yfinance → FRED BOGZ1FL073164003Q (季频) → 磁盘缓存 → 硬编码
         """
         def _fetch():
@@ -218,6 +219,11 @@ class AIAEUSEngine:
             # 备用: VTI (Vanguard Total Market ETF, 相关系数 >0.99)
             # 校准系数: ^W5000 / VTI ≈ 203.4 (2026-04-27 锚点)
             _VTI_SCALE = 203.4
+
+            # V1.3: 合理性阈值 (Wilshire 历史范围: 2009 GFC 底 ~6000, 2025 高 ~75000)
+            _WILSHIRE_MIN = 10000   # 低于此值100%为异常数据
+            _WILSHIRE_MAX = 200000  # 高于此值100%为异常数据
+            _MKTCAP_MIN_T = 10.0   # 美股总市值不可能低于 $10T
 
             for sym, is_index in [("^W5000", True), ("VTI", False)]:
                 try:
@@ -231,13 +237,32 @@ class AIAEUSEngine:
                         latest_date = df.index[-1]
                         # VTI 需要换算回 Wilshire 指数量级
                         latest_val = raw_price if is_index else raw_price * _VTI_SCALE
+
+                        # ── V1.3: 合理性校验 ──
+                        # 情况1: ^W5000 返回了 VTI 量级的值 (yfinance 在中国网络下可能返回 ETF 价格)
+                        if is_index and 50 < latest_val < 1000:
+                            _log(f"⚠️ ^W5000 返回 VTI 量级值 {raw_price:.2f}, 自动应用 VTI_SCALE 校正", "WARN")
+                            latest_val = raw_price * _VTI_SCALE
+
+                        # 情况2: 值仍然过低或过高 → 拒绝, 继续下一个源
+                        if latest_val < _WILSHIRE_MIN or latest_val > _WILSHIRE_MAX:
+                            _log(f"⛔ Wilshire ({sym}) 值 {latest_val:.0f} 超出合理范围 [{_WILSHIRE_MIN}, {_WILSHIRE_MAX}], 跳过", "ERROR")
+                            continue
+
                         market_cap_trillion = round(latest_val / 1000, 2)
+
+                        # 情况3: 市值过低 → 拒绝
+                        if market_cap_trillion < _MKTCAP_MIN_T:
+                            _log(f"⛔ Wilshire ({sym}) 隐含市值 ${market_cap_trillion}T < ${_MKTCAP_MIN_T}T, 数据异常, 跳过", "ERROR")
+                            continue
+
                         source = f"yfinance_{sym.replace('^','')}"
                         result = {
                             "trade_date": latest_date.strftime("%Y-%m-%d"),
                             "wilshire_index": round(latest_val, 2),
                             "market_cap_trillion_usd": market_cap_trillion,
                             "source": source,
+                            "raw_price": round(raw_price, 2),
                             "fetched_at": datetime.now().isoformat()
                         }
                         atomic_write_json(result, cache_file)
@@ -245,6 +270,7 @@ class AIAEUSEngine:
                         return result
                 except Exception as e:
                     _log(f"yfinance {sym} error: {e}", "WARN")
+
 
             # === 备用: FRED 季频总市值 ===
             fred = _get_fred()
@@ -515,10 +541,17 @@ class AIAEUSEngine:
         return round(max(5.0, min(50.0, aiae_core)), 2)
 
     def compute_margin_heat(self, margin_trillion: float, mktcap_trillion: float) -> float:
-        """Margin Heat = Margin Debt / Total MktCap × 100"""
+        """Margin Heat = Margin Debt / Total MktCap × 100
+        V1.3: 增加上限钳制, 防止异常 MktCap 导致的荒谬比值
+        """
         if mktcap_trillion <= 0:
             return 1.5
-        return round(margin_trillion / mktcap_trillion * 100, 2)
+        heat = margin_trillion / mktcap_trillion * 100
+        # V1.3: Margin/MktCap 历史范围 0.5-2.5%, 超过5%说明分母(MktCap)异常
+        if heat > 5.0:
+            _log(f"⚠️ MarginHeat={heat:.2f}% 异常偏高 (margin=${margin_trillion}T, mktcap=${mktcap_trillion}T), 钳制为1.5%", "ERROR")
+            return 1.5
+        return round(heat, 2)
 
     def compute_us_aiae_v1(self, aiae_core: float, margin_heat: float, aaii_spread: float) -> float:
         """
