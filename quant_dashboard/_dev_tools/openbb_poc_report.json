@@ -1,0 +1,78 @@
+{
+  "timestamp": "2026-04-28T18:10:49.342215",
+  "python_env": {
+    "python_version": "3.12.10",
+    "platform": "win32"
+  },
+  "tests": {
+    "hs300_daily": {
+      "status": "pass",
+      "rows": 243,
+      "latest_date": "2026-04-28",
+      "latest_close": 4758.21,
+      "latency_ms": 3133,
+      "price_diff_vs_tushare_pct": 0.0,
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume"
+      ]
+    },
+    "vix_index": {
+      "status": "pass",
+      "rows": 252,
+      "latest_date": "2026-04-28",
+      "latest_vix": 18.31,
+      "latency_ms": 705
+    },
+    "macro_m2": {
+      "status": "pass",
+      "rows": 23,
+      "latest_m2_billion": 22667.3,
+      "latency_ms": 1427,
+      "columns": [
+        "M2SL"
+      ]
+    }
+  },
+  "dependency_footprint": {
+    "total_packages": 141,
+    "openbb_packages": 31,
+    "openbb_package_names": [
+      "openbb",
+      "openbb-benzinga",
+      "openbb-bls",
+      "openbb-cftc",
+      "openbb-commodity",
+      "openbb-congress-gov",
+      "openbb-core",
+      "openbb-crypto",
+      "openbb-currency",
+      "openbb-derivatives",
+      "openbb-econdb",
+      "openbb-economy",
+      "openbb-equity",
+      "openbb-etf",
+      "openbb-federal-reserve",
+      "openbb-fixedincome",
+      "openbb-fmp",
+      "openbb-fred",
+      "openbb-government-us",
+      "openbb-imf",
+      "openbb-index",
+      "openbb-intrinio",
+      "openbb-news",
+      "openbb-oecd",
+      "openbb-platform-api",
+      "openbb-regulators",
+      "openbb-sec",
+      "openbb-tiingo",
+      "openbb-tradingeconomics",
+      "openbb-us-eia",
+      "openbb-yfinance"
+    ]
+  },
+  "verdict": "[GO] — 3/3 通过。OpenBB 适合作为备用数据源。建议 Phase O 实现 DataAdapter 抽象层。"
+}

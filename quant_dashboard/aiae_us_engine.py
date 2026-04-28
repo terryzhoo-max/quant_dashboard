@@ -207,36 +207,74 @@ class AIAEUSEngine:
     # ========== 数据获取层 ==========
 
     def _fetch_wilshire5000_market_cap(self) -> Dict:
-        """获取 Wilshire 5000 指数值 (代理美股总市值, FRED)"""
+        """获取 Wilshire 5000 指数值 (代理美股总市值)
+        V1.2: FRED WILL5000INDFC 已下架, 改用 yfinance ^W5000 (日频实时)
+        Fallback 链: yfinance → FRED BOGZ1FL073164003Q (季频) → 磁盘缓存 → 硬编码
+        """
         def _fetch():
             cache_file = os.path.join(CACHE_DIR, "aiae_us_wilshire.json")
-            fred = _get_fred()
-            if fred:
+
+            # === 主路径: yfinance ^W5000 (日频, 免费, 无 API key) ===
+            # 备用: VTI (Vanguard Total Market ETF, 相关系数 >0.99)
+            # 校准系数: ^W5000 / VTI ≈ 203.4 (2026-04-27 锚点)
+            _VTI_SCALE = 203.4
+
+            for sym, is_index in [("^W5000", True), ("VTI", False)]:
                 try:
-                    start_dt = datetime.now() - timedelta(days=90)
-                    @retry_with_backoff(max_retries=3, base_delay=2.0)
-                    def _call_fred():
-                        return fred.get_series("WILL5000INDFC", observation_start=start_dt)
-                    series = _call_fred()
-                    if series is not None and not series.empty:
-                        series = series.dropna()
-                        latest_val = float(series.iloc[-1])
-                        latest_date = series.index[-1]
-                        # Wilshire 5000 Full Cap: 指数值 ≈ 总市值(十亿美元)
-                        # 实际上 Wilshire5000 以 1980.12.31 = 1,404.6 为基准
-                        # 2026年约 55,000 → 代理约 55 万亿美元
+                    import yfinance as yf
+                    df = yf.download(sym, period="3mo", progress=False)
+                    if df is not None and not df.empty:
+                        close_col = df["Close"]
+                        if hasattr(close_col, "columns"):
+                            close_col = close_col.iloc[:, 0]
+                        raw_price = float(close_col.dropna().iloc[-1])
+                        latest_date = df.index[-1]
+                        # VTI 需要换算回 Wilshire 指数量级
+                        latest_val = raw_price if is_index else raw_price * _VTI_SCALE
                         market_cap_trillion = round(latest_val / 1000, 2)
+                        source = f"yfinance_{sym.replace('^','')}"
                         result = {
                             "trade_date": latest_date.strftime("%Y-%m-%d"),
                             "wilshire_index": round(latest_val, 2),
                             "market_cap_trillion_usd": market_cap_trillion,
+                            "source": source,
                             "fetched_at": datetime.now().isoformat()
                         }
                         atomic_write_json(result, cache_file)
-                        _log(f"Wilshire5000: {latest_val:.0f} (≈${market_cap_trillion}T)")
+                        _log(f"Wilshire5000 ({source}): {latest_val:.0f} (≈${market_cap_trillion}T)")
                         return result
                 except Exception as e:
-                    _log(f"FRED WILL5000PR error: {e}", "WARN")
+                    _log(f"yfinance {sym} error: {e}", "WARN")
+
+            # === 备用: FRED 季频总市值 ===
+            fred = _get_fred()
+            if fred:
+                try:
+                    from datetime import timedelta as _td
+                    @retry_with_backoff(max_retries=2, base_delay=2.0)
+                    def _call_fred():
+                        return fred.get_series("BOGZ1FL073164003Q",
+                                               observation_start=datetime.now() - _td(days=400))
+                    series = _call_fred()
+                    if series is not None and not series.empty:
+                        series = series.dropna()
+                        latest_val = float(series.iloc[-1])
+                        # 单位: Millions → Trillions
+                        market_cap_trillion = round(latest_val / 1000000, 2)
+                        # 反推 Wilshire 指数近似值 (1T ≈ 指数 1000)
+                        wilshire_approx = round(market_cap_trillion * 1000, 2)
+                        result = {
+                            "trade_date": series.index[-1].strftime("%Y-%m-%d"),
+                            "wilshire_index": wilshire_approx,
+                            "market_cap_trillion_usd": market_cap_trillion,
+                            "source": "fred_quarterly",
+                            "fetched_at": datetime.now().isoformat()
+                        }
+                        atomic_write_json(result, cache_file)
+                        _log(f"Wilshire (FRED quarterly proxy): ≈${market_cap_trillion}T", "WARN")
+                        return result
+                except Exception as e:
+                    _log(f"FRED quarterly proxy error: {e}", "WARN")
 
             if os.path.exists(cache_file):
                 with open(cache_file, 'r', encoding='utf-8') as f:
