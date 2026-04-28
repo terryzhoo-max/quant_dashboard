@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════
-   AlphaCore V16.0 · 决策中枢 CSS (Visual Overhaul)
-   A1: Glassmorphism · A2: Tab动画 · A3: Hover光晕
-   A4: 微动画库 · B2-B5: 组件重塑
+   AlphaCore V17.1 · 决策中枢 CSS
+   Glassmorphism · Tab动画 · Hover光晕 · 微动画库
+   执行建议卡片 · Regime色带 · Info矛盾样式
    ═══════════════════════════════════════════════════ */
 
 /* ── 页面布局 ── */
@@ -118,6 +118,7 @@
 }
 .conflict-color-band.high { background: linear-gradient(180deg, #f87171, #ef4444); box-shadow: 2px 0 8px rgba(239,68,68,0.2); }
 .conflict-color-band.medium { background: linear-gradient(180deg, #fbbf24, #f59e0b); box-shadow: 2px 0 8px rgba(245,158,11,0.2); }
+.conflict-color-band.info { background: linear-gradient(180deg, #64748b, #475569); box-shadow: 2px 0 8px rgba(100,116,139,0.15); }
 .conflict-body { padding: 10px 12px; flex: 1; }
 .conflict-desc { font-size: 0.82rem; color: #cbd5e1; }
 .conflict-action { font-size: 0.75rem; color: #94a3b8; margin-top: 4px; }
@@ -151,6 +152,10 @@
 .direction-arrow.up { color: #34d399; text-shadow: 0 0 8px rgba(16,185,129,0.4); }
 .direction-arrow.down { color: #f87171; text-shadow: 0 0 8px rgba(239,68,68,0.4); }
 .direction-arrow.neutral { color: #64748b; }
+.direction-meaning {
+    font-size: 0.62rem; color: #64748b; margin-top: 3px;
+    letter-spacing: 0.3px;
+}
 
 /* ── A3: 情景模拟器 + Hover光晕 ── */
 .scenario-section { margin-top: 24px; }
@@ -485,6 +490,10 @@
     padding: 20px 24px; margin-bottom: 24px;
     animation: tabFadeIn 0.4s ease-out;
     position: relative; overflow: hidden;
+}
+.action-plan-section-title {
+    font-size: 0.95rem; color: #e2e8f0; margin: 0 0 16px;
+    display: flex; align-items: center; gap: 8px;
 }
 .action-plan-card::before {
     content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;

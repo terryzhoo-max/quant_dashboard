@@ -128,11 +128,18 @@ function renderDirections(directions) {
     const labels = { aiae: 'AIAE', erp: 'ERP', vix: 'VIX', mr: 'MR' };
     const arrows = { '1': '▲', '-1': '▼', '0': '━' };
     const cls = { '1': 'up', '-1': 'down', '0': 'neutral' };
+    const meanings = {
+        aiae: { '1': '冷配加仓', '-1': '过热减仓', '0': '中性均衡' },
+        erp:  { '1': '估值偏低', '-1': '估值偏高', '0': '估值中性' },
+        vix:  { '1': '恐慌低迷', '-1': '恐慌较高', '0': '波动正常' },
+        mr:   { '1': '技术看多', '-1': '技术看空', '0': '区间震荡' },
+    };
 
     grid.innerHTML = Object.entries(directions).map(([key, dir]) => `
         <div class="direction-item">
             <div class="direction-label">${labels[key] || key}</div>
             <div class="direction-arrow ${cls[String(dir)] || 'neutral'}">${arrows[String(dir)] || '●'}</div>
+            <div class="direction-meaning">${(meanings[key] || {})[String(dir)] || ''}</div>
         </div>
     `).join('');
 }
@@ -363,20 +370,23 @@ function renderTimelineList(data) {
 
     const header = `<div class="timeline-item header">
         <span>日期</span><span style="text-align:center">AIAE</span><span style="text-align:center">ERP</span>
-        <span style="text-align:center">VIX</span><span style="text-align:center">JCS</span>
-        <span style="text-align:center">仓位</span><span style="text-align:center">矛盾</span>
+        <span style="text-align:center">VIX</span><span style="text-align:center">MR</span><span style="text-align:center">JCS</span>
+        <span style="text-align:center">仓位</span>
     </div>`;
 
+    const mrColors = { BULL: '#34d399', BEAR: '#f87171', CRASH: '#ef4444', RANGE: '#94a3b8' };
     const rows = data.slice().reverse().slice(0, 15).map(d => {
         const jcsClass = d.jcs_level === 'high' ? 'color:#34d399' : (d.jcs_level === 'low' ? 'color:#f87171' : 'color:#fbbf24');
+        const mr = d.mr_regime || '-';
+        const mrC = mrColors[mr] || '#94a3b8';
         return `<div class="timeline-item">
             <span class="timeline-date">${(d.date || '').slice(5)}</span>
             <span class="timeline-val">R${d.aiae_regime ?? '-'}</span>
             <span class="timeline-val">${d.erp_score != null ? d.erp_score.toFixed(0) : '-'}</span>
             <span class="timeline-val">${d.vix_val != null ? d.vix_val.toFixed(1) : '-'}</span>
+            <span class="timeline-val" style="color:${mrC};font-weight:600;font-size:0.72rem">${mr}</span>
             <span class="timeline-val timeline-jcs" style="${jcsClass}">${d.jcs_score != null ? d.jcs_score.toFixed(1) : '-'}</span>
             <span class="timeline-val">${d.suggested_position != null ? d.suggested_position.toFixed(0) + '%' : '-'}</span>
-            <span class="timeline-val">${d.conflict_count || 0}</span>
         </div>`;
     });
 
@@ -599,7 +609,7 @@ function renderCalendar(data, year, month) {
             const ci = correct === 1 ? '✅' : (correct === 0 ? '❌' : '');
             html += `<div class="calendar-day has-data" style="background:${bg};box-shadow:inset 0 0 12px rgba(${c.r},${c.g},${c.b},0.08)">
                 <span class="day-num">${d}</span><span class="day-jcs" style="color:${fg}">${jcsStr}</span>
-                <div class="calendar-tooltip">JCS: ${jcsStr} | 仓位: ${pos}<br>AIAE: R${entry.aiae_regime||'-'} | 矛盾: ${entry.conflict_count||0}${ci?'<br>信号: '+ci:''}</div>
+                <div class="calendar-tooltip">JCS: ${jcsStr} | R${entry.aiae_regime||'-'} | ${entry.mr_regime||'-'}<br>仓位: ${pos} | ERP: ${entry.erp_score != null ? entry.erp_score.toFixed(0) : '-'}${ci?'<br>信号: '+ci:''}</div>
             </div>`;
         } else {
             html += `<div class="calendar-day no-data"><span class="day-num" style="color:#334155">${d}</span></div>`;
