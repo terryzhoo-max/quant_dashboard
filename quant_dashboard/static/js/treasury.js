@@ -1113,18 +1113,44 @@ function renderGlobalAIAE(json) {
     const jpRI = (jp.current||{}).regime_info || {};
     const hkRI = (hk.current||{}).regime_info || {};
 
+    // V1.4: 数据源降级检测 — fallback/stale_cache 时显示警告
+    function _checkDegraded(reportData) {
+        const raw = (reportData||{}).raw_data || {};
+        const mkt = raw.mkt || {};
+        if (mkt.is_fallback) return { degraded: true, label: '⚠️ 降级', tip: '数据源: 硬编码 (yfinance/FRED失败)', color: '#ef4444' };
+        if (mkt.is_stale_cache) return { degraded: true, label: '⚠️ 旧缓存', tip: '数据源: 过期磁盘缓存 (在线源失败)', color: '#f59e0b' };
+        const src = mkt.source || '';
+        if (src.includes('stooq')) return { degraded: false, label: '', tip: '数据源: Stooq', color: '' };
+        return { degraded: false, label: '', tip: '', color: '' };
+    }
+    const usDeg = _checkDegraded(us);
+    const jpDeg = _checkDegraded(jp);
+    const hkDeg = _checkDegraded(hk);
+
     const $usV = document.getElementById('gaiae-us-value');
     const $jpV = document.getElementById('gaiae-jp-value');
     const $hkV = document.getElementById('gaiae-hk-value');
     const $usR = document.getElementById('gaiae-us-regime');
     const $jpR = document.getElementById('gaiae-jp-regime');
     const $hkR = document.getElementById('gaiae-hk-regime');
-    if ($usV) $usV.textContent = usV1.toFixed(1) + '%';
-    if ($jpV) $jpV.textContent = jpV1.toFixed(1) + '%';
-    if ($hkV) $hkV.textContent = hkV1.toFixed(1) + '%';
-    if ($usR) { $usR.textContent = (usRI.emoji||'') + ' ' + (usRI.cn||'--'); $usR.style.color = usRI.color||'#94a3b8'; }
-    if ($jpR) { $jpR.textContent = (jpRI.emoji||'') + ' ' + (jpRI.cn||'--'); $jpR.style.color = jpRI.color||'#94a3b8'; }
-    if ($hkR) { $hkR.textContent = (hkRI.emoji||'') + ' ' + (hkRI.cn||'--'); $hkR.style.color = hkRI.color||'#94a3b8'; }
+    if ($usV) $usV.textContent = usV1.toFixed(1) + '%' + (usDeg.degraded ? ' ⚠️' : '');
+    if ($jpV) $jpV.textContent = jpV1.toFixed(1) + '%' + (jpDeg.degraded ? ' ⚠️' : '');
+    if ($hkV) $hkV.textContent = hkV1.toFixed(1) + '%' + (hkDeg.degraded ? ' ⚠️' : '');
+    if ($usR) {
+        $usR.innerHTML = (usRI.emoji||'') + ' ' + (usRI.cn||'--') +
+            (usDeg.degraded ? ' <span style="font-size:0.5rem;color:'+usDeg.color+';background:'+usDeg.color+'15;padding:1px 5px;border-radius:3px;border:1px solid '+usDeg.color+'33" title="'+usDeg.tip+'">'+usDeg.label+'</span>' : '');
+        $usR.style.color = usRI.color||'#94a3b8';
+    }
+    if ($jpR) {
+        $jpR.innerHTML = (jpRI.emoji||'') + ' ' + (jpRI.cn||'--') +
+            (jpDeg.degraded ? ' <span style="font-size:0.5rem;color:'+jpDeg.color+';background:'+jpDeg.color+'15;padding:1px 5px;border-radius:3px;border:1px solid '+jpDeg.color+'33" title="'+jpDeg.tip+'">'+jpDeg.label+'</span>' : '');
+        $jpR.style.color = jpRI.color||'#94a3b8';
+    }
+    if ($hkR) {
+        $hkR.innerHTML = (hkRI.emoji||'') + ' ' + (hkRI.cn||'--') +
+            (hkDeg.degraded ? ' <span style="font-size:0.5rem;color:'+hkDeg.color+';background:'+hkDeg.color+'15;padding:1px 5px;border-radius:3px;border:1px solid '+hkDeg.color+'33" title="'+hkDeg.tip+'">'+hkDeg.label+'</span>' : '');
+        $hkR.style.color = hkRI.color||'#94a3b8';
+    }
 
     // Coldest market hero card
     const regionMap = { cn: '🇨🇳 A股', us: '🇺🇸 美股', jp: '🇯🇵 日股', hk: '🇭🇰 港股' };

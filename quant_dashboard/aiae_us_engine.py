@@ -212,23 +212,41 @@ class AIAEUSEngine:
 
     def _fetch_wilshire5000_market_cap(self) -> Dict:
         """获取 Wilshire 5000 指数值 (代理美股总市值)
-        V1.2: FRED WILL5000INDFC 已下架, 改用 yfinance ^W5000 (日频实时)
-        V1.3: 数据合理性校验 (防止云端 yfinance 返回异常数据导致 AIAE 灾难性偏移)
-        Fallback 链: yfinance → FRED BOGZ1FL073164003Q (季频) → 磁盘缓存 → 硬编码
+        V1.4: 增强 fallback 链, 适配中国云服务器 (yfinance 不可用) 环境
+        Fallback 链: yfinance → Stooq CSV (中国可访问) → FRED 季频 → 磁盘缓存(永不失效) → 硬编码
         """
         def _fetch():
             cache_file = os.path.join(CACHE_DIR, "aiae_us_wilshire.json")
 
-            # === 主路径: yfinance ^W5000 (日频, 免费, 无 API key) ===
-            # 备用: VTI (Vanguard Total Market ETF, 相关系数 >0.99)
-            # 校准系数: ^W5000 / VTI ≈ 203.4 (2026-04-27 锚点)
-            _VTI_SCALE = 203.4
-
-            # V1.3: 合理性阈值 (Wilshire 历史范围: 2009 GFC 底 ~6000, 2025 高 ~75000)
+            # === 常量 ===
+            _VTI_SCALE = 203.4  # ^W5000 / VTI ≈ 203.4 (2026-04-27 锚点)
             _WILSHIRE_MIN = 10000   # 低于此值100%为异常数据
             _WILSHIRE_MAX = 200000  # 高于此值100%为异常数据
             _MKTCAP_MIN_T = 10.0   # 美股总市值不可能低于 $10T
 
+            def _validate_and_save(latest_val, trade_date_str, source, raw_price=None):
+                """统一校验+保存逻辑"""
+                if latest_val < _WILSHIRE_MIN or latest_val > _WILSHIRE_MAX:
+                    _log(f"⛔ Wilshire ({source}) 值 {latest_val:.0f} 超出合理范围, 跳过", "ERROR")
+                    return None
+                market_cap_trillion = round(latest_val / 1000, 2)
+                if market_cap_trillion < _MKTCAP_MIN_T:
+                    _log(f"⛔ Wilshire ({source}) 隐含市值 ${market_cap_trillion}T < ${_MKTCAP_MIN_T}T, 跳过", "ERROR")
+                    return None
+                result = {
+                    "trade_date": trade_date_str,
+                    "wilshire_index": round(latest_val, 2),
+                    "market_cap_trillion_usd": market_cap_trillion,
+                    "source": source,
+                    "fetched_at": datetime.now().isoformat()
+                }
+                if raw_price is not None:
+                    result["raw_price"] = round(raw_price, 2)
+                atomic_write_json(result, cache_file)
+                _log(f"Wilshire5000 ({source}): {latest_val:.0f} (≈${market_cap_trillion}T)")
+                return result
+
+            # === Tier 1: yfinance ^W5000 / VTI (需要翻墙, 本地环境可用) ===
             for sym, is_index in [("^W5000", True), ("VTI", False)]:
                 try:
                     import yfinance as yf
@@ -239,44 +257,55 @@ class AIAEUSEngine:
                             close_col = close_col.iloc[:, 0]
                         raw_price = float(close_col.dropna().iloc[-1])
                         latest_date = df.index[-1]
-                        # VTI 需要换算回 Wilshire 指数量级
                         latest_val = raw_price if is_index else raw_price * _VTI_SCALE
-
-                        # ── V1.3: 合理性校验 ──
-                        # 情况1: ^W5000 返回了 VTI 量级的值 (yfinance 在中国网络下可能返回 ETF 价格)
+                        # ^W5000 返回 VTI 量级时自动校正
                         if is_index and 50 < latest_val < 1000:
-                            _log(f"⚠️ ^W5000 返回 VTI 量级值 {raw_price:.2f}, 自动应用 VTI_SCALE 校正", "WARN")
+                            _log(f"⚠️ ^W5000 返回 VTI 量级值 {raw_price:.2f}, 自动校正", "WARN")
                             latest_val = raw_price * _VTI_SCALE
-
-                        # 情况2: 值仍然过低或过高 → 拒绝, 继续下一个源
-                        if latest_val < _WILSHIRE_MIN or latest_val > _WILSHIRE_MAX:
-                            _log(f"⛔ Wilshire ({sym}) 值 {latest_val:.0f} 超出合理范围 [{_WILSHIRE_MIN}, {_WILSHIRE_MAX}], 跳过", "ERROR")
-                            continue
-
-                        market_cap_trillion = round(latest_val / 1000, 2)
-
-                        # 情况3: 市值过低 → 拒绝
-                        if market_cap_trillion < _MKTCAP_MIN_T:
-                            _log(f"⛔ Wilshire ({sym}) 隐含市值 ${market_cap_trillion}T < ${_MKTCAP_MIN_T}T, 数据异常, 跳过", "ERROR")
-                            continue
-
-                        source = f"yfinance_{sym.replace('^','')}"
-                        result = {
-                            "trade_date": latest_date.strftime("%Y-%m-%d"),
-                            "wilshire_index": round(latest_val, 2),
-                            "market_cap_trillion_usd": market_cap_trillion,
-                            "source": source,
-                            "raw_price": round(raw_price, 2),
-                            "fetched_at": datetime.now().isoformat()
-                        }
-                        atomic_write_json(result, cache_file)
-                        _log(f"Wilshire5000 ({source}): {latest_val:.0f} (≈${market_cap_trillion}T)")
-                        return result
+                        result = _validate_and_save(latest_val, latest_date.strftime("%Y-%m-%d"),
+                                                   f"yfinance_{sym.replace('^','')}", raw_price)
+                        if result:
+                            return result
                 except Exception as e:
                     _log(f"yfinance {sym} error: {e}", "WARN")
 
+            # === Tier 2: Stooq CSV API (中国可访问, 无需翻墙) ===
+            # stooq.com 提供免费历史数据 CSV, 在中国大陆可直接访问
+            for stooq_sym, is_etf in [("^spx", False), ("spy.us", True)]:
+                try:
+                    import urllib.request
+                    import csv
+                    import io
+                    # SPX (S&P500) → 乘以系数换算为 Wilshire 估计值
+                    # 2026-04-28 实测锚点: W5000=71303, SPX=7139 → SPX_SCALE=10.0
+                    # SPY=711.69 → SPY_SCALE=100.2
+                    _SPX_SCALE = 10.0
+                    _SPY_SCALE = 100.2
 
-            # === 备用: FRED 季频总市值 ===
+                    url = f"https://stooq.com/q/l/?s={stooq_sym}&f=sd2t2ohlcv&h&e=csv"
+                    req = urllib.request.Request(url, headers={
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                    })
+                    with urllib.request.urlopen(req, timeout=10) as resp:
+                        raw = resp.read().decode('utf-8')
+
+                    reader = csv.DictReader(io.StringIO(raw))
+                    for row in reader:
+                        close_str = row.get("Close", "").strip()
+                        date_str = row.get("Date", "").strip()
+                        if close_str and close_str != "N/D" and date_str:
+                            price = float(close_str)
+                            scale = _SPY_SCALE if is_etf else _SPX_SCALE
+                            wilshire_est = price * scale
+                            result = _validate_and_save(wilshire_est, date_str,
+                                                       f"stooq_{stooq_sym.replace('^','')}", price)
+                            if result:
+                                return result
+                        break  # 只需要第一行
+                except Exception as e:
+                    _log(f"Stooq {stooq_sym} error: {e}", "WARN")
+
+            # === Tier 3: FRED 季频总市值 (需要 API Key) ===
             fred = _get_fred()
             if fred:
                 try:
@@ -289,13 +318,8 @@ class AIAEUSEngine:
                     if series is not None and not series.empty:
                         series = series.dropna()
                         latest_val = float(series.iloc[-1])
-                        # 单位: Millions → Trillions
                         market_cap_trillion = round(latest_val / 1000000, 2)
-                        # V1.3: FRED 数据也需要校验
-                        if market_cap_trillion < _MKTCAP_MIN_T:
-                            _log(f"⛔ FRED quarterly MktCap=${market_cap_trillion}T < ${_MKTCAP_MIN_T}T, 数据异常", "ERROR")
-                        else:
-                            # 反推 Wilshire 指数近似值 (1T ≈ 指数 1000)
+                        if market_cap_trillion >= _MKTCAP_MIN_T:
                             wilshire_approx = round(market_cap_trillion * 1000, 2)
                             result = {
                                 "trade_date": series.index[-1].strftime("%Y-%m-%d"),
@@ -307,10 +331,14 @@ class AIAEUSEngine:
                             atomic_write_json(result, cache_file)
                             _log(f"Wilshire (FRED quarterly proxy): ≈${market_cap_trillion}T", "WARN")
                             return result
+                        else:
+                            _log(f"⛔ FRED quarterly MktCap=${market_cap_trillion}T < ${_MKTCAP_MIN_T}T", "ERROR")
                 except Exception as e:
                     _log(f"FRED quarterly proxy error: {e}", "WARN")
+            else:
+                _log("FRED API 不可用 (FRED_API_KEY 未配置或 fredapi 未安装)", "WARN")
 
-            # === V1.3: 磁盘缓存读取 + 合理性校验 ===
+            # === Tier 4: 磁盘缓存 (V1.4: 永不失效, 宁用旧数据不用硬编码) ===
             if os.path.exists(cache_file):
                 try:
                     with open(cache_file, 'r', encoding='utf-8') as f:
@@ -318,21 +346,23 @@ class AIAEUSEngine:
                     cached_mktcap = cached.get("market_cap_trillion_usd", 0)
                     cached_wilshire = cached.get("wilshire_index", 0)
                     if cached_mktcap >= _MKTCAP_MIN_T and _WILSHIRE_MIN <= cached_wilshire <= _WILSHIRE_MAX:
-                        _log(f"Wilshire: 使用磁盘缓存 (${cached_mktcap}T, idx={cached_wilshire:.0f})", "WARN")
+                        cached["source"] = cached.get("source", "disk_cache") + "_stale"
+                        cached["is_stale_cache"] = True
+                        _log(f"⚠️ Wilshire: 所有在线源失败, 使用磁盘缓存 (${cached_mktcap}T, 源={cached.get('source')})", "WARN")
                         return cached
                     else:
-                        # 磁盘缓存数据已损坏, 删除并 fall through
-                        _log(f"⛔ 磁盘缓存数据异常: MktCap=${cached_mktcap}T, Wilshire={cached_wilshire}, 已删除", "ERROR")
-                        os.remove(cache_file)
+                        _log(f"⛔ 磁盘缓存数据异常: MktCap=${cached_mktcap}T, Wilshire={cached_wilshire}", "ERROR")
                 except Exception as e:
                     _log(f"磁盘缓存读取失败: {e}", "ERROR")
 
-            # === 终极 fallback: 硬编码估算 (基于 2026-04 美股总市值约 $55-75T) ===
-            _log("Wilshire: 所有数据源失败, 使用硬编码保守估算 $55T", "ERROR")
+            # === Tier 5: 终极 fallback (V1.4: 更新为 $68T 中位估计 + 醒目标记) ===
+            _log("⛔ Wilshire: 所有数据源+磁盘缓存全部失败, 使用硬编码 $68T (2026-04估计中位值)", "ERROR")
+            _log("💡 解决方案: 1) 确保服务器有 .env 文件(含FRED_API_KEY)  2) 从本地 SCP 拷贝 data_lake/aiae_us_wilshire.json", "ERROR")
             return {
                 "trade_date": datetime.now().strftime("%Y-%m-%d"),
-                "wilshire_index": 55000,
-                "market_cap_trillion_usd": 55.0,
+                "wilshire_index": 68000,
+                "market_cap_trillion_usd": 68.0,
+                "source": "hardcoded_fallback",
                 "fetched_at": datetime.now().isoformat(),
                 "is_fallback": True
             }

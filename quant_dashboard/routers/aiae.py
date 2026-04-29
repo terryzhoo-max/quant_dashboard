@@ -194,6 +194,90 @@ async def get_aiae_global_chart():
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+@router.get("/aiae_global/diagnose")
+async def diagnose_aiae_data_sources():
+    """诊断各数据源可用性 — 用于排查本地/云端数值不一致"""
+    import os as _os
+    from config import FRED_API_KEY as _fk
+    results = {"status": "success", "checks": {}}
+
+    # 1. FRED API Key
+    results["checks"]["fred_api_key"] = {
+        "configured": bool(_fk and len(_fk) > 5),
+        "key_preview": (_fk[:6] + "...") if _fk else "(empty)",
+    }
+
+    # 2. yfinance 可用性
+    try:
+        import yfinance as yf
+        df = yf.download("VTI", period="5d", progress=False)
+        if df is not None and not df.empty:
+            results["checks"]["yfinance"] = {"status": "ok", "vti_close": float(df["Close"].iloc[-1]) if "Close" in df.columns else "parse_error"}
+        else:
+            results["checks"]["yfinance"] = {"status": "fail", "reason": "empty_response"}
+    except Exception as e:
+        results["checks"]["yfinance"] = {"status": "fail", "reason": str(e)[:200]}
+
+    # 3. Stooq 可用性
+    try:
+        import urllib.request
+        req = urllib.request.Request("https://stooq.com/q/l/?s=spy.us&f=sd2t2ohlcv&h&e=csv",
+                                     headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            raw = resp.read().decode('utf-8')
+        results["checks"]["stooq"] = {"status": "ok" if "Close" in raw else "fail", "response_len": len(raw), "preview": raw[:200]}
+    except Exception as e:
+        results["checks"]["stooq"] = {"status": "fail", "reason": str(e)[:200]}
+
+    # 4. FRED API 可用性
+    try:
+        from fredapi import Fred
+        fred = Fred(api_key=_fk)
+        series = fred.get_series("DGS10", observation_start=datetime.now() - __import__('datetime').timedelta(days=7))
+        if series is not None and not series.empty:
+            results["checks"]["fred_api"] = {"status": "ok", "latest_10y": float(series.dropna().iloc[-1])}
+        else:
+            results["checks"]["fred_api"] = {"status": "fail", "reason": "empty_response"}
+    except Exception as e:
+        results["checks"]["fred_api"] = {"status": "fail", "reason": str(e)[:200]}
+
+    # 5. 磁盘缓存状态
+    cache_dir = "data_lake"
+    cache_files = ["aiae_us_wilshire.json", "aiae_us_m2.json", "aiae_us_margin.json", "aaii_sentiment.json"]
+    for cf in cache_files:
+        fp = _os.path.join(cache_dir, cf)
+        if _os.path.exists(fp):
+            try:
+                import json as _json
+                with open(fp, 'r', encoding='utf-8') as f:
+                    data = _json.load(f)
+                age_hours = (time.time() - _os.path.getmtime(fp)) / 3600
+                results["checks"][cf] = {"exists": True, "age_hours": round(age_hours, 1),
+                                         "source": data.get("source", "unknown"),
+                                         "key_value": data.get("market_cap_trillion_usd") or data.get("m2_trillion_usd") or data.get("spread")}
+            except Exception as e:
+                results["checks"][cf] = {"exists": True, "error": str(e)[:100]}
+        else:
+            results["checks"][cf] = {"exists": False}
+
+    # 6. 当前 AIAE 计算值 (不触发缓存, 直接读缓存的报告)
+    cached_report = cache_manager.get_json("aiae_global_report_data")
+    if cached_report:
+        us = cached_report.get("us", {})
+        us_raw = us.get("raw_data", {}).get("mkt", {})
+        results["checks"]["current_us_aiae"] = {
+            "aiae_v1": (us.get("current") or {}).get("aiae_v1"),
+            "mkt_source": us_raw.get("source"),
+            "mkt_wilshire": us_raw.get("wilshire_index"),
+            "mkt_cap_T": us_raw.get("market_cap_trillion_usd"),
+            "is_fallback": us_raw.get("is_fallback", False),
+            "is_stale_cache": us_raw.get("is_stale_cache", False),
+        }
+    else:
+        results["checks"]["current_us_aiae"] = {"cached": False}
+
+    return results
+
 
 # ─── 港股 ERP 择时 ───
 
