@@ -996,6 +996,52 @@
 .global-temp-recommendation.visible { display: block; }
 .global-temp-rec-icon { margin-right: 6px; }
 
+/* ═══════════════════════════════════════════════════
+   V20.0: 合并决策面板 (信号矩阵 + 执行指令)
+   ═══════════════════════════════════════════════════ */
+
+.decision-panel { padding: 20px; }
+.decision-panel h3 {
+    font-size: 0.95rem; color: #e2e8f0; margin: 0 0 14px;
+    display: flex; align-items: center; gap: 8px;
+}
+
+/* 诊断 → 处方 分割线 */
+.decision-divider {
+    height: 1px; margin: 16px 0;
+    background: linear-gradient(90deg, transparent, rgba(139,92,246,0.2), transparent);
+}
+
+/* 内联行动指令 (替代独立 action-plan-card) */
+.action-inline {
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: rgba(15,23,42,0.35);
+    border: 1px solid rgba(148,163,184,0.06);
+    border-left: 3px solid #f59e0b;
+    animation: tabFadeIn 0.4s ease-out;
+    transition: border-color 0.4s ease;
+}
+.action-inline-header {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 8px;
+}
+.action-inline-icon { font-size: 1.4rem; flex-shrink: 0; }
+.action-inline-title { flex: 1; }
+
+/* 内联上下文中压缩标签尺寸 */
+.action-inline .action-label {
+    font-size: 1rem; font-weight: 700;
+}
+.action-inline .action-reasoning {
+    font-size: 0.8rem; margin-bottom: 12px;
+    display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2;
+    -webkit-box-orient: vertical; overflow: hidden;
+}
+.action-inline .action-footer {
+    margin-bottom: 8px;
+}
+
 /* ── 响应式 ── */
 @media (max-width: 1024px) {
     .jcs-section { grid-template-columns: 1fr; }

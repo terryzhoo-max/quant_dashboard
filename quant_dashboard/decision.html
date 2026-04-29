@@ -116,19 +116,7 @@
                 <!-- V17.3: 警示容器 -->
                 <div id="alert-container"></div>
 
-                <!-- V19.0: 全球市场温度仪表板 -->
-                <div class="global-temp-dashboard glass-decision" id="global-temp-dashboard">
-                    <div class="global-temp-header">
-                        <h3 class="global-temp-title">🌐 全球市场温度 · 当日决策</h3>
-                        <span class="global-temp-time" id="global-temp-time">--</span>
-                    </div>
-                    <div class="global-temp-grid" id="global-temp-grid">
-                        <div class="loading-spinner">⏳ 同步全球市场温度...</div>
-                    </div>
-                    <div class="global-temp-recommendation" id="global-temp-rec"></div>
-                </div>
-
-                <!-- JCS + 矛盾矩阵 -->
+                <!-- V20.0: JCS + 合并决策面板 -->
                 <div class="jcs-section">
                     <!-- 左: JCS 仪表盘 -->
                     <div class="jcs-gauge-wrap glass-decision">
@@ -139,65 +127,56 @@
                         <div class="jcs-ring-label">联合置信度 (JCS)</div>
                         <div class="jcs-level-badge medium" id="jcs-badge">加载中</div>
                         <div class="jcs-ring-label" id="jcs-label" style="margin-top:8px;max-width:200px;text-align:center;line-height:1.4;"></div>
-                        <!-- V17.3 H1: JCS 分级规则参考 -->
+                        <!-- JCS 分级规则参考 -->
                         <div class="jcs-rules">
                             <div class="jcs-rule"><span class="rule-dot high"></span> ≥70 可执行</div>
                             <div class="jcs-rule"><span class="rule-dot medium"></span> 40-70 谨慎</div>
                             <div class="jcs-rule"><span class="rule-dot low"></span> &lt;40 观望</div>
                         </div>
-                        <!-- V18.0 M: JCS 成分拆解 -->
+                        <!-- JCS 成分拆解 -->
                         <div id="jcs-components" class="jcs-components"></div>
                     </div>
 
-                    <!-- 右: 矛盾矩阵 -->
-                    <div class="conflict-panel glass-decision">
-                        <h3>⚡ 信号矛盾检测</h3>
+                    <!-- 右: 合并决策面板 (信号矩阵 + 执行指令) -->
+                    <div class="decision-panel glass-decision">
+                        <h3>⚡ 信号矩阵 · 执行指令</h3>
                         <div class="conflict-summary ok" id="conflict-summary">分析中...</div>
+                        <!-- 方向指示器 (事实层: 4引擎核心读数) -->
+                        <div class="direction-grid" id="direction-grid"></div>
+                        <!-- 矛盾检测 (推导层) -->
                         <div id="conflict-list">
                             <div class="loading-spinner">⏳ 正在扫描引擎信号一致性...</div>
                         </div>
-
-                        <!-- V17.3 H2: 方向阈值参考 -->
-                        <div class="threshold-ref">
-                            <span>AIAE: R≤2→看多 R≥4→看空</span>
-                            <span>ERP: &gt;60→低估 &lt;40→高估</span>
-                            <span>VIX: &lt;18→安全 &gt;28→恐慌</span>
+                        <!-- 分割线 + 执行指令 -->
+                        <div class="decision-divider"></div>
+                        <div class="action-inline" id="action-inline" style="display:none;">
+                            <div class="action-inline-header">
+                                <span class="action-inline-icon" id="action-icon">👁️</span>
+                                <div class="action-inline-title">
+                                    <div class="action-label" id="action-label">--</div>
+                                    <div class="action-confidence" id="action-confidence">--</div>
+                                </div>
+                            </div>
+                            <div class="action-reasoning" id="action-reasoning">--</div>
+                            <div class="action-footer">
+                                <div class="action-next" id="action-next">
+                                    <span class="action-next-label">📅 下次检查</span>
+                                    <span class="action-next-value" id="action-next-val">--</span>
+                                </div>
+                                <div class="action-pos" id="action-pos">
+                                    <span class="action-pos-label">🎯 目标仓位</span>
+                                    <span class="action-pos-value" id="action-pos-val">--%</span>
+                                </div>
+                            </div>
+                            <div class="action-risk" id="action-risk">--</div>
                         </div>
-                        <!-- 方向指示器 -->
-                        <div class="direction-grid" id="direction-grid"></div>
                     </div>
                 </div>
 
-                <!-- V17.0 C2: 执行建议卡片 -->
-                <div class="action-plan-card glass-decision" id="action-plan-card" style="display:none;">
-                    <h3 class="action-plan-section-title">📋 执行建议 <span style="font-size:0.7rem;color:#64748b;font-weight:400;">— 基于 JCS + 矛盾状态自动生成</span></h3>
-                    <div class="action-plan-header">
-                        <div class="action-plan-icon" id="action-icon">👁️</div>
-                        <div class="action-plan-title">
-                            <div class="action-label" id="action-label">--</div>
-                            <div class="action-confidence" id="action-confidence">--</div>
-                        </div>
-                    </div>
-                    <div class="action-reasoning" id="action-reasoning">--</div>
-                    <div class="action-signals" id="action-signals"></div>
-                    <div class="action-footer">
-                        <div class="action-next" id="action-next">
-                            <span class="action-next-label">📅 下次检查</span>
-                            <span class="action-next-value" id="action-next-val">--</span>
-                        </div>
-                        <div class="action-pos" id="action-pos">
-                            <span class="action-pos-label">🎯 目标仓位</span>
-                            <span class="action-pos-value" id="action-pos-val">--%</span>
-                        </div>
-                    </div>
-                    <div class="action-risk" id="action-risk">--</div>
-                </div>
-
-                <!-- V17.5 K: AIAE 宏观仓位管控 -->
+                <!-- AIAE 宏观仓位管控 -->
                 <div class="aiae-hub-panel glass-decision" id="aiae-hub-panel" style="display:none;">
                     <h3 class="action-plan-section-title">🎛️ AIAE 宏观仓位管控 <span style="font-size:0.7rem;color:#64748b;font-weight:400;">— 配置热度核心锚 · 权重35%</span></h3>
                     <div class="aiae-hub-grid">
-                        <!-- 左: ECharts 仪表盘 -->
                         <div class="aiae-hub-gauge-col">
                             <div id="aiae-hub-gauge-chart" style="width:100%;height:180px;"></div>
                             <div class="aiae-hub-meta">
@@ -205,7 +184,6 @@
                                 <div class="aiae-hub-slope" id="aiae-hub-slope">--</div>
                             </div>
                         </div>
-                        <!-- 右: 五档 + 警示 -->
                         <div class="aiae-hub-detail-col">
                             <div class="aiae-hub-section-label">五档市场状态</div>
                             <div class="aiae-hub-regime-strip" id="aiae-hub-regime-strip"></div>
@@ -213,6 +191,18 @@
                             <div class="aiae-hub-warnings" id="aiae-hub-warnings"></div>
                         </div>
                     </div>
+                </div>
+
+                <!-- 全球市场温度仪表板 (横向参考层) -->
+                <div class="global-temp-dashboard glass-decision" id="global-temp-dashboard">
+                    <div class="global-temp-header">
+                        <h3 class="global-temp-title">🌐 全球市场温度 · 横向对比</h3>
+                        <span class="global-temp-time" id="global-temp-time">--</span>
+                    </div>
+                    <div class="global-temp-grid" id="global-temp-grid">
+                        <div class="loading-spinner">⏳ 同步全球市场温度...</div>
+                    </div>
+                    <div class="global-temp-recommendation" id="global-temp-rec"></div>
                 </div>
 
                 <!-- 情景模拟器 -->

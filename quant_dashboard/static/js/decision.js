@@ -97,13 +97,8 @@ function renderConflicts(data) {
     summary.className = 'conflict-summary ' + cls;
     summary.textContent = data.matrix_summary;
     if (data.conflicts.length === 0) {
-        panel.innerHTML = `<div class="no-conflict-badge"><span class="pulse-dot"></span> 所有引擎信号对齐，无矛盾</div>
-        <div class="pair-list">
-            <div class="pair-item"><span class="pair-check">✓</span><span class="pair-engines">AIAE ↔ ERP</span> 方向一致</div>
-            <div class="pair-item"><span class="pair-check">✓</span><span class="pair-engines">VIX ↔ MR</span> 方向一致</div>
-            <div class="pair-item"><span class="pair-check">✓</span><span class="pair-engines">ERP ↔ VIX</span> 方向一致</div>
-            <div class="pair-item"><span class="pair-check">✓</span><span class="pair-engines">AIAE ↔ MR</span> 方向一致</div>
-        </div>`;
+        // V20.0: 紧凑无矛盾状态 — 一行徽章替代4行列表
+        panel.innerHTML = `<div class="no-conflict-badge"><span class="pulse-dot"></span> 所有引擎信号对齐，零矛盾</div>`;
         return;
     }
     panel.innerHTML = data.conflicts.map(c => `
@@ -190,22 +185,22 @@ function renderScenarioCards(scenarios) {
 }
 
 // ═══════════════════════════════════════════════════
-//  V17.0 C2: 执行建议卡片渲染
+//  V20.0: 内联执行指令渲染 (合并至决策面板)
 // ═══════════════════════════════════════════════════
 
 function renderActionPlan(plan) {
-    const card = document.getElementById('action-plan-card');
-    if (!card || !plan) return;
+    const el = document.getElementById('action-inline');
+    if (!el || !plan) return;
 
-    // 置信度样式
-    card.className = 'action-plan-card glass-decision confidence-' + (plan.confidence || 'medium');
-    card.style.display = 'block';
+    // 置信度色带 (左边框)
+    const confColors = { high: '#10b981', medium: '#f59e0b', low: '#ef4444' };
+    el.style.borderLeftColor = confColors[plan.confidence] || confColors.medium;
+    el.style.display = 'block';
 
     const iconEl = document.getElementById('action-icon');
     const labelEl = document.getElementById('action-label');
     const confEl = document.getElementById('action-confidence');
     const reasonEl = document.getElementById('action-reasoning');
-    const signalsEl = document.getElementById('action-signals');
     const nextEl = document.getElementById('action-next-val');
     const posEl = document.getElementById('action-pos-val');
     const riskEl = document.getElementById('action-risk');
@@ -217,27 +212,9 @@ function renderActionPlan(plan) {
         confEl.innerHTML = `<span class="conf-dot ${plan.confidence}"></span> ${confMap[plan.confidence] || '中置信'}`;
     }
     if (reasonEl) reasonEl.textContent = plan.reasoning || '';
-    if (signalsEl) {
-        signalsEl.innerHTML = (plan.top_signals || []).map(s =>
-            `<span class="action-signal-tag">• ${s}</span>`
-        ).join('');
-    }
     if (nextEl) nextEl.textContent = plan.next_check || '--';
     if (posEl) posEl.textContent = (plan.position_target != null ? plan.position_target + '%' : '--%');
     if (riskEl) riskEl.textContent = '⚠️ ' + (plan.risk_note || '');
-
-    // V17.3 H3: 规则引用
-    const ruleMap = {
-        high: 'JCS≥70 + 无严重矛盾 → 可积极执行',
-        medium: 'JCS 40-70 或存在分歧 → 谨慎操作、不追涨杀跌',
-        low: 'JCS<40 或严重矛盾 → 暂停操作、等待信号清晰',
-    };
-    const existingRule = card.querySelector('.action-rule-ref');
-    if (existingRule) existingRule.remove();
-    const ruleDiv = document.createElement('div');
-    ruleDiv.className = 'action-rule-ref';
-    ruleDiv.textContent = '📐 ' + (ruleMap[plan.confidence] || '');
-    card.appendChild(ruleDiv);
 }
 
 // ═══════════════════════════════════════════════════
@@ -1012,13 +989,13 @@ async function initDecisionHub() {
             // V18.0 M: JCS 成分拆解条
             renderJCSComponents(data.jcs);
 
-            // 矛盾
-            renderConflicts(data.conflicts);
-
-            // 方向
+            // V20.0: 事实层先渲染 (方向指示器)
             renderDirections(data.jcs.directions, data.snapshot);
 
-            // V17.0: 执行建议
+            // 推导层 (矛盾检测)
+            renderConflicts(data.conflicts);
+
+            // 内联执行指令
             if (data.action_plan) renderActionPlan(data.action_plan);
 
             // V17.3: 警示系统
