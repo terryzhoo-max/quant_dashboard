@@ -118,7 +118,7 @@ AUDIT_CONFIG = {
     "stop_loss_etf": -8.0,              # ETF止损红线 (%) — ETF波动小, 纪律更严
     "single_position_limit": 20.0,      # 单票集中度上限 (%) ← 与 PortfolioEngine.POSITION_LIMIT 同步
     "sector_limit": 40.0,               # 行业集中度上限 (%)
-    "total_position_cap": 90.0,         # 总仓位上限 (%)
+    "total_position_cap": 95.0,         # 总仓位上限 (%)
     "min_holdings": 5,                  # 最少持仓数
 
     # 数据新鲜度阈值

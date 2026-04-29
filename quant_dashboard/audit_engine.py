@@ -43,7 +43,7 @@ def _load_audit_cfg():
         return {
             "stop_loss_stock": -10.0, "stop_loss_etf": -8.0,
             "single_position_limit": 20.0,
-            "sector_limit": 40.0, "total_position_cap": 90.0,
+            "sector_limit": 40.0, "total_position_cap": 95.0,
             "min_holdings": 5, "daily_stale_warn_days": 3,
             "daily_stale_fail_days": 5, "fina_fresh_days": 90,
             "erp_stale_warn_days": 3, "erp_stale_fail_days": 7,
@@ -435,7 +435,7 @@ def _is_etf(ts_code: str) -> bool:
 # ═══════════════════════════════════════════════════════
 #  V2.1 升级:
 #    1. 止损差异化: 个股 -12% / ETF -8%
-#    2. 总仓位上限从 85% 放宽至 90%
+#    2. 总仓位上限从 85% 放宽至 95%
 #    3. 使用 portfolio_engine 实时估值
 #    4. 单票阈值统一为 20% (与 POSITION_LIMIT 一致)
 #    5. 行业集中度 + 持仓分散度审计
@@ -677,18 +677,18 @@ def audit_risk_control():
 
     # ── 检查 5: 总仓位水平 ──
     if total_asset > 0:
-        POS_CAP = AUDIT_CFG.get("total_position_cap", 85.0)
+        POS_CAP = AUDIT_CFG.get("total_position_cap", 95.0)
         pos_pct = (1 - cash / max(total_asset, 1)) * 100
         s = 100 if pos_pct <= POS_CAP else max(40, 100 - int((pos_pct - POS_CAP) * 5))
         scores.append(s)
         checks.append({
             "name": "总仓位水平",
-            "status": "pass" if pos_pct <= POS_CAP else ("warn" if pos_pct <= 95 else "fail"),
+            "status": "pass" if pos_pct <= POS_CAP else ("warn" if pos_pct <= 98 else "fail"),
             "detail": f"当前仓位: {pos_pct:.1f}%",
             "meta": f"上限 {int(POS_CAP)}% (Regime自适应) · [{data_source}]",
             "score": s,
             "explanation": f"总仓位上限{int(POS_CAP)}%是为了防止追保风险，并留足调仓空间。满仓意味着无法逢低吸纳新机会，且遇到系统性下跌时无现金缓冲。",
-            "threshold": f"🟢 ≤{int(POS_CAP)}%: 合规 | 🟡 {int(POS_CAP)+1}-95%: 偏重，调仓空间不足 | 🔴 >95%: 必须立即减仓",
+            "threshold": f"🟢 ≤{int(POS_CAP)}%: 合规 | 🟡 {int(POS_CAP)+1}-98%: 偏重，调仓空间不足 | 🔴 >98%: 必须立即减仓",
             "action": f"卖出部分持仓降低总仓位至{int(POS_CAP)}%以下，优先卖出非核心持仓",
         })
 
