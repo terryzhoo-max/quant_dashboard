@@ -95,7 +95,11 @@ _bg_executor = ThreadPoolExecutor(max_workers=3)
 
 def _log(msg: str, level: str = "INFO"):
     ts_str = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-    print(f"[{ts_str}] [{level}] [HK-AIAE] {msg}")
+    try:
+        print(f"[{ts_str}] [{level}] [HK-AIAE] {msg}")
+    except UnicodeEncodeError:
+        safe_msg = msg.encode('ascii', errors='replace').decode('ascii')
+        print(f"[{ts_str}] [{level}] [HK-AIAE] {safe_msg}")
 
 def _refresh_cache(key: str, fetcher):
     try:
@@ -491,26 +495,41 @@ class AIAEHKEngine:
                     # HSI 20000 ≈ 32万亿HKD ≈ 4.1万亿USD
                     mktcap_hkd_trillion = price / 20000 * 32
                     mktcap_usd_trillion = mktcap_hkd_trillion / 7.8
-                    result = {
-                        "trade_date": datetime.now().strftime("%Y-%m-%d"),
-                        "hsi_close": round(price, 0),
-                        "mktcap_hkd_trillion": round(mktcap_hkd_trillion, 1),
-                        "mktcap_usd_trillion": round(mktcap_usd_trillion, 2),
-                        "fetched_at": datetime.now().isoformat(),
-                        "source": "cnbc",
-                    }
-                    atomic_write_json(result, cache_file)
-                    _log(f"HSI MktCap: {mktcap_hkd_trillion:.0f}T HKD (≈${mktcap_usd_trillion:.1f}T USD) [CNBC]")
-                    return result
+                    # V1.3 sanity check: MktCap 必须 >= 5T HKD
+                    if mktcap_hkd_trillion < 5.0:
+                        _log(f"CNBC HSI sanity FAIL: MktCap={mktcap_hkd_trillion:.1f}T HKD (<5T), price={price}, skip", "ERROR")
+                    else:
+                        result = {
+                            "trade_date": datetime.now().strftime("%Y-%m-%d"),
+                            "hsi_close": round(price, 0),
+                            "mktcap_hkd_trillion": round(mktcap_hkd_trillion, 1),
+                            "mktcap_usd_trillion": round(mktcap_usd_trillion, 2),
+                            "fetched_at": datetime.now().isoformat(),
+                            "source": "cnbc",
+                        }
+                        atomic_write_json(result, cache_file)
+                        _log(f"HSI MktCap: {mktcap_hkd_trillion:.0f}T HKD (=${mktcap_usd_trillion:.1f}T USD) [CNBC]")
+                        return result
             except Exception as e:
                 _log(f"CNBC HSI error: {e}", "WARN")
 
-            # Tier 2: 磁盘缓存
+            # Tier 2: 磁盘缓存 (V1.3: 加合理性校验)
             if os.path.exists(cache_file):
                 with open(cache_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+                    cached = json.load(f)
+                cached_mktcap = cached.get('mktcap_hkd_trillion', 0)
+                if cached_mktcap >= 5.0:
+                    _log(f"HSI MktCap from cache: {cached_mktcap:.1f}T HKD")
+                    return cached
+                else:
+                    _log(f"Cache sanity FAIL: MktCap={cached_mktcap}T HKD (<5T), deleting dirty cache", "ERROR")
+                    try:
+                        os.remove(cache_file)
+                    except OSError:
+                        pass
 
             # Tier 3: 硬编码兜底
+            _log("HSI MktCap: using hardcoded fallback 33.6T HKD", "WARN")
             return {
                 "trade_date": datetime.now().strftime("%Y-%m-%d"),
                 "hsi_close": 21000, "mktcap_hkd_trillion": 33.6,
@@ -581,10 +600,19 @@ class AIAEHKEngine:
           ratio=0.20  (2018-01 HSI 33500 泡沫) → AIAE=28% (Ⅴ級過熱)
 
         線形映射: AIAE = 6 + (ratio - 0.08) / (0.20 - 0.08) × 22
+
+        V1.3 防腐層: MktCap < $1T USD → return neutral 15% (防止脏数据扩散)
         """
+        # V1.3 Layer 3: 输入合理性校验
+        if mktcap_usd < 1.0:
+            _log(f"compute_aiae_core: MktCap=${mktcap_usd}T (<$1T), using neutral 15%", "ERROR")
+            return 15.0
         if effective_m2 <= 0:
             return 15.0
         ratio = mktcap_usd / effective_m2
+        if ratio < 0.02:
+            _log(f"compute_aiae_core: ratio={ratio:.4f} (<0.02), using neutral 15%", "ERROR")
+            return 15.0
         # 線形歸一化: [0.08, 0.20] → [6%, 28%]
         aiae_core = 6.0 + (ratio - 0.08) / (0.20 - 0.08) * 22.0
         return round(max(4.0, min(35.0, aiae_core)), 2)
@@ -595,11 +623,17 @@ class AIAEHKEngine:
         V1.1 修正: mktcap_usd 单位=万亿(trillion), cumulative_12m 单位=亿RMB
         旧: *1000 (万亿→十亿) vs 亿 → 放大10倍
         新: *10000 (万亿→亿) 单位统一
+        V1.3: 钳制上限 5.0%, 防止 MktCap 异常导致数值爆炸
         """
         if mktcap_usd <= 0:
             return 1.0
         cumulative_usd = cumulative_12m / 7.25  # 亿RMB→亿USD
-        return round(cumulative_usd / (mktcap_usd * 10000) * 100, 2)  # 万亿→亿, 单位统一
+        heat = round(cumulative_usd / (mktcap_usd * 10000) * 100, 2)  # 万亿→亿, 单位统一
+        # V1.3 clamp: 防止 MktCap 异常导致热度暴涨
+        if heat > 5.0:
+            _log(f"SB heat={heat:.2f}% clamped to 1.5% (mktcap=${mktcap_usd}T)", "ERROR")
+            return 1.5
+        return heat
 
     def compute_ah_premium_score(self, ah_index: float) -> float:
         """AH溢价指数归一化 → AIAE等效值

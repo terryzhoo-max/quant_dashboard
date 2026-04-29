@@ -82,7 +82,11 @@ _bg_executor = ThreadPoolExecutor(max_workers=3)
 
 def _log(msg: str, level: str = "INFO"):
     ts_str = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-    print(f"[{ts_str}] [{level}] [JP-AIAE] {msg}")
+    try:
+        print(f"[{ts_str}] [{level}] [JP-AIAE] {msg}")
+    except UnicodeEncodeError:
+        safe_msg = msg.encode('ascii', errors='replace').decode('ascii')
+        print(f"[{ts_str}] [{level}] [JP-AIAE] {safe_msg}")
 
 def _refresh_cache(key: str, fetcher):
     try:
@@ -196,9 +200,9 @@ DEFAULT_JP_FOREIGN = {
 
 
 class AIAEJPEngine:
-    """日本 AIAE 宏観仓位管控引擎 V1.1"""
+    """日本 AIAE 宏観仓位管控引擎 V1.3"""
 
-    VERSION = "1.1"
+    VERSION = "1.3"
     REGION = "JP"
 
     # === 上月 AIAE 缓存文件路径 (用于动态斜率计算) ===
@@ -228,19 +232,22 @@ class AIAEJPEngine:
                         series = series.dropna()
                         latest = float(series.iloc[-1])
                         # N225 → TOPIX推估 → 時価総額
-                        # N225/TOPIX 比率は歴史的に ~14 前後
                         topix_est = latest / 14.0
                         mktcap = round(topix_est * 0.27, 1)
-                        result = {
-                            "trade_date": series.index[-1].strftime("%Y-%m-%d"),
-                            "topix_index": round(latest / 14.3, 2),
-                            "nikkei225": round(latest, 2),
-                            "market_cap_trillion_jpy": mktcap,
-                            "fetched_at": datetime.now().isoformat()
-                        }
-                        atomic_write_json(result, cache_file)
-                        _log(f"N225→TOPIX推估: {mktcap}兆円")
-                        return result
+                        # V1.3 sanity: MktCap 必须 >= 100T JPY
+                        if mktcap < 100:
+                            _log(f"FRED N225 sanity FAIL: MktCap={mktcap}T JPY (<100T), N225={latest}, skip", "ERROR")
+                        else:
+                            result = {
+                                "trade_date": series.index[-1].strftime("%Y-%m-%d"),
+                                "topix_index": round(latest / 14.3, 2),
+                                "nikkei225": round(latest, 2),
+                                "market_cap_trillion_jpy": mktcap,
+                                "fetched_at": datetime.now().isoformat()
+                            }
+                            atomic_write_json(result, cache_file)
+                            _log(f"N225→TOPIX推估: {mktcap}兆円")
+                            return result
                 except Exception as e:
                     _log(f"FRED NIKKEI225 error: {e}", "WARN")
 
@@ -259,27 +266,41 @@ class AIAEJPEngine:
                 if n225 > 10000:
                     topix_est = n225 / 14.0
                     mktcap = round(topix_est * 0.27, 1)
-                    result = {
-                        "trade_date": datetime.now().strftime("%Y-%m-%d"),
-                        "topix_index": round(topix_est, 2),
-                        "nikkei225": round(n225, 2),
-                        "market_cap_trillion_jpy": mktcap,
-                        "fetched_at": datetime.now().isoformat(),
-                        "source": "cnbc"
-                    }
-                    atomic_write_json(result, cache_file)
-                    _log(f"CNBC N225={n225:.0f}→TOPIX推估: {mktcap}兆円")
-                    return result
+                    # V1.3 sanity: MktCap >= 100T JPY
+                    if mktcap < 100:
+                        _log(f"CNBC N225 sanity FAIL: MktCap={mktcap}T JPY (<100T), N225={n225}, skip", "ERROR")
+                    else:
+                        result = {
+                            "trade_date": datetime.now().strftime("%Y-%m-%d"),
+                            "topix_index": round(topix_est, 2),
+                            "nikkei225": round(n225, 2),
+                            "market_cap_trillion_jpy": mktcap,
+                            "fetched_at": datetime.now().isoformat(),
+                            "source": "cnbc"
+                        }
+                        atomic_write_json(result, cache_file)
+                        _log(f"CNBC N225={n225:.0f} -> TOPIX MktCap: {mktcap}T JPY")
+                        return result
             except Exception as e:
                 _log(f"CNBC N225 error: {e}", "WARN")
 
-            # 3. キャッシュファイル
+            # 3. Cache file (V1.3: sanity validation)
             if os.path.exists(cache_file):
                 with open(cache_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+                    cached = json.load(f)
+                cached_mktcap = cached.get('market_cap_trillion_jpy', 0)
+                if cached_mktcap >= 100:
+                    _log(f"TOPIX MktCap from cache: {cached_mktcap}T JPY")
+                    return cached
+                else:
+                    _log(f"Cache sanity FAIL: MktCap={cached_mktcap}T JPY (<100T), deleting dirty cache", "ERROR")
+                    try:
+                        os.remove(cache_file)
+                    except OSError:
+                        pass
 
-            # 4. ハードコードフォールバック
-            _log("TOPIX: ハードコード推定値使用", "ERROR")
+            # 4. Hardcoded fallback
+            _log("TOPIX: hardcoded fallback 870T JPY", "WARN")
             return {
                 "trade_date": datetime.now().strftime("%Y-%m-%d"),
                 "topix_index": 2700,
@@ -413,7 +434,7 @@ class AIAEJPEngine:
             try:
                 with open(JP_FOREIGN_FILE, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                _log(f"JP Foreign loaded: net={data.get('net_buy_billion_jpy', 0)}億円")
+                _log(f"JP Foreign loaded: net={data.get('net_buy_billion_jpy', 0)}")
                 return data
             except Exception:
                 pass
@@ -428,7 +449,7 @@ class AIAEJPEngine:
                 default['decayed'] = True
         except Exception:
             pass
-        _log(f"JP Foreign: デフォルト推定値 net={default['net_buy_billion_jpy']}億円")
+        _log(f"JP Foreign: default estimate net={default['net_buy_billion_jpy']}")
         return default
 
     def update_jp_margin(self, margin_buying_trillion_jpy: float):
@@ -440,7 +461,7 @@ class AIAEJPEngine:
         }
         atomic_write_json(data, JP_MARGIN_FILE)
         self._margin_data = data
-        _log(f"JP Margin 手動更新: {margin_buying_trillion_jpy}兆円")
+        _log(f"JP Margin manual update: {margin_buying_trillion_jpy}T JPY")
 
     def update_jp_foreign(self, net_buy_billion_jpy: float, cumulative_12m: float = None):
         """手動更新 外国人買い越し"""
@@ -452,7 +473,7 @@ class AIAEJPEngine:
         }
         atomic_write_json(data, JP_FOREIGN_FILE)
         self._foreign_data = data
-        _log(f"JP Foreign 手動更新: net={net_buy_billion_jpy}億円")
+        _log(f"JP Foreign manual update: net={net_buy_billion_jpy}")
 
     # ========== 核心計算層 ==========
 
@@ -465,29 +486,35 @@ class AIAEJPEngine:
           ratio=0.95  (実用30年上限余裕)   → AIAE=32%  (Ⅴ級バブル警報)
 
         V1.2 優化: 区間 [0.4, 1.2] → [0.35, 0.95]
-        旧上限 1.2 は1989年バブル(半世紀の極端事件)がアンカー。
-        その後30年間のデータでratioは0.35-0.75の範囲。
-        2024-03 N225=41000時 ratio≈0.70。上限 0.95 で十分な余裕あり。
+        V1.3 防腐層: MktCap < 100T JPY → return neutral 17%
 
         線形映射: AIAE = 8 + (ratio - 0.35) / (0.95 - 0.35) × 24
-
-        日本特殊性: M2/GDP比率が世界最高(~250%)なので、
-        MktCap/(MktCap+M2) だと M2 が過大で常に低値になるか、
-        またはMktCapがM2に匹敵すると ~50% に偏る。
-        比値法なら正確に歴史データに適合する。
         """
+        # V1.3 Layer 3: 入力合理性検証
+        if mktcap_trillion_jpy < 100:
+            _log(f"compute_aiae_core: MktCap={mktcap_trillion_jpy}T JPY (<100T), using neutral 17%", "ERROR")
+            return 17.0
         if m2_trillion_jpy <= 0:
             return 17.0
         ratio = mktcap_trillion_jpy / m2_trillion_jpy
+        if ratio < 0.05:
+            _log(f"compute_aiae_core: ratio={ratio:.4f} (<0.05), using neutral 17%", "ERROR")
+            return 17.0
         # 線形歸一化: [0.35, 0.95] → [8%, 32%]
         aiae_core = 8.0 + (ratio - 0.35) / (0.95 - 0.35) * 24.0
         return round(max(5.0, min(40.0, aiae_core)), 2)
 
     def compute_margin_heat(self, margin_trillion: float, mktcap_trillion: float) -> float:
-        """信用取引熱度 = 融資残高 / 時価総額 × 100"""
+        """信用取引熱度 = 融資残高 / 時価総額 × 100
+        V1.3: 銳制上限 3.0%, 防止 MktCap 異常導致数値爆発"""
         if mktcap_trillion <= 0:
             return 0.4
-        return round(margin_trillion / mktcap_trillion * 100, 2)
+        heat = round(margin_trillion / mktcap_trillion * 100, 2)
+        # V1.3 clamp
+        if heat > 3.0:
+            _log(f"MarginHeat={heat:.2f}% clamped to 0.5% (margin={margin_trillion}T, mktcap={mktcap_trillion}T)", "ERROR")
+            return 0.5
+        return heat
 
     def normalize_foreign_flow(self, net_buy_billion: float) -> float:
         """
