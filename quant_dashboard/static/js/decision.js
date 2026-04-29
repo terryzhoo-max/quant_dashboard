@@ -1019,25 +1019,67 @@ async function initDecisionHub() {
 }
 
 // ═══════════════════════════════════════════════════
-//  V18.0 Phase L: 绩效分析渲染 (沪深300基准)
+//  V18.1: 绩效分析渲染 (多基准: 沪深300 / 科创50 / 创业板50)
 // ═══════════════════════════════════════════════════
 
 let perfLoaded = false;
+let perfBenchmarks = null;  // 缓存多基准数据
+let currentBench = 'hs300'; // 当前选中基准
+
 async function loadPerformanceAnalytics() {
     if (perfLoaded) return;
     try {
         const resp = await AC.secureFetch(`${API_BASE}/performance`);
         const data = await resp.json();
         if (data.status === 'success' && data.metrics) {
+            // 缓存多基准数据
+            perfBenchmarks = data.benchmarks || null;
+            console.log('[PerfAnalytics] benchmarks loaded:', perfBenchmarks ? Object.keys(perfBenchmarks) : 'null');
             const sec = document.getElementById('perf-section');
             if (sec) sec.style.display = 'block';
+            // 默认渲染沪深300 (向后兼容)
             renderPerfMetrics(data.metrics, data.drawdown);
             renderPerfHeatmap(data.monthly_heatmap);
             renderPerfDrawdown(data.drawdown);
             renderPerfSharpe(data.rolling_sharpe);
+            // 绑定基准切换器
+            initBenchTabs();
             perfLoaded = true;
         }
     } catch (e) { console.error('Performance analytics load error:', e); }
+}
+
+function switchBenchmark(key) {
+    if (!perfBenchmarks || !perfBenchmarks[key]) return;
+    currentBench = key;
+    const bm = perfBenchmarks[key];
+    // 更新指标条
+    renderPerfMetrics(bm.metrics, bm.drawdown);
+    // 更新图表 (需要先 dispose 再重建, 否则 ECharts 复用旧实例)
+    ['perf-heatmap-chart', 'perf-drawdown-chart', 'perf-sharpe-chart'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) { const inst = echarts.getInstanceByDom(el); if (inst) inst.dispose(); }
+    });
+    renderPerfHeatmap(bm.monthly_heatmap);
+    renderPerfDrawdown(bm.drawdown);
+    renderPerfSharpe(bm.rolling_sharpe);
+    // 更新图表区标题
+    const label = document.getElementById('perf-bench-label');
+    if (label) label.textContent = bm.name;
+    // 同步所有 bench-tabs 的 active 状态
+    document.querySelectorAll('.bench-tabs').forEach(tabGroup => {
+        tabGroup.querySelectorAll('.bench-tab').forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.bench === key);
+        });
+    });
+}
+
+function initBenchTabs() {
+    document.querySelectorAll('.bench-tabs').forEach(tabGroup => {
+        tabGroup.querySelectorAll('.bench-tab').forEach(tab => {
+            tab.addEventListener('click', () => switchBenchmark(tab.dataset.bench));
+        });
+    });
 }
 
 function renderPerfMetrics(m, dd) {

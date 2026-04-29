@@ -241,7 +241,14 @@
                         </div>
                     </div>
                     <div class="risk-overview-metrics glass-decision">
-                        <h3 style="font-size:0.95rem;color:#e2e8f0;margin:0 0 12px;display:flex;align-items:center;gap:8px;">📊 风控绩效指标 <span style="font-size:0.7rem;color:#64748b;font-weight:400;">— 沪深300基准</span></h3>
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                            <h3 style="font-size:0.95rem;color:#e2e8f0;margin:0;">📊 风控绩效指标</h3>
+                            <div class="bench-tabs" id="bench-tabs-metrics">
+                                <button class="bench-tab active" data-bench="hs300">沪深300</button>
+                                <button class="bench-tab" data-bench="kc50">科创50</button>
+                                <button class="bench-tab" data-bench="cy50">创业板50</button>
+                            </div>
+                        </div>
                         <div class="perf-metrics-bar" id="perf-metrics-bar">
                             <div class="loading-spinner" style="padding:16px;">✨ 绩效数据加载中...</div>
                         </div>
@@ -266,7 +273,14 @@
 
                 <!-- 第3层: 绩效图表 -->
                 <div class="perf-section" id="perf-section" style="display:none;">
-                    <h3 class="action-plan-section-title">📊 沪深300基准绩效分析 <span style="font-size:0.7rem;color:#64748b;font-weight:400;">— 近 2 年日线 · 零外部依赖</span></h3>
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                        <h3 class="action-plan-section-title" id="perf-section-title" style="margin:0;">📊 <span id="perf-bench-label">沪深300</span> 绩效分析 <span style="font-size:0.7rem;color:#64748b;font-weight:400;">— 近 2 年日线</span></h3>
+                        <div class="bench-tabs" id="bench-tabs-charts">
+                            <button class="bench-tab active" data-bench="hs300">沪深300</button>
+                            <button class="bench-tab" data-bench="kc50">科创50</button>
+                            <button class="bench-tab" data-bench="cy50">创业板50</button>
+                        </div>
+                    </div>
 
                     <div class="perf-charts-grid">
                         <div class="perf-chart-card glass-decision">

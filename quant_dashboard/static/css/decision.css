@@ -532,6 +532,25 @@
 }
 .risk-overview-metrics { padding: 20px; }
 
+/* V20.1: 基准切换器 (药丸按钮) */
+.bench-tabs {
+    display: flex; gap: 4px;
+    background: rgba(15,23,42,0.5);
+    border-radius: 8px; padding: 3px;
+    border: 1px solid rgba(148,163,184,0.06);
+}
+.bench-tab {
+    padding: 4px 10px; border: none; border-radius: 6px;
+    background: transparent; color: #64748b;
+    font-size: 0.7rem; font-weight: 500; cursor: pointer;
+    transition: all 0.2s ease; white-space: nowrap;
+}
+.bench-tab:hover { color: #94a3b8; background: rgba(148,163,184,0.06); }
+.bench-tab.active {
+    background: rgba(139,92,246,0.15); color: #a78bfa;
+    border: 1px solid rgba(139,92,246,0.2);
+}
+
 .risk-grid {
     display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
     margin-bottom: 24px;
