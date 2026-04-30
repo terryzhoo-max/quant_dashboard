@@ -978,6 +978,8 @@ async function initDecisionHub() {
     initTabs();
 
     try {
+        fetchSwingGuard(); // Load Swing Guard
+        
         const resp = await AC.secureFetch(`${API_BASE}/hub`);
         const data = await resp.json();
 
@@ -1256,6 +1258,105 @@ function renderPerfSharpe(sharpeData) {
         }]
     });
     window.addEventListener('resize', () => chart.resize());
+}
+
+// ═══════════════════════════════════════════════════
+//  Phase 2: 全球宽基波段守卫 (Swing Guard)
+// ═══════════════════════════════════════════════════
+
+async function fetchSwingGuard() {
+    const grid = document.getElementById('swing-guard-grid');
+    if (!grid) return;
+    
+    grid.innerHTML = '<div class="loading-spinner">⏳ 拉取7大ETF最新信号 (若Tushare冷启动约需5秒)...</div>';
+    
+    try {
+        const resp = await AC.secureFetch(`${API_BASE}/swing-guard`);
+        const result = await resp.json();
+        
+        if (result.status === 'success') {
+            renderSwingGuard(result.data);
+            if (result.cached) {
+                console.log("Swing Guard: Using cached data");
+            }
+        } else {
+            grid.innerHTML = `<div class="loading-spinner">❌ 无法获取波段守卫数据: ${result.error || '未知错误'}</div>`;
+        }
+    } catch (e) {
+        grid.innerHTML = `<div class="loading-spinner">❌ 网络请求失败</div>`;
+        console.error("Swing Guard fetch error: ", e);
+    }
+}
+
+function renderSwingGuard(data) {
+    const grid = document.getElementById('swing-guard-grid');
+    if (!grid) return;
+    
+    if (!data || Object.keys(data).length === 0) {
+        grid.innerHTML = '<div class="loading-spinner">暂无波段监测数据</div>';
+        return;
+    }
+    
+    const statusStyles = { 
+        "GREEN": { card: "sg-status-green", text: "sg-text-green", bg: "sg-bg-green" }, 
+        "YELLOW": { card: "sg-status-yellow", text: "sg-text-yellow", bg: "sg-bg-yellow" }, 
+        "RED": { card: "sg-status-red", text: "sg-text-red", bg: "sg-bg-red" }, 
+        "UNKNOWN": { card: "", text: "sg-text-neutral", bg: "sg-bg-neutral" }, 
+        "ERROR": { card: "sg-status-red", text: "sg-text-red", bg: "sg-bg-red" } 
+    };
+    const emojis = { "GREEN": "🟢", "YELLOW": "🟡", "RED": "🔴", "UNKNOWN": "⚪", "ERROR": "❌" };
+    
+    let html = '';
+    
+    // Sort logic to put RED on top
+    const entries = Object.entries(data).sort((a, b) => {
+        const order = {"RED":0, "YELLOW":1, "GREEN":2};
+        const stA = a[1].status || "UNKNOWN";
+        const stB = b[1].status || "UNKNOWN";
+        return (order[stA]??3) - (order[stB]??3);
+    });
+    
+    entries.forEach(([assetId, info]) => {
+        const st = info.status || "UNKNOWN";
+        const style = statusStyles[st] || statusStyles["UNKNOWN"];
+        const emoji = emojis[st] || "⚪";
+        
+        const action = info.action || '--';
+        const rawBuffer = info.buffer_pct !== undefined ? info.buffer_pct : 0;
+        const bufferStr = info.buffer_pct !== undefined ? (rawBuffer * 100).toFixed(1) + '%' : '--';
+        const reason = info.reason || '';
+        const name = info.asset_name || assetId;
+        
+        // Energy Bar Logic (Max ref is 12%)
+        let barWidth = Math.max(0, Math.min(100, (rawBuffer / 0.12) * 100));
+        let barColor = st === 'GREEN' ? '#10b981' : (st === 'YELLOW' ? '#f59e0b' : '#ef4444');
+        let flashClass = rawBuffer <= 0.005 ? 'flash' : ''; // Flash if buffer is negative or very close to 0
+        if (st === 'RED') barWidth = 100; // If red, fill the bar with red flashing
+        
+        html += `
+            <div class="sg-card ${style.card}">
+                <div class="sg-header">
+                    <div class="sg-title">${emoji} ${name}</div>
+                    <div class="sg-badge ${style.bg}">${action}</div>
+                </div>
+                
+                <div class="sg-data-row">
+                    <span class="sg-data-label">安全垫缓冲</span>
+                    <span class="sg-data-value ${rawBuffer < 0 ? 'sg-text-red' : style.text}">${bufferStr}</span>
+                </div>
+                
+                <div class="sg-buffer-track">
+                    <div class="sg-buffer-fill ${flashClass}" style="width: ${barWidth}%; background: ${barColor};"></div>
+                </div>
+                
+                <div class="sg-footer">
+                    ${reason}
+                </div>
+            </div>
+        `;
+    });
+    
+    grid.innerHTML = html;
 }
 
 // 启动

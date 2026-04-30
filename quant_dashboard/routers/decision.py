@@ -91,3 +91,26 @@ async def get_performance():
     data = compute_performance_analytics()
     return {"status": "success", **data}
 
+
+@router.get("/swing-guard")
+async def get_swing_guard():
+    """全球宽基波段守卫 (7大ETF)"""
+    from services.cache_service import cache_manager
+    import time
+    
+    cache_key = "swing_guard_signals"
+    cached = cache_manager.get_json(cache_key)
+    # Cache for 1 hour since we are making EOD decisions
+    if cached and "timestamp" in cached and time.time() - cached["timestamp"] < 3600:
+        return {"status": "success", "data": cached["data"], "cached": True}
+        
+    from swing_decision import SwingDecisionOrchestrator
+    orchestrator = SwingDecisionOrchestrator()
+    signals = orchestrator.generate_all_signals()
+    
+    # Save to cache
+    payload = {"timestamp": time.time(), "data": signals}
+    cache_manager.set_json(cache_key, payload)
+    
+    return {"status": "success", "data": signals, "cached": False}
+
