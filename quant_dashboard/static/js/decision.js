@@ -783,17 +783,23 @@ function renderCalendar(data, year, month) {
             const jcs = entry.jcs_score != null ? entry.jcs_score : 50;
             const jcsStr = jcs.toFixed(1);
             const c = jcsToColor(jcs);
-            const bg = `rgba(${c.r},${c.g},${c.b},0.15)`;
-            const fg = `rgb(${c.r},${c.g},${c.b})`;
+            const varColor = `${c.r}, ${c.g}, ${c.b}`;
+            const fg = `rgb(${varColor})`;
             const pos = entry.suggested_position != null ? entry.suggested_position + '%' : '--';
             const correct = entry.signal_correct;
             const ci = correct === 1 ? '✅' : (correct === 0 ? '❌' : '');
-            html += `<div class="calendar-day has-data" style="background:${bg};box-shadow:inset 0 0 12px rgba(${c.r},${c.g},${c.b},0.08)">
+            html += `<div class="calendar-day has-data" style="--jcs-color: ${varColor};">
                 <span class="day-num">${d}</span><span class="day-jcs" style="color:${fg}">${jcsStr}</span>
-                <div class="calendar-tooltip">JCS: ${jcsStr} | R${entry.aiae_regime||'-'} | ${entry.mr_regime||'-'}<br>仓位: ${pos} | ERP: ${entry.erp_score != null ? entry.erp_score.toFixed(0) : '-'}${ci?'<br>信号: '+ci:''}</div>
+                <div class="calendar-tooltip">
+                    <div style="font-weight:700; margin-bottom:4px; color:${fg}">JCS: ${jcsStr}</div>
+                    <div style="display:flex; justify-content:space-between; margin-bottom:2px"><span>Regime:</span> <span>R${entry.aiae_regime||'-'} | ${entry.mr_regime||'-'}</span></div>
+                    <div style="display:flex; justify-content:space-between; margin-bottom:2px"><span>仓位:</span> <span>${pos}</span></div>
+                    <div style="display:flex; justify-content:space-between;"><span>ERP:</span> <span>${entry.erp_score != null ? entry.erp_score.toFixed(0) : '-'}</span></div>
+                    ${ci ? `<div style="margin-top:4px; border-top:1px dashed rgba(255,255,255,0.1); padding-top:4px;">信号: ${ci}</div>` : ''}
+                </div>
             </div>`;
         } else {
-            html += `<div class="calendar-day no-data"><span class="day-num" style="color:#334155">${d}</span></div>`;
+            html += `<div class="calendar-day no-data"><span class="day-num">${d}</span></div>`;
         }
     }
     el.innerHTML = html;

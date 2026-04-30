@@ -19,26 +19,65 @@
     border: 1px solid rgba(139,92,246,0.3);
 }
 
-/* ── A2: Tab 导航 + 滑块动画 ── */
+/* ── A2: 生产级 Tab 导航 ── */
 .decision-tabs {
     display: flex; gap: 4px; margin-bottom: 24px;
-    background: rgba(15,23,42,0.6); border-radius: 10px; padding: 4px;
-    border: 1px solid rgba(148,163,184,0.08);
+    background: rgba(15, 23, 42, 0.4); 
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border-radius: 12px; padding: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.05);
     position: relative;
 }
+
 .decision-tab {
-    flex: 1; padding: 10px 16px; text-align: center;
-    border-radius: 8px; cursor: pointer; font-size: 0.85rem;
-    color: #94a3b8; transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+    flex: 1; padding: 12px 16px; text-align: center;
+    border-radius: 8px; cursor: pointer; font-size: 0.88rem;
+    color: #94a3b8; transition: all 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
     border: none; background: transparent; position: relative; z-index: 1;
+    font-weight: 500; overflow: hidden;
+    -webkit-font-smoothing: antialiased;
 }
-.decision-tab:hover { color: #e2e8f0; background: rgba(148,163,184,0.06); }
+
+.decision-tab::before {
+    /* 悬浮微光底部轨道 */
+    content: ''; position: absolute; left: 15%; right: 15%; bottom: 0; height: 2px;
+    background: rgba(255,255,255,0.1); border-radius: 2px;
+    transform: scaleX(0); transition: transform 0.3s ease;
+    opacity: 0;
+}
+
+.decision-tab:hover {
+    color: #e2e8f0; 
+    background: rgba(255,255,255,0.03); 
+    text-shadow: 0 0 8px rgba(255,255,255,0.2);
+}
+.decision-tab:hover::before {
+    transform: scaleX(1); opacity: 1;
+}
+
+/* 机械微震反馈 */
+.decision-tab:active {
+    transform: scale(0.97);
+}
+
+/* 激活态 */
 .decision-tab.active {
-    background: rgba(139,92,246,0.15); color: #a78bfa;
-    border: 1px solid rgba(139,92,246,0.25);
+    background: linear-gradient(180deg, rgba(139, 92, 246, 0.05) 0%, rgba(139, 92, 246, 0.15) 100%);
+    color: #c4b5fd;
     font-weight: 600;
-    box-shadow: 0 0 12px rgba(139,92,246,0.1);
+    text-shadow: 0 0 12px rgba(167, 139, 250, 0.5);
+    box-shadow: inset 0 1px 0 rgba(167, 139, 250, 0.2), 0 4px 12px rgba(0,0,0,0.2);
 }
+
+/* Active 状态能量底线 */
+.decision-tab.active::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+    background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+    box-shadow: 0 -2px 10px rgba(139, 92, 246, 0.6);
+    border-radius: 3px 3px 0 0;
+}
+.decision-tab.active::before { display: none; }
 /* A2: Tab内容切换动画 */
 .tab-panel { display: none; animation: tabFadeIn 0.35s ease-out; }
 .tab-panel.active { display: block; }
@@ -711,44 +750,57 @@
     padding: 6px 0; font-weight: 600;
 }
 .calendar-day {
-    aspect-ratio: 1; border-radius: 10px; display: flex;
+    aspect-ratio: 1; border-radius: 8px; display: flex;
     flex-direction: column; align-items: center; justify-content: center;
     font-size: 0.75rem; cursor: default; position: relative;
-    transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-.calendar-day.empty { background: transparent; }
-.calendar-day.no-data { background: rgba(15,23,42,0.15); }
+.calendar-day.empty { background: transparent; border: none; box-shadow: none; }
+
+/* 雕刻感空白格 */
+.calendar-day.no-data { 
+    background: rgba(15, 23, 42, 0.2); 
+    border: 1px solid rgba(255,255,255,0.02);
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.2); 
+}
+.calendar-day.no-data .day-num { color: #334155 !important; font-weight: 500; }
+
+/* 晶体化数据格 */
 .calendar-day.has-data {
-    border: 1px solid rgba(255,255,255,0.04);
-    box-shadow: inset 0 0 12px rgba(0,0,0,0.1);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(15, 23, 42, 0.4);
+    box-shadow: inset 0 0 16px rgba(var(--jcs-color), 0.15);
 }
 .calendar-day.has-data:hover {
-    transform: scale(1.12); z-index: 2;
-    border-color: rgba(139,92,246,0.3);
-    box-shadow: 0 4px 16px rgba(0,0,0,0.3), 0 0 12px rgba(139,92,246,0.1);
+    transform: scale(1.15); z-index: 5;
+    border-color: rgba(var(--jcs-color), 0.5);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6), 0 0 24px rgba(var(--jcs-color), 0.4);
 }
-.calendar-day .day-num { color: #94a3b8; font-weight: 500; margin-bottom: 2px; }
-.calendar-day .day-jcs { font-weight: 700; font-size: 0.7rem; }
-/* B3: 连续色温 (通过JS内联style设置) — 这些只是fallback */
-.calendar-day.jcs-high { background: rgba(16,185,129,0.12); }
-.calendar-day.jcs-high .day-jcs { color: #34d399; }
-.calendar-day.jcs-medium { background: rgba(245,158,11,0.12); }
-.calendar-day.jcs-medium .day-jcs { color: #fbbf24; }
-.calendar-day.jcs-low { background: rgba(239,68,68,0.12); }
-.calendar-day.jcs-low .day-jcs { color: #f87171; }
-.calendar-day.no-data { background: rgba(148,163,184,0.03); }
-.calendar-day.no-data .day-num { color: #475569 !important; }
 
-/* 日历 tooltip */
+.calendar-day .day-num { color: #cbd5e1; font-weight: 600; margin-bottom: 2px; z-index: 2; }
+.calendar-day .day-jcs { font-weight: 800; font-size: 0.75rem; z-index: 2; text-shadow: 0 0 8px currentColor; }
+
+/* 次世代 Tooltip */
 .calendar-tooltip {
-    position: absolute; bottom: 105%; left: 50%; transform: translateX(-50%);
-    background: rgba(15,23,42,0.95); border: 1px solid rgba(139,92,246,0.3);
-    border-radius: 8px; padding: 8px 12px; font-size: 0.72rem;
+    position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translate(-50%, 8px);
+    background: rgba(15, 23, 42, 0.85); 
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px; padding: 10px 14px; font-size: 0.75rem;
     white-space: nowrap; pointer-events: none; opacity: 0;
-    transition: opacity 0.2s; z-index: 10; color: #e2e8f0;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); z-index: 20; color: #f8fafc;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);
+    line-height: 1.4; font-weight: 500; min-width: 130px;
 }
-.calendar-day:hover .calendar-tooltip { opacity: 1; }
+.calendar-tooltip::after {
+    /* 底部小三角 */
+    content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+    border-width: 6px; border-style: solid;
+    border-color: rgba(255,255,255,0.1) transparent transparent transparent;
+}
+.calendar-day:hover .calendar-tooltip { 
+    opacity: 1; transform: translate(-50%, 0); 
+}
 
 /* ═══════════════════════════════════════════════════
    A4: 动画库
