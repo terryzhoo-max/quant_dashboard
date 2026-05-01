@@ -121,7 +121,7 @@ function renderDirections(directions, snapshot) {
     if (!grid) return;
 
     const engines = {
-        aiae: { label: 'AIAE', weight: 35, unit: '%',
+        aiae: { label: 'AIAE', weight: 45, unit: '%',
             val: snapshot ? snapshot.aiae_v1 : null,
             fmt: v => v != null ? v.toFixed(1) + '%' : '--' },
         erp:  { label: 'ERP', weight: 25, unit: '%',
@@ -192,9 +192,13 @@ function renderActionPlan(plan) {
     const el = document.getElementById('action-inline');
     if (!el || !plan) return;
 
-    // 置信度色带 (左边框)
-    const confColors = { high: '#10b981', medium: '#f59e0b', low: '#ef4444' };
-    el.style.borderLeftColor = confColors[plan.confidence] || confColors.medium;
+    // 置信度色温弥散光 (CSS 变量驱动底光 + 顶线)
+    const confColorMap = {
+        high: 'rgba(16, 185, 129, 0.7)',
+        medium: 'rgba(245, 158, 11, 0.6)',
+        low: 'rgba(239, 68, 68, 0.7)'
+    };
+    el.style.setProperty('--conf-color', confColorMap[plan.confidence] || confColorMap.medium);
     el.style.display = 'block';
 
     const iconEl = document.getElementById('action-icon');

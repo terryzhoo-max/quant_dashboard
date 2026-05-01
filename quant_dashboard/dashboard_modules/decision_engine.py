@@ -184,7 +184,7 @@ def compute_conflict_matrix(snapshot: dict) -> dict:
 
 # 引擎权重 (用于方向一致性加权)
 _JCS_WEIGHTS = {
-    "aiae": 0.35,
+    "aiae": 0.45,   # V20.1: 主锚强化 (原 0.35 + 缺失的 0.10), 总和归一至 1.0
     "erp": 0.25,
     "vix": 0.15,
     "mr": 0.15,

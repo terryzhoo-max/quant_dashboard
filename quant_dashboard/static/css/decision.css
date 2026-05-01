@@ -140,49 +140,95 @@
     box-shadow: inset 0 0 8px rgba(239,68,68,0.2), 0 0 16px rgba(239,68,68,0.3); 
 }
 
-/* ── B5: 矛盾矩阵增强 ── */
+/* ── B5: 矛盾矩阵增强 (赛博玻璃升维) ── */
 .conflict-panel { padding: 20px; }
 .conflict-panel h3 {
     font-size: 0.95rem; color: #e2e8f0; margin: 0 0 16px;
     display: flex; align-items: center; gap: 8px;
 }
-.conflict-summary {
-    padding: 10px 14px; border-radius: 10px; margin-bottom: 16px;
-    font-size: 0.85rem; font-weight: 500;
-    transition: all 0.3s ease;
-}
-.conflict-summary.ok { background: rgba(16,185,129,0.08); color: #34d399; border: 1px solid rgba(16,185,129,0.15); }
-.conflict-summary.warn { background: rgba(245,158,11,0.08); color: #fbbf24; border: 1px solid rgba(245,158,11,0.15); }
-.conflict-summary.danger { background: rgba(239,68,68,0.08); color: #f87171; border: 1px solid rgba(239,68,68,0.15); }
 
-/* B5: 矛盾项左侧色带 */
+/* 状态摘要条：呼吸脉冲光晕 */
+.conflict-summary {
+    padding: 12px 16px; border-radius: 10px; margin-bottom: 16px;
+    font-size: 0.85rem; font-weight: 600;
+    transition: all 0.4s ease;
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    position: relative;
+}
+.conflict-summary.ok {
+    background: rgba(16,185,129,0.06); color: #6ee7b7;
+    border: 1px solid rgba(16,185,129,0.25);
+    box-shadow: 0 0 20px rgba(16,185,129,0.15), inset 0 0 12px rgba(16,185,129,0.08);
+    animation: conflictPulseOk 3s ease-in-out infinite;
+}
+.conflict-summary.warn {
+    background: rgba(245,158,11,0.06); color: #fcd34d;
+    border: 1px solid rgba(245,158,11,0.3);
+    box-shadow: 0 0 20px rgba(245,158,11,0.15), inset 0 0 12px rgba(245,158,11,0.08);
+    animation: conflictPulseWarn 2s ease-in-out infinite;
+}
+.conflict-summary.danger {
+    background: rgba(239,68,68,0.06); color: #fca5a5;
+    border: 1px solid rgba(239,68,68,0.35);
+    box-shadow: 0 0 24px rgba(239,68,68,0.2), inset 0 0 12px rgba(239,68,68,0.1);
+    animation: conflictPulseDanger 1.5s ease-in-out infinite;
+}
+@keyframes conflictPulseOk {
+    0%, 100% { box-shadow: 0 0 16px rgba(16,185,129,0.1), inset 0 0 10px rgba(16,185,129,0.05); }
+    50% { box-shadow: 0 0 28px rgba(16,185,129,0.25), inset 0 0 16px rgba(16,185,129,0.12); }
+}
+@keyframes conflictPulseWarn {
+    0%, 100% { box-shadow: 0 0 16px rgba(245,158,11,0.1), inset 0 0 10px rgba(245,158,11,0.05); }
+    50% { box-shadow: 0 0 28px rgba(245,158,11,0.25), inset 0 0 16px rgba(245,158,11,0.12); }
+}
+@keyframes conflictPulseDanger {
+    0%, 100% { box-shadow: 0 0 16px rgba(239,68,68,0.15), inset 0 0 10px rgba(239,68,68,0.08); }
+    50% { box-shadow: 0 0 32px rgba(239,68,68,0.35), inset 0 0 20px rgba(239,68,68,0.15); }
+}
+
+/* 矛盾项：发光色带 + hover 环境光晕 */
 .conflict-item {
     display: flex; align-items: stretch; gap: 0;
-    border-radius: 10px; margin-bottom: 8px; overflow: hidden;
+    border-radius: 10px; margin-bottom: 10px; overflow: hidden;
     background: rgba(15,23,42,0.4);
-    border: 1px solid rgba(148,163,184,0.06);
-    transition: transform 0.2s ease, border-color 0.3s ease;
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.05);
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-.conflict-item:hover { transform: translateX(4px); border-color: rgba(148,163,184,0.12); }
+.conflict-item:hover {
+    transform: translateX(6px); 
+    border-color: rgba(255,255,255,0.12);
+    background: rgba(15,23,42,0.6);
+}
 .conflict-color-band {
     width: 4px; flex-shrink: 0;
 }
-.conflict-color-band.high { background: linear-gradient(180deg, #f87171, #ef4444); box-shadow: 2px 0 8px rgba(239,68,68,0.2); }
-.conflict-color-band.medium { background: linear-gradient(180deg, #fbbf24, #f59e0b); box-shadow: 2px 0 8px rgba(245,158,11,0.2); }
-.conflict-color-band.info { background: linear-gradient(180deg, #64748b, #475569); box-shadow: 2px 0 8px rgba(100,116,139,0.15); }
-.conflict-body { padding: 10px 12px; flex: 1; }
-.conflict-desc { font-size: 0.82rem; color: #cbd5e1; }
-.conflict-action { font-size: 0.75rem; color: #94a3b8; margin-top: 4px; }
+.conflict-color-band.high {
+    background: linear-gradient(180deg, #fca5a5, #ef4444);
+    box-shadow: 3px 0 12px rgba(239,68,68,0.35);
+}
+.conflict-color-band.medium {
+    background: linear-gradient(180deg, #fcd34d, #f59e0b);
+    box-shadow: 3px 0 12px rgba(245,158,11,0.3);
+}
+.conflict-color-band.info {
+    background: linear-gradient(180deg, #94a3b8, #64748b);
+    box-shadow: 3px 0 8px rgba(148,163,184,0.2);
+}
+.conflict-body { padding: 12px 14px; flex: 1; }
+.conflict-desc { font-size: 0.82rem; color: #e2e8f0; font-weight: 500; }
+.conflict-action { font-size: 0.75rem; color: #94a3b8; margin-top: 6px; }
 
-/* B5: 无矛盾脉冲光环 */
+/* 无矛盾脉冲光环（增强振幅） */
 .no-conflict-badge {
     display: flex; align-items: center; justify-content: center;
-    gap: 8px; padding: 20px; color: #34d399; font-size: 0.85rem;
+    gap: 10px; padding: 20px; color: #6ee7b7; font-size: 0.88rem;
+    font-weight: 600; text-shadow: 0 0 12px rgba(16,185,129,0.3);
 }
 .pulse-dot {
-    width: 10px; height: 10px; border-radius: 50%; background: #34d399;
+    width: 12px; height: 12px; border-radius: 50%; background: #34d399;
     animation: pulseGlow 2s ease-in-out infinite;
-    box-shadow: 0 0 8px rgba(16,185,129,0.4);
+    box-shadow: 0 0 12px rgba(16,185,129,0.5), 0 0 24px rgba(16,185,129,0.2);
 }
 
 /* ── V18.0 M: Koyfin 风格方向指示器 (能量矩阵) ── */
@@ -965,23 +1011,23 @@
 }
 .action-plan-icon { font-size: 2rem; }
 .action-label {
-    font-size: 1.15rem; font-weight: 700; color: #e2e8f0;
-    letter-spacing: 0.5px;
+    font-size: 1.2rem; font-weight: 800; color: #f8fafc;
+    letter-spacing: 0.5px; text-shadow: 0 0 12px rgba(255,255,255,0.15);
 }
 .action-confidence {
-    font-size: 0.72rem; color: #94a3b8; margin-top: 2px;
-    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 0.75rem; color: #cbd5e1; margin-top: 2px;
+    display: inline-flex; align-items: center; gap: 6px; font-weight: 600;
 }
 .action-confidence .conf-dot {
-    width: 6px; height: 6px; border-radius: 50%;
+    width: 8px; height: 8px; border-radius: 50%;
     display: inline-block;
 }
-.action-confidence .conf-dot.high { background: #34d399; box-shadow: 0 0 6px rgba(16,185,129,0.4); }
-.action-confidence .conf-dot.medium { background: #fbbf24; box-shadow: 0 0 6px rgba(245,158,11,0.4); }
-.action-confidence .conf-dot.low { background: #f87171; box-shadow: 0 0 6px rgba(239,68,68,0.4); }
+.action-confidence .conf-dot.high { background: #34d399; box-shadow: 0 0 8px rgba(16,185,129,0.5), 0 0 16px rgba(16,185,129,0.2); }
+.action-confidence .conf-dot.medium { background: #fbbf24; box-shadow: 0 0 8px rgba(245,158,11,0.5), 0 0 16px rgba(245,158,11,0.2); }
+.action-confidence .conf-dot.low { background: #f87171; box-shadow: 0 0 8px rgba(239,68,68,0.5), 0 0 16px rgba(239,68,68,0.2); }
 
 .action-reasoning {
-    font-size: 0.85rem; color: #cbd5e1; line-height: 1.5;
+    font-size: 0.85rem; color: #cbd5e1; line-height: 1.6;
     margin-bottom: 14px; padding-left: 4px;
 }
 
@@ -990,29 +1036,50 @@
 }
 .action-signal-tag {
     font-size: 0.75rem; padding: 4px 10px; border-radius: 6px;
-    background: rgba(139,92,246,0.08); color: #a78bfa;
-    border: 1px solid rgba(139,92,246,0.15);
+    background: rgba(139,92,246,0.08); color: #c4b5fd;
+    border: 1px solid rgba(139,92,246,0.2);
+    backdrop-filter: blur(4px);
 }
 
 .action-footer {
     display: flex; gap: 16px; margin-bottom: 12px;
 }
 .action-next, .action-pos {
-    flex: 1; padding: 10px 14px; border-radius: 10px;
-    background: rgba(15,23,42,0.4);
-    border: 1px solid rgba(148,163,184,0.06);
+    flex: 1; padding: 12px 16px; border-radius: 12px;
+    background: rgba(15,23,42,0.5);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.06);
+    box-shadow: inset 0 0 12px rgba(0,0,0,0.2);
+    transition: all 0.3s ease;
+}
+.action-next:hover, .action-pos:hover {
+    border-color: rgba(139,92,246,0.2);
+    box-shadow: inset 0 0 12px rgba(0,0,0,0.2), 0 0 12px rgba(139,92,246,0.1);
 }
 .action-next-label, .action-pos-label {
-    font-size: 0.7rem; color: #64748b; display: block; margin-bottom: 4px;
+    font-size: 0.72rem; color: #94a3b8; display: block; margin-bottom: 6px;
+    font-weight: 600; letter-spacing: 0.5px;
 }
-.action-next-value, .action-pos-value {
+.action-next-value {
     font-size: 0.85rem; color: #e2e8f0; font-weight: 600;
+}
+.action-pos-value {
+    font-size: 1.1rem; color: #f8fafc; font-weight: 800;
+    font-family: 'JetBrains Mono', monospace;
+    text-shadow: 0 0 10px rgba(255,255,255,0.3);
 }
 
 .action-risk {
-    font-size: 0.75rem; color: #94a3b8; padding: 8px 12px;
-    border-radius: 8px; background: rgba(245,158,11,0.05);
-    border: 1px solid rgba(245,158,11,0.1);
+    font-size: 0.78rem; color: #fcd34d; padding: 10px 14px;
+    border-radius: 10px; 
+    background: rgba(245,158,11,0.06);
+    border: 1px solid rgba(245,158,11,0.2);
+    font-weight: 500;
+    animation: riskPulse 3s ease-in-out infinite;
+}
+@keyframes riskPulse {
+    0%, 100% { box-shadow: 0 0 0 transparent; }
+    50% { box-shadow: 0 0 16px rgba(245,158,11,0.1); }
 }
 
 /* ═══════════════════════════════════════════════════
@@ -1177,34 +1244,48 @@
     background: linear-gradient(90deg, transparent, rgba(139,92,246,0.2), transparent);
 }
 
-/* 内联行动指令 (替代独立 action-plan-card) */
+/* 内联行动指令 (赛博玻璃升维) */
 .action-inline {
-    padding: 14px 16px;
-    border-radius: 12px;
-    background: rgba(15,23,42,0.35);
-    border: 1px solid rgba(148,163,184,0.06);
-    border-left: 3px solid #f59e0b;
+    padding: 18px 20px;
+    border-radius: 14px;
+    background: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.06);
     animation: tabFadeIn 0.4s ease-out;
-    transition: border-color 0.4s ease;
+    transition: all 0.4s ease;
+    position: relative; overflow: hidden;
 }
+/* 底部置信色温弥散光（代替死板的 border-left） */
+.action-inline::before {
+    content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 50px;
+    background: radial-gradient(ellipse at bottom, var(--conf-color, rgba(245,158,11,0.6)) 0%, transparent 70%);
+    opacity: 0.3; transition: opacity 0.3s ease; pointer-events: none;
+}
+.action-inline::after {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--conf-color, rgba(245,158,11,0.4)), transparent);
+    opacity: 0.5;
+}
+
 .action-inline-header {
-    display: flex; align-items: center; gap: 10px;
-    margin-bottom: 8px;
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 12px; position: relative; z-index: 2;
 }
-.action-inline-icon { font-size: 1.4rem; flex-shrink: 0; }
+.action-inline-icon { font-size: 1.6rem; flex-shrink: 0; }
 .action-inline-title { flex: 1; }
 
 /* 内联上下文中压缩标签尺寸 */
 .action-inline .action-label {
-    font-size: 1rem; font-weight: 700;
+    font-size: 1.05rem; font-weight: 800;
 }
 .action-inline .action-reasoning {
-    font-size: 0.8rem; margin-bottom: 12px;
+    font-size: 0.82rem; margin-bottom: 14px;
     display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2;
     -webkit-box-orient: vertical; overflow: hidden;
+    position: relative; z-index: 2;
 }
 .action-inline .action-footer {
-    margin-bottom: 8px;
+    margin-bottom: 10px; position: relative; z-index: 2;
 }
 
 /* ── 响应式 ── */
@@ -1225,12 +1306,47 @@
 }
 
 /* ═══════════════════════════════════════════════════
-   Phase 2: 全球宽基波段守卫 (Swing Guard Visual Upgrade)
+   Phase 2: 全球宽基波段守卫 (Swing Guard — 生产级收尾打磨)
    ═══════════════════════════════════════════════════ */
 
 .swing-guard-dashboard {
     margin-top: 24px; padding: 20px 24px;
 }
+
+/* 头部 (内联样式已迁移至此) */
+.swing-guard-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 18px;
+}
+.swing-guard-title {
+    margin: 0; font-size: 1rem; font-weight: 700; color: #f1f5f9;
+    display: flex; align-items: center; gap: 6px;
+}
+.swing-guard-subtitle {
+    font-size: 0.7rem; color: #64748b; font-weight: 400;
+}
+
+/* 赛博刷新按钮 */
+.sg-refresh-btn {
+    padding: 5px 12px; font-size: 0.78rem; font-weight: 600;
+    background: rgba(139, 92, 246, 0.1);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    border-radius: 8px; color: #c4b5fd; cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    display: inline-flex; align-items: center; gap: 4px;
+}
+.sg-refresh-btn:hover {
+    background: rgba(139, 92, 246, 0.2);
+    border-color: rgba(139, 92, 246, 0.5);
+    box-shadow: 0 0 16px rgba(139, 92, 246, 0.25);
+    transform: translateY(-1px);
+}
+.sg-refresh-btn:active {
+    transform: scale(0.95);
+}
+
+/* 卡片网格 */
 .swing-guard-grid {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px;
 }
@@ -1253,7 +1369,7 @@
     box-shadow: 0 8px 24px rgba(0,0,0,0.3);
 }
 
-/* 状态色体系 (利用 CSS 伪元素实现左侧脉冲边框与内发光) */
+/* 状态色体系 (左侧脉冲边框与内发光) */
 .sg-card::before {
     content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
     transition: all 0.3s ease;
@@ -1261,24 +1377,33 @@
 
 /* 清仓态 🔴 */
 .sg-status-red::before {
-    background: linear-gradient(180deg, #f87171, #ef4444);
-    box-shadow: 2px 0 10px rgba(239, 68, 68, 0.4);
+    background: linear-gradient(180deg, #fca5a5, #ef4444);
+    box-shadow: 3px 0 12px rgba(239, 68, 68, 0.45);
 }
-.sg-status-red:hover { box-shadow: inset 0 0 30px rgba(239, 68, 68, 0.08), 0 8px 24px rgba(0,0,0,0.4); border-color: rgba(239, 68, 68, 0.2); }
+.sg-status-red:hover {
+    box-shadow: inset 0 0 30px rgba(239, 68, 68, 0.08), 0 8px 24px rgba(0,0,0,0.4);
+    border-color: rgba(239, 68, 68, 0.25);
+}
 
 /* 减仓态 🟡 */
 .sg-status-yellow::before {
-    background: linear-gradient(180deg, #fbbf24, #f59e0b);
-    box-shadow: 2px 0 10px rgba(245, 158, 11, 0.4);
+    background: linear-gradient(180deg, #fcd34d, #f59e0b);
+    box-shadow: 3px 0 12px rgba(245, 158, 11, 0.45);
 }
-.sg-status-yellow:hover { box-shadow: inset 0 0 30px rgba(245, 158, 11, 0.06), 0 8px 24px rgba(0,0,0,0.4); border-color: rgba(245, 158, 11, 0.2); }
+.sg-status-yellow:hover {
+    box-shadow: inset 0 0 30px rgba(245, 158, 11, 0.06), 0 8px 24px rgba(0,0,0,0.4);
+    border-color: rgba(245, 158, 11, 0.25);
+}
 
 /* 持有态 🟢 */
 .sg-status-green::before {
-    background: linear-gradient(180deg, #34d399, #10b981);
-    box-shadow: 2px 0 10px rgba(16, 185, 129, 0.4);
+    background: linear-gradient(180deg, #6ee7b7, #10b981);
+    box-shadow: 3px 0 12px rgba(16, 185, 129, 0.45);
 }
-.sg-status-green:hover { box-shadow: inset 0 0 30px rgba(16, 185, 129, 0.06), 0 8px 24px rgba(0,0,0,0.4); border-color: rgba(16, 185, 129, 0.2); }
+.sg-status-green:hover {
+    box-shadow: inset 0 0 30px rgba(16, 185, 129, 0.06), 0 8px 24px rgba(0,0,0,0.4);
+    border-color: rgba(16, 185, 129, 0.25);
+}
 
 /* 卡片头部 */
 .sg-header {
@@ -1289,52 +1414,60 @@
     display: flex; align-items: center; gap: 6px;
 }
 .sg-badge {
-    font-size: 0.72rem; font-weight: 600; padding: 3px 8px; border-radius: 6px;
-    letter-spacing: 0.5px;
+    font-size: 0.72rem; font-weight: 700; padding: 3px 10px; border-radius: 6px;
+    letter-spacing: 0.5px; text-transform: uppercase;
 }
 
-/* 状态色映射 */
-.sg-text-red { color: #f87171; }
-.sg-bg-red { background: rgba(239, 68, 68, 0.15); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.3); }
-.sg-text-yellow { color: #fbbf24; }
-.sg-bg-yellow { background: rgba(245, 158, 11, 0.15); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.3); }
-.sg-text-green { color: #34d399; }
-.sg-bg-green { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.3); }
+/* 状态色映射 (徽章 + 内发光) */
+.sg-text-red { color: #fca5a5; text-shadow: 0 0 8px rgba(239, 68, 68, 0.4); }
+.sg-bg-red { background: rgba(239, 68, 68, 0.12); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.35); box-shadow: inset 0 0 6px rgba(239,68,68,0.15); }
+.sg-text-yellow { color: #fcd34d; text-shadow: 0 0 8px rgba(245, 158, 11, 0.4); }
+.sg-bg-yellow { background: rgba(245, 158, 11, 0.12); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.35); box-shadow: inset 0 0 6px rgba(245,158,11,0.15); }
+.sg-text-green { color: #6ee7b7; text-shadow: 0 0 8px rgba(16, 185, 129, 0.4); }
+.sg-bg-green { background: rgba(16, 185, 129, 0.12); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.35); box-shadow: inset 0 0 6px rgba(16,185,129,0.15); }
 .sg-text-neutral { color: #94a3b8; }
-.sg-bg-neutral { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.3); }
+.sg-bg-neutral { background: rgba(148, 163, 184, 0.12); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.3); }
 
 /* 安全垫数据行 */
 .sg-data-row {
     display: flex; justify-content: space-between; align-items: flex-end;
 }
 .sg-data-label {
-    font-size: 0.78rem; color: #94a3b8; font-weight: 500;
+    font-size: 0.78rem; color: #94a3b8; font-weight: 600; letter-spacing: 0.3px;
 }
 .sg-data-value {
-    font-family: 'Inter', 'JetBrains Mono', monospace;
-    font-size: 1.15rem; font-weight: 700;
+    font-family: 'JetBrains Mono', 'Inter', monospace;
+    font-size: 1.2rem; font-weight: 800;
+    /* text-shadow inherited from .sg-text-* classes */
 }
 
-/* 全新能量条 (Buffer Progress Bar) */
+/* 能量条 (凹陷轨道 + 发光填充) */
 .sg-buffer-track {
-    height: 4px; border-radius: 2px; width: 100%;
-    background: rgba(255,255,255,0.06);
+    height: 5px; border-radius: 4px; width: 100%;
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid rgba(255,255,255,0.04);
+    box-shadow: inset 0 1px 4px rgba(0,0,0,0.5);
     overflow: hidden; margin-top: 2px;
 }
 .sg-buffer-fill {
-    height: 100%; border-radius: 2px;
+    height: 100%; border-radius: 4px;
     transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+    box-shadow: 0 0 10px currentColor;
 }
-/* 红灯时闪烁 */
+/* 红灯闪烁 */
 @keyframes dangerFlash {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
+    0%, 100% { opacity: 1; box-shadow: 0 0 12px rgba(239,68,68,0.6); }
+    50% { opacity: 0.35; box-shadow: 0 0 4px rgba(239,68,68,0.2); }
 }
-.sg-buffer-fill.flash { animation: dangerFlash 1.5s infinite; }
+.sg-buffer-fill.flash { animation: dangerFlash 1.2s infinite; }
 
 /* 底部防守逻辑释义 */
 .sg-footer {
-    font-size: 0.72rem; color: #64748b; line-height: 1.4;
-    border-top: 1px dashed rgba(255,255,255,0.08);
+    font-size: 0.73rem; color: #94a3b8; line-height: 1.5;
+    border-top: 1px solid rgba(255,255,255,0.06);
     padding-top: 10px; margin-top: 2px;
+    padding-left: 10px;
+    border-left: 2px solid rgba(139, 92, 246, 0.3);
+    font-weight: 500;
 }
+
