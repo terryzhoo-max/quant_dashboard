@@ -336,17 +336,30 @@ function renderAIAEHub(snapshot) {
         slopeEl.style.color = Math.abs(slope) >= 1.5 ? '#ef4444' : '#94a3b8';
     }
 
-    // ── 五档状态条 ──
+    // ── 五档状态条 (注入 CSS 变量驱动发光色) ──
     const strip = document.getElementById('aiae-hub-regime-strip');
     if (strip) {
-        strip.innerHTML = _REGIME_DEFS.map(d => `
-            <div class="aiae-hub-regime-item${d.r === regime ? ' active' : ''}" style="${d.r === regime ? 'background:rgba(255,255,255,0.04);border-color:' + d.color + '30;' : ''}">
+        strip.innerHTML = _REGIME_DEFS.map(d => {
+            const isActive = d.r === regime;
+            // Convert hex to RGB for CSS variable
+            const hexToRgb = (hex) => {
+                const r = parseInt(hex.slice(1, 3), 16);
+                const g = parseInt(hex.slice(3, 5), 16);
+                const b = parseInt(hex.slice(5, 7), 16);
+                return `${r},${g},${b}`;
+            };
+            const activeStyle = isActive
+                ? `--regime-color:${d.color}40;--regime-rgb:${hexToRgb(d.color)};background:rgba(255,255,255,0.04);border-color:${d.color}30;`
+                : '';
+            return `
+            <div class="aiae-hub-regime-item${isActive ? ' active' : ''}" style="${activeStyle}">
                 <div class="aiae-hub-ri-emoji">${d.emoji}</div>
-                <div class="aiae-hub-ri-name" style="${d.r === regime ? 'color:' + d.color : ''}">${d.name}</div>
+                <div class="aiae-hub-ri-name" style="${isActive ? 'color:' + d.color : ''}">${d.name}</div>
                 <div class="aiae-hub-ri-range">${d.range}</div>
                 <div class="aiae-hub-ri-pos">仓位 ${d.pos}</div>
             </div>
-        `).join('');
+        `;
+        }).join('');
     }
 
     // ── 三警示指标 ──
