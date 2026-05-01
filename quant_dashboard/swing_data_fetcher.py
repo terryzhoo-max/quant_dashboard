@@ -1,5 +1,4 @@
 import tushare as ts
-import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 from config import TUSHARE_TOKEN
