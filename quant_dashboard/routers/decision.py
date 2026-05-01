@@ -20,9 +20,10 @@ class SimulateRequest(BaseModel):
 
 @router.get("/hub")
 async def get_decision_hub():
-    """决策中枢全量数据 (矛盾检测 + JCS + 情景列表)"""
+    """决策中枢全量数据 — V2: SWR 三级缓存 (5min fresh / 1h stale)"""
+    from services.cache_service import stale_while_revalidate
     from dashboard_modules.decision_engine import get_hub_data
-    return get_hub_data()
+    return stale_while_revalidate("swr_decision_hub", get_hub_data, fresh_ttl=300, stale_ttl=3600)
 
 
 @router.get("/scenarios")
@@ -86,10 +87,14 @@ async def get_calendar(year: int = Query(default=None), month: int = Query(defau
 
 @router.get("/performance")
 async def get_performance():
-    """沪深300基准绩效分析 (月度热力图 + 回撤 + 滚动Sharpe)"""
-    from dashboard_modules.performance_analytics import compute_performance_analytics
-    data = compute_performance_analytics()
-    return {"status": "success", **data}
+    """沪深300基准绩效分析 — V2: SWR 三级缓存 (2h fresh / 12h stale)"""
+    from services.cache_service import stale_while_revalidate
+
+    def _compute():
+        from dashboard_modules.performance_analytics import compute_performance_analytics
+        return {"status": "success", **compute_performance_analytics()}
+
+    return stale_while_revalidate("swr_perf_analytics", _compute, fresh_ttl=7200, stale_ttl=43200)
 
 
 @router.get("/swing-guard")

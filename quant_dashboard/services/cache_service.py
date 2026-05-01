@@ -111,3 +111,96 @@ class CacheService:
 
 # 模块级单例 — main.py 中 `from services.cache_service import cache_manager`
 cache_manager = CacheService()
+
+
+# ═══════════════════════════════════════════════════
+#  V2.0: Stale-While-Revalidate 通用中间件
+# ═══════════════════════════════════════════════════
+
+import time as _time
+
+# 防止并发重复刷新的标志位
+_swr_refreshing = set()
+_swr_refresh_lock = threading.Lock()
+
+
+def stale_while_revalidate(cache_key: str, compute_fn, fresh_ttl=3600, stale_ttl=21600):
+    """
+    三级缓存通用中间件 (全路由复用):
+    
+    - Fresh  (age < fresh_ttl):  直接返回
+    - Stale  (fresh_ttl < age < stale_ttl): 返回旧数据 + 后台静默刷新
+    - Miss   (age > stale_ttl 或无缓存): 同步计算
+    
+    Args:
+        cache_key: 缓存键名 (建议前缀 swr_)
+        compute_fn: 无参数计算函数, 返回 dict
+        fresh_ttl: 新鲜数据有效期 (秒), 默认 1h
+        stale_ttl: 过时数据最大容忍期 (秒), 默认 6h
+    
+    Returns:
+        dict: 计算结果 + 缓存元数据 (cached, stale, age_seconds)
+    """
+    cached = cache_manager.get_json(cache_key)
+    
+    if cached and "timestamp" in cached:
+        age = _time.time() - cached["timestamp"]
+        
+        # Tier 1: Fresh — 直接返回
+        if age < fresh_ttl:
+            result = cached["data"]
+            result["_cache"] = {"cached": True, "stale": False, "age_seconds": int(age)}
+            return result
+        
+        # Tier 2: Stale — 返回旧数据 + 后台刷新
+        if age < stale_ttl:
+            _trigger_bg_refresh(cache_key, compute_fn)
+            result = cached["data"]
+            result["_cache"] = {"cached": True, "stale": True, "age_seconds": int(age)}
+            return result
+    
+    # Tier 3: Hard miss — 同步计算
+    return _swr_compute_sync(cache_key, compute_fn)
+
+
+def _trigger_bg_refresh(cache_key: str, compute_fn):
+    """后台静默刷新 (带防雷锁)"""
+    with _swr_refresh_lock:
+        if cache_key in _swr_refreshing:
+            return  # 已有刷新线程在跑
+        _swr_refreshing.add(cache_key)
+    
+    def _do_refresh():
+        try:
+            result = compute_fn()
+            payload = {"timestamp": _time.time(), "data": result}
+            cache_manager.set_json(cache_key, payload)
+            _logger.info(f"SWR 后台刷新完成: {cache_key}")
+        except Exception as e:
+            _logger.warning(f"SWR 后台刷新失败 {cache_key}: {e}")
+        finally:
+            with _swr_refresh_lock:
+                _swr_refreshing.discard(cache_key)
+    
+    threading.Thread(target=_do_refresh, daemon=True).start()
+
+
+def _swr_compute_sync(cache_key: str, compute_fn):
+    """同步计算并写入缓存"""
+    try:
+        result = compute_fn()
+        payload = {"timestamp": _time.time(), "data": result}
+        cache_manager.set_json(cache_key, payload)
+        result["_cache"] = {"cached": False, "stale": False, "age_seconds": 0}
+        return result
+    except Exception as e:
+        _logger.error(f"SWR 同步计算失败 {cache_key}: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "error": str(e)}
+
+
+def swr_clear(cache_key: str):
+    """清除 SWR 缓存 (供 /refresh 端点调用)"""
+    cache_manager.delete(cache_key)
+    _logger.info(f"SWR 缓存已清除: {cache_key}")

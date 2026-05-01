@@ -36,15 +36,15 @@ executor = ThreadPoolExecutor(max_workers=6)
 
 @router.get("/aiae/report")
 async def get_aiae_report():
-    """AIAE 完整报告: 当前AIAE值、五档状态、仓位矩阵、子策略配额、信号"""
-    try:
-        loop = asyncio.get_running_loop()
+    """中国 AIAE 完整报告 — V2: SWR 三级缓存 (30min fresh / 4h stale)"""
+    from services.cache_service import stale_while_revalidate
+
+    def _compute():
         engine = get_aiae_engine()
-        report = await loop.run_in_executor(executor, engine.generate_report)
-        return {"status": "success", "data": report, "timestamp": datetime.now().isoformat()}
-    except Exception as e:
-        logger.error(f"AIAE report error: {e}")
-        return {"status": "error", "message": str(e)}
+        report = engine.generate_report()
+        return {"status": "success", "data": report, "timestamp": __import__('datetime').datetime.now().isoformat()}
+
+    return stale_while_revalidate("swr_aiae_cn_report", _compute, fresh_ttl=1800, stale_ttl=14400)
 
 @router.get("/aiae/chart")
 async def get_aiae_chart():
@@ -58,8 +58,10 @@ async def get_aiae_chart():
 
 @router.get("/aiae/refresh")
 async def refresh_aiae():
-    """强制刷新AIAE数据(清除缓存)"""
+    """强制刷新AIAE数据(清除SWR缓存 + 重算)"""
+    from services.cache_service import swr_clear
     try:
+        swr_clear("swr_aiae_cn_report")  # 清除 SWR 缓存
         loop = asyncio.get_running_loop()
         engine = get_aiae_engine()
         engine.refresh()
