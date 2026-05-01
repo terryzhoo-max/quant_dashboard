@@ -1287,27 +1287,41 @@ function renderPerfSharpe(sharpeData) {
 //  Phase 2: 全球宽基波段守卫 (Swing Guard)
 // ═══════════════════════════════════════════════════
 
-async function fetchSwingGuard() {
+async function fetchSwingGuard(retries = 2) {
     const grid = document.getElementById('swing-guard-grid');
     if (!grid) return;
     
     grid.innerHTML = '<div class="loading-spinner">⏳ 拉取7大ETF最新信号 (若Tushare冷启动约需5秒)...</div>';
     
-    try {
-        const resp = await AC.secureFetch(`${API_BASE}/swing-guard`);
-        const result = await resp.json();
-        
-        if (result.status === 'success') {
-            renderSwingGuard(result.data);
-            if (result.cached) {
-                console.log("Swing Guard: Using cached data");
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+            const resp = await AC.secureFetch(`${API_BASE}/swing-guard`);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const result = await resp.json();
+            
+            if (result.status === 'success') {
+                renderSwingGuard(result.data);
+                if (result.cached) {
+                    console.log("Swing Guard: Using cached data");
+                }
+                return; // 成功，退出
+            } else {
+                throw new Error(result.error || '后端返回失败');
             }
-        } else {
-            grid.innerHTML = `<div class="loading-spinner">❌ 无法获取波段守卫数据: ${result.error || '未知错误'}</div>`;
+        } catch (e) {
+            console.warn(`Swing Guard 第 ${attempt + 1} 次尝试失败:`, e.message);
+            if (attempt < retries) {
+                grid.innerHTML = `<div class="loading-spinner">⏳ 数据源冷启动中... 重试 ${attempt + 2}/${retries + 1}</div>`;
+                await new Promise(r => setTimeout(r, 3000));
+            } else {
+                grid.innerHTML = `<div class="loading-spinner" style="display:flex;flex-direction:column;align-items:center;gap:12px;">
+                    <span>⚠️ 波段守卫数据暂时不可用</span>
+                    <span style="font-size:0.75rem;color:#64748b;">${e.message}</span>
+                    <button class="sg-refresh-btn" onclick="fetchSwingGuard()" style="margin-top:4px;">↻ 重试</button>
+                </div>`;
+                console.error("Swing Guard fetch error (all retries exhausted):", e);
+            }
         }
-    } catch (e) {
-        grid.innerHTML = `<div class="loading-spinner">❌ 网络请求失败</div>`;
-        console.error("Swing Guard fetch error: ", e);
     }
 }
 

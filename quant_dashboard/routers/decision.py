@@ -103,14 +103,19 @@ async def get_swing_guard():
     # Cache for 1 hour since we are making EOD decisions
     if cached and "timestamp" in cached and time.time() - cached["timestamp"] < 3600:
         return {"status": "success", "data": cached["data"], "cached": True}
+    
+    try:
+        from swing_decision import SwingDecisionOrchestrator
+        orchestrator = SwingDecisionOrchestrator()
+        signals = orchestrator.generate_all_signals()
         
-    from swing_decision import SwingDecisionOrchestrator
-    orchestrator = SwingDecisionOrchestrator()
-    signals = orchestrator.generate_all_signals()
-    
-    # Save to cache
-    payload = {"timestamp": time.time(), "data": signals}
-    cache_manager.set_json(cache_key, payload)
-    
-    return {"status": "success", "data": signals, "cached": False}
+        # Save to cache
+        payload = {"timestamp": time.time(), "data": signals}
+        cache_manager.set_json(cache_key, payload)
+        
+        return {"status": "success", "data": signals, "cached": False}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "error": f"波段守卫引擎异常: {str(e)}"}
 
