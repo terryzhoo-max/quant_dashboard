@@ -71,9 +71,10 @@ class FactorDataManager:
                     break
             
             if all_indicators:
-                new_df = pd.concat(all_indicators)
+                new_df = pd.concat([d for d in all_indicators if not d.empty and not d.isna().all(axis=None)])
                 if existing_df is not None:
-                    full_df = pd.concat([existing_df, new_df]).drop_duplicates(
+                    dfs = [d for d in [existing_df, new_df] if not d.empty and not d.isna().all(axis=None)]
+                    full_df = pd.concat(dfs).drop_duplicates(
                         subset=['ts_code', 'ann_date', 'end_date']
                     ).sort_values('ann_date')
                 else:
@@ -126,7 +127,8 @@ class FactorDataManager:
                 if new_df is not None and not new_df.empty:
                     new_df = new_df.sort_values("trade_date")
                     if existing_df is not None:
-                        combined_df = pd.concat([existing_df, new_df]).drop_duplicates(subset=['trade_date']).sort_values("trade_date")
+                        dfs = [d for d in [existing_df, new_df] if not d.empty and not d.isna().all(axis=None)]
+                        combined_df = pd.concat(dfs).drop_duplicates(subset=['trade_date']).sort_values("trade_date")
                     else:
                         combined_df = new_df
                     combined_df.to_parquet(file_path)

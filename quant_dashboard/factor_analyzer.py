@@ -77,7 +77,7 @@ class FactorAnalyzer:
         if not all_data:
             return pd.DataFrame()
 
-        full_df = pd.concat(all_data)
+        full_df = pd.concat([d for d in all_data if not d.empty])
         full_df = full_df.dropna(subset=[factor_name, 'next_5d_ret'])
         return full_df
 
@@ -116,7 +116,7 @@ class FactorAnalyzer:
         if not all_data:
             return pd.DataFrame()
 
-        full_df = pd.concat(all_data)
+        full_df = pd.concat([d for d in all_data if not d.empty])
         return full_df
 
     def calculate_metrics(self, data: pd.DataFrame, factor_name: str):

@@ -288,7 +288,8 @@ class ERPTimingEngine:
             if df is not None and not df.empty:
                 df['trade_date'] = pd.to_datetime(df['trade_date'], format='%Y%m%d')
                 if existing is not None:
-                    df = pd.concat([existing, df]).drop_duplicates(subset='trade_date', keep='last')
+                    dfs = [d for d in [existing, df] if d is not None and not d.empty]
+                    df = pd.concat(dfs).drop_duplicates(subset='trade_date', keep='last')
                 df = df.sort_values('trade_date').reset_index(drop=True)
                 atomic_write_parquet(df, cache_file)
                 print(f"[ERP] PE-TTM cached: {len(df)} rows")
@@ -335,11 +336,12 @@ class ERPTimingEngine:
                 chunk_start = chunk_end + timedelta(days=1)
                 time.sleep(1.0)  # Rate limit safety
             if all_dfs:
-                new_df = pd.concat(all_dfs, ignore_index=True)
+                new_df = pd.concat([d for d in all_dfs if not d.empty], ignore_index=True)
                 new_df['trade_date'] = pd.to_datetime(new_df['trade_date'], format='%Y%m%d')
                 new_df = new_df.rename(columns={'yield': 'yield_10y'})
                 new_df = new_df[['trade_date', 'yield_10y']]
-                df = pd.concat([existing, new_df]).drop_duplicates(subset='trade_date', keep='last') if existing is not None else new_df
+                dfs = [d for d in [existing, new_df] if d is not None and not d.empty]
+                df = pd.concat(dfs).drop_duplicates(subset='trade_date', keep='last') if len(dfs) > 1 else (dfs[0] if dfs else new_df)
                 df = df.sort_values('trade_date').reset_index(drop=True)
                 atomic_write_parquet(df, cache_file)
                 print(f"[ERP] 10Y yield cached: {len(df)} rows ({batch_count} batches)")
@@ -986,7 +988,8 @@ class ERPTimingEngine:
             erp_sampled = erp_df.iloc[::3].copy()
             # C3 fix: 确保采样后最后一行始终是原始序列的最新日期
             if len(erp_df) > 0 and (len(erp_sampled) == 0 or erp_sampled.index[-1] != erp_df.index[-1]):
-                erp_sampled = pd.concat([erp_sampled, erp_df.iloc[[-1]]]).drop_duplicates(subset='trade_date', keep='last')
+                dfs = [d for d in [erp_sampled, erp_df.iloc[[-1]]] if not d.empty]
+                erp_sampled = pd.concat(dfs).drop_duplicates(subset='trade_date', keep='last')
 
             dates = erp_sampled['trade_date'].dt.strftime('%Y-%m-%d').tolist()
             erp_vals = erp_sampled['erp'].round(2).tolist()

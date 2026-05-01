@@ -46,7 +46,8 @@ def _fetch_pe_ttm(start_date: str, end_date: str, index_code: str = "000300.SH")
     if df is not None and not df.empty:
         df['trade_date'] = pd.to_datetime(df['trade_date'], format='%Y%m%d')
         if existing is not None:
-            df = pd.concat([existing, df]).drop_duplicates(subset='trade_date', keep='last')
+            dfs = [d for d in [existing, df] if d is not None and not d.empty]
+            df = pd.concat(dfs).drop_duplicates(subset='trade_date', keep='last')
         df = df.sort_values('trade_date').reset_index(drop=True)
         df.to_parquet(cache_file)
         print(f"[ERP Data] PE-TTM: {len(df)} rows cached")
@@ -102,12 +103,13 @@ def _fetch_yield_10y(start_date: str, end_date: str, bond_code: str = "1001.CB")
             time.sleep(3.5)  # Tushare 限流
 
     if all_dfs:
-        new_df = pd.concat(all_dfs, ignore_index=True)
+        new_df = pd.concat([d for d in all_dfs if not d.empty], ignore_index=True)
         new_df['trade_date'] = pd.to_datetime(new_df['trade_date'], format='%Y%m%d')
         new_df = new_df.rename(columns={'yield': 'yield_10y'})
         new_df = new_df[['trade_date', 'yield_10y']]
         if existing is not None:
-            df = pd.concat([existing, new_df]).drop_duplicates(subset='trade_date', keep='last')
+            dfs = [d for d in [existing, new_df] if d is not None and not d.empty]
+            df = pd.concat(dfs).drop_duplicates(subset='trade_date', keep='last')
         else:
             df = new_df
         df = df.sort_values('trade_date').reset_index(drop=True)

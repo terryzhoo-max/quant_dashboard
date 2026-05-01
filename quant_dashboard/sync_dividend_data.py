@@ -54,7 +54,8 @@ for code, asset in DIVIDEND_POOL:
         if df is not None and not df.empty:
             df = df.sort_values('trade_date').reset_index(drop=True)
             if existing is not None:
-                df = pd.concat([existing, df]).drop_duplicates('trade_date').sort_values('trade_date').reset_index(drop=True)
+                dfs = [d for d in [existing, df] if d is not None and not d.empty]
+                df = pd.concat(dfs).drop_duplicates('trade_date').sort_values('trade_date').reset_index(drop=True)
             df.to_parquet(fpath)
             # 验证数量
             rows = len(df)
