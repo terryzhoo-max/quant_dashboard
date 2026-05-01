@@ -1291,7 +1291,7 @@ async function fetchSwingGuard(retries = 2) {
     const grid = document.getElementById('swing-guard-grid');
     if (!grid) return;
     
-    grid.innerHTML = '<div class="loading-spinner">⏳ 拉取7大ETF最新信号 (若Tushare冷启动约需5秒)...</div>';
+    grid.innerHTML = '<div class="loading-spinner">⏳ 拉取7大ETF最新信号...</div>';
     
     for (let attempt = 0; attempt <= retries; attempt++) {
         try {
@@ -1301,10 +1301,9 @@ async function fetchSwingGuard(retries = 2) {
             
             if (result.status === 'success') {
                 renderSwingGuard(result.data);
-                if (result.cached) {
-                    console.log("Swing Guard: Using cached data");
-                }
-                return; // 成功，退出
+                // V2: 数据新鲜度标签
+                _updateSwingGuardFreshness(result);
+                return;
             } else {
                 throw new Error(result.error || '后端返回失败');
             }
@@ -1323,6 +1322,34 @@ async function fetchSwingGuard(retries = 2) {
             }
         }
     }
+}
+
+function _updateSwingGuardFreshness(result) {
+    const header = document.querySelector('.swing-guard-header');
+    if (!header) return;
+    // 移除旧标签
+    const old = header.querySelector('.sg-freshness');
+    if (old) old.remove();
+    
+    const badge = document.createElement('span');
+    badge.className = 'sg-freshness';
+    
+    if (!result.cached) {
+        badge.textContent = '🟢 实时';
+        badge.style.cssText = 'font-size:0.72rem;color:#6ee7b7;margin-right:8px;font-weight:600;';
+    } else if (result.stale) {
+        const mins = Math.round((result.age_seconds || 0) / 60);
+        badge.textContent = `🟡 ${mins}m前 · 刷新中`;
+        badge.style.cssText = 'font-size:0.72rem;color:#fcd34d;margin-right:8px;font-weight:600;';
+    } else {
+        const mins = Math.round((result.age_seconds || 0) / 60);
+        badge.textContent = `⚡ ${mins}m前`;
+        badge.style.cssText = 'font-size:0.72rem;color:#94a3b8;margin-right:8px;font-weight:600;';
+    }
+    
+    // 插入到刷新按钮之前
+    const btn = header.querySelector('.sg-refresh-btn');
+    if (btn) btn.parentNode.insertBefore(badge, btn);
 }
 
 function renderSwingGuard(data) {

@@ -191,6 +191,16 @@ def warmup_hk_aiae_cache():
         raise Exception(f"HK AIAE warmup failed: {status}")
 
 
+def warmup_swing_guard():
+    """预热波段守卫: 并行拉取7大ETF + 缓存信号 (V2.0)"""
+    from swing_decision import SwingDecisionOrchestrator
+    orchestrator = SwingDecisionOrchestrator()
+    signals = orchestrator.generate_all_signals()
+    payload = {"timestamp": time.time(), "data": signals}
+    cache_manager.set_json("swing_guard_signals", payload)
+    logger.info(f"Swing Guard 预热完成 · {len(signals)} 只ETF")
+
+
 # ═══════════════════════════════════════════════════
 #  全球 AIAE 四地对比缓存
 # ═══════════════════════════════════════════════════
@@ -301,6 +311,8 @@ def daily_warmup_callback():
         backfill_signal_accuracy()
     except Exception as e:
         sched_logger.warning(f"准确率回填失败 (非致命): {e}")
+    # V2.0: 波段守卫刷新 (收盘后更新7大ETF信号)
+    with_retry(warmup_swing_guard, "SwingGuard_Warmup", 2, 30)
     sched_logger.info("收盘预热流水线完成")
 
 
@@ -339,3 +351,10 @@ def aaii_crawl_callback():
     """AAII Sentiment 每周五自动爬取"""
     sched_logger.info("AAII Sentiment 自动爬取启动")
     with_retry(warmup_aaii_sentiment, "AAII_Crawl", 2, 120)
+
+
+def swing_guard_warmup_callback():
+    """波段守卫定时预热: 15:40 收盘后刷新 (独立于 daily_warmup 的补充通道)"""
+    sched_logger.info("Swing Guard 定时预热启动")
+    with_retry(warmup_swing_guard, "SwingGuard_Scheduled", 2, 30)
+    sched_logger.info("Swing Guard 预热完成")

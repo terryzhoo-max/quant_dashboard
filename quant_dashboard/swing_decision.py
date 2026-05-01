@@ -1,4 +1,5 @@
 import json
+import pandas as pd
 from swing_data_fetcher import SwingDataFetcher
 from swing_strategy_engine import SwingStrategyEngine
 
@@ -11,8 +12,11 @@ class SwingDecisionOrchestrator:
         self.engine = SwingStrategyEngine()
         
     def generate_all_signals(self) -> dict:
-        """为7大ETF生成完整决策信号"""
+        """为7大ETF生成完整决策信号 (V2: 并行拉取)"""
         results = {}
+        
+        # V2: 并行拉取全部 ETF 日线数据
+        all_dfs = self.fetcher.fetch_all_etfs(days=120)
         
         # 遍历所有配置的资产
         all_assets = list(self.engine.slow_ma_assets.keys()) + \
@@ -20,9 +24,8 @@ class SwingDecisionOrchestrator:
                      list(self.engine.trailing_drawdown_assets.keys())
                      
         for asset_id in all_assets:
-            print(f"正在拉取并分析: {asset_id} ...")
-            # 1. 获取日线数据
-            df = self.fetcher.fetch_etf_daily(asset_id, days=120)
+            # 1. 从并行结果中取数据
+            df = all_dfs.get(asset_id, pd.DataFrame())
             
             # 2. 获取实时溢价率（QDII专享）
             premium = self.fetcher.get_qdii_premium(asset_id)

@@ -94,28 +94,61 @@ async def get_performance():
 
 @router.get("/swing-guard")
 async def get_swing_guard():
-    """全球宽基波段守卫 (7大ETF)"""
+    """全球宽基波段守卫 (7大ETF) — V2: Stale-While-Revalidate 三级缓存"""
     from services.cache_service import cache_manager
     import time
+    import threading
     
     cache_key = "swing_guard_signals"
     cached = cache_manager.get_json(cache_key)
-    # Cache for 1 hour since we are making EOD decisions
-    if cached and "timestamp" in cached and time.time() - cached["timestamp"] < 3600:
-        return {"status": "success", "data": cached["data"], "cached": True}
     
+    if cached and "timestamp" in cached:
+        age = time.time() - cached["timestamp"]
+        
+        # Tier 1: Fresh (< 1h) — 直接返回
+        if age < 3600:
+            return {"status": "success", "data": cached["data"],
+                    "cached": True, "age_seconds": int(age)}
+        
+        # Tier 2: Stale (1-6h) — 返回旧数据 + 后台静默刷新
+        if age < 21600:
+            threading.Thread(target=_refresh_swing_guard_bg, daemon=True).start()
+            return {"status": "success", "data": cached["data"],
+                    "cached": True, "stale": True, "age_seconds": int(age)}
+    
+    # Tier 3: Hard miss — 必须阻塞等待
+    return _refresh_swing_guard_sync()
+
+
+def _refresh_swing_guard_bg():
+    """后台静默刷新 (Stale-While-Revalidate 的 revalidate 部分)"""
+    import time
+    from services.cache_service import cache_manager
     try:
         from swing_decision import SwingDecisionOrchestrator
         orchestrator = SwingDecisionOrchestrator()
         signals = orchestrator.generate_all_signals()
-        
-        # Save to cache
         payload = {"timestamp": time.time(), "data": signals}
-        cache_manager.set_json(cache_key, payload)
-        
+        cache_manager.set_json("swing_guard_signals", payload)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+
+
+def _refresh_swing_guard_sync():
+    """同步刷新 (Hard miss 时阻塞)"""
+    import time
+    from services.cache_service import cache_manager
+    try:
+        from swing_decision import SwingDecisionOrchestrator
+        orchestrator = SwingDecisionOrchestrator()
+        signals = orchestrator.generate_all_signals()
+        payload = {"timestamp": time.time(), "data": signals}
+        cache_manager.set_json("swing_guard_signals", payload)
         return {"status": "success", "data": signals, "cached": False}
     except Exception as e:
         import traceback
         traceback.print_exc()
         return {"status": "error", "error": f"波段守卫引擎异常: {str(e)}"}
+
 

@@ -43,9 +43,10 @@ from services.dashboard_builder import _hot_data_reactor_tick, _STRATEGY_LOCK
 from services.warmup_pipeline import (
     warmup_erp_cache, warmup_aiae_cache, warmup_dashboard_cache,
     warmup_rates_cache, warmup_hk_erp_cache, warmup_hk_aiae_cache,
-    warmup_global_aiae_cache,
+    warmup_global_aiae_cache, warmup_swing_guard,
     daily_warmup_callback, morning_warmup_callback, fred_daily_callback,
     us_aiae_warmup_callback, jp_aiae_warmup_callback, aaii_crawl_callback,
+    swing_guard_warmup_callback,
 )
 from aiae_engine import get_aiae_engine
 
@@ -75,6 +76,7 @@ async def lifespan(app: FastAPI):
     threading.Thread(target=warmup_global_aiae_cache, daemon=True).start()
     threading.Thread(target=warmup_hk_erp_cache, daemon=True).start()
     threading.Thread(target=warmup_hk_aiae_cache, daemon=True).start()
+    threading.Thread(target=warmup_swing_guard, daemon=True).start()
 
     # ── Init APScheduler ──
     scheduler = BackgroundScheduler(
@@ -97,6 +99,8 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(jp_aiae_warmup_callback, CronTrigger(day_of_week='mon-fri', hour=15, minute=30), id="jp_aiae")
     # 7. AAII 情绪爬虫 每周五 09:00
     scheduler.add_job(aaii_crawl_callback, CronTrigger(day_of_week='fri', hour=9, minute=0), id="aaii_crawl")
+    # 8. 波段守卫 15:40 (收盘后自动刷新7大ETF信号)
+    scheduler.add_job(swing_guard_warmup_callback, CronTrigger(day_of_week='mon-fri', hour=15, minute=40), id="swing_guard")
 
     scheduler.start()
     app.state.scheduler = scheduler
