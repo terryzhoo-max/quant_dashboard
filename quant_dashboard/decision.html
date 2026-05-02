@@ -8,7 +8,7 @@
     <title>决策中枢 · AlphaCore</title>
     <link rel="stylesheet" href="./static/css/fonts.css?v=1">
     <link rel="stylesheet" href="./static/css/styles.css?v=12">
-    <link rel="stylesheet" href="./static/css/decision.css?v=28">
+    <link rel="stylesheet" href="./static/css/decision.css?v=31">
     <link rel="stylesheet" href="./static/css/visual_excellence.css?v=3">
     <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
@@ -218,25 +218,47 @@
                             📋 操作纪律参考 <span class="sop-arrow">▶</span>
                         </h4>
                         <div class="sop-body">
-                            <div class="sop-section">
-                                <div class="sop-section-title sop-buy">🟢 买入纪律</div>
-                                <ul class="sop-rules">
-                                    <li>JCS ≥ 70 + AIAE ≤ R2 → 单次最大加仓 <b>10%</b></li>
-                                    <li>JCS 40-70 → 仅微调，单次 ≤ <b>5%</b></li>
-                                    <li>JCS &lt; 40 → <b>禁止</b>新建仓，等待信号恢复</li>
-                                    <li>分批建仓：目标仓位分 <b>3 次</b>到位 (T/T+2/T+5)</li>
-                                </ul>
-                            </div>
-                            <div class="sop-section">
-                                <div class="sop-section-title sop-sell">🔴 止盈 / 止损纪律</div>
-                                <ul class="sop-rules">
-                                    <li>波段守卫 <b>RED</b> 信号 → 目标标的立即止盈</li>
-                                    <li>AIAE 升至 <b>R4+</b> → 全组合减仓至建议仓位</li>
-                                    <li>VIX &gt; <b>30</b> → 紧急降仓，仅保留防御仓</li>
-                                    <li>单票浮盈 &gt; <b>20%</b> → 移动止盈线至成本+10%</li>
-                                    <li>单票浮亏 &gt; <b>8%</b> → 检查信号共振，无共振则止损</li>
-                                    <li>JCS 连续 3 日 &lt; 40 → 全组合降至 <b>30%</b> 以下</li>
-                                </ul>
+                            <div class="sop-grid-4">
+                                <div class="sop-col sop-col-entry">
+                                    <div class="sop-col-title">🟢 建仓纪律</div>
+                                    <ul class="sop-rules">
+                                        <li>JCS ≥ <b>70</b> + AIAE ≤ R2 → 加仓 ≤ <b>10%</b></li>
+                                        <li>JCS <b>50-70</b> → 微调 ≤ <b>5%</b>，需 2 引擎共振</li>
+                                        <li>JCS &lt; <b>50</b> → <b class="danger-text">禁止</b>新建仓</li>
+                                        <li>分 <b>3 批</b>建仓: T / T+2 / T+5</li>
+                                        <li>单批不超过目标仓位的 <b>1/3</b></li>
+                                    </ul>
+                                </div>
+                                <div class="sop-col sop-col-hold">
+                                    <div class="sop-col-title">📊 持仓管理</div>
+                                    <ul class="sop-rules">
+                                        <li><b>每日</b>收盘后复查 JCS + 波段守卫</li>
+                                        <li><b>每周五</b>审查板块集中度 + HHI</li>
+                                        <li>单票仓位 ≤ <b>20%</b>，超配立即减至线内</li>
+                                        <li>单板块 ≤ <b>40%</b>，否则触发行业分散</li>
+                                        <li>最少持 <b>5 只</b>标的，分散尾部风险</li>
+                                    </ul>
+                                </div>
+                                <div class="sop-col sop-col-reduce">
+                                    <div class="sop-col-title">🟡 减仓 / 止盈</div>
+                                    <ul class="sop-rules">
+                                        <li>波段守卫 <b class="danger-text">RED</b> → 对应标的<b>立即止盈</b></li>
+                                        <li>AIAE 升至 <b>R4+</b> → 全组合减至建议仓位</li>
+                                        <li>单票浮盈 > <b>20%</b> → 移动止盈至成本+10%</li>
+                                        <li>单票浮盈 > <b>30%</b> → 减半锁定利润</li>
+                                        <li>JCS 连续 <b>3 日</b> &lt; 50 → 整体减仓 20%</li>
+                                    </ul>
+                                </div>
+                                <div class="sop-col sop-col-emergency">
+                                    <div class="sop-col-title">🔴 紧急止损</div>
+                                    <ul class="sop-rules">
+                                        <li>VIX > <b>30</b> → 降仓至 <b>30%</b>，仅留防御</li>
+                                        <li>单票浮亏 > <b>8%</b> → 无共振信号则<b>止损</b></li>
+                                        <li>JCS 连续 3 日 &lt; <b>40</b> → 全组合 ≤ <b>20%</b></li>
+                                        <li>尾部风险 > <b>60</b> → 降至建议仓位 <b>70%</b></li>
+                                        <li>组合回撤 > <b>-10%</b> → 暂停操作 1 日冷静</li>
+                                    </ul>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -462,6 +484,6 @@
         </div>
     </main>
 
-    <script src="./static/js/decision.js?v=28"></script>
+    <script src="./static/js/decision.js?v=30"></script>
 </body>
 </html>

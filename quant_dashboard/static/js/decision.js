@@ -672,7 +672,8 @@ function renderSectorConcentration(sectors, hhi, totalSignals, dataSource) {
         ${sectors.map((s, i) => {
             const over = s.pct > SECTOR_LIMIT;
             const barColor = over ? '#f87171' : colors[i % colors.length];
-            const srcHtml = (s.sources || []).map(src => `<span class="sc-src-pill">${src}</span>`).join('');
+            // 持仓模式: 来源已在顶部标明, 不重复; 信号模式: 显示策略来源
+            const srcHtml = (!isPortfolio && s.sources) ? s.sources.map(src => `<span class="sc-src-pill">${src}</span>`).join('') : '';
             return `<div class="sector-bar-row ${over ? 'sc-over' : ''}">
                 <span class="sector-bar-name">${s.sector}</span>
                 <div class="sector-bar-bg">
@@ -680,8 +681,7 @@ function renderSectorConcentration(sectors, hhi, totalSignals, dataSource) {
                     <div class="sc-redline" style="left:${SECTOR_LIMIT}%"></div>
                 </div>
                 <span class="sector-bar-pct ${over ? 'sc-pct-over' : ''}">${s.pct}%${over ? ' ⚠️' : ''}</span>
-                <div class="sc-src-row">${srcHtml}</div>
-            </div>`;
+            </div>${srcHtml ? `<div class="sc-src-row">${srcHtml}</div>` : ''}`;
         }).join('')}`;
 }
 
@@ -1125,6 +1125,9 @@ async function initDecisionHub() {
 
             // 情景
             renderScenarioCards(data.scenarios);
+
+            // V19.2: 信号阈值速查表 — 高亮当前信号位置
+            if (data.snapshot) highlightThresholdTable(data.snapshot);
         } else {
             document.getElementById('jcs-value').textContent = '--';
         }
@@ -1132,6 +1135,40 @@ async function initDecisionHub() {
         console.error('Decision hub load error:', e);
         document.querySelector('.loading-spinner')?.remove();
     }
+}
+
+// ═══════════════════════════════════════════════════
+//  V19.2: 信号阈值速查表 — 实时高亮当前信号
+// ═══════════════════════════════════════════════════
+function highlightThresholdTable(snap) {
+    const table = document.querySelector('.threshold-table tbody');
+    if (!table) return;
+    const rows = table.querySelectorAll('tr');
+    // 判定每个引擎当前落在哪列: 1=看多, 2=中性, 3=看空
+    const aiae = snap.aiae_v1 ?? 22;
+    const erp = snap.erp_score ?? 45;
+    const vix = snap.vix_val ?? 20;
+    const mr = (snap.mr_regime || 'RANGE').toUpperCase();
+
+    const zones = [
+        aiae < 17 ? 1 : (aiae <= 23 ? 2 : 3),                    // AIAE
+        erp > 55 ? 1 : (erp >= 35 ? 2 : 3),                       // ERP
+        vix < 16 ? 1 : (vix <= 25 ? 2 : 3),                       // VIX
+        mr === 'BULL' ? 1 : (['BEAR','CRASH'].includes(mr) ? 3 : 2) // MR
+    ];
+
+    rows.forEach((row, i) => {
+        if (i >= zones.length) return;
+        const cells = row.querySelectorAll('td');
+        if (cells.length < 4) return;
+        const activeCol = zones[i]; // 1=看多(col1), 2=中性(col2), 3=看空(col3)
+        cells.forEach((td, j) => td.classList.remove('tt-active', 'tt-active-bull', 'tt-active-neutral', 'tt-active-bear'));
+        const target = cells[activeCol];
+        if (target) {
+            target.classList.add('tt-active');
+            target.classList.add(activeCol === 1 ? 'tt-active-bull' : (activeCol === 2 ? 'tt-active-neutral' : 'tt-active-bear'));
+        }
+    });
 }
 
 // ═══════════════════════════════════════════════════
