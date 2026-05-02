@@ -45,6 +45,7 @@ function drawJCSRing(score, level) {
     canvas.height = size * dpr;
     canvas.style.width = size + 'px';
     canvas.style.height = size + 'px';
+    ctx.setTransform(1, 0, 0, 1, 0, 0);  // V19.3: 防止多次调用 scale 叠加
     ctx.scale(dpr, dpr);
 
     const cx = size / 2, cy = size / 2, r = 72, lw = 10;
@@ -98,7 +99,7 @@ function renderConflicts(data) {
     summary.textContent = data.matrix_summary;
     if (data.conflicts.length === 0) {
         // V20.0: 紧凑无矛盾状态 — 一行徽章替代4行列表
-        panel.innerHTML = `<div class="no-conflict-badge"><span class="pulse-dot"></span> 所有引擎信号对齐，零矛盾</div>`;
+        panel.innerHTML = `<div class="no-conflict-badge"><span class="pulse-dot"></span> 零矛盾信号，各引擎间无方向冲突</div>`;
         return;
     }
     panel.innerHTML = data.conflicts.map(c => `
@@ -199,6 +200,7 @@ function renderActionPlan(plan) {
         low: 'rgba(239, 68, 68, 0.7)'
     };
     el.style.setProperty('--conf-color', confColorMap[plan.confidence] || confColorMap.medium);
+    el.classList.remove('initially-hidden');
     el.style.display = 'block';
 
     const iconEl = document.getElementById('action-icon');
@@ -250,7 +252,7 @@ function renderAlerts(alerts) {
 
 const _REGIME_DEFS = [
     { r: 1, emoji: '🟢', name: 'Ⅰ级', cn: '极度恐慌', range: '<12.5%', pos: '90-95%', color: '#10b981' },
-    { r: 2, emoji: '🟥', name: 'Ⅱ级', cn: '低配置区', range: '12.5-17%', pos: '70-85%', color: '#3b82f6' },
+    { r: 2, emoji: '🔵', name: 'Ⅱ级', cn: '低配置区', range: '12.5-17%', pos: '70-85%', color: '#3b82f6' },
     { r: 3, emoji: '🟡', name: 'Ⅲ级', cn: '中性均衡', range: '17-23%', pos: '50-65%', color: '#eab308' },
     { r: 4, emoji: '🟠', name: 'Ⅳ级', cn: '偏热区域', range: '23-30%', pos: '25-40%', color: '#f97316' },
     { r: 5, emoji: '🔴', name: 'Ⅴ级', cn: '极度过热', range: '>30%', pos: '0-15%', color: '#ef4444' },
@@ -270,11 +272,14 @@ function renderAIAEHub(snapshot) {
     const fundPos = snapshot.fund_position || 80;
     const rd = _REGIME_DEFS.find(d => d.r === regime) || _REGIME_DEFS[2];
 
-    panel.style.display = 'block';
+    panel.classList.remove('initially-hidden');
 
     // ── ECharts 半环仪表 ──
     const chartEl = document.getElementById('aiae-hub-gauge-chart');
     if (chartEl && typeof echarts !== 'undefined') {
+        // V19.3: 销毁旧实例防止内存泄漏 (刷新按钮可能重复调用)
+        const oldChart = echarts.getInstanceByDom(chartEl);
+        if (oldChart) oldChart.dispose();
         const chart = echarts.init(chartEl);
         chart.setOption({
             series: [{
@@ -306,7 +311,7 @@ function renderAIAEHub(snapshot) {
                 splitLine: { show: false },
                 axisLabel: {
                     distance: -20, fontSize: 9, color: '#475569',
-                    formatter: v => v % 10 === 0 ? v + '%' : ''
+                    formatter: v => v % 5 === 0 ? v + '%' : ''  // V19.3: 5% 精度刻度
                 },
                 title: { show: false },
                 detail: {
@@ -557,7 +562,10 @@ function renderTimelineChart(data) {
         ],
     });
 
-    window.addEventListener('resize', () => chart.resize());
+    // V19.3: 具名函数避免 resize 监听器累积
+    if (window._acTimelineResize) window.removeEventListener('resize', window._acTimelineResize);
+    window._acTimelineResize = () => chart.resize();
+    window.addEventListener('resize', window._acTimelineResize);
 }
 
 function renderTimelineList(data) {
@@ -714,6 +722,7 @@ function drawTailGauge(score) {
     const w = 240, h = 130;
     canvas.width = w * dpr; canvas.height = h * dpr;
     canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+    ctx.setTransform(1, 0, 0, 1, 0, 0);  // V19.3: DPR 重置
     ctx.scale(dpr, dpr);
     const cx = w/2, cy = h - 10, r = 90, lw = 14;
     const pct = Math.min(score / 100, 1);
@@ -866,7 +875,7 @@ function renderJCSComponents(jcs) {
         const pct = Math.min(100, (it.val / it.max) * 100);
         return `<div class="jcs-comp-row">
             <span class="jcs-comp-label">${it.label}</span>
-            <div class="jcs-comp-bar-bg"><div class="jcs-comp-bar-fill" style="width:${pct}%;background:${it.color}"></div></div>
+            <div class="jcs-comp-bar-bg"><div class="jcs-comp-bar-fill" style="width:${pct}%;background:${it.color};color:${it.color}"></div></div>
             <span class="jcs-comp-val">${it.val != null ? (typeof it.val === 'number' ? it.val.toFixed(1) : it.val) : '--'}${it.suffix}</span>
         </div>`;
     }).join('');
@@ -909,7 +918,6 @@ function renderGlobalTemperature(gt) {
         const aiae = typeof m.aiae_v1 === 'number' ? m.aiae_v1.toFixed(1) : '--';
         const cap = m.cap || 55;
         return `<div class="global-temp-card" style="--regime-color:${color}">
-            <div style="position:absolute;top:0;left:0;right:0;height:3px;background:${color};opacity:0.7"></div>
             <div class="global-temp-market-name">
                 <span class="global-temp-flag">${m.flag}</span> ${m.name}
             </div>
@@ -990,10 +998,10 @@ function renderGlobalTemperature(gt) {
             });
         });
 
-        // Resize 监听
-        const resizeAll = () => Object.values(_globalTempCharts).forEach(c => c && c.resize());
-        window.removeEventListener('resize', resizeAll);
-        window.addEventListener('resize', resizeAll);
+        // V19.3: 具名全局引用避免 resize 监听器累积
+        if (window._acGlobalTempResize) window.removeEventListener('resize', window._acGlobalTempResize);
+        window._acGlobalTempResize = () => Object.values(_globalTempCharts).forEach(c => c && c.resize());
+        window.addEventListener('resize', window._acGlobalTempResize);
     });
 
     // 全球推荐条
@@ -1038,9 +1046,9 @@ async function loadRiskGuardrail() {
 
 function renderTailRiskBrief(data) {
     const statusEl = document.getElementById('rg-status');
-    const varEl = document.getElementById('rg-var');
-    const maxddEl = document.getElementById('rg-maxdd');
-    const curddEl = document.getElementById('rg-curdd');
+    const riskConc = document.getElementById('rg-risk-conc');
+    const riskAiae = document.getElementById('rg-risk-aiae');
+    const riskVix = document.getElementById('rg-risk-vix');
     const overlapEl = document.getElementById('rg-overlap');
     if (!statusEl) return;
 
@@ -1052,26 +1060,25 @@ function renderTailRiskBrief(data) {
     statusEl.textContent = levelLabel;
     statusEl.className = 'rg-status ' + level;
 
-    // VaR from tail components or fallback
-    if (varEl) {
-        const varVal = tail.components?.concentration || 0;
-        varEl.textContent = varVal.toFixed(0) + '%';
-        varEl.className = 'rg-kpi-value ' + (varVal >= 50 ? 'danger' : (varVal >= 30 ? 'warn' : 'ok'));
+    // V19.3: 集中度风险分 (匹配实际数据语义)
+    if (riskConc) {
+        const concVal = tail.components?.concentration || 0;
+        riskConc.textContent = concVal.toFixed(0);
+        riskConc.className = 'rg-kpi-value ' + (concVal >= 50 ? 'danger' : (concVal >= 30 ? 'warn' : 'ok'));
     }
 
-    // Max drawdown from overlap matrix sectors
-    if (maxddEl) {
-        const sectors = data.sector_concentration || [];
-        const topSector = sectors.length > 0 ? sectors[0].pct : 0;
-        maxddEl.textContent = topSector + '%';
-        maxddEl.className = 'rg-kpi-value ' + (topSector >= 40 ? 'danger' : (topSector >= 25 ? 'warn' : 'ok'));
+    // AIAE 热度分
+    if (riskAiae) {
+        const aiaeVal = tail.components?.aiae || 0;
+        riskAiae.textContent = aiaeVal.toFixed(0);
+        riskAiae.className = 'rg-kpi-value ' + (aiaeVal >= 50 ? 'danger' : (aiaeVal >= 30 ? 'warn' : 'ok'));
     }
 
-    // Current drawdown (VIX component from tail risk)
-    if (curddEl) {
+    // VIX 恐慌分
+    if (riskVix) {
         const vixComp = tail.components?.vix || 0;
-        curddEl.textContent = vixComp.toFixed(0) + '%';
-        curddEl.className = 'rg-kpi-value ' + (vixComp >= 50 ? 'danger' : (vixComp >= 30 ? 'warn' : 'ok'));
+        riskVix.textContent = vixComp.toFixed(0);
+        riskVix.className = 'rg-kpi-value ' + (vixComp >= 50 ? 'danger' : (vixComp >= 30 ? 'warn' : 'ok'));
     }
 
     // Strategy overlap
@@ -1089,45 +1096,48 @@ function renderTailRiskBrief(data) {
 
 async function initDecisionHub() {
     initTabs();
+    initSOPToggle();  // V19.3: SOP 折叠事件委托
 
     try {
-        fetchSwingGuard();     // Load Swing Guard
-        loadRiskGuardrail();   // V19.0: Risk Guardrail Strip
-        
+        // V19.3: 异步独立请求 + 超时降级
+        _fetchWithDegradation('swing-guard-grid', fetchSwingGuard, '波段守卫');
+        _fetchWithDegradation('risk-guardrail', loadRiskGuardrail, '风控护栏');
+
         const resp = await AC.secureFetch(`${API_BASE}/hub`);
         const data = await resp.json();
 
         if (data.status === 'success') {
-            // JCS
+            // V19.3: 渲染顺序严格匹配 HTML 布局 — 先环境后信号
+
+            // ① 警示系统 (最高优先级，顶部)
+            renderAlerts(data.alerts || []);
+
+            // ② AIAE 宏观仓位管控 (决策前置 — 先看环境)
+            if (data.snapshot) renderAIAEHub(data.snapshot);
+
+            // ③ JCS 环形图 + 成分拆解
             drawJCSRing(data.jcs.score, data.jcs.level);
             const labelEl = document.getElementById('jcs-label');
             if (labelEl) labelEl.textContent = data.jcs.label;
-            // V18.0 M: JCS 成分拆解条
             renderJCSComponents(data.jcs);
 
-            // V20.0: 事实层先渲染 (方向指示器)
+            // ④ 方向指示器 (事实层)
             renderDirections(data.jcs.directions, data.snapshot);
 
-            // 推导层 (矛盾检测)
+            // ⑤ 矛盾检测 (推导层)
             renderConflicts(data.conflicts);
 
-            // 内联执行指令
+            // ⑥ 执行指令 (结论层)
             if (data.action_plan) renderActionPlan(data.action_plan);
 
-            // V17.3: 警示系统
-            renderAlerts(data.alerts || []);
+            // ⑦ 信号阈值速查表 — 高亮当前信号位置
+            if (data.snapshot) highlightThresholdTable(data.snapshot);
 
-            // V19.0: 全球市场温度仪表板
+            // ⑧ 全球市场温度仪表板 (横向参考)
             if (data.global_temperature) renderGlobalTemperature(data.global_temperature);
 
-            // V17.5: AIAE 宏观仓位管控
-            if (data.snapshot) renderAIAEHub(data.snapshot);
-
-            // 情景
+            // ⑨ 情景模拟器 (最后，探索性)
             renderScenarioCards(data.scenarios);
-
-            // V19.2: 信号阈值速查表 — 高亮当前信号位置
-            if (data.snapshot) highlightThresholdTable(data.snapshot);
         } else {
             document.getElementById('jcs-value').textContent = '--';
         }
@@ -1135,6 +1145,26 @@ async function initDecisionHub() {
         console.error('Decision hub load error:', e);
         document.querySelector('.loading-spinner')?.remove();
     }
+}
+
+// V19.3: SOP 折叠事件委托 (替代 inline onclick)
+function initSOPToggle() {
+    document.querySelectorAll('.sop-toggle').forEach(el => {
+        el.addEventListener('click', () => el.parentElement.classList.toggle('open'));
+    });
+}
+
+// V19.3: 异步加载超时降级 (8s 后显示失败 + 重试按钮)
+function _fetchWithDegradation(containerId, fetchFn, label) {
+    const timer = setTimeout(() => {
+        const el = document.getElementById(containerId);
+        if (!el) return;
+        const spinner = el.querySelector('.loading-spinner');
+        if (spinner) {
+            spinner.innerHTML = `⚠️ ${label}数据暂不可用 <button class="sg-refresh-btn" style="margin-left:8px;font-size:0.72rem;" onclick="this.parentElement.innerHTML='⏳ 重新加载...';${fetchFn.name}()">↻ 重试</button>`;
+        }
+    }, 8000);
+    fetchFn().finally(() => clearTimeout(timer));
 }
 
 // ═══════════════════════════════════════════════════
@@ -1305,7 +1335,10 @@ function renderPerfHeatmap(heatmapData) {
             emphasis: { itemStyle: { borderColor: '#a78bfa', borderWidth: 2 } }
         }]
     });
-    window.addEventListener('resize', () => chart.resize());
+    // V19.3: 具名函数避免 resize 监听器累积
+    if (window._acHeatmapResize) window.removeEventListener('resize', window._acHeatmapResize);
+    window._acHeatmapResize = () => chart.resize();
+    window.addEventListener('resize', window._acHeatmapResize);
 }
 
 function renderPerfDrawdown(dd) {
@@ -1356,7 +1389,9 @@ function renderPerfDrawdown(dd) {
             }
         }]
     });
-    window.addEventListener('resize', () => chart.resize());
+    if (window._acDrawdownResize) window.removeEventListener('resize', window._acDrawdownResize);
+    window._acDrawdownResize = () => chart.resize();
+    window.addEventListener('resize', window._acDrawdownResize);
 }
 
 function renderPerfSharpe(sharpeData) {
@@ -1408,7 +1443,9 @@ function renderPerfSharpe(sharpeData) {
             }
         }]
     });
-    window.addEventListener('resize', () => chart.resize());
+    if (window._acSharpeResize) window.removeEventListener('resize', window._acSharpeResize);
+    window._acSharpeResize = () => chart.resize();
+    window.addEventListener('resize', window._acSharpeResize);
 }
 
 // ═══════════════════════════════════════════════════

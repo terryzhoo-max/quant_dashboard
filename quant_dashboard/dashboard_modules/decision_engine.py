@@ -160,11 +160,13 @@ def compute_conflict_matrix(snapshot: dict) -> dict:
         except Exception:
             continue
 
-    has_severe = any(c["severity"] == "high" for c in conflicts)
-    count = len(conflicts)
+    # V19.3: 排除 info 级别 (如 all_neutral) — 不计入矛盾计数和前端 warn 状态
+    actionable = [c for c in conflicts if c["severity"] != "info"]
+    has_severe = any(c["severity"] == "high" for c in actionable)
+    count = len(actionable)
 
     if count == 0:
-        summary = "🟢 所有引擎方向一致，无矛盾信号"
+        summary = "🟢 零矛盾信号，各引擎间无方向冲突"
     elif has_severe:
         summary = f"🔴 检测到 {count} 个矛盾 (含严重矛盾)，建议保持防御"
     else:
@@ -323,7 +325,7 @@ def compute_jcs(snapshot: dict) -> dict:
         "level": level,
         "label": label,
         "directions": directions,
-        "agreement_pct": round(base_agreement / 60.0 * 100, 1),
+        "agreement_pct": min(100.0, round(base_agreement / 60.0 * 100, 1)),
         "data_health": round(data_health, 1),
         "consensus_bonus": round(consensus_bonus, 1),
         "conflict_count": conflicts["conflict_count"],
@@ -426,6 +428,10 @@ def simulate_scenario(scenario_id: str, current_snapshot: dict) -> dict:
     jcs_before = compute_jcs(before)
     jcs_after = compute_jcs(after)
 
+    # V19.3: 重算矛盾状态 (供影响摘要使用)
+    conflicts_before = compute_conflict_matrix(before)
+    conflicts_after = compute_conflict_matrix(after)
+
     # 影响摘要
     pos_before = before.get("suggested_position", 55)
     pos_after = after.get("suggested_position", pos_before)
@@ -439,6 +445,10 @@ def simulate_scenario(scenario_id: str, current_snapshot: dict) -> dict:
         impact_items.append(f"JCS {jcs_before['score']} → {jcs_after['score']}")
     if after.get("hub_composite", 0) != before.get("hub_composite", 0):
         impact_items.append(f"Composite {before.get('hub_composite', 0)} → {after.get('hub_composite', 0)}")
+    # V19.3: 矛盾状态变化
+    cc_b, cc_a = conflicts_before["conflict_count"], conflicts_after["conflict_count"]
+    if cc_a != cc_b:
+        impact_items.append(f"矛盾 {cc_b} → {cc_a} {'⚠️ 新增矛盾' if cc_a > cc_b else '✅ 矛盾消解'}")
 
     return {
         "scenario": {

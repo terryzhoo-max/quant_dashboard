@@ -4,6 +4,9 @@
    执行建议卡片 · Regime色带 · Info矛盾样式
    ═══════════════════════════════════════════════════ */
 
+/* V19.3: JS 控制显隐的统一 class (代替 inline style="display:none") */
+.initially-hidden { display: none; }
+
 /* ── 页面布局 ── */
 .decision-content { padding: 0 24px 40px; }
 
@@ -447,7 +450,7 @@
    V17.5 K: AIAE 宏观仓位管控 (生产级赛博升维)
    ═══════════════════════════════════════════════════ */
 
-.aiae-hub-panel { margin-top: 20px; padding: 20px 24px; }
+.aiae-hub-panel { margin-top: 20px; margin-bottom: 24px; padding: 20px 24px; }
 
 /* 标题行 (迁移 inline 样式) */
 .aiae-hub-panel .action-plan-section-title {
@@ -485,6 +488,8 @@
     padding-bottom: 6px;
     border-bottom: 1px solid rgba(255,255,255,0.05);
 }
+/* V19.3: 警示指标区域间距 */
+.aiae-hub-section-gap { margin-top: 14px; }
 
 /* 五档状态条 — 凹陷物理槽 */
 .aiae-hub-regime-strip {
@@ -1324,6 +1329,7 @@
 /* 顶部色带 (跟随档位颜色) */
 .global-temp-card::after {
     content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: var(--regime-color, #eab308);
     transition: opacity 0.3s ease; opacity: 0.7;
 }
 .global-temp-card:hover::after { opacity: 1; }
@@ -1497,15 +1503,21 @@
     .scenario-grid { grid-template-columns: 1fr; }
     .direction-grid { grid-template-columns: repeat(2, 1fr); }
     .global-temp-grid { grid-template-columns: 1fr; }
+    /* V19.3: 五档状态条窄屏横向滑动防挤压 */
+    .aiae-hub-regime-strip {
+        grid-template-columns: repeat(5, minmax(60px, 1fr));
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+    .aiae-hub-regime-strip::-webkit-scrollbar { display: none; }
 }
 
 /* ═══════════════════════════════════════════════════
    Phase 2: 全球宽基波段守卫 (Swing Guard — 生产级收尾打磨)
    ═══════════════════════════════════════════════════ */
 
-.swing-guard-dashboard {
-    margin-top: 24px; padding: 20px 24px;
-}
+.swing-guard-dashboard { margin-top: 24px; margin-bottom: 24px; padding: 20px 24px; }
 
 /* 头部 (内联样式已迁移至此) */
 .swing-guard-header {
@@ -1789,6 +1801,12 @@
     display: inline-block; margin-left: 6px; font-size: 0.62rem;
     color: #64748b; font-weight: 500;
 }
+/* V19.3: 阈值表脚注 */
+.threshold-table-caption {
+    caption-side: bottom; text-align: left;
+    font-size: 0.6rem; color: #475569; padding: 6px 2px 0;
+    font-style: italic; letter-spacing: 0.2px;
+}
 .tt-bull {
     color: #6ee7b7; background: rgba(16,185,129,0.04); border-radius: 4px;
 }
@@ -1901,11 +1919,9 @@
     border-left: 2px solid rgba(255,255,255,0.06); padding-left: 10px;
 }
 
-/* 执行指令色带增强 */
+/* V19.3: 执行指令色带增强 — 统一用 ::before 弥散光 + ::after 顶线, 移除冗余 border-left */
 .action-inline {
     position: relative;
-    border-left: 3px solid var(--conf-color, rgba(148,163,184,0.3));
-    padding-left: 16px !important;
 }
 
 /* ═══════════════════════════════════════════════════

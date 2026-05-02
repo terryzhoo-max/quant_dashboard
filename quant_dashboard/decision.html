@@ -120,7 +120,7 @@
                 <div id="alert-container"></div>
 
                 <!-- V19.0: AIAE 宏观仓位管控 (决策前置 — 先看环境再看信号) -->
-                <div class="aiae-hub-panel glass-decision" id="aiae-hub-panel" style="display:none;">
+                <div class="aiae-hub-panel glass-decision initially-hidden" id="aiae-hub-panel">
                     <h3 class="action-plan-section-title">🎛️ AIAE 宏观仓位管控 <span class="aiae-hub-subtitle">— 配置热度核心锚 · 权重35%</span></h3>
                     <div class="aiae-hub-grid">
                         <div class="aiae-hub-gauge-col">
@@ -133,7 +133,7 @@
                         <div class="aiae-hub-detail-col">
                             <div class="aiae-hub-section-label">五档市场状态</div>
                             <div class="aiae-hub-regime-strip" id="aiae-hub-regime-strip"></div>
-                            <div class="aiae-hub-section-label" style="margin-top:14px;">警示指标</div>
+                            <div class="aiae-hub-section-label aiae-hub-section-gap">警示指标</div>
                             <div class="aiae-hub-warnings" id="aiae-hub-warnings"></div>
                         </div>
                     </div>
@@ -172,7 +172,7 @@
                         </div>
                         <!-- 分割线 + 执行指令 -->
                         <div class="decision-divider"></div>
-                        <div class="action-inline" id="action-inline" style="display:none;">
+                        <div class="action-inline initially-hidden" id="action-inline">
                             <div class="action-inline-header">
                                 <span class="action-inline-icon" id="action-icon">👁️</span>
                                 <div class="action-inline-title">
@@ -203,6 +203,7 @@
                         <h4 class="ref-card-title">📐 信号阈值速查</h4>
                         <table class="threshold-table">
                             <thead><tr><th>引擎</th><th class="th-bull">🟢 看多</th><th>━ 中性</th><th class="th-bear">🔴 看空</th></tr></thead>
+                            <caption class="threshold-table-caption">权重为仓位温度计因子权重，JCS 内部引擎等权</caption>
                             <tbody>
                                 <tr><td class="tt-engine">AIAE<span class="tt-w">35%</span></td><td class="tt-bull">R1-R2 (&lt;17%)</td><td>R3 (17-23%)</td><td class="tt-bear">R4-R5 (&gt;23%)</td></tr>
                                 <tr><td class="tt-engine">ERP<span class="tt-w">25%</span></td><td class="tt-bull">Score &gt;55</td><td>35-55</td><td class="tt-bear">&lt;35</td></tr>
@@ -214,7 +215,7 @@
 
                     <!-- 操作纪律参考 (折叠) -->
                     <div class="ref-card glass-decision" id="sop-ref">
-                        <h4 class="ref-card-title sop-toggle" onclick="this.parentElement.classList.toggle('open')">
+                        <h4 class="ref-card-title sop-toggle">
                             📋 操作纪律参考 <span class="sop-arrow">▶</span>
                         </h4>
                         <div class="sop-body">
@@ -266,6 +267,32 @@
 
 
 
+                <!-- V19.3: 风控护栏 (系统级安全阀，优先于个股级波段守卫) -->
+                <div class="risk-guardrail glass-decision" id="risk-guardrail">
+                    <div class="rg-header">
+                        <span class="rg-title">🛡️ 风控护栏</span>
+                        <span class="rg-status" id="rg-status">加载中</span>
+                    </div>
+                    <div class="rg-grid">
+                        <div class="rg-kpi">
+                            <div class="rg-kpi-label">集中度风险</div>
+                            <div class="rg-kpi-value" id="rg-risk-conc">--</div>
+                        </div>
+                        <div class="rg-kpi">
+                            <div class="rg-kpi-label">AIAE 热度</div>
+                            <div class="rg-kpi-value" id="rg-risk-aiae">--</div>
+                        </div>
+                        <div class="rg-kpi">
+                            <div class="rg-kpi-label">VIX 恐慌</div>
+                            <div class="rg-kpi-value" id="rg-risk-vix">--</div>
+                        </div>
+                        <div class="rg-kpi">
+                            <div class="rg-kpi-label">策略重叠度</div>
+                            <div class="rg-kpi-value" id="rg-overlap">--</div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 全球宽基波段守卫 (Swing Guard) -->
                 <div class="swing-guard-dashboard glass-decision" id="swing-guard-dashboard">
                     <div class="swing-guard-header">
@@ -280,32 +307,6 @@
                         <span class="sg-rule-item">🟡 <b>YELLOW</b> 安全垫收窄 · 缩量关注</span>
                         <span class="sg-rule-item">🔴 <b>RED</b> 跌破止盈线 · 立即止盈</span>
                         <span class="sg-rule-item sg-rule-formula">止盈线 = 最高收盘价 × (1 - 回撤比例)</span>
-                    </div>
-                </div>
-
-                <!-- V19.0: 风控护栏指示条 (从 risk-matrix 提取3个关键KPI) -->
-                <div class="risk-guardrail glass-decision" id="risk-guardrail">
-                    <div class="rg-header">
-                        <span class="rg-title">🛡️ 风控护栏</span>
-                        <span class="rg-status" id="rg-status">加载中</span>
-                    </div>
-                    <div class="rg-grid">
-                        <div class="rg-kpi">
-                            <div class="rg-kpi-label">VaR 95%</div>
-                            <div class="rg-kpi-value" id="rg-var">--</div>
-                        </div>
-                        <div class="rg-kpi">
-                            <div class="rg-kpi-label">历史最大回撤</div>
-                            <div class="rg-kpi-value" id="rg-maxdd">--</div>
-                        </div>
-                        <div class="rg-kpi">
-                            <div class="rg-kpi-label">当前回撤</div>
-                            <div class="rg-kpi-value" id="rg-curdd">--</div>
-                        </div>
-                        <div class="rg-kpi">
-                            <div class="rg-kpi-label">策略重叠度</div>
-                            <div class="rg-kpi-value" id="rg-overlap">--</div>
-                        </div>
                     </div>
                 </div>
 
