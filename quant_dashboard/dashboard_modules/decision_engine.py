@@ -201,7 +201,7 @@ def _signal_direction(snapshot: dict) -> dict:
     return {
         "aiae": 1 if aiae_r <= 2 else (-1 if aiae_r >= 4 else 0),
         "erp": 1 if erp_s > 60 else (-1 if erp_s < 40 else 0),
-        "vix": 1 if vix_v < 18 else (-1 if vix_v > 28 else 0),
+        "vix": 1 if vix_v < 16 else (-1 if vix_v > 25 else 0),  # P1: 收窄阈值 (A股实证校准)
         "mr": 1 if mr_r == "BULL" else (-1 if mr_r in ("BEAR", "CRASH") else 0),
     }
 
@@ -395,6 +395,12 @@ def simulate_scenario(scenario_id: str, current_snapshot: dict) -> dict:
         after["liquidity_score"] = 0
         after["macro_temp_score"] = max(0, after.get("macro_temp_score", 50) - 30)
 
+    # P2: MR Regime 联动 — VIX 极端 / AIAE 过热时自动降级 MR 技术面
+    if after.get("vix_val", 0) >= 35:
+        after["mr_regime"] = "CRASH" if after["vix_val"] >= 45 else "BEAR"
+    if after.get("aiae_regime", 3) >= 5 and after.get("mr_regime") == "BULL":
+        after["mr_regime"] = "RANGE"  # 过热牛市末端降级
+
     # 重算 hub composite
     after["hub_composite"] = _recalc_hub_composite(after)
     before["hub_composite"] = _recalc_hub_composite(before)
@@ -572,11 +578,15 @@ def generate_action_plan(snapshot: dict, jcs: dict, conflicts: dict) -> dict:
     directions = jcs.get("directions", {})
     has_severe = conflicts.get("has_severe", False)
     conflict_count = conflicts.get("conflict_count", 0)
-    pos = snapshot.get("suggested_position", 55)
+    raw_pos = snapshot.get("suggested_position", 55)
     aiae_regime = snapshot.get("aiae_regime", 3)
     mr_regime = snapshot.get("mr_regime", "RANGE")
     erp_score = snapshot.get("erp_score", 50)
     vix_val = snapshot.get("vix_val", 20)
+
+    # P3: JCS 折损系数 — 低置信时自动压缩仓位目标
+    jcs_multiplier = 1.0 if jcs_score >= 70 else (0.85 if jcs_score >= 40 else 0.65)
+    pos = round(raw_pos * jcs_multiplier)
 
     top_signals = []
     risk_note = ""
@@ -828,7 +838,12 @@ def _build_global_temperature() -> dict:
         if global_data and global_data.get("status") == "success":
             report = global_data.get(mkt_key, {})
             current = report.get("current", {})
-            aiae_v1 = current.get("aiae_v1")
+            # P5: 多路径 fallback — 兼容不同海外引擎的 JSON 结构
+            aiae_v1 = (
+                current.get("aiae_v1")
+                or report.get("aiae_v1")
+                or report.get("summary", {}).get("aiae_v1")
+            )
             regime = current.get("regime", 3)
             ri = _GLOBAL_REGIMES[mkt_key].get(regime, _GLOBAL_REGIMES[mkt_key][3])
 
@@ -993,16 +1008,23 @@ def compute_risk_matrix() -> dict:
         })
     top_sector_pct = sector_concentration[0]["pct"] if sector_concentration else 0
 
-    # 3. 尾部风险仪表 (综合: 集中度 + VIX + 矛盾)
+    # 3. 尾部风险仪表 (综合: 集中度 + VIX + AIAE + 矛盾)
     snapshot = _build_snapshot_from_cache()
     vix = snapshot.get("vix_val", 20) or 20
     conflicts = compute_conflict_matrix(snapshot)
 
-    # 尾部风险公式: 0-100
+    # 尾部风险公式: 0-100 (P4: 增加 AIAE 过热因子)
     concentration_risk = min(100, top_sector_pct * 1.5)  # 集中度超 60% 满分
     vix_risk = min(100, max(0, (vix - 15) * 4))  # VIX 15→0, 40→100
+    aiae_regime = snapshot.get("aiae_regime", 3)
+    aiae_risk = min(100, max(0, (aiae_regime - 2) * 33))  # R1→0, R3→33, R5→100
     conflict_risk = min(100, conflicts["conflict_count"] * 30)  # 每个矛盾 30 分
-    tail_risk = round(concentration_risk * 0.4 + vix_risk * 0.4 + conflict_risk * 0.2, 1)
+    tail_risk = round(
+        concentration_risk * 0.30 +
+        vix_risk * 0.30 +
+        aiae_risk * 0.25 +
+        conflict_risk * 0.15, 1
+    )
 
     if tail_risk >= 70:
         tail_level, tail_label = "high", "🔴 尾部风险偏高"
@@ -1024,6 +1046,7 @@ def compute_risk_matrix() -> dict:
             "components": {
                 "concentration": round(concentration_risk, 1),
                 "vix": round(vix_risk, 1),
+                "aiae": round(aiae_risk, 1),
                 "conflict": round(conflict_risk, 1),
             },
         },

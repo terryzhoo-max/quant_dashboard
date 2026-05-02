@@ -607,7 +607,7 @@ async def get_industry_tracking(date: Optional[str] = None):
         _, latest_ts, _ = _tracking_cache_get("latest")
         return {"status": "success", "data": results,
                 "data_freshness": {
-                    "last_calc": latest_ts or "--",
+                    "last_calc": latest_ts or datetime.now().isoformat(),
                     "etf_count": len(results.get("sector_heatmap", [])),
                     "cache_ttl_sec": _get_tracking_ttl()
                 }}

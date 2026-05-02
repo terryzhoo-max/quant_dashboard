@@ -96,12 +96,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 let freshBadge = '';
                 if (_lastFreshness && _lastFreshness.last_calc) {
                     const calcTime = new Date(_lastFreshness.last_calc);
-                    const ageMin = Math.round((Date.now() - calcTime.getTime()) / 60000);
+                    const ageMin = isNaN(calcTime.getTime()) ? -1 : Math.round((Date.now() - calcTime.getTime()) / 60000);
                     const isStale = ageMin > 30;
-                    const freshColor = isStale ? '#f59e0b' : '#10b981';
-                    const freshIcon = isStale ? '⚠️' : '✅';
-                    const ageText = ageMin < 1 ? '刚刚' : (ageMin < 60 ? `${ageMin}分钟前` : `${Math.round(ageMin/60)}小时前`);
-                    freshBadge = `<span style="font-size:0.72rem; padding:2px 10px; border-radius:6px; background:rgba(${isStale ? '245,158,11' : '16,185,129'},0.1); color:${freshColor}; font-weight:600; margin-left:auto;">${freshIcon} 数据 ${ageText}</span>`;
+                    const freshColor = ageMin < 0 ? '#94a3b8' : (isStale ? '#f59e0b' : '#10b981');
+                    const freshIcon = ageMin < 0 ? '⏳' : (isStale ? '⚠️' : '✅');
+                    const ageText = ageMin < 0 ? '计算中...' : (ageMin < 1 ? '刚刚' : (ageMin < 60 ? `${ageMin}分钟前` : `${Math.round(ageMin/60)}小时前`));
+                    freshBadge = `<span style="font-size:0.72rem; padding:2px 10px; border-radius:6px; background:rgba(${ageMin < 0 ? '148,163,184' : (isStale ? '245,158,11' : '16,185,129')},0.1); color:${freshColor}; font-weight:600; margin-left:auto;">${freshIcon} 数据 ${ageText}</span>`;
                 }
 
                 banner.innerHTML = `
