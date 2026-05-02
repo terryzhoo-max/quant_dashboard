@@ -637,10 +637,21 @@ class AIAEHKEngine:
 
     def compute_ah_premium_score(self, ah_index: float) -> float:
         """AH溢价指数归一化 → AIAE等效值
-        AH溢价 120-160 → 10-30% AIAE等效
-        AH越高 = H股越便宜 = AIAE应该越低(利好加仓)"""
+
+        V1.3 校准: 锚定区间从 [120,160] 扩展至 [105,160]
+        原因: 互联互通深化后 AH 溢价结构性收窄至 110-125 区间,
+              旧 [120,160] 锚点导致 AH<120 时归一化值飙升至 30%+,
+              30% 权重因子贡献 53% AIAE 总值 → 单因子扭曲全局信号.
+
+        新映射: AH=105 → 30% (过热上限)
+                AH=132.5 → 20% (中性)
+                AH=160 → 10% (极度低估)
+
+        AH越高 = H股越便宜 = AIAE应该越低(利好加仓)
+        """
         # 反向: AH越高 = H股越便宜 = 越应该买
-        normalized = 30 - (ah_index - 120) / (160 - 120) * (30 - 10)
+        # V1.3: [105, 160] 适应互联互通时代 AH 溢价中枢下移
+        normalized = 30 - (ah_index - 105) / (160 - 105) * (30 - 10)
         return max(5, min(35, normalized))
 
     def compute_hk_aiae_v1(self, aiae_core: float, sb_heat: float, ah_score: float) -> float:
@@ -722,9 +733,9 @@ class AIAEHKEngine:
         if ah_index > 150:
             signals.append({"type": "ah_premium", "level": "opportunity",
                           "text": f"AH溢价{ah_index:.0f} → H股显著折价, 估值修复空间大", "color": "#10b981"})
-        elif ah_index < 110:
+        elif ah_index < 105:
             signals.append({"type": "ah_premium", "level": "warning",
-                          "text": f"AH溢价仅{ah_index:.0f} → H股折价收窄, 吸引力下降", "color": "#f59e0b"})
+                          "text": f"AH溢价仅{ah_index:.0f} → H股折价消失, 港股偏贵", "color": "#f59e0b"})
 
         return signals
 
