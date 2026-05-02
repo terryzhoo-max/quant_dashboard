@@ -503,3 +503,111 @@ body {
     opacity: 1;
     transform: translateY(-50%) translateX(0);
 }
+
+
+/* ═══════════════════════════════════════════════════
+   8. P6 可访问性增强 (WCAG 2.1 AA)
+   ═══════════════════════════════════════════════════ */
+
+/* ── 8.1 Focus-Visible 键盘导航环 ── */
+/* 仅键盘用户看到焦点环, 鼠标用户不受干扰 */
+
+*:focus-visible {
+    outline: 2px solid rgba(167, 139, 250, 0.7);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+/* 侧边栏导航项 */
+.nav-item:focus-visible,
+.nav-parent:focus-visible {
+    outline: 2px solid rgba(167, 139, 250, 0.6);
+    outline-offset: -2px;
+    background: rgba(139, 92, 246, 0.08);
+}
+
+/* 按钮和交互元素 */
+button:focus-visible,
+[role="button"]:focus-visible,
+a:focus-visible {
+    outline: 2px solid rgba(167, 139, 250, 0.7);
+    outline-offset: 2px;
+}
+
+/* 卡片级焦点 (Tab 到策略卡片/KPI 卡片时) */
+.stat-card:focus-visible,
+.strat-card:focus-visible,
+.module-card:focus-visible,
+.heatmap-cell:focus-visible {
+    outline: 2px solid rgba(167, 139, 250, 0.5);
+    outline-offset: -1px;
+    box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.1);
+}
+
+/* 输入框焦点 */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 0;
+    border-color: var(--accent);
+}
+
+/* ── 8.2 Skip-to-Content 快捷链接 ── */
+.skip-to-content {
+    position: absolute;
+    top: -100%;
+    left: 16px;
+    z-index: 9999;
+    padding: 12px 24px;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.85rem;
+    border-radius: 0 0 8px 8px;
+    text-decoration: none;
+    transition: top 0.2s ease;
+}
+
+.skip-to-content:focus {
+    top: 0;
+}
+
+/* ── 8.3 High Contrast Mode 支持 ── */
+@media (forced-colors: active) {
+    .sidebar,
+    .glass-panel,
+    .stat-card,
+    .quick-action-strip {
+        border: 1px solid CanvasText;
+    }
+
+    .nav-item.active {
+        border: 2px solid Highlight;
+    }
+
+    button,
+    [role="button"] {
+        border: 1px solid ButtonText;
+    }
+}
+
+/* ── 8.4 Screen Reader 辅助类 ── */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* ── 8.5 交互元素最小触控尺寸 (44px WCAG) ── */
+.sidebar-toggle,
+.nav-item,
+.nav-parent {
+    min-height: 44px;
+}

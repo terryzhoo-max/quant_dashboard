@@ -1,4 +1,4 @@
-:root {
+﻿:root {
     /* 极致高级暗黑色系与金融专业蓝紫点缀 */
     --bg-dark: #07090e;
     --sidebar-bg: rgba(13, 16, 23, 0.7);
@@ -12,6 +12,15 @@
     --danger: #ef4444;
     --warning: #f59e0b;
     --font-family: 'Inter', system-ui, -apple-system, sans-serif;
+
+    /* B2: 亮色变体 Token (文本/指示器用) */
+    --success-light: #34d399;
+    --danger-light: #f87171;
+    --warning-light: #fbbf24;
+    --accent-light: #60a5fa;
+    --purple: #8b5cf6;
+    --purple-light: #a78bfa;
+    --text-dim: #64748b;
 
     /* C3: 五色光晕系统 */
     --glow-blue: rgba(59, 130, 246, 0.25);
@@ -148,7 +157,7 @@ body {
 .badge-beta {
     font-size: 0.65rem;
     background: rgba(139, 92, 246, 0.15);
-    color: #a78bfa;
+    color: var(--purple-light);
     padding: 2px 6px;
     border-radius: 6px;
     border: 1px solid rgba(139, 92, 246, 0.3);
@@ -385,7 +394,7 @@ body {
     padding: 1px 8px;
     border-radius: 4px;
     background: rgba(245, 158, 11, 0.15);
-    color: #fbbf24;
+    color: var(--warning-light);
     margin-left: 6px;
     letter-spacing: 0.3px;
     vertical-align: middle;
@@ -395,19 +404,19 @@ body {
 
 .erp-signal-pill.sig-bull {
     background: rgba(16, 185, 129, 0.15);
-    color: #34d399;
+    color: var(--success-light);
     border-color: rgba(16, 185, 129, 0.3);
 }
 
 .erp-signal-pill.sig-bear {
     background: rgba(239, 68, 68, 0.15);
-    color: #f87171;
+    color: var(--danger-light);
     border-color: rgba(239, 68, 68, 0.3);
 }
 
 .erp-signal-pill.sig-neutral {
     background: rgba(245, 158, 11, 0.12);
-    color: #fbbf24;
+    color: var(--warning-light);
     border-color: rgba(245, 158, 11, 0.2);
 }
 
@@ -425,7 +434,7 @@ body {
     padding: 2px 8px;
     border-radius: var(--radius-pill);
     background: rgba(245, 158, 11, 0.12);
-    color: #fbbf24;
+    color: var(--warning-light);
     border: 1px solid rgba(245, 158, 11, 0.2);
     transition: all 0.3s ease;
     white-space: nowrap;
@@ -433,13 +442,13 @@ body {
 
 .erp-abs-label.erp-val-bull {
     background: rgba(16, 185, 129, 0.12);
-    color: #34d399;
+    color: var(--success-light);
     border-color: rgba(16, 185, 129, 0.25);
 }
 
 .erp-abs-label.erp-val-bear {
     background: rgba(239, 68, 68, 0.12);
-    color: #f87171;
+    color: var(--danger-light);
     border-color: rgba(239, 68, 68, 0.25);
 }
 
@@ -471,21 +480,21 @@ body {
     color: #fff;
 }
 #card-erp .stat-value.erp-bullish .trend {
-    color: #34d399;
+    color: var(--success-light);
     background: rgba(16, 185, 129, 0.15);
 }
 #card-erp .stat-value.erp-bearish {
     color: #fff;
 }
 #card-erp .stat-value.erp-bearish .trend {
-    color: #f87171;
+    color: var(--danger-light);
     background: rgba(239, 68, 68, 0.15);
 }
 #card-erp .stat-value.erp-neutral {
     color: #fff;
 }
 #card-erp .stat-value.erp-neutral .trend {
-    color: #fbbf24;
+    color: var(--warning-light);
     background: rgba(245, 158, 11, 0.12);
 }
 
@@ -511,25 +520,25 @@ body {
 
 .cap-resonance-pill.res-bull {
     background: rgba(16, 185, 129, 0.15);
-    color: #34d399;
+    color: var(--success-light);
     border-color: rgba(16, 185, 129, 0.3);
 }
 
 .cap-resonance-pill.res-bear {
     background: rgba(239, 68, 68, 0.15);
-    color: #f87171;
+    color: var(--danger-light);
     border-color: rgba(239, 68, 68, 0.3);
 }
 
 .cap-resonance-pill.res-diverge {
     background: rgba(245, 158, 11, 0.12);
-    color: #fbbf24;
+    color: var(--warning-light);
     border-color: rgba(245, 158, 11, 0.2);
 }
 
 .cap-resonance-pill.res-neutral {
     background: rgba(148, 163, 184, 0.1);
-    color: #94a3b8;
+    color: var(--text-muted);
     border-color: rgba(148, 163, 184, 0.15);
 }
 
@@ -564,13 +573,13 @@ body {
 }
 
 .cap-flow-dir.dir-up {
-    color: #10b981;
+    color: var(--success);
     text-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
     animation: cap-pulse-green 2s ease-in-out infinite;
 }
 
 .cap-flow-dir.dir-down {
-    color: #ef4444;
+    color: var(--danger);
     text-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
 }
 
@@ -614,17 +623,17 @@ body {
 }
 
 .cap-flow-trend.flow-up {
-    color: #34d399;
+    color: var(--success-light);
     background: rgba(16, 185, 129, 0.12);
 }
 
 .cap-flow-trend.flow-down {
-    color: #f87171;
+    color: var(--danger-light);
     background: rgba(239, 68, 68, 0.12);
 }
 
 .cap-flow-trend.flow-neutral {
-    color: #94a3b8;
+    color: var(--text-muted);
     background: rgba(148, 163, 184, 0.08);
 }
 
@@ -734,7 +743,7 @@ body {
     padding: 1px 6px;
     border-radius: 4px;
     background: rgba(59, 130, 246, 0.15);
-    color: #60a5fa;
+    color: var(--accent-light);
     margin-left: 6px;
     letter-spacing: 0.5px;
     vertical-align: middle;
@@ -768,7 +777,7 @@ body {
 
 .signal-consensus-label.sig-bull {
     background: rgba(16, 185, 129, 0.15);
-    color: #34d399;
+    color: var(--success-light);
     border: 1px solid rgba(16, 185, 129, 0.25);
 }
 
@@ -780,13 +789,13 @@ body {
 
 .signal-consensus-label.sig-neutral {
     background: rgba(245, 158, 11, 0.12);
-    color: #fbbf24;
+    color: var(--warning-light);
     border: 1px solid rgba(245, 158, 11, 0.2);
 }
 
 .signal-consensus-label.sig-bear {
     background: rgba(239, 68, 68, 0.12);
-    color: #f87171;
+    color: var(--danger-light);
     border: 1px solid rgba(239, 68, 68, 0.2);
 }
 
@@ -867,18 +876,18 @@ body {
 }
 
 .sig-dot.sig-dir-up {
-    background: #10b981;
+    background: var(--success);
     box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
     animation: sig-pulse-green 2s ease-in-out infinite;
 }
 
 .sig-dot.sig-dir-down {
-    background: #ef4444;
+    background: var(--danger);
     box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
 }
 
 .sig-dot.sig-dir-mixed {
-    background: #f59e0b;
+    background: var(--warning);
     box-shadow: 0 0 6px rgba(245, 158, 11, 0.4);
 }
 
@@ -911,7 +920,7 @@ body {
 .erp-chart-title {
     margin: 0 0 8px;
     font-size: 0.85rem;
-    color: #94a3b8;
+    color: var(--text-muted);
 }
 
 .erp-chart-title::before { display: none; }
@@ -925,7 +934,7 @@ body {
 .erp-chart-loading {
     text-align: center;
     padding: 80px 20px;
-    color: #64748b;
+    color: var(--text-dim);
     font-size: 0.8rem;
 }
 
@@ -984,7 +993,7 @@ body {
     margin-top: 8px;
     padding: 4px 12px;
     background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.1) 100%);
-    color: #10b981;
+    color: var(--success);
     border: 1px solid rgba(16, 185, 129, 0.3);
     border-radius: 6px;
     font-size: 0.8rem;
@@ -1028,25 +1037,25 @@ body {
 
 .score-high {
     background: rgba(16, 185, 129, 0.15);
-    color: #34d399;
+    color: var(--success-light);
     border: 1px solid rgba(16, 185, 129, 0.3);
 }
 
 .score-mid {
     background: rgba(245, 158, 11, 0.15);
-    color: #fbbf24;
+    color: var(--warning-light);
     border: 1px solid rgba(245, 158, 11, 0.3);
 }
 
 .score-low {
     background: rgba(148, 163, 184, 0.15);
-    color: #94a3b8;
+    color: var(--text-muted);
     border: 1px solid rgba(148, 163, 184, 0.2);
 }
 
 .score-danger {
     background: rgba(239, 68, 68, 0.15);
-    color: #f87171;
+    color: var(--danger-light);
     border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
@@ -1056,9 +1065,9 @@ body {
     border-radius: 50%;
     flex-shrink: 0;
 }
-.dot-div { background: #f59e0b; }
-.dot-mr  { background: #3b82f6; }
-.dot-mom { background: #10b981; }
+.dot-div { background: var(--warning); }
+.dot-mr  { background: var(--accent); }
+.dot-mom { background: var(--success); }
 .dot-erp { background: #a78bfa; }
 .dot-aiae { background: #ec4899; }
 .filter-badge {
@@ -1066,7 +1075,7 @@ body {
     padding: 2px 6px;
     border-radius: 4px;
     background: rgba(245, 158, 11, 0.15);
-    color: #f59e0b;
+    color: var(--warning);
     font-weight: 600;
 }
 .filter-badge:empty {
@@ -1100,11 +1109,11 @@ body {
     transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.vix-status-low { background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
-.vix-status-norm { background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); }
-.vix-status-alert { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
+.vix-status-low { background: rgba(16, 185, 129, 0.15); color: var(--success); border: 1px solid rgba(16, 185, 129, 0.3); }
+.vix-status-norm { background: rgba(245, 158, 11, 0.15); color: var(--warning); border: 1px solid rgba(245, 158, 11, 0.3); }
+.vix-status-alert { background: rgba(239, 68, 68, 0.15); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.3); }
 .vix-status-crisis { 
-    background: #ef4444; 
+    background: var(--danger); 
     color: #fff; 
     font-weight: 700; 
     box-shadow: 0 0 15px rgba(239, 68, 68, 0.5);
@@ -1149,7 +1158,7 @@ body {
 .plan-header h3 {
     margin: 0;
     font-size: 1.05rem;
-    color: #f59e0b;
+    color: var(--warning);
     text-transform: uppercase;
     letter-spacing: 1px;
 }
@@ -1160,7 +1169,7 @@ body {
     border-radius: 12px;
     background: rgba(245, 158, 11, 0.1);
     border: 1px solid rgba(245, 158, 11, 0.3);
-    color: #f59e0b;
+    color: var(--warning);
     font-weight: 600;
     white-space: nowrap;
 }
@@ -1267,8 +1276,8 @@ body {
     text-align: center;
 }
 
-.plan-anchor-erp.erp-bull { color: #10b981; border-color: rgba(16,185,129,0.3); background: rgba(16,185,129,0.08); }
-.plan-anchor-erp.erp-bear { color: #ef4444; border-color: rgba(239,68,68,0.3); background: rgba(239,68,68,0.08); }
+.plan-anchor-erp.erp-bull { color: var(--success); border-color: rgba(16,185,129,0.3); background: rgba(16,185,129,0.08); }
+.plan-anchor-erp.erp-bear { color: var(--danger); border-color: rgba(239,68,68,0.3); background: rgba(239,68,68,0.08); }
 
 /* 风险指标 */
 .plan-anchor-risk { width: 100%; }
@@ -1287,9 +1296,9 @@ body {
     font-weight: 600;
     color: rgba(255, 255, 255, 0.7);
 }
-.plan-risk-val.risk-safe { color: #10b981; }
-.plan-risk-val.risk-warning { color: #f59e0b; }
-.plan-risk-val.risk-danger { color: #ef4444; }
+.plan-risk-val.risk-safe { color: var(--success); }
+.plan-risk-val.risk-warning { color: var(--warning); }
+.plan-risk-val.risk-danger { color: var(--danger); }
 
 /* 右栏: 主内容区 */
 .plan-main {
@@ -1331,11 +1340,11 @@ body {
 .col-tier-v2 { font-weight: 600; }
 
 /* 每档色系 */
-.matrix-row-v2.tier-1 { --tier-color: #10b981; }
-.matrix-row-v2.tier-2 { --tier-color: #3b82f6; }
+.matrix-row-v2.tier-1 { --tier-color: var(--success); }
+.matrix-row-v2.tier-2 { --tier-color: var(--accent); }
 .matrix-row-v2.tier-3 { --tier-color: #eab308; }
 .matrix-row-v2.tier-4 { --tier-color: #f97316; }
-.matrix-row-v2.tier-5 { --tier-color: #ef4444; }
+.matrix-row-v2.tier-5 { --tier-color: var(--danger); }
 
 /* 激活行 */
 .matrix-row-v2.tier-active {
@@ -1401,10 +1410,10 @@ body {
 }
 
 .plan-directive.priority-primary { border-left-color: #eab308; font-weight: 600; }
-.plan-directive.priority-confirm { border-left-color: #10b981; }
-.plan-directive.priority-risk { border-left-color: #94a3b8; }
+.plan-directive.priority-confirm { border-left-color: var(--success); }
+.plan-directive.priority-risk { border-left-color: var(--text-muted); }
 .plan-directive.priority-risk.risk-active { border-left-color: #f97316; }
-.plan-directive.priority-risk.risk-critical { border-left-color: #ef4444; }
+.plan-directive.priority-risk.risk-critical { border-left-color: var(--danger); }
 
 /* 情景标签 V2.0 */
 .plan-scenarios-v2 {
@@ -1432,8 +1441,8 @@ body {
 }
 
 .scenario-tag-v2.type-aiae_upgrade { border-color: rgba(249,115,22,0.3); color: #fb923c; }
-.scenario-tag-v2.type-vix_alert { border-color: rgba(239,68,68,0.3); color: #f87171; }
-.scenario-tag-v2.type-erp_shift { border-color: rgba(59,130,246,0.3); color: #60a5fa; }
+.scenario-tag-v2.type-vix_alert { border-color: rgba(239,68,68,0.3); color: var(--danger-light); }
+.scenario-tag-v2.type-erp_shift { border-color: rgba(59,130,246,0.3); color: var(--accent-light); }
 
 .plan-disclaimer {
     font-size: 0.68rem;
@@ -1512,8 +1521,8 @@ body {
 .heatmap-cell.down-mid { background: linear-gradient(135deg, rgba(16, 185, 129, 0.18), rgba(16, 185, 129, 0.08)); border-color: rgba(16, 185, 129, 0.2); }
 .heatmap-cell.down-low { background: rgba(16, 185, 129, 0.05); border-color: rgba(16, 185, 129, 0.1); }
 
-.heatmap-cell.up-high .sector-change { color: #f87171; }
-.heatmap-cell.down-high .sector-change { color: #34d399; }
+.heatmap-cell.up-high .sector-change { color: var(--danger-light); }
+.heatmap-cell.down-high .sector-change { color: var(--success-light); }
 
 /* [C1] score-pill/score-high/mid/low/danger 已在 L1005-1039 统一定义 (此处重复已移除) */
 
@@ -1631,7 +1640,7 @@ body {
 
 .strat-status.active { color: var(--success); background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); }
 .strat-status.warning { color: var(--warning); background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.3); }
-.strat-status.dormant { color: #94a3b8; background: rgba(148, 163, 184, 0.15); border: 1px solid rgba(148, 163, 184, 0.3); }
+.strat-status.dormant { color: var(--text-muted); background: rgba(148, 163, 184, 0.15); border: 1px solid rgba(148, 163, 184, 0.3); }
 
 .strat-body {
     display: flex;
@@ -1804,7 +1813,7 @@ h3::before {
 }
 
 .badge.buy { background: rgba(16, 185, 129, 0.2); color: var(--success); border: 1px solid rgba(16, 185, 129, 0.3); }
-.badge.wait { background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
+.badge.wait { background: rgba(59, 130, 246, 0.2); color: var(--accent-light); border: 1px solid rgba(59, 130, 246, 0.3); }
 .badge.sell { background: rgba(239, 68, 68, 0.2); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.3); }
 
 /* Custom scrollbar */
@@ -1955,7 +1964,7 @@ h3::before {
 }
 
 .hub-aiae-cap strong {
-    color: #f59e0b;
+    color: var(--warning);
     font-weight: 700;
     font-family: 'Inter', monospace;
     white-space: nowrap;
@@ -1988,7 +1997,7 @@ h3::before {
 }
 
 .hub-detail-link:hover {
-    color: #f59e0b;
+    color: var(--warning);
     border-color: rgba(245,158,11,0.3);
     background: rgba(245,158,11,0.08);
 }
@@ -2261,10 +2270,10 @@ h3::before {
     flex-shrink: 0;
     transition: box-shadow 0.3s ease;
 }
-.dot-div  { background: #10b981; box-shadow: 0 0 6px rgba(16,185,129,0.4); }
-.dot-mr   { background: #3b82f6; box-shadow: 0 0 6px rgba(59,130,246,0.4); }
+.dot-div  { background: var(--success); box-shadow: 0 0 6px rgba(16,185,129,0.4); }
+.dot-mr   { background: var(--accent); box-shadow: 0 0 6px rgba(59,130,246,0.4); }
 .dot-mom  { background: #8b5cf6; box-shadow: 0 0 6px rgba(139,92,246,0.4); }
-.dot-erp  { background: #f59e0b; box-shadow: 0 0 6px rgba(245,158,11,0.4); }
+.dot-erp  { background: var(--warning); box-shadow: 0 0 6px rgba(245,158,11,0.4); }
 .dot-aiae { background: #06b6d4; box-shadow: 0 0 6px rgba(6,182,212,0.4); }
 
 .alloc-items {
@@ -2315,7 +2324,7 @@ h3::before {
 }
 
 .col-allocation .cycle-badge strong {
-    color: #f59e0b;
+    color: var(--warning);
     font-weight: 800;
     font-size: 0.9rem;
 }
@@ -2327,12 +2336,12 @@ h3::before {
     border-color: rgba(6, 182, 212, 0.15);
 }
 .sentiment-hub[data-temp-zone="warm"] {
-    --temp-color: #f59e0b;
+    --temp-color: var(--warning);
     --temp-color-dim: rgba(245, 158, 11, 0.3);
     border-color: rgba(245, 158, 11, 0.15);
 }
 .sentiment-hub[data-temp-zone="hot"] {
-    --temp-color: #ef4444;
+    --temp-color: var(--danger);
     --temp-color-dim: rgba(239, 68, 68, 0.3);
     border-color: rgba(239, 68, 68, 0.15);
 }
@@ -2385,27 +2394,27 @@ h3::before {
 }
 
 .at-tier.active .at-tier-label {
-    color: #fbbf24;
+    color: var(--warning-light);
 }
 
 .at-tier.active .at-tier-name {
-    color: #f59e0b;
+    color: var(--warning);
 }
 
 /* 按档位着色 */
 .at-tier[data-tier="1"].active { background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.4); box-shadow: 0 0 12px rgba(16,185,129,0.15); }
-.at-tier[data-tier="1"].active .at-tier-label { color: #34d399; }
-.at-tier[data-tier="1"].active .at-tier-name { color: #10b981; }
+.at-tier[data-tier="1"].active .at-tier-label { color: var(--success-light); }
+.at-tier[data-tier="1"].active .at-tier-name { color: var(--success); }
 .at-tier[data-tier="2"].active { background: rgba(59,130,246,0.15); border-color: rgba(59,130,246,0.4); box-shadow: 0 0 12px rgba(59,130,246,0.15); }
-.at-tier[data-tier="2"].active .at-tier-label { color: #60a5fa; }
-.at-tier[data-tier="2"].active .at-tier-name { color: #3b82f6; }
+.at-tier[data-tier="2"].active .at-tier-label { color: var(--accent-light); }
+.at-tier[data-tier="2"].active .at-tier-name { color: var(--accent); }
 /* tier 3 uses default amber above */
 .at-tier[data-tier="4"].active { background: rgba(249,115,22,0.15); border-color: rgba(249,115,22,0.4); box-shadow: 0 0 12px rgba(249,115,22,0.15); }
 .at-tier[data-tier="4"].active .at-tier-label { color: #fb923c; }
 .at-tier[data-tier="4"].active .at-tier-name { color: #f97316; }
 .at-tier[data-tier="5"].active { background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.4); box-shadow: 0 0 12px rgba(239,68,68,0.15); animation: pulse-danger 2s infinite; }
-.at-tier[data-tier="5"].active .at-tier-label { color: #f87171; }
-.at-tier[data-tier="5"].active .at-tier-name { color: #ef4444; }
+.at-tier[data-tier="5"].active .at-tier-label { color: var(--danger-light); }
+.at-tier[data-tier="5"].active .at-tier-name { color: var(--danger); }
 
 /* --- 三大预警指标组 --- */
 .hub-warn-group {
@@ -2455,7 +2464,7 @@ h3::before {
 .hub-warn-bar-fill {
     height: 100%;
     border-radius: 2px;
-    background: #10b981;
+    background: var(--success);
     transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.5s ease;
     width: 0%;
 }
@@ -2518,7 +2527,7 @@ h3::before {
 }
 
 .hub-details-toggle:hover {
-    color: #f59e0b;
+    color: var(--warning);
 }
 
 .hub-details-group[open] .hub-details-toggle {
@@ -2606,7 +2615,7 @@ body.industry-scope .stat-desc {
 .stat-value.highlight-up {
     font-family: 'Outfit', sans-serif;
     font-weight: 800;
-    color: #10b981;
+    color: var(--success);
     text-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
 }
 
@@ -2864,31 +2873,31 @@ body.industry-scope .badge-beta {
     border-color: rgba(239,68,68,0.3);
     box-shadow: 0 4px 30px rgba(239,68,68,0.08);
 }
-.regime-banner.rb-bull .rb-dot { background: #ef4444; box-shadow: 0 0 14px rgba(239,68,68,0.7), 0 0 40px rgba(239,68,68,0.2); }
-.regime-banner.rb-bull .rb-temp { color: #f87171; text-shadow: 0 0 20px rgba(239,68,68,0.3); }
+.regime-banner.rb-bull .rb-dot { background: var(--danger); box-shadow: 0 0 14px rgba(239,68,68,0.7), 0 0 40px rgba(239,68,68,0.2); }
+.regime-banner.rb-bull .rb-temp { color: var(--danger-light); text-shadow: 0 0 20px rgba(239,68,68,0.3); }
 
 .regime-banner.rb-bear {
     background: linear-gradient(135deg, rgba(16,185,129,0.16) 0%, rgba(16,185,129,0.04) 40%, rgba(20,24,34,0.4) 100%);
     border-color: rgba(16,185,129,0.3);
     box-shadow: 0 4px 30px rgba(16,185,129,0.08);
 }
-.regime-banner.rb-bear .rb-dot { background: #10b981; box-shadow: 0 0 14px rgba(16,185,129,0.7), 0 0 40px rgba(16,185,129,0.2); }
-.regime-banner.rb-bear .rb-temp { color: #34d399; text-shadow: 0 0 20px rgba(16,185,129,0.3); }
+.regime-banner.rb-bear .rb-dot { background: var(--success); box-shadow: 0 0 14px rgba(16,185,129,0.7), 0 0 40px rgba(16,185,129,0.2); }
+.regime-banner.rb-bear .rb-temp { color: var(--success-light); text-shadow: 0 0 20px rgba(16,185,129,0.3); }
 
 .regime-banner.rb-neutral {
     background: linear-gradient(135deg, rgba(245,158,11,0.12) 0%, rgba(245,158,11,0.03) 40%, rgba(20,24,34,0.4) 100%);
     border-color: rgba(245,158,11,0.25);
     box-shadow: 0 4px 30px rgba(245,158,11,0.06);
 }
-.regime-banner.rb-neutral .rb-dot { background: #f59e0b; box-shadow: 0 0 14px rgba(245,158,11,0.7), 0 0 40px rgba(245,158,11,0.2); }
-.regime-banner.rb-neutral .rb-temp { color: #fbbf24; text-shadow: 0 0 20px rgba(245,158,11,0.3); }
+.regime-banner.rb-neutral .rb-dot { background: var(--warning); box-shadow: 0 0 14px rgba(245,158,11,0.7), 0 0 40px rgba(245,158,11,0.2); }
+.regime-banner.rb-neutral .rb-temp { color: var(--warning-light); text-shadow: 0 0 20px rgba(245,158,11,0.3); }
 
 /* ================= V5.0 策略卡片状态指示 ================= */
 .version-pill {
     font-size: 0.6rem;
     padding: 1px 6px;
     background: linear-gradient(135deg, rgba(99,102,241,0.2), rgba(139,92,246,0.15));
-    color: #a78bfa;
+    color: var(--purple-light);
     border: 1px solid rgba(139,92,246,0.3);
     border-radius: 5px;
     font-weight: 700;
@@ -2900,7 +2909,7 @@ body.industry-scope .badge-beta {
     font-size: 0.6rem;
     padding: 1px 6px;
     background: rgba(255,255,255,0.06);
-    color: #94a3b8;
+    color: var(--text-muted);
     border: 1px solid rgba(255,255,255,0.1);
     border-radius: 5px;
     font-weight: 500;
@@ -3069,7 +3078,7 @@ body.industry-scope .badge-beta {
     border: 1px solid rgba(239, 68, 68, 0.35);
     border-radius: var(--radius-inner);
     padding: 12px 20px;
-    color: #fbbf24;
+    color: var(--warning-light);
     font-size: 0.85rem;
     font-weight: 600;
     text-align: center;
@@ -3081,7 +3090,7 @@ body.industry-scope .badge-beta {
     background: rgba(96, 165, 250, 0.15);
     padding: 2px 8px;
     border-radius: 4px;
-    color: #60a5fa;
+    color: var(--accent-light);
     font-size: 0.82rem;
 }
 
@@ -3106,7 +3115,7 @@ body.industry-scope .badge-beta {
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    color: #f1f5f9;
+    color: var(--text-main);
     padding: 14px 24px;
     border-radius: 12px;
     font-size: 0.9rem;
@@ -3159,9 +3168,9 @@ body.industry-scope .badge-beta {
 }
 
 /* [P3] 因子分数颜色联动 (JS设置) */
-.factor-score.score-color-high { color: #34d399; }
-.factor-score.score-color-mid  { color: #fbbf24; }
-.factor-score.score-color-low  { color: #f87171; }
+.factor-score.score-color-high { color: var(--success-light); }
+.factor-score.score-color-mid  { color: var(--warning-light); }
+.factor-score.score-color-low  { color: var(--danger-light); }
 
 /* [P4] 策略卡片 metric 数字对齐 */
 .strat-metric strong {
