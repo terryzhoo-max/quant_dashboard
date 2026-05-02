@@ -148,3 +148,31 @@
     };
 
 })();
+
+// ═══════════════════════════════════════════════════
+// Visual Excellence V2.0 — 全局侧边栏收缩系统
+// 自动应用到所有引入 alphacore_utils.js 的页面
+// ═══════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', function() {
+    var sidebar = document.querySelector('.sidebar');
+    var toggleBtn = document.getElementById('sidebar-toggle');
+    if (!sidebar || !toggleBtn) return;
+
+    // 从 localStorage 恢复状态
+    if (localStorage.getItem('alphacore_sidebar_collapsed') === 'true') {
+        sidebar.classList.add('collapsed');
+    }
+
+    toggleBtn.addEventListener('click', function() {
+        sidebar.classList.toggle('collapsed');
+        localStorage.setItem('alphacore_sidebar_collapsed', sidebar.classList.contains('collapsed'));
+        // 延迟通知 ECharts 重新 resize
+        setTimeout(function() {
+            if (window.AC && AC._charts) {
+                AC._charts.forEach(function(c) {
+                    try { if (c && !c.isDisposed()) c.resize(); } catch(e) {}
+                });
+            }
+        }, 400);
+    });
+});

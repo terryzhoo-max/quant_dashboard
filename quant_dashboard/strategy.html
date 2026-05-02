@@ -1,10 +1,12 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AlphaCore · 策略中心</title>
-    <link rel="stylesheet" href="./static/css/styles.css">
+    <title>AlphaCore · 策略中心</title>    <link rel="stylesheet" href="./static/css/fonts.css?v=1">
+
+    <link rel="stylesheet" href="./static/css/styles.css?v=11">
+    <link rel="stylesheet" href="./static/css/visual_excellence.css?v=2">
     <link rel="stylesheet" href="./static/css/strategy.css">
     <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 </head>
@@ -66,11 +68,12 @@
                 <span>投资组合</span>
             </a>
         </nav>
+        <button class="sidebar-toggle" id="sidebar-toggle" title="收缩/展开"><i class="toggle-icon">◀</i><span class="toggle-text">收起导航</span></button>
+
         <div class="user-profile">
             <img src="https://i.pravatar.cc/150?img=11" alt="User Avatar">
             <div class="user-info"><span class="name">基金经理 Pro</span><span class="role">顶级投研权限</span></div>
-        </div>
-    </aside>
+        </div></aside>
 
     <main class="dashboard">
         <header class="topbar">
@@ -3728,7 +3731,7 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
 
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
     <script>window.echarts || document.write('<script src="./static/vendor/echarts.min.js"><\/script>')</script>
-    <script src="./static/js/alphacore_utils.js"></script>
+    <script src="./static/js/alphacore_utils.js?v=2"></script>
     <script src="./static/js/strategy.js"></script>
     <script src="./static/js/strategy_erp.js"></script>
     <script src="./static/js/strategy_aiae.js"></script>

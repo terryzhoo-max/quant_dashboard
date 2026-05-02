@@ -1451,3 +1451,63 @@ function renderAIAEThermometer(d) {
         el('aiae-thermo-action-text').textContent = actionMap[d.regime] || actionMap[3];
     }
 }
+
+// ═══════════════════════════════════════════════════
+// Visual Excellence V2.0: 快速行动条数据绑定
+// ═══════════════════════════════════════════════════
+
+// ── 快速决策行动条 数据绑定 ──
+// 挂钩到已有 renderPositionHub 数据流 (零额外 API 调用)
+(function() {
+    const _origRenderHub = window.renderPositionHub;
+    if (!_origRenderHub) return;
+
+    window.renderPositionHub = function(temp) {
+        // 先执行原始渲染逻辑
+        _origRenderHub(temp);
+
+        // 同步更新快速行动条
+        const qaMindset = document.getElementById('qa-mindset');
+        const qaPos = document.getElementById('qa-pos');
+        const qaConfFill = document.getElementById('qa-conf-fill');
+        const qaConfVal = document.getElementById('qa-conf-val');
+        const qaStrip = document.getElementById('quick-action-strip');
+
+        if (!qaStrip) return; // 非主页则跳过
+
+        // 提取仓位百分比 (复用 Hub 逻辑)
+        let posPercent = 30;
+        if (temp.strategy_positions && temp.strategy_positions.total != null) {
+            posPercent = temp.strategy_positions.total;
+        } else {
+            const posMatch = (temp.advice || '').match(/(\d+)%/);
+            if (posMatch) posPercent = parseInt(posMatch[1], 10);
+        }
+
+        const tier = temp.advice_tier || 3;
+
+        if (qaMindset) {
+            qaMindset.textContent = temp.mindset || '侦测中...';
+            // 颜色联动
+            const tierBorderColors = {1:'#10b981',2:'#3b82f6',3:'#f59e0b',4:'#f97316',5:'#ef4444'};
+            const tierBgColors = {1:'rgba(16,185,129,0.12)',2:'rgba(59,130,246,0.12)',3:'rgba(245,158,11,0.12)',4:'rgba(249,115,22,0.12)',5:'rgba(239,68,68,0.12)'};
+            qaMindset.style.borderLeftColor = tierBorderColors[tier] || '#f59e0b';
+            qaMindset.style.background = tierBgColors[tier] || 'rgba(245,158,11,0.12)';
+        }
+
+        if (qaPos) {
+            qaPos.textContent = posPercent + '%';
+        }
+
+        if (temp.hub_confidence !== undefined) {
+            if (qaConfFill) qaConfFill.style.width = `${temp.hub_confidence}%`;
+            if (qaConfVal) qaConfVal.textContent = Math.round(temp.hub_confidence);
+        }
+
+        // 行动条边框色跟随档位
+        if (qaStrip) {
+            const stripBorderColors = {1:'rgba(16,185,129,0.3)',2:'rgba(59,130,246,0.3)',3:'rgba(245,158,11,0.2)',4:'rgba(249,115,22,0.3)',5:'rgba(239,68,68,0.3)'};
+            qaStrip.style.borderColor = stripBorderColors[tier] || 'rgba(245,158,11,0.2)';
+        }
+    };
+})();

@@ -1,0 +1,505 @@
+/* ═══════════════════════════════════════════════════
+   AlphaCore Visual Excellence V2.0
+   生产级视觉升维 · 14寸笔记本优化版
+   ── Token补丁 · 侧边栏收缩 · 快速行动条 · 通用增强 ──
+   ═══════════════════════════════════════════════════ */
+
+/* ── 1. Design Token 扩展 (不覆盖、只增补) ── */
+:root {
+    /* 五档色彩系统 Token */
+    --color-tier-1: #10b981;
+    --color-tier-2: #3b82f6;
+    --color-tier-3: #eab308;
+    --color-tier-4: #f97316;
+    --color-tier-5: #ef4444;
+
+    /* 字体系统 Token */
+    --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    --font-display: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-chinese: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+
+    /* 侧边栏可伸缩 Token */
+    --sidebar-width: 260px;
+    --sidebar-collapsed-width: 68px;
+    --sidebar-transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+
+/* ═══════════════════════════════════════════════════
+   2. 侧边栏收缩系统 (14寸笔记本救星)
+   ═══════════════════════════════════════════════════ */
+
+/* 覆盖原始 280px → 260px 并可动画收缩 */
+.sidebar {
+    width: var(--sidebar-width);
+    transition: var(--sidebar-transition);
+    overflow: hidden;
+}
+
+/* ── 收缩态 ── */
+.sidebar.collapsed {
+    width: var(--sidebar-collapsed-width);
+    padding: 28px 10px;
+}
+
+.sidebar.collapsed .logo h1,
+.sidebar.collapsed .nav-group-title,
+.sidebar.collapsed .badge-beta,
+.sidebar.collapsed .user-info,
+.sidebar.collapsed .nav-item span:not(.icon),
+.sidebar.collapsed .nav-parent span:not(.icon):not(.nav-arrow),
+.sidebar.collapsed .nav-arrow,
+.sidebar.collapsed .hub-main-title,
+.sidebar.collapsed .nav-sub-group {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, width 0.2s ease;
+}
+
+/* 收缩态下导航项居中 */
+.sidebar.collapsed .nav-item {
+    justify-content: center;
+    padding: 12px 0;
+    gap: 0;
+    border-radius: 10px;
+}
+
+.sidebar.collapsed .nav-parent {
+    justify-content: center;
+    padding: 12px 0;
+    gap: 0;
+}
+
+.sidebar.collapsed .nav-item .icon,
+.sidebar.collapsed .nav-parent .icon {
+    font-size: 1.2rem;
+    margin: 0;
+}
+
+/* 收缩态 active 样式调整 */
+.sidebar.collapsed .nav-item.active {
+    border-left: none;
+    background: rgba(59, 130, 246, 0.15);
+    box-shadow: none;
+}
+
+/* Logo 收缩 */
+.sidebar.collapsed .logo {
+    justify-content: center;
+    margin-bottom: 32px;
+}
+
+.sidebar.collapsed .logo-icon {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+}
+
+/* 用户信息收缩 */
+.sidebar.collapsed .user-profile {
+    justify-content: center;
+}
+
+.sidebar.collapsed .user-profile img {
+    width: 36px;
+    height: 36px;
+}
+
+/* ── 收缩按钮 ── */
+.sidebar-toggle {
+    width: 100%;
+    padding: 10px 0;
+    margin-top: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    color: #94a3b8;
+    font-size: 0.8rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    z-index: 20;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-toggle:hover {
+    background: rgba(59, 130, 246, 0.12);
+    border-color: rgba(59, 130, 246, 0.3);
+    color: #60a5fa;
+}
+
+.sidebar-toggle .toggle-text {
+    font-size: 0.72rem;
+    font-weight: 500;
+    transition: opacity 0.2s ease;
+}
+
+.sidebar.collapsed .sidebar-toggle .toggle-text {
+    display: none;
+}
+
+.sidebar-toggle .toggle-icon {
+    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    font-style: normal;
+    line-height: 1;
+}
+
+.sidebar.collapsed .sidebar-toggle .toggle-icon {
+    transform: rotate(180deg);
+}
+
+/* Tooltip 悬浮提示 (收缩态专用) */
+.sidebar.collapsed .nav-item {
+    position: relative;
+}
+
+.sidebar.collapsed .nav-item::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: calc(100% + 12px);
+    top: 50%;
+    transform: translateY(-50%) translateX(-4px);
+    background: rgba(15, 23, 42, 0.95);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    color: #f1f5f9;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+    z-index: 100;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.sidebar.collapsed .nav-item:hover::after {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+}
+
+
+/* ═══════════════════════════════════════════════════
+   3. 快速决策行动条 (Quick Action Strip)
+   ── 主页首屏核心决策组件 ──
+   ═══════════════════════════════════════════════════ */
+
+.quick-action-strip {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 14px 24px;
+    border-radius: var(--radius-card);
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(245, 158, 11, 0.2);
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.06) 0%, rgba(20, 24, 34, 0.4) 40%, rgba(139, 92, 246, 0.04) 100%);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    animation: fadeSlideUp 0.4s 0.08s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+}
+
+/* 顶部能量条 */
+.quick-action-strip::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #f59e0b, #a78bfa, transparent);
+    opacity: 0.6;
+}
+
+/* 心态标签 */
+.qa-mindset {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #f8fafc;
+    padding: 6px 16px;
+    border-radius: 8px;
+    background: rgba(59, 130, 246, 0.12);
+    border-left: 3px solid var(--accent);
+    white-space: nowrap;
+    flex-shrink: 0;
+    letter-spacing: 0.3px;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* 仓位区 */
+.qa-position {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.qa-label {
+    font-size: 0.7rem;
+    color: #94a3b8;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+}
+
+.qa-position strong {
+    font-size: 1.5rem;
+    font-weight: 900;
+    background: linear-gradient(135deg, #f59e0b, #fbbf24);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 0 12px rgba(245, 158, 11, 0.3));
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+}
+
+/* 置信度区 */
+.qa-confidence {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 120px;
+}
+
+.qa-conf-bar {
+    flex: 1;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 3px;
+    overflow: hidden;
+    min-width: 60px;
+    max-width: 140px;
+}
+
+.qa-conf-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #ef4444, #f59e0b, #10b981);
+    transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+    width: 0%;
+}
+
+.qa-conf-val {
+    font-size: 0.82rem;
+    font-weight: 800;
+    color: #f8fafc;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    min-width: 28px;
+    text-align: right;
+}
+
+/* 跳转链接 */
+.qa-detail-link {
+    font-size: 0.75rem;
+    color: #a78bfa;
+    text-decoration: none;
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(139, 92, 246, 0.25);
+    background: rgba(139, 92, 246, 0.08);
+    white-space: nowrap;
+    font-weight: 600;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    flex-shrink: 0;
+}
+
+.qa-detail-link:hover {
+    background: rgba(139, 92, 246, 0.18);
+    border-color: rgba(139, 92, 246, 0.5);
+    color: #c4b5fd;
+    box-shadow: 0 0 12px rgba(139, 92, 246, 0.15);
+    transform: translateY(-1px);
+}
+
+
+/* ═══════════════════════════════════════════════════
+   4. 全局字体增强 (覆盖层)
+   ── 所有数值元素使用 JetBrains Mono ──
+   ═══════════════════════════════════════════════════ */
+
+/* 核心数值元素 — 统一等宽字体 */
+.stat-value,
+.rb-temp,
+.pos-big-value,
+.hub-aiae-val,
+.alloc-total-badge,
+.alloc-item strong,
+.conf-value,
+.factor-score,
+.cap-z-val,
+.cap-flow-value,
+.cap-flow-trend,
+.plan-anchor-value,
+.plan-anchor-cap strong,
+.hub-warn-val,
+.hub-src-tag,
+.vix-percentile-label,
+.erp-pct-label,
+.signal-consensus-count {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+}
+
+/* body 字体回退链增强 (中文渲染) */
+body {
+    font-family: var(--font-chinese);
+}
+
+
+/* ═══════════════════════════════════════════════════
+   5. 14寸笔记本专项优化
+   ═══════════════════════════════════════════════════ */
+
+/* 14寸笔记本典型分辨率: 1366x768 ~ 1920x1080 */
+@media (max-width: 1440px) {
+    .content {
+        padding: 24px 32px;
+    }
+
+    .topbar {
+        padding: 18px 32px;
+    }
+
+    .stats-grid {
+        gap: 16px;
+    }
+
+    .strategy-cards-grid {
+        gap: 16px;
+    }
+
+    .hub-container-v6 {
+        gap: 20px;
+    }
+
+    .sentiment-hub {
+        padding: 22px;
+    }
+
+    /* 快速行动条紧凑化 */
+    .quick-action-strip {
+        gap: 14px;
+        padding: 12px 20px;
+    }
+
+    .qa-position strong {
+        font-size: 1.3rem;
+    }
+}
+
+/* 更小屏幕 (1366px) 策略卡片 3+2 布局 */
+@media (max-width: 1366px) {
+    .strategy-cards-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .quick-action-strip {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .qa-confidence {
+        min-width: 100px;
+    }
+}
+
+
+/* ═══════════════════════════════════════════════════
+   6. prefers-reduced-motion 无障碍支持
+   ═══════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.15s !important;
+    }
+}
+
+
+/* ═══════════════════════════════════════════════════
+   7. 滚动位置锚点导航 (右侧极简)
+   ═══════════════════════════════════════════════════ */
+
+.scroll-spy {
+    position: fixed;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 50;
+    opacity: 0.4;
+    transition: opacity 0.3s ease;
+}
+
+.scroll-spy:hover {
+    opacity: 0.9;
+}
+
+.scroll-spy-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(148, 163, 184, 0.4);
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+}
+
+.scroll-spy-dot:hover {
+    background: rgba(167, 139, 250, 0.6);
+    transform: scale(1.5);
+}
+
+.scroll-spy-dot.active {
+    background: #a78bfa;
+    box-shadow: 0 0 8px rgba(167, 139, 250, 0.5);
+    transform: scale(1.3);
+}
+
+/* 悬停标签 */
+.scroll-spy-dot::before {
+    content: attr(data-label);
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%) translateX(4px);
+    background: rgba(15, 23, 42, 0.9);
+    backdrop-filter: blur(12px);
+    color: #e2e8f0;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: all 0.2s ease;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.scroll-spy-dot:hover::before {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+}

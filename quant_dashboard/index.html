@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -7,14 +7,16 @@
     <meta name="theme-color" content="#07090e">
     <title>AlphaCore 投研量化终端</title>
     <!-- 引入外部样式 -->
-    <link rel="stylesheet" href="./static/css/styles.css?v=10">
+    <link rel="stylesheet" href="./static/css/fonts.css?v=1">
+    <link rel="stylesheet" href="./static/css/styles.css?v=11">
+    <link rel="stylesheet" href="./static/css/visual_excellence.css?v=2">
     <!-- 引入高级无衬线字体 Inter -->
     <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Chart.js 移除 (极简主义与性能优化) -->
     <!-- ECharts 可视化引擎 -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
     <script>window.echarts || document.write('<script src="./static/vendor/echarts.min.js"><\/script>')</script>
-    <script src="./static/js/alphacore_utils.js"></script>
+    <script src="./static/js/alphacore_utils.js?v=2"></script>
 </head>
 <body>
     <!-- 左侧导航栏 -->
@@ -25,43 +27,43 @@
         </div>
         <nav class="nav-menu">
             <div class="nav-group-title">情 报 中 心</div>
-            <a href="./index.html" class="nav-item active">
+            <a href="./index.html" class="nav-item active" data-tooltip="量化总览">
                 <span class="icon">📊</span>
                 <span>量化总览</span>
             </a>
-            <a href="./factor.html" class="nav-item">
+            <a href="./factor.html" class="nav-item" data-tooltip="因子分析">
                 <span class="icon">📈</span>
                 <span>因子分析</span>
             </a>
-            <a href="./industry.html" class="nav-item">
+            <a href="./industry.html" class="nav-item" data-tooltip="产业追踪">
                 <span class="icon">🏭</span>
                 <span>产业追踪</span>
             </a>
 
             <div class="nav-group-title">策 略 实 验 室</div>
-            <a href="./strategy.html" class="nav-item">
+            <a href="./strategy.html" class="nav-item" data-tooltip="策略中心">
                 <span class="icon">⚙️</span>
                 <span>策略中心</span>
             </a>
-            <a href="./backtest.html" class="nav-item">
+            <a href="./backtest.html" class="nav-item" data-tooltip="量化回测">
                 <span class="icon">🧪</span>
                 <span>量化回测</span>
                 <span class="badge-beta">Beta</span>
             </a>
-            <a href="./treasury.html" class="nav-item">
+            <a href="./treasury.html" class="nav-item" data-tooltip="海外策略">
                 <span class="icon">🌐</span>
                 <span>海外策略</span>
             </a>
 
             <div class="nav-group-title">科 学 决 策</div>
-            <a href="./decision.html" class="nav-item">
+            <a href="./decision.html" class="nav-item" data-tooltip="决策中枢">
                 <span class="icon">🧠</span>
                 <span>决策中枢</span>
                 <span class="badge-beta" style="background:rgba(139,92,246,0.15);color:#a78bfa;border-color:rgba(139,92,246,0.3);">V16</span>
             </a>
 
             <div class="nav-group-title">研 究 审 计</div>
-            <a href="./audit.html" class="nav-item"><span class="icon">🔍</span><span>深度审计</span></a>
+            <a href="./audit.html" class="nav-item" data-tooltip="深度审计"><span class="icon">🔍</span><span>深度审计</span></a>
             <div class="nav-parent" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')"><span class="icon">📑</span><span>个股深研</span><span class="nav-arrow">▶</span></div>
             <div class="nav-sub-group">
                 <a href="./smic_audit.html" class="nav-item"><span class="icon">🔬</span><span>中芯国际</span><span class="badge-beta" style="background:rgba(239,68,68,0.15);color:#f87171;border-color:rgba(239,68,68,0.3);">DEEP</span></a>
@@ -73,19 +75,20 @@
                 <a href="./scc_audit.html" class="nav-item"><span class="icon">📡</span><span>深南电路</span><span class="badge-beta" style="background:rgba(139,92,246,0.15);color:#a855f7;border-color:rgba(139,92,246,0.3);">DEEP</span></a>
                 </div>
             <div class="nav-group-title">账 户 管 理</div>
-            <a href="./portfolio.html" class="nav-item">
+            <a href="./portfolio.html" class="nav-item" data-tooltip="投资组合">
                 <span class="icon">💼</span>
                 <span>投资组合</span>
             </a>
         </nav>
+        <button class="sidebar-toggle" id="sidebar-toggle" title="收缩/展开"><i class="toggle-icon">◀</i><span class="toggle-text">收起导航</span></button>
+
         <div class="user-profile">
             <img src="https://i.pravatar.cc/150?img=11" alt="User Avatar">
             <div class="user-info">
                 <span class="name">基金经理 Pro</span>
                 <span class="role">顶级投研权限</span>
             </div>
-        </div>
-    </aside>
+        </div></aside>
 
     <!-- 主看板区 -->
     <main class="dashboard">
@@ -117,6 +120,21 @@
                     <span class="rb-tag" id="rb-vix">VIX --</span>
                     <span class="rb-tag" id="rb-capital">资金 Z:--</span>
                 </div>
+            </div>
+
+            <!-- V2.0 快速决策行动条 -->
+            <div class="quick-action-strip glass-panel" id="quick-action-strip">
+                <div class="qa-mindset" id="qa-mindset">侦测中...</div>
+                <div class="qa-position">
+                    <span class="qa-label">建议仓位</span>
+                    <strong id="qa-pos">--%</strong>
+                </div>
+                <div class="qa-confidence">
+                    <span class="qa-label">置信度</span>
+                    <div class="qa-conf-bar"><div class="qa-conf-fill" id="qa-conf-fill" style="width:0%"></div></div>
+                    <span class="qa-conf-val" id="qa-conf-val">--</span>
+                </div>
+                <a href="./decision.html" class="qa-detail-link">🧠 详细分析 ▸</a>
             </div>
 
             <!-- 数据结构化概览卡片 -->
@@ -581,6 +599,6 @@
         </div>
     </main>
 
-    <script src="./static/js/script.js?v=10"></script>
+    <script src="./static/js/script.js?v=11"></script>
 </body>
 </html>
