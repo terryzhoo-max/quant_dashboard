@@ -1918,3 +1918,45 @@
     min-width: 22px; text-align: right; flex-shrink: 0;
     font-variant-numeric: tabular-nums;
 }
+
+/* ═══════════════════════════════════════════════════
+   V19.1: 板块集中度增强
+   ═══════════════════════════════════════════════════ */
+
+/* 汇总指标行 */
+.sc-summary {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;
+}
+.sc-badge {
+    font-size: 0.65rem; padding: 2px 8px; border-radius: 6px;
+    font-weight: 600; letter-spacing: 0.2px;
+}
+.sc-badge-ok { background: rgba(16,185,129,0.1); color: #6ee7b7; }
+.sc-badge-warn { background: rgba(245,158,11,0.1); color: #fbbf24; }
+.sc-badge-danger { background: rgba(239,68,68,0.1); color: #fca5a5; }
+.sc-badge-count { background: rgba(139,92,246,0.1); color: #a78bfa; }
+.sc-badge-limit { background: rgba(248,113,113,0.06); color: #64748b; }
+
+/* 条形图红线标记 */
+.sector-bar-bg { position: relative; }
+.sc-redline {
+    position: absolute; top: -2px; bottom: -2px; width: 2px;
+    background: rgba(248,113,113,0.6); border-radius: 1px;
+    pointer-events: none;
+}
+
+/* 超标行 */
+.sc-over { }
+.sc-pct-over {
+    color: #f87171 !important; font-weight: 700;
+}
+
+/* 来源策略标签 */
+.sc-src-row {
+    display: flex; gap: 4px; margin-top: 2px; padding-left: 60px;
+}
+.sc-src-pill {
+    font-size: 0.58rem; padding: 1px 6px; border-radius: 4px;
+    background: rgba(148,163,184,0.08); color: #64748b;
+    font-weight: 500;
+}

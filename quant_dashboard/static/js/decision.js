@@ -607,7 +607,7 @@ async function loadRiskMatrix() {
 
         if (riskData.status === 'success') {
             renderOverlapMatrix(riskData);
-            renderSectorConcentration(riskData.sector_concentration);
+            renderSectorConcentration(riskData.sector_concentration, riskData.hhi, riskData.total_signals, riskData.data_source);
             renderTailRisk(riskData.tail_risk);
         }
         if (accData.status === 'success') renderAccuracy(accData);
@@ -646,21 +646,43 @@ function renderOverlapMatrix(data) {
     el.innerHTML = html;
 }
 
-function renderSectorConcentration(sectors) {
+function renderSectorConcentration(sectors, hhi, totalSignals, dataSource) {
     const el = document.getElementById('sector-concentration');
     if (!el) return;
     if (!sectors || sectors.length === 0) {
         el.innerHTML = '<div style="text-align:center;padding:20px;color:#64748b;">暂无板块数据</div>';
         return;
     }
-    const colors = ['#a78bfa', '#34d399', '#fbbf24', '#f87171', '#38bdf8', '#fb923c', '#e879f9', '#94a3b8'];
-    el.innerHTML = sectors.map((s, i) => `
-        <div class="sector-bar-row">
-            <span class="sector-bar-name">${s.sector}</span>
-            <div class="sector-bar-bg"><div class="sector-bar-fill" style="width:${s.pct}%;background:${colors[i % colors.length]}"></div></div>
-            <span class="sector-bar-pct">${s.pct}%</span>
+    const SECTOR_LIMIT = 40; // config.py sector_limit
+    const colors = ['#a78bfa', '#34d399', '#fbbf24', '#38bdf8', '#fb923c', '#e879f9', '#94a3b8', '#6ee7b7'];
+    const hhiLevel = (hhi || 0) > 2500 ? 'danger' : ((hhi || 0) > 1500 ? 'warn' : 'ok');
+    const hhiLabel = hhiLevel === 'danger' ? '⚠️ 高集中' : (hhiLevel === 'warn' ? '🟡 中等' : '🟢 分散');
+    const isPortfolio = dataSource === 'portfolio';
+    const srcIcon = isPortfolio ? '🟢' : '🟡';
+    const srcLabel = isPortfolio ? '实际持仓 (市值加权)' : '策略信号 (等权)';
+    const countLabel = isPortfolio ? '持仓' : '信号';
+
+    el.innerHTML = `
+        <div class="sc-summary">
+            <span class="sc-badge ${isPortfolio ? 'sc-badge-ok' : 'sc-badge-warn'}">${srcIcon} ${srcLabel}</span>
+            <span class="sc-badge sc-badge-${hhiLevel}">HHI: ${hhi || '--'} ${hhiLabel}</span>
+            <span class="sc-badge sc-badge-count">${totalSignals || '--'} ${countLabel}</span>
+            <span class="sc-badge sc-badge-limit">红线: ${SECTOR_LIMIT}%</span>
         </div>
-    `).join('');
+        ${sectors.map((s, i) => {
+            const over = s.pct > SECTOR_LIMIT;
+            const barColor = over ? '#f87171' : colors[i % colors.length];
+            const srcHtml = (s.sources || []).map(src => `<span class="sc-src-pill">${src}</span>`).join('');
+            return `<div class="sector-bar-row ${over ? 'sc-over' : ''}">
+                <span class="sector-bar-name">${s.sector}</span>
+                <div class="sector-bar-bg">
+                    <div class="sector-bar-fill" style="width:${s.pct}%;background:${barColor}"></div>
+                    <div class="sc-redline" style="left:${SECTOR_LIMIT}%"></div>
+                </div>
+                <span class="sector-bar-pct ${over ? 'sc-pct-over' : ''}">${s.pct}%${over ? ' ⚠️' : ''}</span>
+                <div class="sc-src-row">${srcHtml}</div>
+            </div>`;
+        }).join('')}`;
 }
 
 function renderTailRisk(tail) {

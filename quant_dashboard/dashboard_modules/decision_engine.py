@@ -1017,19 +1017,61 @@ def compute_risk_matrix() -> dict:
             multi_strategy_codes.append({"code": code, "strategies": in_strats, "count": len(in_strats)})
     multi_strategy_codes.sort(key=lambda x: x["count"], reverse=True)
 
-    # 2. 板块集中度
-    all_sectors = {}
-    for sectors in strategy_sectors.values():
-        for sec, cnt in sectors.items():
-            all_sectors[sec] = all_sectors.get(sec, 0) + cnt
-    total_signals = sum(all_sectors.values()) or 1
-    sector_concentration = []
-    for sec, cnt in sorted(all_sectors.items(), key=lambda x: x[1], reverse=True)[:8]:
-        sector_concentration.append({
-            "sector": sec, "count": cnt,
-            "pct": round(cnt / total_signals * 100, 1),
-        })
-    top_sector_pct = sector_concentration[0]["pct"] if sector_concentration else 0
+    # 2. 板块集中度 (V19.2: 实际持仓优先, 策略信号回退)
+    strat_labels = {"mr": "MR趋势", "div": "红利", "mom": "动量"}
+    data_source = "signal"
+
+    # ── 尝试从实际持仓读取 (市值加权 — 真实风险暴露) ──
+    portfolio_sectors = {}
+    portfolio_count = 0
+    try:
+        from portfolio_engine import get_portfolio_engine
+        _pe = get_portfolio_engine()
+        _val = _pe.get_valuation()
+        _positions = _val.get("positions", [])
+        if _positions:
+            for p in _positions:
+                industry = p.get("industry", "其他")
+                weight = float(p.get("weight", 0))
+                portfolio_sectors[industry] = portfolio_sectors.get(industry, 0) + weight
+            portfolio_count = len(_positions)
+            if portfolio_sectors:
+                data_source = "portfolio"
+    except Exception as e:
+        logger.debug("板块集中度: 持仓读取失败, 回退策略信号: %s", e)
+
+    if data_source == "portfolio":
+        # 实际持仓路径 (市值权重)
+        total_weight = sum(portfolio_sectors.values()) or 1
+        sector_concentration = []
+        for sec, w in sorted(portfolio_sectors.items(), key=lambda x: x[1], reverse=True)[:8]:
+            pct = round(w / total_weight * 100, 1)
+            sector_concentration.append({
+                "sector": sec, "count": 0, "pct": pct, "sources": ["实际持仓"],
+            })
+        top_sector_pct = sector_concentration[0]["pct"] if sector_concentration else 0
+        total_signals = portfolio_count
+    else:
+        # 回退路径: 策略信号 (等权计数)
+        all_sectors = {}
+        sector_sources = {}
+        for sname, sectors in strategy_sectors.items():
+            for sec, cnt in sectors.items():
+                all_sectors[sec] = all_sectors.get(sec, 0) + cnt
+                if sname not in sector_sources.setdefault(sec, []):
+                    sector_sources[sec].append(sname)
+        total_signals = sum(all_sectors.values()) or 1
+        sector_concentration = []
+        for sec, cnt in sorted(all_sectors.items(), key=lambda x: x[1], reverse=True)[:8]:
+            pct = round(cnt / total_signals * 100, 1)
+            sources = [strat_labels.get(s, s) for s in sector_sources.get(sec, [])]
+            sector_concentration.append({
+                "sector": sec, "count": cnt, "pct": pct, "sources": sources,
+            })
+        top_sector_pct = sector_concentration[0]["pct"] if sector_concentration else 0
+
+    # HHI: 赫芬达尔指数 (0-10000, >2500 高集中)
+    hhi = round(sum(s["pct"] ** 2 for s in sector_concentration))
 
     # 3. 尾部风险仪表 (综合: 集中度 + VIX + AIAE + 矛盾)
     snapshot = _build_snapshot_from_cache()
@@ -1074,6 +1116,9 @@ def compute_risk_matrix() -> dict:
         "multi_strategy_codes": multi_strategy_codes[:10],
         "sector_concentration": sector_concentration,
         "top_sector_pct": top_sector_pct,
+        "hhi": hhi,
+        "total_signals": total_signals,
+        "data_source": data_source,
         "tail_risk": {
             "score": tail_risk,
             "level": tail_level,
