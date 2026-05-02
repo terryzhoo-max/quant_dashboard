@@ -19,32 +19,43 @@ from services.cache_service import cache_manager
 logger = logging.getLogger("alphacore.perf_analytics")
 
 # 缓存 key
-_CACHE_KEY = "perf_analytics_multi"
+_CACHE_KEY = "perf_analytics_7bm"  # V19.2: 7 benchmarks (换 key 清旧缓存)
 _CACHE_TTL = 3600 * 4  # 4 小时
 
-# ── 多基准配置 ──
+# ── 多基准配置 (V19.2: 扩展至7标的, 与波段守卫一致) ──
 BENCHMARKS = [
-    {"key": "hs300", "ts_code": "000300.SH", "name": "沪深300"},
-    {"key": "kc50",  "ts_code": "000688.SH", "name": "科创50"},
-    {"key": "cy50",  "ts_code": "399673.SZ", "name": "创业板50"},
+    {"key": "hs300",  "ts_code": "000300.SH", "name": "沪深300",    "api": "index"},
+    {"key": "kc50",   "ts_code": "000688.SH", "name": "科创50",     "api": "index"},
+    {"key": "cy50",   "ts_code": "399673.SZ", "name": "创业板50",   "api": "index"},
+    {"key": "sp500",  "ts_code": "513500.SH", "name": "标普500ETF",  "api": "fund"},
+    {"key": "nasdaq", "ts_code": "513100.SH", "name": "纳指100ETF",  "api": "fund"},
+    {"key": "nikkei", "ts_code": "513520.SH", "name": "日经225ETF",  "api": "fund"},
+    {"key": "hstech", "ts_code": "513180.SH", "name": "恒生科技ETF", "api": "fund"},
 ]
 
 
-def _fetch_index_returns(ts_code: str, days: int = 500) -> Optional[pd.Series]:
-    """从 Tushare 获取指数日收益率序列 (通用)"""
+def _fetch_index_returns(ts_code: str, days: int = 500, api: str = "index") -> Optional[pd.Series]:
+    """从 Tushare 获取指数/基金日收益率序列 (V19.2: 支持 index_daily + fund_daily)"""
     try:
         import tushare as ts
         pro = ts.pro_api()
         end = datetime.now().strftime("%Y%m%d")
         start = (datetime.now() - timedelta(days=days + 30)).strftime("%Y%m%d")
-        df = pro.index_daily(
-            ts_code=ts_code,
-            start_date=start,
-            end_date=end,
-            fields="trade_date,close"
-        )
+        if api == "fund":
+            df = pro.fund_daily(
+                ts_code=ts_code,
+                start_date=start,
+                end_date=end,
+            )
+        else:
+            df = pro.index_daily(
+                ts_code=ts_code,
+                start_date=start,
+                end_date=end,
+                fields="trade_date,close"
+            )
         if df is None or df.empty:
-            logger.warning("Tushare %s 数据为空", ts_code)
+            logger.warning("Tushare %s (%s) 数据为空", ts_code, api)
             return None
         df = df.sort_values("trade_date")
         df["trade_date"] = pd.to_datetime(df["trade_date"])
@@ -52,7 +63,7 @@ def _fetch_index_returns(ts_code: str, days: int = 500) -> Optional[pd.Series]:
         returns = df["close"].pct_change().dropna()
         return returns.tail(days)
     except Exception as e:
-        logger.warning("获取 %s 日线失败: %s", ts_code, e)
+        logger.warning("获取 %s (%s) 日线失败: %s", ts_code, api, e)
         return None
 
 
@@ -166,7 +177,7 @@ def _basic_metrics(returns: pd.Series) -> dict:
 def _compute_single_benchmark(bm: dict) -> tuple:
     """计算单个基准的完整绩效数据, 供线程池并行调用"""
     key = bm["key"]
-    returns = _fetch_index_returns(bm["ts_code"], days=500)
+    returns = _fetch_index_returns(bm["ts_code"], days=500, api=bm.get("api", "index"))
     if returns is None or len(returns) < 60:
         logger.warning("[PerfAnalytics] %s (%s) 数据不足, 跳过", bm["name"], bm["ts_code"])
         return key, None
@@ -194,11 +205,11 @@ def compute_performance_analytics() -> dict:
     if cached and cached.get("benchmarks"):
         return cached
 
-    # 顺序获取 3 个基准 (Tushare 有限流, 并行会被拒绝)
+    # 顺序获取 7 个基准 (Tushare 有限流, 并行会被拒绝)
     benchmarks = {}
     for i, bm in enumerate(BENCHMARKS):
         if i > 0:
-            time.sleep(0.3)  # Tushare 限流间隔
+            time.sleep(0.35)  # Tushare 限流间隔 (7标的需更保守)
         key, data = _compute_single_benchmark(bm)
         if data is not None:
             benchmarks[key] = data
