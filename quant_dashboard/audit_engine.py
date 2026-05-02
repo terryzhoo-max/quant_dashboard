@@ -692,6 +692,45 @@ def audit_risk_control():
             "action": f"卖出部分持仓降低总仓位至{int(POS_CAP)}%以下，优先卖出非核心持仓",
         })
 
+    # ── 检查 6: AIAE 仓位约束对齐 (V6.0) ──
+    if total_asset > 0:
+        try:
+            from services.cache_service import cache_manager
+            aiae_ctx = cache_manager.get_json("aiae_ctx")
+            if aiae_ctx and aiae_ctx.get("cap"):
+                aiae_cap = float(aiae_ctx["cap"])
+                pos_pct = (1 - cash / max(total_asset, 1)) * 100
+                aiae_regime = aiae_ctx.get("regime", "?")
+                aiae_regime_cn = {1: "极度恐慌", 2: "低配置区", 3: "中性均衡", 4: "偏热区域", 5: "极度过热"}.get(aiae_regime, f"R{aiae_regime}")
+                buffer_cap = aiae_cap * 1.10  # 允许 10% 缓冲
+                if pos_pct > buffer_cap:
+                    s = max(40, 100 - int((pos_pct - aiae_cap) * 3))
+                    scores.append(s)
+                    checks.append({
+                        "name": "AIAE 仓位约束",
+                        "status": "warn",
+                        "detail": f"当前仓位 {pos_pct:.1f}% 超过 AIAE 建议上限 {aiae_cap:.0f}% (×110%={buffer_cap:.0f}%)",
+                        "meta": f"AIAE 档位: {aiae_regime_cn} · 建议上限: {aiae_cap:.0f}%",
+                        "score": s,
+                        "explanation": f"AIAE 宏观择时系统建议当前总仓位不超过 {aiae_cap:.0f}%。实际仓位超过该建议的110%缓冲线，说明仓位与宏观信号存在偏差。这不是强制阻断，而是提醒您关注宏观配置热度。",
+                        "threshold": f"🟢 ≤{aiae_cap:.0f}%: 与AIAE一致 | 🟡 {aiae_cap:.0f}-{buffer_cap:.0f}%: 缓冲区 | 🔴 >{buffer_cap:.0f}%: 偏差过大",
+                        "action": f"考虑将总仓位调整至 AIAE 建议的 {aiae_cap:.0f}% 以内",
+                    })
+                else:
+                    scores.append(100)
+                    checks.append({
+                        "name": "AIAE 仓位约束",
+                        "status": "pass",
+                        "detail": f"当前仓位 {pos_pct:.1f}% 在 AIAE 建议上限 {aiae_cap:.0f}% 以内",
+                        "meta": f"AIAE 档位: {aiae_regime_cn} · 建议上限: {aiae_cap:.0f}%",
+                        "score": 100,
+                        "explanation": "当前实际仓位与 AIAE 宏观择时建议保持一致，宏观配置纪律良好。",
+                        "threshold": f"🟢 ≤{aiae_cap:.0f}%: 与AIAE一致",
+                        "action": "继续保持与 AIAE 信号同步的仓位纪律",
+                    })
+        except Exception:
+            pass  # 缓存不可用时静默跳过
+
     # ── 检查 6: 历史最大回撤 ──
     mr_fp = os.path.join(BASE_DIR, "mr_optimization_results.json")
     if os.path.exists(mr_fp):

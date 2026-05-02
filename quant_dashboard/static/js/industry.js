@@ -104,11 +104,19 @@ document.addEventListener('DOMContentLoaded', function() {
                     freshBadge = `<span style="font-size:0.72rem; padding:2px 10px; border-radius:6px; background:rgba(${ageMin < 0 ? '148,163,184' : (isStale ? '245,158,11' : '16,185,129')},0.1); color:${freshColor}; font-weight:600; margin-left:auto;">${freshIcon} 数据 ${ageText}</span>`;
                 }
 
+                const posLabel = r.pos_source === 'aiae' ? 'AIAE仓位' : 'Regime仓位';
+                const posColor = r.pos_source === 'aiae' ? '#f59e0b' : bc;
+                const posBg = r.pos_source === 'aiae' ? 'rgba(245,158,11,0.12)' : bgMap[r.regime];
+                // 分层 tooltip: Regime Cap / AIAE Cap / 审计天花板
+                let layerTooltip = `Regime: ${r.regime_cap ?? '--'}%`;
+                if (r.aiae_cap != null) layerTooltip += ` · AIAE: ${r.aiae_cap}%`;
+                layerTooltip += ` · 天花板: ${r.audit_cap ?? 95}%`;
+
                 banner.innerHTML = `
                     <span style="font-weight:800; color:${bc}; font-size:0.9rem;">${r.regime_icon || '🟡'} ${r.regime_cn || r.regime}</span>
                     <span style="color:#94a3b8; font-size:0.82rem;">CSI300 <b style="color:#e2e8f0">${r.csi300}</b> · MA120 ${r.ma120}</span>
                     <span style="color:#94a3b8; font-size:0.82rem;">VIX <b style="color:${r.layer2_vix > 25 ? '#f87171':'#e2e8f0'}">${r.ret5d !== undefined ? r.ret5d + '%' : '--'}</b> 5D</span>
-                    <span style="font-size:0.78rem; padding:3px 10px; border-radius:6px; background:${bgMap[r.regime]}; color:${bc}; font-weight:600;">建议仓位 ${r.pos_cap}%</span>
+                    <span title="${layerTooltip}" style="font-size:0.78rem; padding:3px 10px; border-radius:6px; background:${posBg}; color:${posColor}; font-weight:600; cursor:help;">${posLabel} ${r.pos_cap}%</span>
                     ${freshBadge}
                 `;
             }

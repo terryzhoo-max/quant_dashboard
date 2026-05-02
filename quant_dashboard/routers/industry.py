@@ -402,8 +402,38 @@ async def get_market_regime():
             "CRASH": "禁止新建仓",
         }
         sg = {"BULL": 65, "RANGE": 68, "BEAR": 75, "CRASH": 999}.get(regime, 68)
-        pc = {"BULL": 85, "RANGE": 66, "BEAR": 45, "CRASH": 0}.get(regime, 66)
         sl = -6 if regime == "BEAR" else -8
+
+        # ── V6.0: 三层级联仓位建议 ──
+        # Layer 1: AIAE 缓存 (matrix_position, AIAE×ERP 交叉查表)
+        # Layer 2: config.POSITION_CONFIG (Regime 仓位上限)
+        # Layer 3: AUDIT 硬天花板 95%
+        # 输出: min(L1, L2, L3)
+        aiae_cap = None
+        pos_source = "regime"
+        try:
+            from services.cache_service import cache_manager
+            aiae_ctx = cache_manager.get_json("aiae_ctx")
+            if aiae_ctx and aiae_ctx.get("cap"):
+                aiae_cap = int(aiae_ctx["cap"])
+                pos_source = "aiae"
+        except Exception:
+            pass
+
+        try:
+            from config import POSITION_CONFIG as _PC
+            # 取动量 Regime Cap (产业追踪页更贴近动量逻辑)
+            regime_cap = _PC.get("mom_regime_cap", {}).get(regime, 66)
+            audit_cap = int(_PC.get("total_cap", 95))
+        except ImportError:
+            regime_cap = {"BULL": 85, "RANGE": 60, "BEAR": 35, "CRASH": 0}.get(regime, 66)
+            audit_cap = 95
+
+        # 三层取最严
+        candidates = [regime_cap, audit_cap]
+        if aiae_cap is not None:
+            candidates.append(aiae_cap)
+        pc = min(candidates)
 
         return {
             "status": "ok", "as_of": datetime.now().strftime("%Y-%m-%d"),
@@ -417,6 +447,11 @@ async def get_market_regime():
             "regime_color": rc, "regime_icon": ri,
             "regime_desc": desc_map.get(regime, ""),
             "pos_cap": pc, "score_gate": sg,
+            # V6.0: 分层仓位透明化
+            "aiae_cap": aiae_cap,       # AIAE 宏观建议 (可能为 null)
+            "regime_cap": regime_cap,    # Regime 仓位上限
+            "audit_cap": audit_cap,      # 审计硬天花板
+            "pos_source": pos_source,    # 数据来源: "aiae" 或 "regime"
             "optimal_params": {
                 "top_n": 3, "rebalance_days": 5, "mom_window": 30,
                 "stop_loss": sl, "pos_cap": pc, "entry_threshold": sg,

@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -8,7 +8,7 @@
     <title>决策中枢 · AlphaCore</title>
     <link rel="stylesheet" href="./static/css/fonts.css?v=1">
     <link rel="stylesheet" href="./static/css/styles.css?v=12">
-    <link rel="stylesheet" href="./static/css/decision.css?v=24">
+    <link rel="stylesheet" href="./static/css/decision.css?v=27">
     <link rel="stylesheet" href="./static/css/visual_excellence.css?v=3">
     <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
@@ -56,7 +56,7 @@
             <a href="./decision.html" class="nav-item active" data-tooltip="决策中枢">
                 <span class="icon">🧠</span>
                 <span>决策中枢</span>
-                <span class="badge-beta" style="background:rgba(139,92,246,0.15);color:#a78bfa;border-color:rgba(139,92,246,0.3);">V17</span>
+                <span class="badge-beta" style="background:rgba(139,92,246,0.15);color:#a78bfa;border-color:rgba(139,92,246,0.3);">V19</span>
             </a>
 
             <div class="nav-group-title">研 究 审 计</div>
@@ -102,7 +102,7 @@
             <!-- 页面标题 -->
             <div class="decision-header">
                 <h2>🧠 科学辅助决策中枢</h2>
-                <span class="version-pill">V18.0</span>
+                <span class="version-pill">V19.1</span>
             </div>
 
             <!-- Tab 切换 -->
@@ -119,7 +119,27 @@
                 <!-- V17.3: 警示容器 -->
                 <div id="alert-container"></div>
 
-                <!-- V20.0: JCS + 合并决策面板 -->
+                <!-- V19.0: AIAE 宏观仓位管控 (决策前置 — 先看环境再看信号) -->
+                <div class="aiae-hub-panel glass-decision" id="aiae-hub-panel" style="display:none;">
+                    <h3 class="action-plan-section-title">🎛️ AIAE 宏观仓位管控 <span class="aiae-hub-subtitle">— 配置热度核心锚 · 权重35%</span></h3>
+                    <div class="aiae-hub-grid">
+                        <div class="aiae-hub-gauge-col">
+                            <div id="aiae-hub-gauge-chart" style="width:100%;height:180px;"></div>
+                            <div class="aiae-hub-meta">
+                                <div class="aiae-hub-regime-label" id="aiae-hub-regime">加载中</div>
+                                <div class="aiae-hub-slope" id="aiae-hub-slope">--</div>
+                            </div>
+                        </div>
+                        <div class="aiae-hub-detail-col">
+                            <div class="aiae-hub-section-label">五档市场状态</div>
+                            <div class="aiae-hub-regime-strip" id="aiae-hub-regime-strip"></div>
+                            <div class="aiae-hub-section-label" style="margin-top:14px;">警示指标</div>
+                            <div class="aiae-hub-warnings" id="aiae-hub-warnings"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- V19.0: JCS + 合并决策面板 (信号结论，排在环境之后) -->
                 <div class="jcs-section">
                     <!-- 左: JCS 仪表盘 -->
                     <div class="jcs-gauge-wrap glass-decision">
@@ -176,25 +196,53 @@
                     </div>
                 </div>
 
-                <!-- AIAE 宏观仓位管控 -->
-                <div class="aiae-hub-panel glass-decision" id="aiae-hub-panel" style="display:none;">
-                    <h3 class="action-plan-section-title">🎛️ AIAE 宏观仓位管控 <span class="aiae-hub-subtitle">— 配置热度核心锚 · 权重45%</span></h3>
-                    <div class="aiae-hub-grid">
-                        <div class="aiae-hub-gauge-col">
-                            <div id="aiae-hub-gauge-chart" style="width:100%;height:180px;"></div>
-                            <div class="aiae-hub-meta">
-                                <div class="aiae-hub-regime-label" id="aiae-hub-regime">加载中</div>
-                                <div class="aiae-hub-slope" id="aiae-hub-slope">--</div>
+                <!-- V19.1: 指标阈值速查 + 操作纪律参考 -->
+                <div class="ref-cards-row">
+                    <!-- 信号阈值速查 -->
+                    <div class="ref-card glass-decision" id="threshold-ref">
+                        <h4 class="ref-card-title">📐 信号阈值速查</h4>
+                        <table class="threshold-table">
+                            <thead><tr><th>引擎</th><th class="th-bull">🟢 看多</th><th>━ 中性</th><th class="th-bear">🔴 看空</th></tr></thead>
+                            <tbody>
+                                <tr><td class="tt-engine">AIAE<span class="tt-w">35%</span></td><td class="tt-bull">R1-R2 (&lt;17%)</td><td>R3 (17-23%)</td><td class="tt-bear">R4-R5 (&gt;23%)</td></tr>
+                                <tr><td class="tt-engine">ERP<span class="tt-w">25%</span></td><td class="tt-bull">Score &gt;55</td><td>35-55</td><td class="tt-bear">&lt;35</td></tr>
+                                <tr><td class="tt-engine">VIX<span class="tt-w">20%</span></td><td class="tt-bull">&lt;16</td><td>16-25</td><td class="tt-bear">&gt;25</td></tr>
+                                <tr><td class="tt-engine">MR<span class="tt-w">20%</span></td><td class="tt-bull">BULL</td><td>RANGE</td><td class="tt-bear">BEAR/CRASH</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- 操作纪律参考 (折叠) -->
+                    <div class="ref-card glass-decision" id="sop-ref">
+                        <h4 class="ref-card-title sop-toggle" onclick="this.parentElement.classList.toggle('open')">
+                            📋 操作纪律参考 <span class="sop-arrow">▶</span>
+                        </h4>
+                        <div class="sop-body">
+                            <div class="sop-section">
+                                <div class="sop-section-title sop-buy">🟢 买入纪律</div>
+                                <ul class="sop-rules">
+                                    <li>JCS ≥ 70 + AIAE ≤ R2 → 单次最大加仓 <b>10%</b></li>
+                                    <li>JCS 40-70 → 仅微调，单次 ≤ <b>5%</b></li>
+                                    <li>JCS &lt; 40 → <b>禁止</b>新建仓，等待信号恢复</li>
+                                    <li>分批建仓：目标仓位分 <b>3 次</b>到位 (T/T+2/T+5)</li>
+                                </ul>
                             </div>
-                        </div>
-                        <div class="aiae-hub-detail-col">
-                            <div class="aiae-hub-section-label">五档市场状态</div>
-                            <div class="aiae-hub-regime-strip" id="aiae-hub-regime-strip"></div>
-                            <div class="aiae-hub-section-label" style="margin-top:14px;">警示指标</div>
-                            <div class="aiae-hub-warnings" id="aiae-hub-warnings"></div>
+                            <div class="sop-section">
+                                <div class="sop-section-title sop-sell">🔴 止盈 / 止损纪律</div>
+                                <ul class="sop-rules">
+                                    <li>波段守卫 <b>RED</b> 信号 → 目标标的立即止盈</li>
+                                    <li>AIAE 升至 <b>R4+</b> → 全组合减仓至建议仓位</li>
+                                    <li>VIX &gt; <b>30</b> → 紧急降仓，仅保留防御仓</li>
+                                    <li>单票浮盈 &gt; <b>20%</b> → 移动止盈线至成本+10%</li>
+                                    <li>单票浮亏 &gt; <b>8%</b> → 检查信号共振，无共振则止损</li>
+                                    <li>JCS 连续 3 日 &lt; 40 → 全组合降至 <b>30%</b> 以下</li>
+                                </ul>
+                            </div>
                         </div>
                     </div>
                 </div>
+
+
 
                 <!-- 全球宽基波段守卫 (Swing Guard) -->
                 <div class="swing-guard-dashboard glass-decision" id="swing-guard-dashboard">
@@ -204,6 +252,38 @@
                     </div>
                     <div class="swing-guard-grid" id="swing-guard-grid">
                         <div class="loading-spinner">⏳ 拉取7大ETF最新信号...</div>
+                    </div>
+                    <div class="sg-rules-footer">
+                        <span class="sg-rule-item">🟢 <b>GREEN</b> 安全垫充足 · 持有</span>
+                        <span class="sg-rule-item">🟡 <b>YELLOW</b> 安全垫收窄 · 缩量关注</span>
+                        <span class="sg-rule-item">🔴 <b>RED</b> 跌破止盈线 · 立即止盈</span>
+                        <span class="sg-rule-item sg-rule-formula">止盈线 = 最高收盘价 × (1 - 回撤比例)</span>
+                    </div>
+                </div>
+
+                <!-- V19.0: 风控护栏指示条 (从 risk-matrix 提取3个关键KPI) -->
+                <div class="risk-guardrail glass-decision" id="risk-guardrail">
+                    <div class="rg-header">
+                        <span class="rg-title">🛡️ 风控护栏</span>
+                        <span class="rg-status" id="rg-status">加载中</span>
+                    </div>
+                    <div class="rg-grid">
+                        <div class="rg-kpi">
+                            <div class="rg-kpi-label">VaR 95%</div>
+                            <div class="rg-kpi-value" id="rg-var">--</div>
+                        </div>
+                        <div class="rg-kpi">
+                            <div class="rg-kpi-label">历史最大回撤</div>
+                            <div class="rg-kpi-value" id="rg-maxdd">--</div>
+                        </div>
+                        <div class="rg-kpi">
+                            <div class="rg-kpi-label">当前回撤</div>
+                            <div class="rg-kpi-value" id="rg-curdd">--</div>
+                        </div>
+                        <div class="rg-kpi">
+                            <div class="rg-kpi-label">策略重叠度</div>
+                            <div class="rg-kpi-value" id="rg-overlap">--</div>
+                        </div>
                     </div>
                 </div>
 
@@ -265,6 +345,40 @@
                         </div>
                         <div class="perf-metrics-bar" id="perf-metrics-bar">
                             <div class="loading-spinner" style="padding:16px;">✨ 绩效数据加载中...</div>
+                        </div>
+                        <div class="perf-threshold-footnote">
+                            📐 Sharpe ≥ 1.0 优秀 · Sortino ≥ 1.5 下行风险可控 · Calmar ≥ 1.0 回撤合理 · 最大回撤 > -15% 需审查
+                        </div>
+                    </div>
+                </div>
+
+                <!-- V19.1: 风险管理 SOP 参考卡片 -->
+                <div class="risk-sop-card glass-decision">
+                    <h3 class="risk-sop-title">🛡️ 风险管理规则 <span style="font-size:0.7rem;color:#64748b;font-weight:400;">Risk Governance SOP</span></h3>
+                    <div class="risk-sop-grid">
+                        <div class="risk-sop-section">
+                            <div class="risk-sop-section-title">📊 绩效健康基准</div>
+                            <ul class="risk-sop-rules">
+                                <li>Sharpe ≥ <b>1.0</b> 优秀 | 0.5-1.0 合格 | <b class="danger-text">< 0.5 需调仓</b></li>
+                                <li>最大回撤 > <b class="danger-text">-15%</b> → 触发仓位审查</li>
+                                <li>Sortino < <b class="danger-text">0</b> → 下行风险失控, 检查策略配置</li>
+                            </ul>
+                        </div>
+                        <div class="risk-sop-section">
+                            <div class="risk-sop-section-title">🎯 尾部风险治理</div>
+                            <ul class="risk-sop-rules">
+                                <li>Score < <b class="safe-text">30</b> → ✅ 安全，正常执行概览页 SOP</li>
+                                <li>Score 30-60 → 🟡 关注，缩减单票仓位至 ≤ <b>15%</b></li>
+                                <li>Score > <b class="danger-text">60</b> → 🔴 危险，全组合降至建议仓位的 <b>70%</b></li>
+                            </ul>
+                        </div>
+                        <div class="risk-sop-section">
+                            <div class="risk-sop-section-title">🔗 集中度控制</div>
+                            <ul class="risk-sop-rules">
+                                <li>单板块暴露 > <b class="danger-text">40%</b> → 触发行业分散化</li>
+                                <li>Jaccard 重叠 > <b class="danger-text">30%</b> → 审查是否重复持仓</li>
+                                <li>单票仓位 > <b class="danger-text">20%</b> → 超配警告</li>
+                            </ul>
                         </div>
                     </div>
                 </div>
@@ -348,6 +462,6 @@
         </div>
     </main>
 
-    <script src="./static/js/decision.js?v=23"></script>
+    <script src="./static/js/decision.js?v=27"></script>
 </body>
 </html>

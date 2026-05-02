@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -476,7 +476,7 @@
                 <div class="st-hero-stats">
                     <div class="st-hero-stat"><span class="st-hs-label">标的池</span><span class="st-hs-value st-blue">35只ETF</span></div>
                     <div class="st-hero-stat"><span class="st-hs-label">运行时间</span><span class="st-hs-value">每日15:30</span></div>
-                    <div class="st-hero-stat"><span class="st-hs-label">总仓位上限</span><span class="st-hs-value st-green">85%</span></div>
+                    <div class="st-hero-stat"><span class="st-hs-label">总仓位上限</span><span class="st-hs-value st-green" id="mr-hero-cap">AIAE动态</span></div>
                     <div class="st-hero-stat"><span class="st-hs-label">单只上限</span><span class="st-hs-value st-gold">15%</span></div>
                 </div>
             </section>
@@ -572,12 +572,48 @@
             </section>
 
 
-            <!-- ZONE divider: ZONE 2 · 标的筛选 -->
+            <!-- ZONE divider: ZONE 2 · 入场决策基准 -->
+            <div class="st-zone-header" style="--zone-color:#2dd4bf">
+                <span class="zone-icon">⚡</span>
+                <div>
+                    <div class="zone-title">ZONE 2 · 入场决策基准</div>
+                    <div class="zone-sub">关键技术指标 · 买入卖出规则 · Regime风控纪律</div>
+                </div>
+            </div>
+
+            <section class="st-section">
+                <div class="st-two-col">
+                    <div class="glass-panel" style="padding:24px;">
+                        <h4>⭐ V3.0 核心参数（864回测验证）</h4>
+                        <table class="st-table">
+                            <thead><tr><th>指标/规则</th><th>V3.0 实盘参数</th><th>说明</th></tr></thead>
+                            <tbody>
+                                <tr><td>趋势过滤</td><td><strong style="color:#34d399">close &gt; MA(90)</strong></td><td>90日均线上才允许建仓</td></tr>
+                                <tr><td>买入 · RSI</td><td><strong style="color:#34d399">RSI(14) ≤ 35</strong></td><td>Wilder平滑，超卖即触发</td></tr>
+                                <tr><td>买入 · 乖离率</td><td><strong style="color:#34d399">BIAS ≤ -2.0%</strong></td><td>偏离MA90下方2%亦可入</td></tr>
+                                <tr><td>卖出 · RSI</td><td><strong style="color:#f87171">RSI(14) ≥ 70</strong></td><td>超买强制出场，不恋战</td></tr>
+                                <tr><td>硬止损</td><td><strong style="color:#fbbf24">入场价 × -8%</strong></td><td>代码强制执行，无例外</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="glass-panel" style="padding:24px;">
+                        <h4>🛡️ Regime 三态风控规则</h4>
+                        <ul style="color:var(--text-muted); font-size:0.85rem; line-height:2.0; padding-left:20px;">
+                            <li><span style="color:#34d399; font-weight:700">🟢 BULL（CSI300 &gt; MA120）</span>：仅防御性标的，总仓位上限 <strong style="color:#34d399">35%</strong>，牛市高位不追涨</li>
+                            <li><span style="color:#60a5fa; font-weight:700">🟡 RANGE（MA60~MA120）</span>：全池35只ETF激活，上限 <strong style="color:#60a5fa">80%</strong>，均值回归主战场</li>
+                            <li><span style="color:#fbbf24; font-weight:700">🔴 BEAR（CSI300 &lt; MA60）</span>：全池激活，上限 <strong style="color:#fbbf24">65%</strong>，重配防御型标的</li>
+                            <li>阶梯止盈：触及 MA20 且 %B &gt; 0.5 → 出半仓，不贪婪</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ZONE divider: ZONE 3 · 标的筛选 -->
             <div class="st-zone-header" style="--zone-color:#a78bfa">
                 <span class="zone-icon">🎯</span>
                 <div>
-                    <div class="zone-title">ZONE 2 · 标的筛选</div>
-                    <div class="zone-sub">35只ETF池 · 按领域分类 · 可追加自选标的</div>
+                    <div class="zone-title">ZONE 3 · 标的筛选</div>
+                    <div class="zone-sub">35只ETF池 · 按领域分类</div>
                 </div>
             </div>
 
@@ -592,7 +628,7 @@
                         <span style="font-size:0.78rem; color:var(--text-muted);">只ETF · 4大领域</span>
                         <div style="height:16px; width:1px; background:rgba(255,255,255,0.1);"></div>
                         <span style="font-size:0.78rem; padding:3px 10px; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.2); border-radius:12px; color:#6ee7b7;">单只上限 5–15%</span>
-                        <span style="font-size:0.78rem; padding:3px 10px; background:rgba(99,102,241,0.1); border:1px solid rgba(99,102,241,0.2); border-radius:12px; color:#a78bfa;">总仓位 ≤ 85%</span>
+                        <span style="font-size:0.78rem; padding:3px 10px; background:rgba(99,102,241,0.1); border:1px solid rgba(99,102,241,0.2); border-radius:12px; color:#a78bfa;" id="mr-pool-cap-badge">总仓位 ≤ AIAE动态</span>
                     </div>
                 </div>
 
@@ -702,128 +738,13 @@
                 </div>
             </section>
 
-            <section class="st-section" id="custom-pool-mean-reversion">
-                <h3>➕ 自选扩池 · 个性化追加标的（ETF 或个股）</h3>
-                <div class="glass-panel custom-pool-panel" style="padding:24px;" data-strategy="mean-reversion">
-
-                    <!-- 输入行 -->
-                    <div style="display:grid; grid-template-columns:1fr auto auto auto; gap:12px; align-items:end; margin-bottom:20px;">
-                        <div>
-                            <label class="st-input-label">股票/ETF 代码（Tushare 格式 · 如 600036.SH 或 512480.SH）</label>
-                            <input id="custom-input-mean-reversion" type="text" maxlength="12"
-                                placeholder="输入代码后按 Enter 或点击查询..."
-                                class="st-input-field"
-                                onkeydown="if(event.key==='Enter') lookupAndAdd('mean-reversion')" />
-                        </div>
-                        <div>
-                            <label class="st-input-label">识别结果</label>
-                            <div id="custom-name-mean-reversion"
-                                style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:10px 14px; font-size:0.85rem; color:var(--text-muted); min-width:140px; height:40px; line-height:20px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                                — 等待查询 —
-                            </div>
-                        </div>
-                        <div>
-                            <label class="st-input-label">仓位上限</label>
-                            <select id="custom-cap-mean-reversion"
-                                class="st-input-field st-input-field--select">
-                                <option value="5">5%</option><option value="8" selected>8% (个股推荐)</option><option value="10">10%</option><option value="15">15% (ETF)</option>
-                            </select>
-                        </div>
-                        <div style="display:flex; gap:8px;">
-                            <button onclick="lookupCustomName('mean-reversion')"
-                                style="background:rgba(99,102,241,0.15); border:1px solid rgba(99,102,241,0.3); color:#a78bfa; border-radius:8px; padding:10px 14px; cursor:pointer; font-size:0.82rem; white-space:nowrap; height:40px;">
-                                🔍 查询
-                            </button>
-                            <button onclick="lookupAndAdd('mean-reversion')"
-                                style="background:linear-gradient(135deg,rgba(16,185,129,0.25),rgba(5,150,105,0.15)); border:1px solid rgba(16,185,129,0.35); color:#10b981; border-radius:8px; padding:10px 16px; cursor:pointer; font-size:0.82rem; font-weight:700; white-space:nowrap; height:40px;">
-                                + 追加
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- 已追加标的 chip 区 -->
-                    <div id="custom-chips-mean-reversion" style="display:flex; flex-wrap:wrap; gap:8px; min-height:48px; margin-bottom:16px; padding:12px; background:rgba(255,255,255,0.02); border:1px dashed rgba(255,255,255,0.08); border-radius:10px;">
-                        <span class="pool-empty-hint" style="color:var(--text-muted); font-size:0.8rem; align-self:center;">暂无自选标的 · 请在上方输入代码并追加</span>
-                    </div>
-
-                    <!-- 风险提示 + 入池标准 -->
-                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
-                        <div style="background:rgba(251,191,36,0.05); border:1px solid rgba(251,191,36,0.2); border-radius:10px; padding:14px;">
-                            <div style="font-size:0.8rem; font-weight:700; color:#fbbf24; margin-bottom:8px;">⚠️ 个股特异风险提示</div>
-                            <ul style="font-size:0.75rem; color:var(--text-muted); padding-left:16px; line-height:1.8; margin:0;">
-                                <li>个股波动率显著高于 ETF，仓位上限已受约束</li>
-                                <li>策略参数基于 ETF 历史优化，个股效果需自行评估</li>
-                                <li>自选标的仅参与<strong style="color:#fff;">实时执行评分</strong>，不纳入历史回测</li>
-                                <li>V1 版本不进行流动性自动验证，请自行确认日均成交额</li>
-                            </ul>
-                        </div>
-                        <div style="background:rgba(16,185,129,0.04); border:1px solid rgba(16,185,129,0.15); border-radius:10px; padding:14px;">
-                            <div style="font-size:0.8rem; font-weight:700; color:#10b981; margin-bottom:8px;">✅ 均值回归个股入池建议标准</div>
-                            <ul style="font-size:0.75rem; color:var(--text-muted); padding-left:16px; line-height:1.8; margin:0;">
-                                <li>RSI(14) 当前处于 20-40 超跌区间</li>
-                                <li>流通市值大于50亿，日均成交额大于2亿</li>
-                                <li>历史最大回撤大于20%（具备高弹性）</li>
-                                <li>PE 不亏损，避免基本面劣化标的</li>
-                            </ul>
-                        </div>
-                    </div>
-
-                    <!-- 统计行 -->
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.06);">
-                        <span id="custom-count-mean-reversion" style="font-size:0.78rem; color:var(--text-muted);">已追加：0 只 / 上限 10 只</span>
-                        <button onclick="clearCustomPool('mean-reversion')"
-                            style="background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); color:#f87171; border-radius:6px; padding:5px 12px; cursor:pointer; font-size:0.75rem;">
-                            清空全部
-                        </button>
-                    </div>
-                </div>
-            </section>
-
-
-            <!-- ZONE divider: ZONE 3 · 入场决策基准 -->
-            <div class="st-zone-header" style="--zone-color:#2dd4bf">
-                <span class="zone-icon">⚡</span>
-                <div>
-                    <div class="zone-title">ZONE 3 · 入场决策基准</div>
-                    <div class="zone-sub">关键技术指标解读 · 买入卖出规则</div>
-                </div>
-            </div>
-
-            <!-- ==================== ZONE 3 · 入场决策 ==================== -->
-            <section class="st-section">
-                <div class="st-two-col">
-                    <div class="glass-panel" style="padding:24px;">
-                        <h4>⭐ V3.0 核心参数（864回测验证）</h4>
-                        <table class="st-table">
-                            <thead><tr><th>指标/规则</th><th>V3.0 实盘参数</th><th>说明</th></tr></thead>
-                            <tbody>
-                                <tr><td>趋势过滤</td><td><strong style="color:#34d399">close &gt; MA(90)</strong></td><td>90日均线上才允许建仓</td></tr>
-                                <tr><td>买入 · RSI</td><td><strong style="color:#34d399">RSI(14) ≤ 35</strong></td><td>Wilder平滑，超卖即触发</td></tr>
-                                <tr><td>买入 · 乖离率</td><td><strong style="color:#34d399">BIAS ≤ -2.0%</strong></td><td>偏离MA90下方2%亦可入</td></tr>
-                                <tr><td>卖出 · RSI</td><td><strong style="color:#f87171">RSI(14) ≥ 70</strong></td><td>超买强制出场，不恋战</td></tr>
-                                <tr><td>硬止损</td><td><strong style="color:#fbbf24">入场价 × -8%</strong></td><td>代码强制执行，无例外</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    <div class="glass-panel" style="padding:24px;">
-                        <h4>🛡️ Regime 三态风控规则</h4>
-                        <ul style="color:var(--text-muted); font-size:0.85rem; line-height:2.0; padding-left:20px;">
-                            <li><span style="color:#34d399; font-weight:700">🟢 BULL（CSI300 &gt; MA120）</span>：仅防御性标的，总仓位上限 <strong style="color:#34d399">40%</strong>，牛市高位不追涨</li>
-                            <li><span style="color:#60a5fa; font-weight:700">🟡 RANGE（MA60~MA120）</span>：全池35只ETF激活，上限 <strong style="color:#60a5fa">80%</strong>，均值回归主战场</li>
-                            <li><span style="color:#fbbf24; font-weight:700">🔴 BEAR（CSI300 &lt; MA60）</span>：全池激活，上限 <strong style="color:#fbbf24">65%</strong>，重配防御型标的</li>
-                            <li>阶梯止盈：触及 MA20 且 %B &gt; 0.5 → 出半仓，不贪婪</li>
-                        </ul>
-                    </div>
-                </div>
-            </section>
-
 
             <!-- ZONE divider: ZONE 4 · 策略研究归档 -->
             <div class="st-zone-header" style="--zone-color:#6b7280">
                 <span class="zone-icon">📚</span>
                 <div>
                     <div class="zone-title">ZONE 4 · 策略研究归档</div>
-                    <div class="zone-sub">运行逻辑 · 回测验证 · 点击展开</div>
+                    <div class="zone-sub">运行逻辑 · 回测验证 · 自选扩池 · 点击展开</div>
                 </div>
             </div>
 
@@ -959,10 +880,84 @@
                 </div>
             </section>
 
-            <!-- ══════ ZONE 1 · 入场决策 ══════ -->
+            <!-- ══════ ZONE 1 · 市场状态（决策前置） ══════ -->
+            <div class="st-zone-header st-zone-header--line" style="--zone-color:#f59e0b; --zone-color-end:#ea580c">
+                <div>
+                    <div class="zone-title" style="color:#fcd34d">ZONE 1 · 市场状态</div>
+                    <div class="zone-sub">先确认 Regime，再做入场评分 · 四状态参数自适应切换</div>
+                </div>
+            </div>
+
+            <!-- 🔄 V4.0 市场自适应参数面板 -->
+            <section class="st-section">
+                <h3>🔄 市场自适应参数面板 · 四状态实时切换</h3>
+                <div class="glass-panel" style="padding:24px; border-color:rgba(99,102,241,0.2);">
+                    <!-- 状态说明条 -->
+                    <div style="margin-bottom:18px; font-size:0.8rem; color:var(--text-muted); display:flex; align-items:center; gap:8px;">
+                        <span style="color:#a78bfa;">&#x26A1;</span>
+                        参数自动联动上方「📡 市场环境实时识别」模块，CSI300实时识别市场状态，红利策略自动切换最优参数集
+                    </div>
+                    <!-- 四状态对比表 -->
+                    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px;">
+                        <!-- BULL -->
+                        <div id="div-regime-bull" style="border:2px solid rgba(16,185,129,0.3); border-radius:12px; padding:16px; background:rgba(16,185,129,0.05); transition:all 0.3s;">
+                            <div style="font-size:0.85rem; font-weight:700; color:#34d399; margin-bottom:10px;">🟢 BULL 牛市</div>
+                            <div style="font-size:0.7rem; color:var(--text-muted); line-height:1.8;">
+                                MA趋势: <strong style="color:#fff;">60日</strong><br>
+                                RSI买: <strong style="color:#34d399;">≤40</strong> 卖: <strong style="color:#f87171;">≥80</strong><br>
+                                乖离率买: <strong style="color:#34d399;">≤-1.5%</strong><br>
+                                防守线: <strong style="color:#fff;">MA20</strong><br>
+                                <span style="color:#34d399; font-weight:700;">仓位上限: 35%</span><br>
+                                入场门槛: <strong style="color:#fbbf24;">≥55分</strong>
+                            </div>
+                        </div>
+                        <!-- RANGE -->
+                        <div id="div-regime-range" style="border:2px solid rgba(59,130,246,0.4); border-radius:12px; padding:16px; background:rgba(59,130,246,0.1); transition:all 0.3s;">
+                            <div style="font-size:0.85rem; font-weight:700; color:#60a5fa; margin-bottom:10px;">🟡 RANGE 震荡 <span style="font-size:0.65rem; color:#a78bfa;">✔ V3.0最优</span></div>
+                            <div style="font-size:0.7rem; color:var(--text-muted); line-height:1.8;">
+                                MA趋势: <strong style="color:#fff;">60日</strong><br>
+                                RSI买: <strong style="color:#34d399;">≤35</strong> 卖: <strong style="color:#f87171;">≥75</strong><br>
+                                乖离率买: <strong style="color:#34d399;">≤-2.0%</strong><br>
+                                防守线: <strong style="color:#fff;">MA30</strong><br>
+                                <span style="color:#60a5fa; font-weight:700;">仓位上限: 70%</span><br>
+                                入场门槛: <strong style="color:#fbbf24;">≥65分</strong>
+                            </div>
+                        </div>
+                        <!-- BEAR -->
+                        <div id="div-regime-bear" style="border:2px solid rgba(251,191,36,0.3); border-radius:12px; padding:16px; background:rgba(251,191,36,0.04); transition:all 0.3s;">
+                            <div style="font-size:0.85rem; font-weight:700; color:#fbbf24; margin-bottom:10px;">🔴 BEAR 熊市</div>
+                            <div style="font-size:0.7rem; color:var(--text-muted); line-height:1.8;">
+                                MA趋势: <strong style="color:#fff;">90日</strong><br>
+                                RSI买: <strong style="color:#34d399;">≤30</strong> 卖: <strong style="color:#f87171;">≥70</strong><br>
+                                乖离率买: <strong style="color:#34d399;">≤-3.0%</strong><br>
+                                防守线: <strong style="color:#fff;">MA40</strong><br>
+                                <span style="color:#fbbf24; font-weight:700;">仓位上限: 45%</span><br>
+                                入场门槛: <strong style="color:#fbbf24;">≥75分</strong>
+                            </div>
+                        </div>
+                        <!-- CRASH -->
+                        <div id="div-regime-crash" style="border:2px solid rgba(239,68,68,0.3); border-radius:12px; padding:16px; background:rgba(239,68,68,0.04); transition:all 0.3s;">
+                            <div style="font-size:0.85rem; font-weight:700; color:#f87171; margin-bottom:10px;">💥 CRASH 熳断</div>
+                            <div style="font-size:0.7rem; color:var(--text-muted); line-height:1.8;">
+                                禁止任何新建仓<br>
+                                高股息已持仓&gt;6%：<strong style="color:#34d399;">不强制清仓</strong><br>
+                                低股息已持仓：允许止损<br>
+                                <span style="color:#f87171; font-weight:700;">仓位上限: 0%</span><br>
+                                入场门槛: <strong style="color:#f87171;">禁止</strong>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 当前状态提示条 -->
+                    <div style="padding:10px 16px; background:rgba(99,102,241,0.06); border:1px solid rgba(99,102,241,0.2); border-radius:8px; font-size:0.78rem; color:var(--text-muted);">
+                        💡 切换公式：先在「🎯 信号评分系统」 tab 重新识别市场状态 &rarr; 返回此页查看对应参数集 &rarr; 调用策略执行 API 时配置 <code style="color:#a78bfa;">regime=BULL/RANGE/BEAR/CRASH</code>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ══════ ZONE 2 · 入场决策 ══════ -->
             <div class="st-zone-header st-zone-header--line" style="--zone-color:#3b82f6; --zone-color-end:#6366f1">
                 <div>
-                    <div class="zone-title" style="color:#60a5fa">入场决策</div>
+                    <div class="zone-title" style="color:#60a5fa">ZONE 2 · 入场决策</div>
                     <div class="zone-sub">7维评分 + 实时指标同步 + 交叉验证警告</div>
                 </div>
             </div>
@@ -1111,85 +1106,13 @@
                 </div>
             </section>
 
-            <!-- ══════ ZONE 2 · 市场状态 ══════ -->
-            <div class="st-zone-header st-zone-header--line" style="--zone-color:#f59e0b; --zone-color-end:#ea580c">
-                <div>
-                    <div class="zone-title" style="color:#fcd34d">ZONE 2 · 市场状态</div>
-                    <div class="zone-sub">四状态参数自适应切换 · 与信号评分系统联动</div>
-                </div>
-            </div>
 
-            <!-- 🔄 V4.0 市场自适应参数面板 -->
-            <section class="st-section">
-                <h3>🔄 市场自适应参数面板 · 四状态实时切换</h3>
-                <div class="glass-panel" style="padding:24px; border-color:rgba(99,102,241,0.2);">
-                    <!-- 状态说明条 -->
-                    <div style="margin-bottom:18px; font-size:0.8rem; color:var(--text-muted); display:flex; align-items:center; gap:8px;">
-                        <span style="color:#a78bfa;">&#x26A1;</span>
-                        参数自动联动上方「📡 市场环境实时识别」模块，CSI300实时识别市场状态，红利策略自动切换最优参数集
-                    </div>
-                    <!-- 四状态对比表 -->
-                    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px;">
-                        <!-- BULL -->
-                        <div id="div-regime-bull" style="border:2px solid rgba(16,185,129,0.3); border-radius:12px; padding:16px; background:rgba(16,185,129,0.05); transition:all 0.3s;">
-                            <div style="font-size:0.85rem; font-weight:700; color:#34d399; margin-bottom:10px;">🟢 BULL 牛市</div>
-                            <div style="font-size:0.7rem; color:var(--text-muted); line-height:1.8;">
-                                MA趋势: <strong style="color:#fff;">60日</strong><br>
-                                RSI买: <strong style="color:#34d399;">≤40</strong> 卖: <strong style="color:#f87171;">≥80</strong><br>
-                                乖离率买: <strong style="color:#34d399;">≤-1.5%</strong><br>
-                                防守线: <strong style="color:#fff;">MA20</strong><br>
-                                <span style="color:#34d399; font-weight:700;">仓位上限: 85%</span><br>
-                                入场门槛: <strong style="color:#fbbf24;">≥55分</strong>
-                            </div>
-                        </div>
-                        <!-- RANGE -->
-                        <div id="div-regime-range" style="border:2px solid rgba(59,130,246,0.4); border-radius:12px; padding:16px; background:rgba(59,130,246,0.1); transition:all 0.3s;">
-                            <div style="font-size:0.85rem; font-weight:700; color:#60a5fa; margin-bottom:10px;">🟡 RANGE 震荡 <span style="font-size:0.65rem; color:#a78bfa;">✔ V3.0最优</span></div>
-                            <div style="font-size:0.7rem; color:var(--text-muted); line-height:1.8;">
-                                MA趋势: <strong style="color:#fff;">60日</strong><br>
-                                RSI买: <strong style="color:#34d399;">≤35</strong> 卖: <strong style="color:#f87171;">≥75</strong><br>
-                                乖离率买: <strong style="color:#34d399;">≤-2.0%</strong><br>
-                                防守线: <strong style="color:#fff;">MA30</strong><br>
-                                <span style="color:#60a5fa; font-weight:700;">仓位上限: 70%</span><br>
-                                入场门槛: <strong style="color:#fbbf24;">≥65分</strong>
-                            </div>
-                        </div>
-                        <!-- BEAR -->
-                        <div id="div-regime-bear" style="border:2px solid rgba(251,191,36,0.3); border-radius:12px; padding:16px; background:rgba(251,191,36,0.04); transition:all 0.3s;">
-                            <div style="font-size:0.85rem; font-weight:700; color:#fbbf24; margin-bottom:10px;">🔴 BEAR 熊市</div>
-                            <div style="font-size:0.7rem; color:var(--text-muted); line-height:1.8;">
-                                MA趋势: <strong style="color:#fff;">90日</strong><br>
-                                RSI买: <strong style="color:#34d399;">≤30</strong> 卖: <strong style="color:#f87171;">≥70</strong><br>
-                                乖离率买: <strong style="color:#34d399;">≤-3.0%</strong><br>
-                                防守线: <strong style="color:#fff;">MA40</strong><br>
-                                <span style="color:#fbbf24; font-weight:700;">仓位上限: 45%</span><br>
-                                入场门槛: <strong style="color:#fbbf24;">≥75分</strong>
-                            </div>
-                        </div>
-                        <!-- CRASH -->
-                        <div id="div-regime-crash" style="border:2px solid rgba(239,68,68,0.3); border-radius:12px; padding:16px; background:rgba(239,68,68,0.04); transition:all 0.3s;">
-                            <div style="font-size:0.85rem; font-weight:700; color:#f87171; margin-bottom:10px;">💥 CRASH 熳断</div>
-                            <div style="font-size:0.7rem; color:var(--text-muted); line-height:1.8;">
-                                禁止任何新建仓<br>
-                                高股息已持仓&gt;6%：<strong style="color:#34d399;">不强制清仓</strong><br>
-                                低股息已持仓：允许止损<br>
-                                <span style="color:#f87171; font-weight:700;">仓位上限: 0%</span><br>
-                                入场门槛: <strong style="color:#f87171;">禁止</strong>
-                            </div>
-                        </div>
-                    </div>
-                    <!-- 当前状态提示条 -->
-                    <div style="padding:10px 16px; background:rgba(99,102,241,0.06); border:1px solid rgba(99,102,241,0.2); border-radius:8px; font-size:0.78rem; color:var(--text-muted);">
-                        💡 切换公式：先在「🎯 信号评分系统」 tab 重新识别市场状态 &rarr; 返回此页查看对应参数集 &rarr; 调用策略执行 API 时配置 <code style="color:#a78bfa;">regime=BULL/RANGE/BEAR/CRASH</code>
-                    </div>
-                </div>
-            </section>
 
-            <!-- ══════ ZONE 3 · 标的筛选 ══════ -->
+            <!-- ══════ ZONE 3 · 标的与信号 ══════ -->
             <div class="st-zone-header st-zone-header--line" style="--zone-color:#10b981; --zone-color-end:#059669">
                 <div>
-                    <div class="zone-title" style="color:#10b981">ZONE 3 · 标的筛选</div>
-                    <div class="zone-sub">8只红利ETF固定权重 + 信号规则 + 数据架构</div>
+                    <div class="zone-title" style="color:#10b981">ZONE 3 · 标的与信号</div>
+                    <div class="zone-sub">8只红利ETF固定权重 + 买卖信号规则</div>
                 </div>
             </div>
 
@@ -1273,20 +1196,7 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                 </div>
             </section>
 
-            <!-- 数据冗余体系 -->
-            <section class="st-section">
-                <h3>🔄 多源冗余数据架构</h3>
-                <div class="glass-panel" style="padding:28px;">
-                    <div class="st-flow">
-                        <div class="st-flow-step"><span class="step-num">L1</span>Tushare Pro</div><span class="st-flow-arrow">→</span>
-                        <div class="st-flow-step"><span class="step-num">L2</span>AKShare</div><span class="st-flow-arrow">→</span>
-                        <div class="st-flow-step"><span class="step-num">L3</span>东方财富</div><span class="st-flow-arrow">→</span>
-                        <div class="st-flow-step"><span class="step-num">L4</span>新浪财经</div><span class="st-flow-arrow">→</span>
-                        <div class="st-flow-step" style="border-color:rgba(139, 92, 246, 0.3); color:#c4b5fd;">本地 CSV 备份</div>
-                    </div>
-                    <p style="text-align:center;font-size:0.82rem;color:var(--text-muted);margin-top:20px;">系统自动探测数据完整性，单点失效即刻无缝降级，确保策略 7x24 小时可执行。</p>
-                </div>
-            </section>
+
 
 
             <!-- 自选扩池管理器 -->
@@ -1371,9 +1281,24 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
             <div class="st-zone-header st-zone-header--line" style="--zone-gradient:linear-gradient(180deg,rgba(255,255,255,0.3),rgba(255,255,255,0.1))">
                 <div>
                     <div class="zone-title" style="color:var(--text-muted)">ZONE 4 · 研究归档</div>
-                    <div class="zone-sub">回测结果 · 分状态验证 · 自选扩池（点击展开）</div>
+                    <div class="zone-sub">数据架构 · 回测结果 · 分状态验证 · 自选扩池（点击展开）</div>
                 </div>
             </div>
+
+            <!-- 数据冗余体系（从 ZONE 3 下沉） -->
+            <section class="st-section">
+                <h3>🔄 多源冗余数据架构</h3>
+                <div class="glass-panel" style="padding:28px;">
+                    <div class="st-flow">
+                        <div class="st-flow-step"><span class="step-num">L1</span>Tushare Pro</div><span class="st-flow-arrow">→</span>
+                        <div class="st-flow-step"><span class="step-num">L2</span>AKShare</div><span class="st-flow-arrow">→</span>
+                        <div class="st-flow-step"><span class="step-num">L3</span>东方财富</div><span class="st-flow-arrow">→</span>
+                        <div class="st-flow-step"><span class="step-num">L4</span>新浪财经</div><span class="st-flow-arrow">→</span>
+                        <div class="st-flow-step" style="border-color:rgba(139, 92, 246, 0.3); color:#c4b5fd;">本地 CSV 备份</div>
+                    </div>
+                    <p style="text-align:center;font-size:0.82rem;color:var(--text-muted);margin-top:20px;">系统自动探测数据完整性，单点失效即刻无缝降级，确保策略 7x24 小时可执行。</p>
+                </div>
+            </section>
 
             <section class="st-section">
             <!-- 回测 + 分状态验证 accordion -->
@@ -2297,7 +2222,7 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                                 <tr><td>动量窗口</td><td style="color:#fcd34d; font-weight:700;">30 日</td><td style="font-size:0.75rem">跨越单月噪声，捕捉趋势</td></tr>
                                 <tr><td>止损线</td><td style="color:#f87171; font-weight:700;">-8%</td><td style="font-size:0.75rem">控单次亏损，回撤优化</td></tr>
                                 <tr><td>权重_短期MOM</td><td style="color:#10b981; font-weight:700;">40%</td><td style="font-size:0.75rem">4因子中权重最高</td></tr>
-                                <tr><td>仓位上限</td><td style="color:#60a5fa; font-weight:700;">85%（牛）</td><td style="font-size:0.75rem">三层滤波自适应</td></tr>
+                                <tr><td>仓位上限</td><td style="color:#60a5fa; font-weight:700;">85%（牛） / 60%（震荡） / 35%（熊）</td><td style="font-size:0.75rem">三层滤波 + AIAE穿透自适应</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -2333,7 +2258,7 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                     <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:20px;">
                         <div style="background:rgba(16,185,129,0.05); border:1px solid rgba(16,185,129,0.2); border-radius:10px; padding:16px;">
                             <div style="font-weight:700; color:#10b981; margin-bottom:8px;">🟢 BULL 牛市 (系数×1.0)</div>
-                            <div style="font-size:0.78rem; color:var(--text-muted); line-height:1.6;">CSI300 站上MA120 且 MA120向上 → 全仓85%运行</div>
+                            <div style="font-size:0.78rem; color:var(--text-muted); line-height:1.6;">CSI300 站上MA120 且 MA120向上 → 仓位上限85%（受AIAE总量约束）</div>
                         </div>
                         <div style="background:rgba(251,191,36,0.05); border:1px solid rgba(251,191,36,0.2); border-radius:10px; padding:16px;">
                             <div style="font-weight:700; color:#fbbf24; margin-bottom:8px;">🟡 RANGE 震荡 (系数×0.7)</div>
@@ -2341,7 +2266,7 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                         </div>
                         <div style="background:rgba(239,68,68,0.05); border:1px solid rgba(239,68,68,0.2); border-radius:10px; padding:16px;">
                             <div style="font-weight:700; color:#f87171; margin-bottom:8px;">🔴 BEAR 熊市 (系数×0.5)</div>
-                            <div style="font-size:0.78rem; color:var(--text-muted); line-height:1.6;">跌破MA120 → 仓位压缩至45%，优先防守</div>
+                            <div style="font-size:0.78rem; color:var(--text-muted); line-height:1.6;">跌破MA120 → 仓位压缩至35%，优先防守</div>
                         </div>
                     </div>
                 </div>

@@ -74,13 +74,17 @@ def get_active_pool(regime: str) -> list:
 
 
 # ====== V3.0 Regime 自适应参数（含因子权重+止损+评分门槛） ======
+# position_cap 从 config.POSITION_CONFIG 统一读取
+from config import POSITION_CONFIG as _POS_CFG
+_MOM_CAP = _POS_CFG["mom_regime_cap"]
+
 REGIME_PARAMS = {
     "BULL": {
         "label":    "牛市",
         "strategy": "追强",      # 核心策略标签
         "top_n":    5,
         "momentum_threshold": 0,
-        "position_cap": 85,
+        "position_cap": _MOM_CAP["BULL"],     # ← 中心化
         "single_cap":   30,
         "stop_loss":    -8,      # V3.0: 分状态止损
         "volatility_filter": False,
@@ -96,7 +100,7 @@ REGIME_PARAMS = {
         "strategy": "均衡",
         "top_n":    4,
         "momentum_threshold": 2,
-        "position_cap": 60,
+        "position_cap": _MOM_CAP["RANGE"],    # ← 中心化
         "single_cap":   25,
         "stop_loss":    -7,
         "volatility_filter": True,
@@ -111,7 +115,7 @@ REGIME_PARAMS = {
         "strategy": "防守",
         "top_n":    3,
         "momentum_threshold": 5,
-        "position_cap": 35,
+        "position_cap": _MOM_CAP["BEAR"],     # ← 中心化
         "single_cap":   20,
         "stop_loss":    -5,
         "volatility_filter": True,
@@ -314,12 +318,35 @@ def assess_market_environment(hs300_df, etf_data: dict) -> dict:
 
     # ---- 三层取最严 ----
     env["final_cap"] = min(env["layer1_cap"], env["layer2_cap"], env["layer3_cap"])
+
+    # ---- Layer 4: AIAE 宏观约束穿透 (V6.0) ----
+    # 读取 AIAE 缓存, 用 min() 约束: 只可能压低仓位, 不会放大
+    env["aiae_cap"] = None
+    env["aiae_cap_info"] = ""
+    try:
+        from services.cache_service import cache_manager
+        from aiae_params import SUB_STRATEGY_ALLOC
+        aiae_ctx = cache_manager.get_json("aiae_ctx")
+        if aiae_ctx and aiae_ctx.get("regime"):
+            aiae_regime = aiae_ctx.get("regime", 3)
+            matrix_pos = aiae_ctx.get("cap", 55)
+            mom_alloc_pct = SUB_STRATEGY_ALLOC.get(aiae_regime, {}).get("mom", 25) / 100.0
+            aiae_mom_cap = int(matrix_pos * mom_alloc_pct)
+            env["aiae_cap"] = aiae_mom_cap
+            if aiae_mom_cap < env["final_cap"]:
+                env["aiae_cap_info"] = f"AIAE R{aiae_regime}约束: {env['final_cap']}%→{aiae_mom_cap}%"
+                env["final_cap"] = aiae_mom_cap
+    except Exception:
+        pass  # 缓存不可用时降级为纯三层行为
+
     env["regime_label"] = REGIME_PARAMS[env["regime"]]["label"]
 
     print(f"[动量引擎] 环境评估: {env['regime']}")
     print(f"  L1(趋势): {env['layer1_trend']} → {env['layer1_cap']}%")
     print(f"  L2(VIX): {env['layer2_vix']} → {env['layer2_cap']}%")
     print(f"  L3(极端): crash={env['layer3_crash']} → {env['layer3_cap']}%")
+    if env["aiae_cap_info"]:
+        print(f"  L4(AIAE): {env['aiae_cap_info']}")
     print(f"  最终仓位上限: {env['final_cap']}%")
 
     return env

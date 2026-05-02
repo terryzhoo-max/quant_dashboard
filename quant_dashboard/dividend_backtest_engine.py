@@ -34,7 +34,12 @@ DAILY_PRICE_DIR  = "data_lake/daily_prices"
 BENCHMARK_CODE   = "510300.SH"
 RISK_FREE_RATE   = 0.02    # 年化无风险利率
 TRANSACTION_COST = 0.0010  # 单边费率（ETF极低）
-MAX_POSITION     = 0.85    # 总仓位上限
+MAX_POSITION     = 0.85    # 总仓位上限 (从 config.POSITION_CONFIG 同步)
+try:
+    from config import POSITION_CONFIG as _POS_CFG
+    MAX_POSITION = _POS_CFG["backtest_total_cap"] / 100.0
+except ImportError:
+    pass  # 独立运行时使用默认值
 
 TRAIN_START = "2022-01-01"
 TRAIN_END   = "2023-12-31"

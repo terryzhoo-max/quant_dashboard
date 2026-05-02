@@ -46,13 +46,10 @@ FALLBACK_PARAMS = {
     "BULL":  {"N_trend": 120,"rsi_period": 14, "rsi_buy": 45, "rsi_sell": 75, "bias_buy": -1.5, "stop_loss": 0.06},
 }
 
-# 各态仓位上限
-REGIME_POS_CAP = {
-    "BEAR":  0.65,   # 熊市：均值回归主战，65%
-    "RANGE": 0.80,   # 震荡：全力均值回归，80%
-    "BULL":  0.35,   # 牛市：超跌补仓逻辑，35%（防止过度交易）
-    "CRASH": 0.00,   # 崩盘：完全禁入
-}
+# 各态仓位上限 (从 config.POSITION_CONFIG 统一读取)
+from config import POSITION_CONFIG as _POS_CFG
+REGIME_POS_CAP = {k: v / 100.0 for k, v in _POS_CFG["mr_regime_cap"].items()}
+# BEAR:0.65 熊市主战  RANGE:0.80 全力出击  BULL:0.35 防过度交易  CRASH:0.00 禁入
 
 # 信号评分入场门槛（100分制·按 Regime 自适应）
 REGIME_SCORE_GATE = {
@@ -245,6 +242,25 @@ def detect_regime() -> dict:
         pos_cap = REGIME_POS_CAP.get(regime, 0.65)
         score_gate = REGIME_SCORE_GATE.get(regime, 68)
 
+        # ── V6.0: AIAE 宏观约束穿透 ──
+        # 读取 AIAE 缓存的 matrix_position 和 MR 子策略配额
+        # 用 min() 约束: 只可能压低仓位, 不会放大
+        aiae_cap_info = ""
+        try:
+            from services.cache_service import cache_manager
+            from aiae_params import SUB_STRATEGY_ALLOC
+            aiae_ctx = cache_manager.get_json("aiae_ctx")
+            if aiae_ctx and aiae_ctx.get("regime"):
+                aiae_regime = aiae_ctx.get("regime", 3)
+                matrix_pos = aiae_ctx.get("cap", 55)  # AIAE 总仓位建议
+                mr_alloc_pct = SUB_STRATEGY_ALLOC.get(aiae_regime, {}).get("mr", 25) / 100.0
+                aiae_mr_cap = matrix_pos * mr_alloc_pct / 100.0  # 转为小数
+                if aiae_mr_cap < pos_cap:
+                    aiae_cap_info = f"AIAE R{aiae_regime}约束: {pos_cap*100:.0f}%→{aiae_mr_cap*100:.0f}%"
+                    pos_cap = aiae_mr_cap
+        except Exception:
+            pass  # 缓存不可用时降级为纯 Regime 行为
+
         return {
             "regime":      regime,
             "regime_cn":   info["regime_cn"],
@@ -253,6 +269,7 @@ def detect_regime() -> dict:
             "params":      params,
             "pos_cap":     pos_cap,
             "score_gate":  score_gate,
+            "aiae_cap_info": aiae_cap_info,     # V6.0: AIAE 约束详情
             "csi300":      round(float(close_arr[-1]), 2),
             "ma120":       info["ma120"],
             "ma60":        info["ma60"],

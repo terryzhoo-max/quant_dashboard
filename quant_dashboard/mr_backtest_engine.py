@@ -31,7 +31,12 @@ DAILY_PRICE_DIR  = "data_lake/daily_prices"
 BENCHMARK_CODE   = "510300.SH"       # 沪深300ETF 作为基准
 RISK_FREE_RATE   = 0.02              # 年化无风险利率
 TRANSACTION_COST = 0.0010            # 单边费率（ETF佣金+印花税估计）
-MAX_TOTAL_POS    = 0.85              # 组合总仓位上限
+MAX_TOTAL_POS    = 0.85              # 组合总仓位上限 (从 config.POSITION_CONFIG 同步)
+try:
+    from config import POSITION_CONFIG as _POS_CFG
+    MAX_TOTAL_POS = _POS_CFG["backtest_total_cap"] / 100.0
+except ImportError:
+    pass  # 独立运行时使用默认值
 RESULT_FILE      = "mr_optimization_results.json"
 
 TRAIN_START = "2022-01-01"

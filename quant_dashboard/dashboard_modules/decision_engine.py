@@ -184,10 +184,10 @@ def compute_conflict_matrix(snapshot: dict) -> dict:
 
 # 引擎权重 (用于方向一致性加权)
 _JCS_WEIGHTS = {
-    "aiae": 0.45,   # V20.1: 主锚强化 (原 0.35 + 缺失的 0.10), 总和归一至 1.0
-    "erp": 0.25,
-    "vix": 0.15,
-    "mr": 0.15,
+    "aiae": 0.35,   # V19.1: 主锚降权 (0.45→0.35), 月频滞后指标不应过半
+    "erp": 0.25,    # 估值锚不变
+    "vix": 0.20,    # V19.1: 提权 (0.15→0.20), 唯一实时情绪指标
+    "mr": 0.20,     # V19.1: 提权 (0.15→0.20), 唯一价格结构指标
 }
 
 
@@ -200,7 +200,7 @@ def _signal_direction(snapshot: dict) -> dict:
 
     return {
         "aiae": 1 if aiae_r <= 2 else (-1 if aiae_r >= 4 else 0),
-        "erp": 1 if erp_s > 60 else (-1 if erp_s < 40 else 0),
+        "erp": 1 if erp_s > 55 else (-1 if erp_s < 35 else 0),  # V19.1: 拓宽 (60/40→55/35, A股ERP分布校准)
         "vix": 1 if vix_v < 16 else (-1 if vix_v > 25 else 0),  # P1: 收窄阈值 (A股实证校准)
         "mr": 1 if mr_r == "BULL" else (-1 if mr_r in ("BEAR", "CRASH") else 0),
     }
@@ -251,6 +251,19 @@ def compute_jcs(snapshot: dict) -> dict:
         agreement_ratio = abs(weighted_sum) / max_weight if max_weight > 0 else 0
         # 对冲越严重分越低: 完全对冲→10, 弱对冲→25
         base_agreement = 10.0 + agreement_ratio * 20.0
+
+    # V19.1: 中性距离加分 — 中性引擎的读数仍含信息量
+    # VIX=16 (安全) vs VIX=24 (临界) 不应得分相同
+    distance_bonus = 0.0
+    if directions["vix"] == 0:
+        vix_v = snapshot.get("vix_val", 20)
+        # VIX 离恐慌线 (25) 越远越安全, 最多+2.5
+        distance_bonus += max(0, (25 - vix_v) / 25) * 2.5
+    if directions["erp"] == 0:
+        erp_s = snapshot.get("erp_score", 50)
+        # ERP 偏离中位 50 越远, 方向性越明确, 最多+2.5
+        distance_bonus += abs(erp_s - 50) / 50 * 2.5
+    base_agreement += min(distance_bonus, 5.0)  # 总距离分上限 5
 
     # ── 2. Data Health (占 20 分) ──
     stale_count = 0
@@ -321,8 +334,12 @@ def compute_jcs(snapshot: dict) -> dict:
 #  情景模拟器 (纯数学, 零 API 调用)
 # ═══════════════════════════════════════════════════════════
 
-# AIAE Regime → Cap 映射 (复用 aiae_engine.py 的 REGIMES)
-_REGIME_CAP_MAP = {1: 90, 2: 70, 3: 55, 4: 35, 5: 15}
+# AIAE Regime → Cap 映射 (从 aiae_params.POSITION_MATRIX 动态读取, 取 erp_2_4 行)
+try:
+    from aiae_params import POSITION_MATRIX as _PM
+    _REGIME_CAP_MAP = {i+1: _PM["erp_2_4"][i] for i in range(5)}
+except ImportError:
+    _REGIME_CAP_MAP = {1: 85, 2: 70, 3: 50, 4: 25, 5: 5}  # fallback
 _REGIME_CN_MAP = {1: "极度恐慌", 2: "低配置区", 3: "中性均衡", 4: "偏热区域", 5: "极度过热"}
 
 
@@ -584,8 +601,9 @@ def generate_action_plan(snapshot: dict, jcs: dict, conflicts: dict) -> dict:
     erp_score = snapshot.get("erp_score", 50)
     vix_val = snapshot.get("vix_val", 20)
 
-    # P3: JCS 折损系数 — 低置信时自动压缩仓位目标
-    jcs_multiplier = 1.0 if jcs_score >= 70 else (0.85 if jcs_score >= 40 else 0.65)
+    # V19.1: 平滑 Sigmoid 曲线代替硬分档
+    # JCS=0→0.55, JCS=45→0.80, JCS=70→0.95, JCS=100→1.0
+    jcs_multiplier = 0.5 + 0.5 / (1 + math.exp(-0.08 * (jcs_score - 45)))
     pos = round(raw_pos * jcs_multiplier)
 
     top_signals = []
@@ -790,7 +808,12 @@ _GLOBAL_REGIMES = {
     },
 }
 
-_REGIME_CAP_LOOKUP = {1: 92, 2: 77, 3: 57, 4: 32, 5: 8}
+# Cap lookup (erp_4_6 行中位值, 用于全球温度聚合)
+try:
+    from aiae_params import POSITION_MATRIX as _PM2
+    _REGIME_CAP_LOOKUP = {i+1: _PM2["erp_4_6"][i] for i in range(5)}
+except ImportError:
+    _REGIME_CAP_LOOKUP = {1: 90, 2: 80, 3: 60, 4: 35, 5: 10}
 
 # 各市场 AIAE gauge 色带阈值 (用于 ECharts)
 _GLOBAL_GAUGE_BANDS = {
@@ -1013,16 +1036,28 @@ def compute_risk_matrix() -> dict:
     vix = snapshot.get("vix_val", 20) or 20
     conflicts = compute_conflict_matrix(snapshot)
 
-    # 尾部风险公式: 0-100 (P4: 增加 AIAE 过热因子)
-    concentration_risk = min(100, top_sector_pct * 1.5)  # 集中度超 60% 满分
-    vix_risk = min(100, max(0, (vix - 15) * 4))  # VIX 15→0, 40→100
-    aiae_regime = snapshot.get("aiae_regime", 3)
-    aiae_risk = min(100, max(0, (aiae_regime - 2) * 33))  # R1→0, R3→33, R5→100
-    conflict_risk = min(100, conflicts["conflict_count"] * 30)  # 每个矛盾 30 分
+    # 尾部风险公式: 0-100 (V19.1: 参数校准 + 权重重分配)
+
+    # 集中度 — 20%以下健康, 100%满分; 信号池<5时衰减防虚高
+    concentration_risk = min(100, max(0, (top_sector_pct - 20) * 1.25))
+    if total_signals < 5:
+        concentration_risk *= total_signals / 5
+
+    # VIX — 不变 (15→0, 40→100)
+    vix_risk = min(100, max(0, (vix - 15) * 4))
+
+    # V19.1: AIAE 连续值映射 (10%→0, 25%→50, 40%→100), 取代粗糙5级离散
+    aiae_v1 = snapshot.get("aiae_v1") or 22
+    aiae_risk = min(100, max(0, (aiae_v1 - 10) / 30 * 100))
+
+    # 矛盾 — 不变
+    conflict_risk = min(100, conflicts["conflict_count"] * 30)
+
+    # V19.1: 权重重分配 — AIAE结构性风险提权, VIX情绪噪声降权
     tail_risk = round(
         concentration_risk * 0.30 +
-        vix_risk * 0.30 +
-        aiae_risk * 0.25 +
+        vix_risk * 0.20 +          # 30→20: VIX 是短期情绪指标
+        aiae_risk * 0.35 +         # 25→35: AIAE 是核心宏观风险锚
         conflict_risk * 0.15, 1
     )
 

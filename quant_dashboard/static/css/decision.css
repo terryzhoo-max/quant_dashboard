@@ -1663,3 +1663,258 @@
     font-weight: 500;
 }
 
+/* ═══════════════════════════════════════════════════
+   V19.0: 风控护栏指示条 (Risk Guardrail Strip)
+   ═══════════════════════════════════════════════════ */
+
+.risk-guardrail {
+    margin-bottom: 24px; padding: 14px 20px;
+}
+.rg-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px;
+}
+.rg-title {
+    font-size: 0.88rem; font-weight: 700; color: #e2e8f0;
+    letter-spacing: 0.3px;
+}
+.rg-status {
+    font-size: 0.7rem; font-weight: 600; padding: 3px 10px;
+    border-radius: 8px; letter-spacing: 0.5px;
+    background: rgba(148,163,184,0.08); color: #94a3b8;
+    border: 1px solid rgba(148,163,184,0.1);
+    transition: all 0.4s ease;
+}
+.rg-status.ok {
+    color: #6ee7b7; background: rgba(16,185,129,0.08);
+    border-color: rgba(16,185,129,0.2);
+    box-shadow: 0 0 8px rgba(16,185,129,0.1);
+}
+.rg-status.warn {
+    color: #fcd34d; background: rgba(245,158,11,0.08);
+    border-color: rgba(245,158,11,0.2);
+    box-shadow: 0 0 8px rgba(245,158,11,0.1);
+}
+.rg-status.danger {
+    color: #fca5a5; background: rgba(239,68,68,0.08);
+    border-color: rgba(239,68,68,0.2);
+    box-shadow: 0 0 8px rgba(239,68,68,0.15);
+    animation: rgDangerPulse 2s ease-in-out infinite;
+}
+@keyframes rgDangerPulse {
+    0%, 100% { box-shadow: 0 0 6px rgba(239,68,68,0.1); }
+    50% { box-shadow: 0 0 16px rgba(239,68,68,0.3); }
+}
+
+.rg-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+}
+.rg-kpi {
+    text-align: center; padding: 12px 8px; border-radius: 10px;
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px solid rgba(255,255,255,0.04);
+    transition: all 0.3s ease;
+}
+.rg-kpi:hover {
+    border-color: rgba(255,255,255,0.1);
+    background: rgba(15, 23, 42, 0.7);
+}
+.rg-kpi-label {
+    font-size: 0.68rem; color: #94a3b8; margin-bottom: 6px;
+    font-weight: 600; letter-spacing: 0.3px;
+}
+.rg-kpi-value {
+    font-size: 1.1rem; font-weight: 800; color: #e2e8f0;
+    font-variant-numeric: tabular-nums;
+    transition: color 0.4s ease, text-shadow 0.4s ease;
+}
+.rg-kpi-value.ok { color: #6ee7b7; text-shadow: 0 0 8px rgba(16,185,129,0.3); }
+.rg-kpi-value.warn { color: #fcd34d; text-shadow: 0 0 8px rgba(245,158,11,0.3); }
+.rg-kpi-value.danger {
+    color: #fca5a5; text-shadow: 0 0 10px rgba(239,68,68,0.4);
+    animation: rgValPulse 1.5s ease-in-out infinite;
+}
+@keyframes rgValPulse {
+    0%, 100% { text-shadow: 0 0 8px rgba(239,68,68,0.3); }
+    50% { text-shadow: 0 0 18px rgba(239,68,68,0.6); }
+}
+
+@media (max-width: 768px) {
+    .rg-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ═══════════════════════════════════════════════════
+   V19.1: 参考卡片行 (阈值速查 + 操作纪律)
+   ═══════════════════════════════════════════════════ */
+
+.ref-cards-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+    margin-bottom: 24px;
+}
+@media (max-width: 900px) {
+    .ref-cards-row { grid-template-columns: 1fr; }
+}
+.ref-card {
+    padding: 16px 20px;
+}
+.ref-card-title {
+    font-size: 0.82rem; font-weight: 700; color: #e2e8f0;
+    margin: 0 0 12px 0; letter-spacing: 0.3px;
+}
+
+/* 阈值速查表 */
+.threshold-table {
+    width: 100%; border-collapse: collapse; font-size: 0.74rem;
+}
+.threshold-table th {
+    padding: 7px 8px; text-align: center; font-weight: 600;
+    color: #94a3b8; border-bottom: 1px solid rgba(255,255,255,0.06);
+    font-size: 0.7rem; letter-spacing: 0.3px;
+}
+.threshold-table td {
+    padding: 7px 8px; text-align: center; color: #cbd5e1;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+.threshold-table th:first-child, .threshold-table td:first-child {
+    text-align: left;
+}
+.th-bull { color: #6ee7b7 !important; }
+.th-bear { color: #fca5a5 !important; }
+.tt-engine {
+    font-weight: 700; color: #e2e8f0;
+}
+.tt-w {
+    display: inline-block; margin-left: 6px; font-size: 0.62rem;
+    color: #64748b; font-weight: 500;
+}
+.tt-bull {
+    color: #6ee7b7; background: rgba(16,185,129,0.04); border-radius: 4px;
+}
+.tt-bear {
+    color: #fca5a5; background: rgba(239,68,68,0.04); border-radius: 4px;
+}
+
+/* 操作纪律折叠 */
+.sop-toggle {
+    cursor: pointer; user-select: none; display: flex;
+    align-items: center; justify-content: space-between;
+}
+.sop-arrow {
+    font-size: 0.6rem; color: #64748b; transition: transform 0.3s ease;
+}
+.ref-card.open .sop-arrow {
+    transform: rotate(90deg);
+}
+.sop-body {
+    max-height: 0; overflow: hidden; transition: max-height 0.4s ease;
+}
+.ref-card.open .sop-body {
+    max-height: 600px;
+}
+.sop-section { margin-bottom: 10px; }
+.sop-section-title {
+    font-size: 0.76rem; font-weight: 700; margin-bottom: 6px;
+    padding: 4px 0; letter-spacing: 0.3px;
+}
+.sop-section-title.sop-buy { color: #6ee7b7; }
+.sop-section-title.sop-sell { color: #fca5a5; }
+.sop-rules {
+    list-style: none; padding: 0; margin: 0;
+}
+.sop-rules li {
+    font-size: 0.73rem; color: #94a3b8; padding: 4px 0 4px 16px;
+    position: relative; line-height: 1.5;
+}
+.sop-rules li::before {
+    content: '•'; position: absolute; left: 4px; color: #475569;
+}
+.sop-rules li b {
+    color: #e2e8f0; font-weight: 700;
+}
+
+/* 波段守卫规则脚注 */
+.sg-rules-footer {
+    display: flex; flex-wrap: wrap; gap: 10px 18px;
+    padding: 10px 16px; margin-top: 8px;
+    border-top: 1px solid rgba(255,255,255,0.04);
+    font-size: 0.7rem; color: #64748b;
+}
+.sg-rule-item b { font-weight: 700; }
+.sg-rule-item:nth-child(1) b { color: #10b981; }
+.sg-rule-item:nth-child(2) b { color: #f59e0b; }
+.sg-rule-item:nth-child(3) b { color: #ef4444; }
+.sg-rule-formula {
+    color: #475569; font-style: italic; font-size: 0.65rem;
+    border-left: 2px solid rgba(255,255,255,0.06); padding-left: 10px;
+}
+
+/* 执行指令色带增强 */
+.action-inline {
+    position: relative;
+    border-left: 3px solid var(--conf-color, rgba(148,163,184,0.3));
+    padding-left: 16px !important;
+}
+
+/* ═══════════════════════════════════════════════════
+   V19.1: 风险矩阵 Tab 增强
+   ═══════════════════════════════════════════════════ */
+
+/* 绩效阈值脚注 */
+.perf-threshold-footnote {
+    font-size: 0.66rem; color: #475569; padding: 8px 12px 0;
+    border-top: 1px solid rgba(255,255,255,0.03); margin-top: 8px;
+    letter-spacing: 0.2px;
+}
+
+/* 风险管理 SOP 卡片 */
+.risk-sop-card {
+    margin-bottom: 20px; padding: 18px 22px;
+}
+.risk-sop-title {
+    font-size: 0.88rem; font-weight: 700; color: #e2e8f0;
+    margin: 0 0 14px 0; letter-spacing: 0.3px;
+}
+.risk-sop-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+}
+@media (max-width: 900px) {
+    .risk-sop-grid { grid-template-columns: 1fr; }
+}
+.risk-sop-section {
+    padding: 10px 14px; border-radius: 10px;
+    background: rgba(15, 23, 42, 0.4);
+    border: 1px solid rgba(255,255,255,0.04);
+}
+.risk-sop-section-title {
+    font-size: 0.76rem; font-weight: 700; color: #cbd5e1;
+    margin-bottom: 8px; letter-spacing: 0.3px;
+}
+.risk-sop-rules {
+    list-style: none; padding: 0; margin: 0;
+}
+.risk-sop-rules li {
+    font-size: 0.72rem; color: #94a3b8; padding: 3px 0 3px 14px;
+    position: relative; line-height: 1.55;
+}
+.risk-sop-rules li::before {
+    content: '·'; position: absolute; left: 4px; color: #475569; font-weight: 700;
+}
+.risk-sop-rules li b {
+    color: #e2e8f0; font-weight: 700;
+}
+.danger-text { color: #fca5a5 !important; }
+.safe-text { color: #6ee7b7 !important; }
+
+/* V19.1: 尾部风险因子条增强 */
+.tail-bar-row {
+    display: flex; align-items: center; gap: 6px;
+}
+.tail-bar-weight {
+    display: inline-block; margin-left: 4px;
+    font-size: 0.58rem; color: #475569; font-weight: 500;
+}
+.tail-bar-val {
+    font-size: 0.68rem; color: #94a3b8; font-weight: 600;
+    min-width: 22px; text-align: right; flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+}

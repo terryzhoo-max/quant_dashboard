@@ -38,7 +38,12 @@ def safe_round(val, n):
 class PortfolioEngine:
     """AlphaCore 投资组合引擎 V2.0"""
 
-    POSITION_LIMIT = 0.20          # 单票仓位上限 20%
+    # 仓位常量 (从 config.POSITION_CONFIG 统一读取)
+    try:
+        from config import POSITION_CONFIG as _POS_CFG
+        POSITION_LIMIT = _POS_CFG["single_limit"] / 100.0   # 单票仓位上限
+    except ImportError:
+        POSITION_LIMIT = 0.20
     MCTR_LOOKBACK  = 120           # 风险窗口 120 根 K 线 (约半年)
     RISK_FREE_RATE = 0.02          # 无风险利率 (一年期国债)
 

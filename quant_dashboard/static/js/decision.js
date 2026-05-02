@@ -121,16 +121,16 @@ function renderDirections(directions, snapshot) {
     if (!grid) return;
 
     const engines = {
-        aiae: { label: 'AIAE', weight: 45, unit: '%',
+        aiae: { label: 'AIAE', weight: 35, unit: '%',
             val: snapshot ? snapshot.aiae_v1 : null,
             fmt: v => v != null ? v.toFixed(1) + '%' : '--' },
         erp:  { label: 'ERP', weight: 25, unit: '%',
             val: snapshot ? snapshot.erp_val : null,
             fmt: v => v != null ? v.toFixed(2) + '%' : '--' },
-        vix:  { label: 'VIX', weight: 15, unit: '',
+        vix:  { label: 'VIX', weight: 20, unit: '',
             val: snapshot ? snapshot.vix_val : null,
             fmt: v => v != null ? v.toFixed(1) : '--' },
-        mr:   { label: 'MR', weight: 15, unit: '',
+        mr:   { label: 'MR', weight: 20, unit: '',
             val: snapshot ? snapshot.mr_regime : null,
             fmt: v => v || '--' },
     };
@@ -667,8 +667,9 @@ function renderTailRisk(tail) {
     const el = document.getElementById('tail-risk');
     if (!el) return;
     const comps = tail.components;
-    const cColors = { concentration: '#a78bfa', vix: '#fbbf24', conflict: '#f87171' };
-    const cLabels = { concentration: '集中', vix: 'VIX', conflict: '矛盾' };
+    const cColors = { concentration: '#a78bfa', vix: '#fbbf24', aiae: '#f97316', conflict: '#f87171' };
+    const cLabels = { concentration: '集中', vix: 'VIX', aiae: 'AIAE', conflict: '矛盾' };
+    const cWeights = { concentration: '30%', vix: '20%', aiae: '35%', conflict: '15%' };
     const lvlColor = tail.level === 'high' ? '#f87171' : (tail.level === 'medium' ? '#fbbf24' : '#34d399');
     el.innerHTML = `
         <div class="tail-risk-wrap">
@@ -677,7 +678,7 @@ function renderTailRisk(tail) {
             </div>
             <div class="tail-risk-label" style="color:${lvlColor}">${tail.label}</div>
             <div class="tail-risk-bars">
-                ${Object.entries(comps).map(([k, v]) => `<div class="tail-bar-row"><span class="tail-bar-name">${cLabels[k]}</span><div class="tail-bar-bg"><div class="tail-bar-fill" style="width:${v}%;background:${cColors[k]}"></div></div></div>`).join('')}
+                ${Object.entries(comps).map(([k, v]) => `<div class="tail-bar-row"><span class="tail-bar-name">${cLabels[k]}<span class="tail-bar-weight">${cWeights[k]}</span></span><div class="tail-bar-bg"><div class="tail-bar-fill" style="width:${v}%;background:${cColors[k]}"></div></div><span class="tail-bar-val">${v.toFixed(0)}</span></div>`).join('')}
             </div>
         </div>`;
     // B1: 半圆 Gauge Canvas
@@ -727,7 +728,12 @@ function renderAccuracy(data) {
             <div class="skeleton-card"><div class="skeleton-bar"></div><div class="skeleton-text"></div></div>
             <div class="skeleton-card"><div class="skeleton-bar"></div><div class="skeleton-text"></div></div>
         </div>
-        <div style="text-align:center;padding:12px 0 0;color:#64748b;font-size:0.78rem;">📊 系统正在积累信号准确率数据 (T+5)...</div>`;
+        <div style="text-align:center;padding:12px 0 0;color:#64748b;font-size:0.78rem;">📊 系统正在积累信号准确率数据 (T+5)...</div>
+        <div style="text-align:center;padding:6px 0 0;color:#475569;font-size:0.68rem;line-height:1.6;">
+            准确率 = T+5日沦深300收益率方向 vs JCS信号方向<br>
+            · JCS ≥ 50 + 市场上涨 → ✅ 正确 &nbsp;· JCS < 50 + 市场下跌 → ✅ 正确<br>
+            · 反向则记为 ❌。连续跑分 15 日后开始显示数据。
+        </div>`;
         return;
     }
     el.innerHTML = `
@@ -994,6 +1000,68 @@ function renderGlobalTemperature(gt) {
 }
 
 // ═══════════════════════════════════════════════════
+//  V19.0: 风控护栏指示条 (Risk Guardrail Brief)
+// ═══════════════════════════════════════════════════
+
+async function loadRiskGuardrail() {
+    try {
+        const resp = await AC.secureFetch(`${API_BASE}/risk-matrix`);
+        const data = await resp.json();
+        if (data.status !== 'success') return;
+        renderTailRiskBrief(data);
+    } catch (e) {
+        console.warn('Risk guardrail load error:', e);
+    }
+}
+
+function renderTailRiskBrief(data) {
+    const statusEl = document.getElementById('rg-status');
+    const varEl = document.getElementById('rg-var');
+    const maxddEl = document.getElementById('rg-maxdd');
+    const curddEl = document.getElementById('rg-curdd');
+    const overlapEl = document.getElementById('rg-overlap');
+    if (!statusEl) return;
+
+    // Tail risk score → overall status
+    const tail = data.tail_risk || {};
+    const score = tail.score || 0;
+    const level = score >= 60 ? 'danger' : (score >= 30 ? 'warn' : 'ok');
+    const levelLabel = score >= 60 ? '⚠️ 风险偏高' : (score >= 30 ? '🟡 正常' : '✅ 安全');
+    statusEl.textContent = levelLabel;
+    statusEl.className = 'rg-status ' + level;
+
+    // VaR from tail components or fallback
+    if (varEl) {
+        const varVal = tail.components?.concentration || 0;
+        varEl.textContent = varVal.toFixed(0) + '%';
+        varEl.className = 'rg-kpi-value ' + (varVal >= 50 ? 'danger' : (varVal >= 30 ? 'warn' : 'ok'));
+    }
+
+    // Max drawdown from overlap matrix sectors
+    if (maxddEl) {
+        const sectors = data.sector_concentration || [];
+        const topSector = sectors.length > 0 ? sectors[0].pct : 0;
+        maxddEl.textContent = topSector + '%';
+        maxddEl.className = 'rg-kpi-value ' + (topSector >= 40 ? 'danger' : (topSector >= 25 ? 'warn' : 'ok'));
+    }
+
+    // Current drawdown (VIX component from tail risk)
+    if (curddEl) {
+        const vixComp = tail.components?.vix || 0;
+        curddEl.textContent = vixComp.toFixed(0) + '%';
+        curddEl.className = 'rg-kpi-value ' + (vixComp >= 50 ? 'danger' : (vixComp >= 30 ? 'warn' : 'ok'));
+    }
+
+    // Strategy overlap
+    if (overlapEl) {
+        const codes = data.multi_strategy_codes || [];
+        const overlapCount = codes.length;
+        overlapEl.textContent = overlapCount + '只';
+        overlapEl.className = 'rg-kpi-value ' + (overlapCount >= 8 ? 'danger' : (overlapCount >= 4 ? 'warn' : 'ok'));
+    }
+}
+
+// ═══════════════════════════════════════════════════
 //  页面初始化
 // ═══════════════════════════════════════════════════
 
@@ -1001,7 +1069,8 @@ async function initDecisionHub() {
     initTabs();
 
     try {
-        fetchSwingGuard(); // Load Swing Guard
+        fetchSwingGuard();     // Load Swing Guard
+        loadRiskGuardrail();   // V19.0: Risk Guardrail Strip
         
         const resp = await AC.secureFetch(`${API_BASE}/hub`);
         const data = await resp.json();

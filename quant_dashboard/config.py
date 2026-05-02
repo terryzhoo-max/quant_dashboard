@@ -68,13 +68,40 @@ REGIME_RET20_BULL  = 0.05    # 20日涨幅 > 5% → BULL 倾向
 REGIME_DIP_THRESH  = -0.03   # 3日 < -3% → CRASH 检测阈值
 REGIME_MIN_DATA    = 300     # 最少需要 300 个交易日数据
 
-# ── 各 Regime 仓位上限（均值回归策略）──
-MR_POS_CAP = {
-    "BEAR":  0.65,
-    "RANGE": 0.80,
-    "BULL":  0.35,
-    "CRASH": 0.00,
+# ═══════════════════════════════════════════════════════
+#  统一仓位常量 (Single Source of Truth · V6.0)
+#  所有引擎/前端/审计的仓位参数 统一从此处读取
+# ═══════════════════════════════════════════════════════
+POSITION_CONFIG = {
+    # ── 审计红线 (绝对天花板，防追保) ──
+    "total_cap": 95.0,              # 审计红线: 最大允许总仓位 (%)
+    "single_limit": 20.0,           # 单票集中度上限 (%)
+    "sector_limit": 40.0,           # 行业集中度上限 (%)
+    "min_holdings": 5,              # 最少持仓数
+
+    # ── 子策略 Regime 仓位上限 ──
+    # 均值回归 (MR): 震荡主战场, 牛市低配防过度交易
+    "mr_regime_cap": {
+        "BEAR":  65,
+        "RANGE": 80,
+        "BULL":  35,
+        "CRASH":  0,
+    },
+    # 动量轮动 (MOM): 牛市追强, 熊市防守
+    "mom_regime_cap": {
+        "BULL":  85,
+        "RANGE": 60,
+        "BEAR":  35,
+        "CRASH":  0,
+    },
+
+    # ── 回测引擎统一上限 ──
+    # 回测不受 AIAE 动态调整, 用固定值保证可重复性
+    "backtest_total_cap": 85,
 }
+
+# ── 各 Regime 仓位上限（均值回归策略 · 从 POSITION_CONFIG 统一读取）──
+MR_POS_CAP = {k: v / 100.0 for k, v in POSITION_CONFIG["mr_regime_cap"].items()}
 
 # ── 信号评分入场门槛（100分制）──
 MR_SCORE_GATE = {
