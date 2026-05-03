@@ -1,0 +1,11 @@
+{
+    "serverchan_sendkey": "SCT345046TxNycEcgmIbyRI0g8F548Gvoo",
+    "email_smtp": {
+        "host": "smtp.qq.com",
+        "port": 465,
+        "user": "magas@qq.com",
+        "password": "ezklnwdqehjqbicj",
+        "to": "magas@qq.com"
+    },
+    "channels_enabled": ["browser", "serverchan", "email"]
+}

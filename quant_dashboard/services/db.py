@@ -103,6 +103,18 @@ def init_db():
             degraded_modules TEXT,
             recorded_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS signal_alerts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rule_id TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            title TEXT NOT NULL,
+            detail TEXT,
+            value REAL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            acknowledged INTEGER DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_alert_rule_time ON signal_alerts(rule_id, created_at);
     """)
     conn.commit()
     logger.info("SQLite 数据库初始化完成 · %s", DB_PATH)
@@ -505,4 +517,104 @@ def get_calendar_data(year: int = None, month: int = None) -> List[Dict]:
             "FROM decision_log ORDER BY date DESC LIMIT 62"
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ══════════════════════════════════════════════════════════
+#  V21.0: 日报缓存 (投委会报告持久化)
+# ══════════════════════════════════════════════════════════
+
+def _ensure_daily_reports_table():
+    """幂等建表: daily_reports (V21.0 日报缓存)"""
+    conn = _get_conn()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS daily_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL UNIQUE,
+            markdown TEXT NOT NULL,
+            summary_json TEXT,
+            generated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_reports_date ON daily_reports(date)")
+    conn.commit()
+
+
+def save_daily_report(date: str, markdown: str, summary: dict = None):
+    """保存日报 Markdown (按 date UNIQUE 键, 幂等)"""
+    import json as _json
+    _ensure_daily_reports_table()
+    conn = _get_conn()
+    now = datetime.now().isoformat()
+    summary_str = _json.dumps(summary, ensure_ascii=False) if summary else None
+    conn.execute(
+        """INSERT INTO daily_reports (date, markdown, summary_json, generated_at)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(date) DO UPDATE SET
+             markdown = excluded.markdown,
+             summary_json = excluded.summary_json,
+             generated_at = excluded.generated_at""",
+        (date, markdown, summary_str, now),
+    )
+    conn.commit()
+
+
+def get_daily_report(date: str) -> Optional[Dict]:
+    """获取指定日期的日报"""
+    _ensure_daily_reports_table()
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT date, markdown, summary_json, generated_at FROM daily_reports WHERE date = ?",
+        (date,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+# ═══════════════════════════════════════════════════
+#  V21.2: 信号预警持久化
+# ═══════════════════════════════════════════════════
+
+def save_alert(rule_id: str, severity: str, title: str, detail: str, value: float):
+    """写入预警记录"""
+    conn = _get_conn()
+    conn.execute(
+        """INSERT INTO signal_alerts (rule_id, severity, title, detail, value, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (rule_id, severity, title, detail, value, datetime.now().isoformat()),
+    )
+    conn.commit()
+
+
+def get_recent_alerts(limit: int = 20) -> List[Dict]:
+    """获取最近预警列表"""
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT id, rule_id, severity, title, detail, value, created_at, acknowledged "
+        "FROM signal_alerts ORDER BY created_at DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def acknowledge_alert(alert_id: int):
+    """标记预警已读"""
+    conn = _get_conn()
+    conn.execute("UPDATE signal_alerts SET acknowledged = 1 WHERE id = ?", (alert_id,))
+    conn.commit()
+
+
+def get_last_alert_time(rule_id: str) -> Optional[str]:
+    """获取某规则最近一次触发的时间 (用于 cooldown 判断)"""
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT created_at FROM signal_alerts WHERE rule_id = ? ORDER BY created_at DESC LIMIT 1",
+        (rule_id,),
+    ).fetchone()
+    return row["created_at"] if row else None
+
+
+def get_unread_alert_count() -> int:
+    """未读预警数量 (铃铛 badge)"""
+    conn = _get_conn()
+    row = conn.execute("SELECT COUNT(*) as c FROM signal_alerts WHERE acknowledged = 0").fetchone()
+    return row["c"] if row else 0
 

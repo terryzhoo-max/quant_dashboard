@@ -505,8 +505,134 @@ class PortfolioEngine:
         }
 
     # ──────────────────────────────────────
+    #  V21.1: 相关性矩阵 + MCTR 风险贡献
+    # ──────────────────────────────────────
+
+    def get_correlation_data(self) -> dict:
+        """
+        计算持仓间皮尔逊相关系数矩阵 + MCTR 风险贡献分解。
+        复用 calculate_risk_metrics 的收益率拉取逻辑。
+
+        Returns:
+            {
+                "status": "success",
+                "codes": [...],
+                "names": [...],
+                "correlation_matrix": [[float]],  # N×N
+                "mctr_details": [{code, name, weight, mctr, risk_contribution, industry}],
+                "portfolio_vol": float,
+                "data_days": int,
+                "high_corr_pairs": [{a, b, corr, level}],
+            }
+        """
+        valuation = self.get_valuation()
+        positions = valuation.get("positions", [])
+        if len(positions) < 2:
+            return {
+                "status": "insufficient",
+                "message": "至少需要 2 只持仓才能计算相关性矩阵",
+                "position_count": len(positions),
+            }
+
+        # ── 拉取日收益率 ──
+        rets_data = {}
+        for pos in positions:
+            try:
+                p_df = self.dm.get_price_payload(pos["ts_code"])
+                if not p_df.empty:
+                    rets_data[pos["ts_code"]] = p_df['close'].pct_change().dropna().tail(self.MCTR_LOOKBACK)
+            except Exception:
+                pass
+
+        if len(rets_data) < 2:
+            return {"status": "insufficient_data", "message": "可用收益率数据不足 2 只"}
+
+        # ── 构建收益率 DataFrame ──
+        ordered_codes = [p["ts_code"] for p in positions]
+        ordered_names = [p["name"] for p in positions]
+        df_rets = pd.DataFrame(rets_data)
+        for code in ordered_codes:
+            if code not in df_rets.columns:
+                df_rets[code] = 0.0
+        df_rets = df_rets[ordered_codes].fillna(0)
+        data_days = len(df_rets)
+
+        # ── 皮尔逊相关系数矩阵 ──
+        corr_matrix = df_rets.corr().fillna(0)  # 零方差列产生 NaN → 填 0
+        corr_list = []
+        for i in range(len(ordered_codes)):
+            row = []
+            for j in range(len(ordered_codes)):
+                v = corr_matrix.iloc[i, j]
+                # 防御 NaN/Inf (JSON 不支持)
+                if np.isnan(v) or np.isinf(v):
+                    v = 0.0
+                row.append(safe_round(v, 3))
+            corr_list.append(row)
+
+        # ── 高相关对检测 (|r| > 0.7, 排除对角线) ──
+        high_corr_pairs = []
+        for i in range(len(ordered_codes)):
+            for j in range(i + 1, len(ordered_codes)):
+                r = corr_matrix.iloc[i, j]
+                abs_r = abs(r)
+                if abs_r > 0.7:
+                    level = "extreme" if abs_r > 0.9 else "high"
+                    high_corr_pairs.append({
+                        "a": ordered_names[i],
+                        "b": ordered_names[j],
+                        "a_code": ordered_codes[i],
+                        "b_code": ordered_codes[j],
+                        "corr": safe_round(r, 3),
+                        "level": level,
+                    })
+        high_corr_pairs.sort(key=lambda x: abs(x["corr"]), reverse=True)
+
+        # ── MCTR 风险贡献 (复用 cov → MCTR 公式) ──
+        cov_matrix = df_rets.cov().fillna(0) * 252
+        total_val = float(valuation.get("market_value", 0))
+        if total_val == 0:
+            return {"status": "zero_value", "message": "组合市值为零"}
+
+        weights = np.array([float(p["market_value"]) / total_val for p in positions])
+        port_var = np.dot(weights.T, np.dot(cov_matrix, weights))
+        if np.isnan(port_var) or port_var <= 0:
+            port_var = 0.0001
+        port_vol = np.sqrt(port_var)
+        marginal_risk = np.dot(cov_matrix, weights) / port_vol
+        # 清理 NaN/Inf
+        marginal_risk = np.nan_to_num(marginal_risk, nan=0.0, posinf=0.0, neginf=0.0)
+
+        mctr_details = []
+        for i, pos in enumerate(positions):
+            rc = weights[i] * marginal_risk[i] / port_vol * 100
+            rc = 0.0 if (np.isnan(rc) or np.isinf(rc)) else rc
+            mctr_details.append({
+                "code": pos["ts_code"],
+                "name": pos["name"],
+                "industry": pos.get("industry", "其他"),
+                "weight": safe_round(weights[i] * 100, 2),
+                "mctr": safe_round(marginal_risk[i], 4),
+                "risk_contribution": safe_round(rc, 2),
+            })
+        mctr_details.sort(key=lambda x: x["risk_contribution"], reverse=True)
+
+        return {
+            "status": "success",
+            "codes": ordered_codes,
+            "names": ordered_names,
+            "correlation_matrix": corr_list,
+            "mctr_details": mctr_details,
+            "portfolio_vol": safe_round(port_vol, 4),
+            "data_days": data_days,
+            "high_corr_pairs": high_corr_pairs[:10],
+            "position_count": len(positions),
+        }
+
+    # ──────────────────────────────────────
     #  净值曲线
     # ──────────────────────────────────────
+
 
     def get_nav_history(self, days: int = 120):
         """生成组合近 N 日的模拟净值曲线 (基于持仓加权日收益)"""

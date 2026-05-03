@@ -8,7 +8,7 @@
     <title>决策中枢 · AlphaCore</title>
     <link rel="stylesheet" href="./static/css/fonts.css?v=1">
     <link rel="stylesheet" href="./static/css/styles.css?v=12">
-    <link rel="stylesheet" href="./static/css/decision.css?v=32">
+    <link rel="stylesheet" href="./static/css/decision.css?v=35">
     <link rel="stylesheet" href="./static/css/visual_excellence.css?v=3">
     <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
@@ -94,15 +94,32 @@
                 <input type="text" placeholder="搜索标的、宏观周期及因子数据...">
             </div>
             <div class="actions">
+                <button class="btn btn-report" id="btn-daily-report" onclick="generateReport()">📄 生成日报</button>
+                <div class="alert-bell-wrap" id="alert-bell-wrap">
+                    <button class="btn btn-alert-bell" id="alert-bell" onclick="toggleAlertPanel()">
+                        🔔 <span class="alert-badge" id="alert-badge" style="display:none;">0</span>
+                    </button>
+                    <div class="alert-panel" id="alert-panel" style="display:none;">
+                        <div class="alert-panel-header">
+                            <span>🔔 信号预警</span>
+                            <button class="alert-ack-all" onclick="ackAllAlerts()">全部已读</button>
+                        </div>
+                        <div class="alert-list" id="alert-list">
+                            <div style="text-align:center;padding:20px;color:#64748b;font-size:0.82rem;">暂无预警</div>
+                        </div>
+                    </div>
+                </div>
                 <button class="btn btn-primary" onclick="initDecisionHub()">刷新决策数据</button>
             </div>
         </header>
+        <!-- Toast 容器 -->
+        <div class="alert-toast-container" id="alert-toast-container"></div>
 
         <div class="content decision-content">
             <!-- 页面标题 -->
             <div class="decision-header">
                 <h2>🧠 科学辅助决策中枢</h2>
-                <span class="version-pill">V20.0</span>
+                <span class="version-pill">V21.0</span>
             </div>
 
             <!-- Tab 切换 -->
@@ -426,6 +443,21 @@
                     </div>
                 </div>
 
+                <!-- 第2.5层: V21.1 持仓相关性分析 -->
+                <div class="correlation-section" id="correlation-section">
+                    <div class="risk-grid">
+                        <div class="risk-panel glass-decision">
+                            <h3>🔥 持仓相关性热力图 <span class="section-subtitle">— 120日 Pearson</span></h3>
+                            <div id="corr-heatmap-chart" style="width:100%;height:360px;"></div>
+                            <div class="corr-high-pairs" id="corr-high-pairs"></div>
+                        </div>
+                        <div class="risk-panel glass-decision">
+                            <h3>📊 MCTR 风险贡献 <span class="section-subtitle">— 边际风险分解</span></h3>
+                            <div id="mctr-bar-chart" style="width:100%;height:360px;"></div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 第3层: 绩效图表 -->
                 <div class="perf-section" id="perf-section" style="display:none;">
                     <div class="risk-section-header">
@@ -493,6 +525,22 @@
         </div>
     </main>
 
-    <script src="./static/js/decision.js?v=31"></script>
+    <!-- V21.0: 日报 Modal -->
+    <div class="report-overlay" id="report-overlay" onclick="closeReportModal(event)">
+        <div class="report-modal" onclick="event.stopPropagation()">
+            <div class="report-modal-header">
+                <h3>📊 投委会决策简报</h3>
+                <button class="report-close" onclick="closeReportModal()">&times;</button>
+            </div>
+            <div class="report-content" id="report-content"></div>
+            <div class="report-actions">
+                <button class="btn-report-action" id="btn-copy-report" onclick="copyReport()">📋 复制全文</button>
+                <button class="btn-report-action" id="btn-download-report" onclick="downloadReport()">💾 下载 .md</button>
+                <button class="btn-report-action btn-report-close" onclick="closeReportModal()">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="./static/js/decision.js?v=34"></script>
 </body>
 </html>

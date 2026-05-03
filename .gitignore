@@ -19,3 +19,5 @@ ENV/
 quant_dashboard/__pycache__/
 /tmp/
 verify_backend_logic.py
+
+config/alert_config.json

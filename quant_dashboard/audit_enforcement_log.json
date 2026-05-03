@@ -3,18 +3,6 @@
     "action": "enforcer_skipped",
     "reason": "执行器总开关已关闭",
     "status": "skipped",
-    "timestamp": "2026-04-13 16:17:02"
-  },
-  {
-    "action": "enforcer_skipped",
-    "reason": "执行器总开关已关闭",
-    "status": "skipped",
-    "timestamp": "2026-04-14 15:29:45"
-  },
-  {
-    "action": "enforcer_skipped",
-    "reason": "执行器总开关已关闭",
-    "status": "skipped",
     "timestamp": "2026-04-14 21:15:51"
   },
   {
@@ -1198,5 +1186,17 @@
     "reason": "执行器总开关已关闭",
     "status": "skipped",
     "timestamp": "2026-05-03 00:21:09"
+  },
+  {
+    "action": "enforcer_skipped",
+    "reason": "执行器总开关已关闭",
+    "status": "skipped",
+    "timestamp": "2026-05-03 20:16:54"
+  },
+  {
+    "action": "enforcer_skipped",
+    "reason": "执行器总开关已关闭",
+    "status": "skipped",
+    "timestamp": "2026-05-03 20:17:10"
   }
 ]

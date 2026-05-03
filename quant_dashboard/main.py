@@ -46,7 +46,7 @@ from services.warmup_pipeline import (
     warmup_global_aiae_cache, warmup_swing_guard,
     daily_warmup_callback, morning_warmup_callback, fred_daily_callback,
     us_aiae_warmup_callback, jp_aiae_warmup_callback, aaii_crawl_callback,
-    swing_guard_warmup_callback,
+    swing_guard_warmup_callback, daily_report_callback, alert_scan_callback,
 )
 from aiae_engine import get_aiae_engine
 
@@ -101,6 +101,10 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(aaii_crawl_callback, CronTrigger(day_of_week='fri', hour=9, minute=0), id="aaii_crawl")
     # 8. 波段守卫 15:40 (收盘后自动刷新7大ETF信号)
     scheduler.add_job(swing_guard_warmup_callback, CronTrigger(day_of_week='mon-fri', hour=15, minute=40), id="swing_guard")
+    # 9. V21.0: 投委会日报 16:35 (收盘后自动生成, 等待 15:35 预热完成)
+    scheduler.add_job(daily_report_callback, CronTrigger(day_of_week='mon-fri', hour=16, minute=35), id="daily_report")
+    # 10. V21.2: 信号预警扫描 (每10分钟, 盘中监控 JCS/VIX)
+    scheduler.add_job(alert_scan_callback, IntervalTrigger(minutes=10), id="alert_scan")
 
     scheduler.start()
     app.state.scheduler = scheduler

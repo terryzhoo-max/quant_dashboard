@@ -313,6 +313,8 @@ def daily_warmup_callback():
         sched_logger.warning(f"准确率回填失败 (非致命): {e}")
     # V2.0: 波段守卫刷新 (收盘后更新7大ETF信号)
     with_retry(warmup_swing_guard, "SwingGuard_Warmup", 2, 30)
+    # V21.2: 信号预警扫描 (收盘后检测 JCS/VIX)
+    _run_alert_scan("daily_warmup")
     sched_logger.info("收盘预热流水线完成")
 
 
@@ -322,6 +324,8 @@ def morning_warmup_callback():
     with_retry(warmup_aiae_cache, "AIAE_Morning_Warmup", 3, 60)
     with_retry(warmup_industry_tracking, "Industry_Morning_Warmup", 2, 60)
     with_retry(warmup_dashboard_cache, "Dashboard_Morning_Warmup", 3, 60)
+    # V21.2: 信号预警扫描 (盘前检测)
+    _run_alert_scan("morning_warmup")
     sched_logger.info("早间补偿流水线完成")
 
 
@@ -358,3 +362,36 @@ def swing_guard_warmup_callback():
     sched_logger.info("Swing Guard 定时预热启动")
     with_retry(warmup_swing_guard, "SwingGuard_Scheduled", 2, 30)
     sched_logger.info("Swing Guard 预热完成")
+
+
+def daily_report_callback():
+    """V21.0: 每个交易日 16:35 自动生成投委会日报"""
+    sched_logger.info("📄 投委会日报自动生成启动")
+    try:
+        from dashboard_modules.report_generator import auto_generate_report
+        auto_generate_report()
+        sched_logger.info("📄 投委会日报生成完成")
+    except Exception as e:
+        sched_logger.warning(f"日报自动生成失败 (非致命): {e}")
+
+
+# ═══════════════════════════════════════════════════
+#  V21.2: 信号预警扫描 (非致命包装)
+# ═══════════════════════════════════════════════════
+
+def _run_alert_scan(source: str):
+    """安全执行预警扫描 (非致命, 不影响主流程)"""
+    try:
+        from services.alert_monitor import scan_and_alert
+        alerts = scan_and_alert()
+        if alerts:
+            sched_logger.info(f"🔔 预警触发 [{source}]: {len(alerts)} 条")
+        else:
+            sched_logger.debug(f"预警扫描 [{source}]: 无触发")
+    except Exception as e:
+        sched_logger.warning(f"预警扫描失败 (非致命): {e}")
+
+
+def alert_scan_callback():
+    """盘中定时预警扫描 (每 10 分钟, 由 APScheduler 调用)"""
+    _run_alert_scan("interval_scan")

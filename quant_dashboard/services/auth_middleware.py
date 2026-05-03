@@ -38,6 +38,7 @@ _PUBLIC_PATHS = {
 _PUBLIC_PREFIXES = (
     "/docs",
     "/redoc",
+    "/api/v1/decision/alerts",  # V21.2: 预警已读操作 (前端用户按钮, 非外部 API)
 )
 
 # 免认证的 HTTP 方法 (只读操作)

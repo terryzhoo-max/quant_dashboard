@@ -157,3 +157,51 @@ def _refresh_swing_guard_sync():
         return {"status": "error", "error": f"波段守卫引擎异常: {str(e)}"}
 
 
+# ── V21.0: 投委会日报 ──
+
+@router.get("/daily-report")
+async def get_daily_report(date: str = Query(default=None, description="日期 YYYY-MM-DD, 为空则生成今日报告")):
+    """一键生成投委会决策日报 (支持历史回看)"""
+    from dashboard_modules.report_generator import generate_daily_report
+    return generate_daily_report(date)
+
+
+# ── V21.1: 持仓相关性矩阵 ──
+
+@router.get("/correlation-matrix")
+async def get_correlation_matrix():
+    """持仓间皮尔逊相关性热力图 + MCTR 风险贡献"""
+    from portfolio_engine import get_portfolio_engine
+    engine = get_portfolio_engine()
+    return engine.get_correlation_data()
+
+
+# ═══════════════════════════════════════════════════
+#  V21.2: 信号预警 API
+# ═══════════════════════════════════════════════════
+
+@router.get("/alerts")
+async def get_signal_alerts(limit: int = 20):
+    """获取最近预警记录"""
+    from services import db as ac_db
+    alerts = ac_db.get_recent_alerts(limit)
+    unread = ac_db.get_unread_alert_count()
+    return {"status": "success", "alerts": alerts, "unread_count": unread}
+
+
+@router.post("/alerts/{alert_id}/ack")
+async def acknowledge_alert(alert_id: int):
+    """标记预警已读"""
+    from services import db as ac_db
+    ac_db.acknowledge_alert(alert_id)
+    return {"status": "ok"}
+
+
+@router.post("/alerts/ack-all")
+async def acknowledge_all_alerts():
+    """一键全部已读"""
+    from services import db as ac_db
+    conn = ac_db._get_conn()
+    conn.execute("UPDATE signal_alerts SET acknowledged = 1 WHERE acknowledged = 0")
+    conn.commit()
+    return {"status": "ok"}

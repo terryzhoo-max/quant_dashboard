@@ -82,6 +82,10 @@ def atomic_write_parquet(df, filepath):
             else:
                 # 最终失败也不崩溃 — 下次请求会重新拉取
                 print(f"[atomic_write] 写入失败(3次重试): {filepath}, 跳过缓存更新")
+        except RuntimeError as e:
+            # V21.2 fix: interpreter shutdown 期间 pyarrow 线程池已关闭
+            print(f"[atomic_write] RuntimeError (shutdown?): {e}, 跳过缓存更新")
+            break
         except Exception as e:
             if os.path.exists(tmp_path):
                 try:
