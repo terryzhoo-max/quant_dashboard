@@ -2035,3 +2035,43 @@
     font-weight: 500;
 }
 
+/* ═══════════════════════════════════════════════════
+   V20.0: Inline Style 外迁 (Batch D)
+   ═══════════════════════════════════════════════════ */
+
+/* 侧边栏版本徽章 (替代 inline style) */
+.badge-version {
+    background: rgba(139,92,246,0.15);
+    color: #a78bfa;
+    border-color: rgba(139,92,246,0.3);
+}
+
+/* JCS 副标题 label */
+.jcs-label-subtitle {
+    margin-top: 8px;
+    max-width: 200px;
+    text-align: center;
+    line-height: 1.4;
+}
+
+/* 区块副标题文本 (情景模拟器 / 风控SOP) */
+.section-subtitle {
+    font-size: 0.7rem;
+    color: #64748b;
+    font-weight: 400;
+}
+
+/* 绩效图表卡片间距 */
+.perf-chart-card-gap {
+    margin-top: 12px;
+}
+
+/* 日历底部图例条 */
+.calendar-legend {
+    margin-top: 12px;
+    font-size: 0.75rem;
+    color: #64748b;
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+}

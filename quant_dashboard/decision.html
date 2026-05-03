@@ -8,7 +8,7 @@
     <title>决策中枢 · AlphaCore</title>
     <link rel="stylesheet" href="./static/css/fonts.css?v=1">
     <link rel="stylesheet" href="./static/css/styles.css?v=12">
-    <link rel="stylesheet" href="./static/css/decision.css?v=31">
+    <link rel="stylesheet" href="./static/css/decision.css?v=32">
     <link rel="stylesheet" href="./static/css/visual_excellence.css?v=3">
     <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
@@ -56,7 +56,7 @@
             <a href="./decision.html" class="nav-item active" data-tooltip="决策中枢">
                 <span class="icon">🧠</span>
                 <span>决策中枢</span>
-                <span class="badge-beta" style="background:rgba(139,92,246,0.15);color:#a78bfa;border-color:rgba(139,92,246,0.3);">V19</span>
+                <span class="badge-beta badge-version">V20</span>
             </a>
 
             <div class="nav-group-title">研 究 审 计</div>
@@ -102,7 +102,7 @@
             <!-- 页面标题 -->
             <div class="decision-header">
                 <h2>🧠 科学辅助决策中枢</h2>
-                <span class="version-pill">V19.1</span>
+                <span class="version-pill">V20.0</span>
             </div>
 
             <!-- Tab 切换 -->
@@ -149,7 +149,7 @@
                         </div>
                         <div class="jcs-ring-label">联合置信度 (JCS)</div>
                         <div class="jcs-level-badge medium" id="jcs-badge">加载中</div>
-                        <div class="jcs-ring-label" id="jcs-label" style="margin-top:8px;max-width:200px;text-align:center;line-height:1.4;"></div>
+                        <div class="jcs-ring-label jcs-label-subtitle" id="jcs-label"></div>
                         <!-- JCS 分级规则参考 -->
                         <div class="jcs-rules">
                             <div class="jcs-rule"><span class="rule-dot high"></span> ≥70 可执行</div>
@@ -324,7 +324,7 @@
 
                 <!-- 情景模拟器 -->
                 <div class="scenario-section">
-                    <h3>🔮 情景模拟器 <span style="font-size:0.7rem;color:#64748b;font-weight:400;">— 纯数学推演，零API调用</span></h3>
+                    <h3>🔮 情景模拟器 <span class="section-subtitle">— 纯数学推演，零API调用</span></h3>
                     <div class="scenario-grid" id="scenario-grid">
                         <div class="loading-spinner">⏳ 加载情景库...</div>
                     </div>
@@ -381,7 +381,7 @@
 
                 <!-- V19.1: 风险管理 SOP 参考卡片 -->
                 <div class="risk-sop-card glass-decision">
-                    <h3 class="risk-sop-title">🛡️ 风险管理规则 <span style="font-size:0.7rem;color:#64748b;font-weight:400;">Risk Governance SOP</span></h3>
+                    <h3 class="risk-sop-title">🛡️ 风险管理规则 <span class="section-subtitle">Risk Governance SOP</span></h3>
                     <div class="risk-sop-grid">
                         <div class="risk-sop-section">
                             <div class="risk-sop-section-title">📊 绩效健康基准</div>
@@ -452,7 +452,7 @@
                         </div>
                     </div>
 
-                    <div class="perf-chart-card glass-decision" style="margin-top:12px;">
+                    <div class="perf-chart-card glass-decision perf-chart-card-gap">
                         <h4>📈 滚动 Sharpe (60日窗口)</h4>
                         <div id="perf-sharpe-chart" style="width:100%;height:200px;"></div>
                     </div>
@@ -482,7 +482,7 @@
                         <div class="loading-spinner">✨ 加载中...</div>
                     </div>
                 </div>
-                <div style="margin-top:12px;font-size:0.75rem;color:#64748b;display:flex;gap:16px;justify-content:center;">
+                <div class="calendar-legend">
                     <span>🟢 JCS ≥ 70</span>
                     <span>🟡 JCS 40-70</span>
                     <span>🔴 JCS < 40</span>
@@ -493,6 +493,6 @@
         </div>
     </main>
 
-    <script src="./static/js/decision.js?v=30"></script>
+    <script src="./static/js/decision.js?v=31"></script>
 </body>
 </html>

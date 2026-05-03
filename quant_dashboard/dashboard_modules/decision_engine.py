@@ -419,6 +419,9 @@ def simulate_scenario(scenario_id: str, current_snapshot: dict) -> dict:
         after["mr_regime"] = "CRASH" if after["vix_val"] >= 45 else "BEAR"
     if after.get("aiae_regime", 3) >= 5 and after.get("mr_regime") == "BULL":
         after["mr_regime"] = "RANGE"  # 过热牛市末端降级
+    # V20.0: ERP 极端低估 → MR 联动 (ERP>6.5% 意味着恐慌抛售, 技术面应降级)
+    if after.get("erp_val", 4.5) >= 6.5 and after.get("mr_regime") == "BULL":
+        after["mr_regime"] = "RANGE"  # 估值极端通常伴随技术面修正
 
     # 重算 hub composite
     after["hub_composite"] = _recalc_hub_composite(after)
@@ -548,12 +551,20 @@ def _build_snapshot_from_cache() -> dict:
         # V17.1: 快照完整性日志
         _real_count = sum(1 for k in ["erp_score", "vix_score", "hub_composite"]
                          if snapshot.get(k) != 50)
-        if _real_count == 0 and not hub_factors:
+        _is_cold = _real_count == 0 and not hub_factors
+        if _is_cold:
             logger.warning("快照警告: hub_factors 为空, 可能缓存未预热")
         else:
             logger.debug("快照组装: erp=%.1f vix_s=%.1f comp=%.1f pos=%s",
                          snapshot.get("erp_score", 0), snapshot.get("vix_score", 0),
                          snapshot.get("hub_composite", 0), snapshot.get("suggested_position"))
+
+        # V20.0: 数据质量透传 — 前端据此决定是否显示冷启动提示
+        snapshot["_data_quality"] = {
+            "real_sources": _real_count,
+            "total_expected": 4,
+            "is_cold_start": _is_cold,
+        }
 
     # AIAE 上下文 (V17.5: 扩展完整字段供仪表卡片使用)
     aiae_ctx = cache_manager.get_json("aiae_ctx")

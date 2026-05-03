@@ -1,14 +1,37 @@
 /**
- * AlphaCore V17.1 · 决策中枢 JS
+ * AlphaCore V20.0 · 决策中枢 JS
  * ================================
  * - JCS 环形仪表盘 (Canvas)
  * - 矛盾矩阵渲染
  * - 执行建议卡片 (V17.0)
  * - 情景模拟器交互
  * - 决策时间线图 (ECharts) + AIAE Regime 色带
+ * V20.0: ECharts 统一管理器 + 安全格式化 + resize 统一
  */
 
 const API_BASE = '/api/v1/decision';
+
+// ═══════════════════════════════════════════════════
+//  V20.0: 生产级基础设施
+// ═══════════════════════════════════════════════════
+
+/** ECharts 统一实例管理器: 防内存泄漏, 自动 dispose 旧实例 */
+const _chartInstances = {};
+function _getChart(domId) {
+    const el = document.getElementById(domId);
+    if (!el || typeof echarts === 'undefined') return null;
+    if (_chartInstances[domId]) _chartInstances[domId].dispose();
+    const chart = echarts.init(el);
+    _chartInstances[domId] = chart;
+    return chart;
+}
+
+/** 安全数值格式化: 防止 null/undefined.toFixed() 崩溃 */
+const _fmt = (v, d = 1, fallback = '--') =>
+    (v != null && !isNaN(v)) ? Number(v).toFixed(d) : fallback;
+
+/** risk-matrix 响应缓存 (Tab1 风控护栏 + Tab3 风险矩阵共用) */
+let _riskMatrixCache = null;
 
 // ═══════════════════════════════════════════════════
 //  Tab 切换
@@ -505,7 +528,8 @@ function renderTimelineChart(data) {
     const chartEl = document.getElementById('timeline-chart');
     if (!chartEl || typeof echarts === 'undefined') return;
 
-    const chart = echarts.init(chartEl);
+    const chart = _getChart('timeline-chart');
+    if (!chart) return;
     const dates = data.map(d => d.date);
     const jcsData = data.map(d => d.jcs_score);
     const posData = data.map(d => d.suggested_position);
@@ -562,10 +586,7 @@ function renderTimelineChart(data) {
         ],
     });
 
-    // V19.3: 具名函数避免 resize 监听器累积
-    if (window._acTimelineResize) window.removeEventListener('resize', window._acTimelineResize);
-    window._acTimelineResize = () => chart.resize();
-    window.addEventListener('resize', window._acTimelineResize);
+    // V20.0: resize 由全局 _chartInstances handler 统一管理
 }
 
 function renderTimelineList(data) {
@@ -586,11 +607,11 @@ function renderTimelineList(data) {
         return `<div class="timeline-item">
             <span class="timeline-date">${(d.date || '').slice(5)}</span>
             <span class="timeline-val">R${d.aiae_regime ?? '-'}</span>
-            <span class="timeline-val">${d.erp_score != null ? d.erp_score.toFixed(0) : '-'}</span>
-            <span class="timeline-val">${d.vix_val != null ? d.vix_val.toFixed(1) : '-'}</span>
+            <span class="timeline-val">${_fmt(d.erp_score, 0, '-')}</span>
+            <span class="timeline-val">${_fmt(d.vix_val, 1, '-')}</span>
             <span class="timeline-val" style="color:${mrC};font-weight:600;font-size:0.72rem">${mr}</span>
-            <span class="timeline-val timeline-jcs" style="${jcsClass}">${d.jcs_score != null ? d.jcs_score.toFixed(1) : '-'}</span>
-            <span class="timeline-val">${d.suggested_position != null ? d.suggested_position.toFixed(0) + '%' : '-'}</span>
+            <span class="timeline-val timeline-jcs" style="${jcsClass}">${_fmt(d.jcs_score, 1, '-')}</span>
+            <span class="timeline-val">${d.suggested_position != null ? _fmt(d.suggested_position, 0) + '%' : '-'}</span>
         </div>`;
     });
 
@@ -606,11 +627,11 @@ let riskLoaded = false;
 async function loadRiskMatrix() {
     if (riskLoaded) return;
     try {
-        const [riskResp, accResp] = await Promise.all([
-            AC.secureFetch(`${API_BASE}/risk-matrix`),
+        // V20.0: 复用缓存层, 消灭与 loadRiskGuardrail 的重复请求
+        const [riskData, accResp] = await Promise.all([
+            _fetchRiskMatrix(),
             AC.secureFetch(`${API_BASE}/accuracy`),
         ]);
-        const riskData = await riskResp.json();
         const accData = await accResp.json();
 
         if (riskData.status === 'success') {
@@ -789,18 +810,21 @@ function renderAccuracy(data) {
 //  Phase 2: 复盘日历 (Tab 4)
 // ═══════════════════════════════════════════════════
 
-let calendarLoaded = false;
+// V20.0: key-based guard 替代 boolean, 修复切换月份后回到 Tab4 不加载的 bug
+let _calendarLoadedKey = '';
 let calendarYear, calendarMonth;
 
 async function loadCalendar() {
     const now = new Date();
     if (!calendarYear) { calendarYear = now.getFullYear(); calendarMonth = now.getMonth() + 1; }
+    const key = `${calendarYear}-${calendarMonth}`;
+    if (key === _calendarLoadedKey) return;
     try {
         const resp = await AC.secureFetch(`${API_BASE}/calendar?year=${calendarYear}&month=${calendarMonth}`);
         const data = await resp.json();
         if (data.status === 'success') {
             renderCalendar(data.data, calendarYear, calendarMonth);
-            calendarLoaded = true;
+            _calendarLoadedKey = key;
         }
     } catch (e) { console.error('Calendar load error:', e); }
 }
@@ -809,7 +833,7 @@ function changeMonth(delta) {
     calendarMonth += delta;
     if (calendarMonth > 12) { calendarMonth = 1; calendarYear++; }
     if (calendarMonth < 1) { calendarMonth = 12; calendarYear--; }
-    calendarLoaded = false;
+    // V20.0: key-based guard 自动检测月份变化, 无需手动重置
     loadCalendar();
 }
 
@@ -835,7 +859,7 @@ function renderCalendar(data, year, month) {
         const entry = dataMap[dateStr];
         if (entry) {
             const jcs = entry.jcs_score != null ? entry.jcs_score : 50;
-            const jcsStr = jcs.toFixed(1);
+            const jcsStr = _fmt(jcs, 1, '50.0');
             const c = jcsToColor(jcs);
             const varColor = `${c.r}, ${c.g}, ${c.b}`;
             const fg = `rgb(${varColor})`;
@@ -1035,13 +1059,20 @@ function renderGlobalTemperature(gt) {
 
 async function loadRiskGuardrail() {
     try {
-        const resp = await AC.secureFetch(`${API_BASE}/risk-matrix`);
-        const data = await resp.json();
+        const data = await _fetchRiskMatrix();
         if (data.status !== 'success') return;
         renderTailRiskBrief(data);
     } catch (e) {
         console.warn('Risk guardrail load error:', e);
     }
+}
+
+/** V20.0: risk-matrix 缓存层 — 消灭 Tab1 + Tab3 重复请求 */
+async function _fetchRiskMatrix() {
+    if (_riskMatrixCache) return _riskMatrixCache;
+    const resp = await AC.secureFetch(`${API_BASE}/risk-matrix`);
+    _riskMatrixCache = await resp.json();
+    return _riskMatrixCache;
 }
 
 function renderTailRiskBrief(data) {
@@ -1095,6 +1126,7 @@ function renderTailRiskBrief(data) {
 // ═══════════════════════════════════════════════════
 
 async function initDecisionHub() {
+    _riskMatrixCache = null;  // V20.0: 刷新时清除缓存
     initTabs();
     initSOPToggle();  // V19.3: SOP 折叠事件委托
 
@@ -1103,7 +1135,11 @@ async function initDecisionHub() {
         _fetchWithDegradation('swing-guard-grid', fetchSwingGuard, '波段守卫');
         _fetchWithDegradation('risk-guardrail', loadRiskGuardrail, '风控护栏');
 
-        const resp = await AC.secureFetch(`${API_BASE}/hub`);
+        // V20.0: Hub 主 API 超时保护 (15s) — 冷启动时防止 UI 永远 loading
+        const _hubCtrl = new AbortController();
+        const _hubTimeout = setTimeout(() => _hubCtrl.abort(), 15000);
+        const resp = await AC.secureFetch(`${API_BASE}/hub`, { signal: _hubCtrl.signal });
+        clearTimeout(_hubTimeout);
         const data = await resp.json();
 
         if (data.status === 'success') {
@@ -1111,6 +1147,16 @@ async function initDecisionHub() {
 
             // ① 警示系统 (最高优先级，顶部)
             renderAlerts(data.alerts || []);
+
+            // V20.0: 冷启动透明度 — JCS 基于默认值时显示警告
+            if (data.snapshot?._data_quality?.is_cold_start) {
+                const acEl = document.getElementById('alert-container');
+                if (acEl) acEl.innerHTML = `<div class="alert-card alert-caution">
+                    <div class="alert-header"><span class="alert-icon">⚡</span><span class="alert-title">数据预热中</span></div>
+                    <div class="alert-detail">缓存尚未完成预热，当前 JCS 基于默认值计算。请等待 1-2 分钟后刷新。</div>
+                    <span class="alert-rule">规则: 冷启动期间不依据 JCS 执行任何操作</span>
+                </div>` + acEl.innerHTML;
+            }
 
             // ② AIAE 宏观仓位管控 (决策前置 — 先看环境)
             if (data.snapshot) renderAIAEHub(data.snapshot);
@@ -1142,7 +1188,15 @@ async function initDecisionHub() {
             document.getElementById('jcs-value').textContent = '--';
         }
     } catch (e) {
-        console.error('Decision hub load error:', e);
+        if (e.name === 'AbortError') {
+            console.warn('Decision hub request timed out (15s)');
+            const jcsEl = document.getElementById('jcs-value');
+            if (jcsEl) jcsEl.textContent = '--';
+            const csEl = document.getElementById('conflict-summary');
+            if (csEl) { csEl.className = 'conflict-summary warn'; csEl.textContent = '⚠️ 数据加载超时，请点击顶部「刷新决策数据」重试'; }
+        } else {
+            console.error('Decision hub load error:', e);
+        }
         document.querySelector('.loading-spinner')?.remove();
     }
 }
@@ -1239,10 +1293,7 @@ function switchBenchmark(key) {
     // 更新指标条
     renderPerfMetrics(bm.metrics, bm.drawdown);
     // 更新图表 (需要先 dispose 再重建, 否则 ECharts 复用旧实例)
-    ['perf-heatmap-chart', 'perf-drawdown-chart', 'perf-sharpe-chart'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) { const inst = echarts.getInstanceByDom(el); if (inst) inst.dispose(); }
-    });
+    // V20.0: 通过 _getChart 自动 dispose, 无需手动清理
     renderPerfHeatmap(bm.monthly_heatmap);
     renderPerfDrawdown(bm.drawdown);
     renderPerfSharpe(bm.rolling_sharpe);
@@ -1288,7 +1339,8 @@ function renderPerfMetrics(m, dd) {
 function renderPerfHeatmap(heatmapData) {
     const el = document.getElementById('perf-heatmap-chart');
     if (!el || !heatmapData || heatmapData.length === 0) return;
-    const chart = echarts.init(el);
+    const chart = _getChart('perf-heatmap-chart');
+    if (!chart) return;
 
     // 提取年份和月份
     const years = [...new Set(heatmapData.map(d => d[0]))].sort();
@@ -1335,16 +1387,14 @@ function renderPerfHeatmap(heatmapData) {
             emphasis: { itemStyle: { borderColor: '#a78bfa', borderWidth: 2 } }
         }]
     });
-    // V19.3: 具名函数避免 resize 监听器累积
-    if (window._acHeatmapResize) window.removeEventListener('resize', window._acHeatmapResize);
-    window._acHeatmapResize = () => chart.resize();
-    window.addEventListener('resize', window._acHeatmapResize);
+    // V20.0: resize 由全局 _chartInstances handler 统一管理
 }
 
 function renderPerfDrawdown(dd) {
     const el = document.getElementById('perf-drawdown-chart');
     if (!el || !dd || !dd.series || dd.series.length === 0) return;
-    const chart = echarts.init(el);
+    const chart = _getChart('perf-drawdown-chart');
+    if (!chart) return;
 
     chart.setOption({
         tooltip: {
@@ -1389,15 +1439,14 @@ function renderPerfDrawdown(dd) {
             }
         }]
     });
-    if (window._acDrawdownResize) window.removeEventListener('resize', window._acDrawdownResize);
-    window._acDrawdownResize = () => chart.resize();
-    window.addEventListener('resize', window._acDrawdownResize);
+    // V20.0: resize 由全局 _chartInstances handler 统一管理
 }
 
 function renderPerfSharpe(sharpeData) {
     const el = document.getElementById('perf-sharpe-chart');
     if (!el || !sharpeData || sharpeData.length === 0) return;
-    const chart = echarts.init(el);
+    const chart = _getChart('perf-sharpe-chart');
+    if (!chart) return;
 
     chart.setOption({
         tooltip: {
@@ -1443,9 +1492,7 @@ function renderPerfSharpe(sharpeData) {
             }
         }]
     });
-    if (window._acSharpeResize) window.removeEventListener('resize', window._acSharpeResize);
-    window._acSharpeResize = () => chart.resize();
-    window.addEventListener('resize', window._acSharpeResize);
+    // V20.0: resize 由全局 _chartInstances handler 统一管理
 }
 
 // ═══════════════════════════════════════════════════
@@ -1588,6 +1635,21 @@ function renderSwingGuard(data) {
     grid.innerHTML = html;
 }
 
+// ═══════════════════════════════════════════════════
+//  V20.0: 全局生命周期管理
+// ═══════════════════════════════════════════════════
+
+// 统一 resize handler (替代 6 处碎片化监听器)
+window.addEventListener('resize', () => {
+    Object.values(_chartInstances).forEach(c => c && !c.isDisposed() && c.resize());
+    Object.values(_globalTempCharts).forEach(c => c && !c.isDisposed() && c.resize());
+});
+
+// 页面卸载时统一销毁所有 ECharts 实例
+window.addEventListener('beforeunload', () => {
+    Object.values(_chartInstances).forEach(c => c && c.dispose());
+    Object.values(_globalTempCharts).forEach(c => c && c.dispose());
+});
+
 // 启动
 document.addEventListener('DOMContentLoaded', initDecisionHub);
-
