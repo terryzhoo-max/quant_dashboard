@@ -68,15 +68,44 @@ async def lifespan(app: FastAPI):
     # Batch 11: 记录启动时间 (用于 uptime 计算)
     app.state.startup_time = time.time()
 
-    # ── Startup Warmup (Threaded) ──
-    threading.Thread(target=warmup_erp_cache, daemon=True).start()
-    threading.Thread(target=warmup_rates_cache, daemon=True).start()
-    threading.Thread(target=lambda: get_aiae_engine().generate_report(), daemon=True).start()
-    threading.Thread(target=warmup_dashboard_cache, daemon=True).start()
-    threading.Thread(target=warmup_global_aiae_cache, daemon=True).start()
-    threading.Thread(target=warmup_hk_erp_cache, daemon=True).start()
-    threading.Thread(target=warmup_hk_aiae_cache, daemon=True).start()
-    threading.Thread(target=warmup_swing_guard, daemon=True).start()
+    # ── V21.2 Fix: 分层启动预热 (防止 shutdown 竞态) ──
+    # 使用受控线程池替代 8 个裸 daemon Thread
+    import atexit
+    _startup_pool = _SchedPoolExecutor(max_workers=4, thread_name_prefix="warmup")
+    app.state._startup_pool = _startup_pool
+
+    def _safe_warmup(fn, name):
+        """安全包装: 捕获 shutdown 期间的 RuntimeError"""
+        try:
+            fn()
+        except RuntimeError as e:
+            if "shutdown" in str(e).lower() or "interpreter" in str(e).lower():
+                _logger.debug("预热跳过 [%s]: interpreter shutting down", name)
+            else:
+                raise
+        except Exception as e:
+            _logger.warning("预热异常 [%s]: %s", name, e)
+
+    # Phase 1: 核心预热 (立即启动)
+    _startup_pool.submit(_safe_warmup, warmup_erp_cache, "ERP")
+    _startup_pool.submit(_safe_warmup, warmup_rates_cache, "Rates")
+    _startup_pool.submit(_safe_warmup, lambda: get_aiae_engine().generate_report(), "AIAE")
+    _startup_pool.submit(_safe_warmup, warmup_dashboard_cache, "Dashboard")
+
+    # Phase 2: 非核心预热 (延迟 3 秒, 降低并发冲突)
+    def _phase2():
+        time.sleep(3)
+        for fn, name in [
+            (warmup_global_aiae_cache, "Global_AIAE"),
+            (warmup_hk_erp_cache, "HK_ERP"),
+            (warmup_hk_aiae_cache, "HK_AIAE"),
+            (warmup_swing_guard, "SwingGuard"),
+        ]:
+            try:
+                _startup_pool.submit(_safe_warmup, fn, name)
+            except RuntimeError:
+                break  # Pool 已 shutdown, 放弃后续任务
+    threading.Thread(target=_phase2, daemon=True).start()
 
     # ── Init APScheduler ──
     scheduler = BackgroundScheduler(
@@ -111,7 +140,8 @@ async def lifespan(app: FastAPI):
 
     _logger.info("AlphaCore 服务启动完成 · APScheduler(Redis就绪) 已激活全自动数据流水线")
     yield
-    # ── Shutdown ──
+    # ── Shutdown: 先关线程池, 再关调度器 ──
+    _startup_pool.shutdown(wait=False)
     scheduler.shutdown()
     _logger.info("AlphaCore 服务关闭，Scheduler 已终止")
 

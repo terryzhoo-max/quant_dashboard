@@ -482,5 +482,93 @@
         "total": 0.0,
         "success": true,
         "message": "从券商TXT文件覆盖导入 21 只持仓，可用资金 ¥937.41"
+    },
+    {
+        "timestamp": "2026-05-04 00:11:39",
+        "action": "sell",
+        "ts_code": "513130.SH",
+        "name": "恒生科技ETF华泰柏瑞",
+        "amount": 52600,
+        "price": 0.975,
+        "total": 51285.0,
+        "success": true,
+        "message": "卖出成功"
+    },
+    {
+        "timestamp": "2026-05-04 00:30:13",
+        "action": "sell",
+        "ts_code": "002920.SZ",
+        "name": "002920.SZ",
+        "amount": 200,
+        "price": 118.45,
+        "total": 23690.0,
+        "success": false,
+        "message": "未持有该股票"
+    },
+    {
+        "timestamp": "2026-05-04 00:30:50",
+        "action": "sell",
+        "ts_code": "159995.SZ",
+        "name": "芯片ETF华夏",
+        "amount": 20028100,
+        "price": 118.451025,
+        "total": 2372348973.8,
+        "success": false,
+        "message": "持仓不足"
+    },
+    {
+        "timestamp": "2026-05-04 00:31:36",
+        "action": "sell",
+        "ts_code": "002920.SZ",
+        "name": "002920.SZ",
+        "amount": 200,
+        "price": 118.45,
+        "total": 23690.0,
+        "success": false,
+        "message": "未持有该股票"
+    },
+    {
+        "timestamp": "2026-05-04 00:32:44",
+        "action": "sell",
+        "ts_code": "159995.SZ",
+        "name": "芯片ETF华夏",
+        "amount": 28100,
+        "price": 1.025,
+        "total": 28802.5,
+        "success": true,
+        "message": "卖出成功"
+    },
+    {
+        "timestamp": "2026-05-04 00:36:37",
+        "action": "sell",
+        "ts_code": "513130.SH",
+        "name": "恒生科技ETF华泰柏瑞",
+        "amount": 441700,
+        "price": 0.61,
+        "total": 269437.0,
+        "success": true,
+        "message": "卖出成功"
+    },
+    {
+        "timestamp": "2026-05-04 00:37:52",
+        "action": "sell",
+        "ts_code": "159995.SZ",
+        "name": "芯片ETF华夏",
+        "amount": 50400,
+        "price": 2.07,
+        "total": 104328.0,
+        "success": true,
+        "message": "卖出成功"
+    },
+    {
+        "timestamp": "2026-05-04 02:24:38",
+        "action": "import",
+        "ts_code": "SYSTEM",
+        "name": "TXT导入 21 只持仓",
+        "amount": 21,
+        "price": 0,
+        "total": 0.0,
+        "success": true,
+        "message": "从券商TXT文件覆盖导入 21 只持仓，可用资金 ¥937.41"
     }
 ]

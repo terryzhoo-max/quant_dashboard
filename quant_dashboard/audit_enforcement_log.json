@@ -3,42 +3,6 @@
     "action": "enforcer_skipped",
     "reason": "执行器总开关已关闭",
     "status": "skipped",
-    "timestamp": "2026-04-14 21:15:51"
-  },
-  {
-    "action": "enforcer_skipped",
-    "reason": "执行器总开关已关闭",
-    "status": "skipped",
-    "timestamp": "2026-04-14 21:16:13"
-  },
-  {
-    "action": "enforcer_skipped",
-    "reason": "执行器总开关已关闭",
-    "status": "skipped",
-    "timestamp": "2026-04-14 22:34:37"
-  },
-  {
-    "action": "enforcer_skipped",
-    "reason": "执行器总开关已关闭",
-    "status": "skipped",
-    "timestamp": "2026-04-15 00:13:13"
-  },
-  {
-    "action": "enforcer_skipped",
-    "reason": "执行器总开关已关闭",
-    "status": "skipped",
-    "timestamp": "2026-04-15 01:00:13"
-  },
-  {
-    "action": "enforcer_skipped",
-    "reason": "执行器总开关已关闭",
-    "status": "skipped",
-    "timestamp": "2026-04-15 01:23:56"
-  },
-  {
-    "action": "enforcer_skipped",
-    "reason": "执行器总开关已关闭",
-    "status": "skipped",
     "timestamp": "2026-04-15 01:34:40"
   },
   {
@@ -1198,5 +1162,41 @@
     "reason": "执行器总开关已关闭",
     "status": "skipped",
     "timestamp": "2026-05-03 20:17:10"
+  },
+  {
+    "action": "enforcer_skipped",
+    "reason": "执行器总开关已关闭",
+    "status": "skipped",
+    "timestamp": "2026-05-04 00:07:26"
+  },
+  {
+    "action": "enforcer_skipped",
+    "reason": "执行器总开关已关闭",
+    "status": "skipped",
+    "timestamp": "2026-05-04 00:09:38"
+  },
+  {
+    "action": "enforcer_skipped",
+    "reason": "执行器总开关已关闭",
+    "status": "skipped",
+    "timestamp": "2026-05-04 00:34:23"
+  },
+  {
+    "action": "enforcer_skipped",
+    "reason": "执行器总开关已关闭",
+    "status": "skipped",
+    "timestamp": "2026-05-04 02:24:44"
+  },
+  {
+    "action": "enforcer_skipped",
+    "reason": "执行器总开关已关闭",
+    "status": "skipped",
+    "timestamp": "2026-05-04 02:25:03"
+  },
+  {
+    "action": "enforcer_skipped",
+    "reason": "执行器总开关已关闭",
+    "status": "skipped",
+    "timestamp": "2026-05-04 08:12:14"
   }
 ]

@@ -195,10 +195,10 @@ _JCS_WEIGHTS = {
 
 def _signal_direction(snapshot: dict) -> dict:
     """将各引擎状态映射为方向: +1(看多), 0(中性), -1(看空)"""
-    aiae_r = snapshot.get("aiae_regime", 3)
-    erp_s = snapshot.get("erp_score", 50)
-    vix_v = snapshot.get("vix_val", 20)
-    mr_r = snapshot.get("mr_regime", "RANGE")
+    aiae_r = snapshot.get("aiae_regime") or 3        # None → 中性
+    erp_s = snapshot.get("erp_score") or 50          # None → 中性
+    vix_v = snapshot.get("vix_val") or 20            # None → 中性
+    mr_r = snapshot.get("mr_regime") or "RANGE"      # None → 中性
 
     return {
         "aiae": 1 if aiae_r <= 2 else (-1 if aiae_r >= 4 else 0),
@@ -929,6 +929,79 @@ def get_hub_data() -> dict:
     # V19.0: 全球市场温度
     global_temp = _build_global_temperature()
 
+    # V21.2: 数据新鲜度元数据 — 前端据此显示各引擎最后更新时间
+    from services.cache_service import cache_manager
+    _now_ts = datetime.now().timestamp()
+    _freshness = {}
+
+    # ── 各引擎缓存状态 + 数据日期提取 ──
+    _engine_defs = [
+        ("dashboard", "dashboard_data", "Dashboard"),
+        ("aiae", "aiae_ctx", "AIAE"),
+        ("strategy", "strategy_results", "策略引擎"),
+        ("global", "aiae_global_report_data", "全球对比"),
+    ]
+    _dates_seen = []
+    for _fk, _ck, _label in _engine_defs:
+        _cached = cache_manager.get_json(_ck)
+        if _cached:
+            # 提取数据日期 (各引擎存储位置不同)
+            _dd = None
+            if _fk == "dashboard":
+                # dashboard_data 不含 trade_date, 但内嵌 ERP 信号有日期
+                _erp_snap = (_cached.get("data", {}).get("macro_cards", {})
+                             .get("erp", {}))
+                # 从 erp_pct 值存在推断数据有效, 日期从 strategy 补
+            elif _fk == "aiae":
+                _dd = _cached.get("trade_date") or _cached.get("date")
+            elif _fk == "strategy":
+                # strategy_results.erp_timing.current_snapshot.trade_date
+                _erp_t = _cached.get("erp_timing", {})
+                if isinstance(_erp_t, dict):
+                    _dd = (_erp_t.get("data", _erp_t).get("current_snapshot", {})
+                           .get("trade_date"))
+                if not _dd:
+                    _mr = _cached.get("mr", {})
+                    if isinstance(_mr, dict):
+                        _dd = (_mr.get("data", {}).get("market_overview", {})
+                               .get("trade_date"))
+            elif _fk == "global":
+                _dd = (_cached.get("generated_at", "")[:10]
+                       if isinstance(_cached.get("generated_at"), str) else None)
+
+            _freshness[_fk] = {"label": _label, "status": "ok", "age_min": 0, "data_date": _dd}
+            if _dd:
+                _dates_seen.append(_dd)
+        else:
+            _freshness[_fk] = {"label": _label, "status": "stale", "age_min": -1, "data_date": None}
+
+    # 权威日期源: ERP Timing 引擎的 current_snapshot.trade_date (数据交易日)
+    if not _dates_seen:
+        try:
+            from erp_timing_engine import get_erp_engine
+            _erp_sig = get_erp_engine().compute_signal()
+            _erp_td = _erp_sig.get("current_snapshot", {}).get("trade_date")
+            if _erp_td:
+                _erp_td = str(_erp_td)[:10]
+                _dates_seen.append(_erp_td)
+                if "strategy" in _freshness:
+                    _freshness["strategy"]["data_date"] = _erp_td
+        except Exception:
+            pass
+
+    # ── 跨引擎日期一致性检查 ──
+    _unique_dates = list(set(_dates_seen))
+    _date_consistent = len(_unique_dates) <= 1
+    _primary_date = _unique_dates[0] if _unique_dates else None
+
+    # 用 last_update 时间戳计算各引擎数据年龄
+    _last_upd = cache_manager.get_json("last_update")
+    if _last_upd and isinstance(_last_upd, (int, float)):
+        _age = int((_now_ts - _last_upd) / 60)
+        for _fk2 in _freshness:
+            if _freshness[_fk2]["status"] == "ok":
+                _freshness[_fk2]["age_min"] = _age
+
     return {
         "status": "success",
         "timestamp": datetime.now().isoformat(),
@@ -940,6 +1013,9 @@ def get_hub_data() -> dict:
         "scenarios": {k: {"name": v["name"], "desc": v["desc"], "icon": v["icon"], "severity": v["severity"]}
                       for k, v in SCENARIOS.items()},
         "global_temperature": global_temp,
+        "data_freshness": _freshness,
+        "data_date": _primary_date,
+        "date_consistent": _date_consistent,
     }
 
 

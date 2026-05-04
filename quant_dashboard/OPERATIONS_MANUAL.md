@@ -1,6 +1,6 @@
 # AlphaCore 量化终端 · 部署与运维手册
 
-> **版本**: V15.1 · 最后更新: 2026-04-25
+> **版本**: V21.2 · 最后更新: 2026-05-04
 > **服务器**: 阿里云轻量应用服务器 · `iZrj9hm8oe9aow6jr63lngZ`
 > **技术栈**: Python 3.12 + FastAPI + Redis + Docker + SQLite
 
@@ -53,10 +53,13 @@
 |:-----|:-----|:-----|
 | **FastAPI App** | 量化终端主服务 (1 Worker, 2GB 内存限制) | 8000 |
 | **Redis 7** | L1 缓存层 (256MB LRU, RDB 持久化) | 6379 (内部) |
-| **SQLite** | 交易记录 + AIAE 历史 + ERP 日志 (WAL 模式) | 文件存储 |
-| **APScheduler** | 7 个定时任务 (盘中/收盘/早间/FRED/AIAE) | 内嵌 |
+| **SQLite** | 交易记录 + AIAE 历史 + ERP 日志 + 信号预警 (WAL 模式) | 文件存储 |
+| **APScheduler** | 10 个定时任务 (盘中/收盘/早间/FRED/AIAE/波段/日报/预警) | 内嵌 |
 | **Tushare Pro** | A股数据源 (有频率限制: 20次/分钟) | 外部 API |
 | **FRED API** | 美国经济数据 (利率/VIX) | 外部 API |
+| **Finnhub** | 美股/日股实时数据 | 外部 API |
+| **Server酱** | 微信推送通道 (V21.2 信号预警) | 外部 API |
+| **QQ SMTP** | 邮件推送通道 (V21.2 信号预警) | 外部 SMTP |
 
 ---
 
@@ -328,12 +331,15 @@ CORS_ORIGINS=http://127.0.0.1:8000,http://localhost:8000
 | ID | 触发时间 | 功能 |
 |:---|:---------|:-----|
 | `hot_data` | 每 2 分钟 | 盘中热点数据刷新 |
-| `daily_warmup` | 周一至五 15:35 | 收盘预热 (ERP+AIAE+因子+Dashboard+组合快照) |
-| `morning_warmup` | 周一至五 08:30 | 盘前数据补偿 |
+| `daily_warmup` | 周一至五 15:35 | 收盘预热 (ERP+AIAE+因子+Dashboard+组合快照+信号扫描) |
+| `morning_warmup` | 周一至五 08:30 | 盘前数据补偿 + 信号扫描 |
 | `fred_daily` | 周一至五 18:30 | FRED 利率数据刷新 |
 | `us_aiae` | 周二至六 06:30 | 美股 AIAE 预热 + 全球对比更新 |
 | `jp_aiae` | 周一至五 15:30 | 日股 AIAE 预热 + 全球对比更新 |
 | `aaii_crawl` | 每周五 09:00 | AAII 情绪指数爬取 |
+| `swing_guard` | 周一至五 15:40 | 波段守卫 7 大 ETF 信号刷新 |
+| `daily_report` | 周一至五 16:35 | V21.0 投委会日报自动生成 |
+| `alert_scan` | 每 10 分钟 | V21.2 信号预警扫描 (JCS/VIX 三通道推送) |
 
 > 💡 查看调度器状态: `curl -s http://localhost:8000/health | python3 -c "import sys,json; d=json.load(sys.stdin); print(json.dumps(d['scheduler'], indent=2))"`
 
@@ -622,10 +628,12 @@ du -sh /root/quant_dashboard/quant_dashboard/data_lake/*
 | 措施 | 说明 |
 |:-----|:-----|
 | **API Key 认证** | 所有 POST/PUT/DELETE 必须携带 `X-API-Key` Header |
+| **预警端点白名单** | `/api/v1/decision/alerts` 免认证 (前端 ack 操作) |
 | **CORS 白名单** | 仅允许配置的域名跨域访问 |
 | **GZip 压缩** | 减少传输体积，提高响应速度 |
 | **静态文件拦截** | `.py`/`.env` 等敏感文件返回 404 |
 | **DNS 配置** | 容器使用 8.8.8.8 + 223.5.5.5 避免 DNS 污染 |
+| **推送凭据隔离** | Server酱 SendKey + SMTP 密码存于 `config/alert_config.json` |
 
 ### 11.2 严禁入库的文件
 
@@ -701,4 +709,40 @@ chmod +x /root/update.sh
 
 ---
 
-> 📌 **维护者备忘**: 本手册对应 Git commit `f8d9cec`。如果架构发生重大变更（如迁移到 K8s、切换数据库等），请同步更新此文档。
+## 12. V21.0-V21.2 新增功能速查
+
+| 版本 | 功能 | 配置 |
+|:-----|:-----|:-----|
+| V20.0 | 相关性热力图 + MCTR 风险贡献 | 自动 (风险矩阵 Tab) |
+| V21.0 | 投委会日报自动生成 (16:35) | 自动 (APScheduler) |
+| V21.2 | 三通道信号预警 (浏览器/微信/邮件) | `config/alert_config.json` |
+| V21.2 | 数据新鲜度状态栏 | 自动 (决策中枢标题下方) |
+| V21.2 | 启动竞态修复 (ThreadPoolExecutor 分层启动) | 自动 |
+
+### 预警阈值配置
+
+| 规则 | 触发条件 | 级别 | Cooldown |
+|:-----|:---------|:-----|:---------|
+| JCS 低信心 | JCS < 25 | ⚠️ Warning | 8 小时 |
+| VIX 恐慌 | VIX > 30 | 🚨 Warning | 4 小时 |
+| VIX 极端 | VIX > 35 | 🛑 Critical | 2 小时 |
+
+### 推送通道配置 (`config/alert_config.json`)
+
+```json
+{
+  "wechat": { "enabled": true, "send_key": "SCTxxxxx" },
+  "email": {
+    "enabled": true,
+    "smtp_server": "smtp.qq.com",
+    "smtp_port": 465,
+    "sender": "magas@qq.com",
+    "password": "<SMTP授权码>",
+    "recipients": ["magas@qq.com"]
+  }
+}
+```
+
+---
+
+> 📌 **维护者备忘**: 本手册对应 V21.2。如果架构发生重大变更（如迁移到 K8s、切换数据库等），请同步更新此文档。

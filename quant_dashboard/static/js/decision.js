@@ -1150,6 +1150,9 @@ async function initDecisionHub() {
             // ① 警示系统 (最高优先级，顶部)
             renderAlerts(data.alerts || []);
 
+            // V21.2: 数据新鲜度状态栏
+            if (data.data_freshness) renderFreshnessBar(data.data_freshness, data.timestamp, data.data_date, data.date_consistent);
+
             // V20.0: 冷启动透明度 — JCS 基于默认值时显示警告
             if (data.snapshot?._data_quality?.is_cold_start) {
                 const acEl = document.getElementById('alert-container');
@@ -2049,6 +2052,30 @@ function showAlertToast(alert) {
         toast.classList.remove('alert-toast-show');
         setTimeout(() => toast.remove(), 400);
     }, 8000);
+}
+
+// ═══════════════════════════════════════════════════════
+//  V21.2: 数据新鲜度状态栏
+// ═══════════════════════════════════════════════════════
+function renderFreshnessBar(freshness, timestamp, dataDate, dateConsistent) {
+    const bar = document.getElementById('data-freshness-bar');
+    if (!bar) return;
+
+    const time = timestamp ? new Date(timestamp).toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'}) : '--:--';
+    const pills = Object.entries(freshness).map(([key, f]) => {
+        const isOk = f.status === 'ok';
+        const icon = isOk ? '✅' : '⚠️';
+        const cls = isOk ? 'fresh-ok' : 'fresh-stale';
+        const ageStr = isOk && f.age_min >= 0 ? `${f.age_min}m` : '—';
+        const dateInfo = f.data_date ? ` [${f.data_date}]` : '';
+        return `<span class="fresh-pill ${cls}" title="${f.label}: ${isOk ? ageStr + ' ago' : '数据缺失'}${dateInfo}">${icon} ${f.label}</span>`;
+    }).join('');
+
+    // 交易日标识 + 跨引擎日期一致性警告
+    const dateBadge = dataDate ? `<span class="fresh-date">📅 ${dataDate}</span>` : '';
+    const warnBadge = dateConsistent === false ? '<span class="fresh-pill fresh-stale" title="各引擎数据日期不一致">⚠️ 日期错配</span>' : '';
+
+    bar.innerHTML = `<span class="fresh-time">🕐 数据截至 ${time}</span>${dateBadge}${pills}${warnBadge}`;
 }
 
 function startAlertPolling() {
