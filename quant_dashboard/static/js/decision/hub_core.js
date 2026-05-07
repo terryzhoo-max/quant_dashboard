@@ -198,7 +198,18 @@ function renderActionPlan(plan) {
     }
     if (reasonEl) reasonEl.textContent = plan.reasoning || '';
     if (nextEl) nextEl.textContent = plan.next_check || '--';
-    if (posEl) posEl.textContent = (plan.position_target != null ? plan.position_target + '%' : '--%');
+    if (posEl) {
+        const target = plan.position_target;
+        const current = plan.current_position;
+        const gap = plan.position_gap;
+        if (current >= 0 && gap != null && Math.abs(gap) > 10) {
+            const gapColor = gap < 0 ? '#f87171' : '#34d399';
+            const gapIcon = gap < 0 ? '↓' : '↑';
+            posEl.innerHTML = `${target}% <span style="font-size:0.72em;color:${gapColor};margin-left:4px">${gapIcon} 现${current}%</span>`;
+        } else {
+            posEl.textContent = (target != null ? target + '%' : '--%');
+        }
+    }
     if (riskEl) riskEl.textContent = '⚠️ ' + (plan.risk_note || '');
 }
 

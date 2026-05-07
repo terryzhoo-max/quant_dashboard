@@ -116,6 +116,23 @@ document.addEventListener('DOMContentLoaded', function () {
         const cashWeight = data.cash_weight != null ? data.cash_weight : (data.total_asset > 0 ? (data.cash / data.total_asset * 100) : 0);
         document.getElementById('cash-weight').textContent = cashWeight.toFixed(1);
 
+        // 总仓位 (不含国债逆回购)
+        // 国债逆回购代码: 131810/131811/131813 (深市), 204001/204002/204007 (沪市)
+        const isRepo = (pos) => {
+            const code = (pos.ts_code || '').split('.')[0];
+            if (code.startsWith('131') || code.startsWith('204')) return true;
+            const name = pos.name || '';
+            return /逆回购|GC\d/.test(name);
+        };
+        const nonRepoMV = data.positions
+            .filter(p => !isRepo(p))
+            .reduce((sum, p) => sum + (p.market_value || 0), 0);
+        const totalPosWeight = data.total_asset > 0 ? (nonRepoMV / data.total_asset * 100) : 0;
+        const tpwEl = document.getElementById('total-position-weight');
+        tpwEl.textContent = totalPosWeight.toFixed(1);
+        // 颜色语义: >90% 过重(红), >80% 偏高(橙), 正常(紫)
+        tpwEl.style.color = totalPosWeight > 90 ? '#f87171' : totalPosWeight > 80 ? '#fbbf24' : '#6366f1';
+
         // ROI — 使用后端统一计算的盈亏 (券商/Tushare 一致)
         let totalROI = data.total_pnl_pct != null ? data.total_pnl_pct : 0;
         // 向后兼容: 旧 API 可能无 total_pnl_pct 字段

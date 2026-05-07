@@ -8,6 +8,7 @@ import os
 import json
 import time
 import glob
+import re
 import traceback
 import pandas as pd
 import numpy as np
@@ -834,7 +835,20 @@ def audit_risk_control():
     # ── 检查 5: 总仓位水平 ──
     if total_asset > 0:
         POS_CAP = AUDIT_CFG.get("total_position_cap", 95.0)
-        pos_pct = (1 - cash / max(total_asset, 1)) * 100
+        # V24.1: 用持仓市值之和 / 总资产, 排除国债逆回购
+        # 旧公式 (1 - cash/total_asset) 在有冻结资金/逆回购到期款时严重偏高
+        def _is_repo(code: str, name: str) -> bool:
+            prefix = code.split('.')[0]
+            if prefix.startswith('131') or prefix.startswith('204'):
+                return True
+            return '逆回购' in name or bool(re.search(r'GC\d', name))
+
+        equity_mv = sum(
+            p.get("market_value", 0)
+            for p in pos_list
+            if not _is_repo(p.get("ts_code", ""), p.get("name", ""))
+        )
+        pos_pct = equity_mv / max(total_asset, 1) * 100
         s = 100 if pos_pct <= POS_CAP else max(40, 100 - int((pos_pct - POS_CAP) * 5))
         scores.append(s)
         checks.append({
@@ -843,7 +857,7 @@ def audit_risk_control():
             "detail": f"当前仓位: {pos_pct:.1f}%",
             "meta": f"上限 {int(POS_CAP)}% (Regime自适应) · [{data_source}]",
             "score": s,
-            "explanation": f"总仓位上限{int(POS_CAP)}%是为了防止追保风险，并留足调仓空间。满仓意味着无法逢低吸纳新机会，且遇到系统性下跌时无现金缓冲。",
+            "explanation": f"总仓位上限{int(POS_CAP)}%是为了防止追保风险，并留足调仓空间。满仓意味着无法逢低吸纳新机会，且遇到系统性下跌时无现金缓冲。仓位计算基于持仓市值/总资产，已排除国债逆回购。",
             "threshold": f"🟢 ≤{int(POS_CAP)}%: 合规 | 🟡 {int(POS_CAP)+1}-98%: 偏重，调仓空间不足 | 🔴 >98%: 必须立即减仓",
             "action": f"卖出部分持仓降低总仓位至{int(POS_CAP)}%以下，优先卖出非核心持仓",
         })
@@ -855,7 +869,7 @@ def audit_risk_control():
             aiae_ctx = cache_manager.get_json("aiae_ctx")
             if aiae_ctx and aiae_ctx.get("cap"):
                 aiae_cap = float(aiae_ctx["cap"])
-                pos_pct = (1 - cash / max(total_asset, 1)) * 100
+                # 复用检查5已计算的 pos_pct (持仓市值/总资产, 已排除逆回购)
                 aiae_regime = aiae_ctx.get("regime", "?")
                 aiae_regime_cn = {1: "极度恐慌", 2: "低配置区", 3: "中性均衡", 4: "偏热区域", 5: "极度过热"}.get(aiae_regime, f"R{aiae_regime}")
                 buffer_cap = aiae_cap * 1.10  # 允许 10% 缓冲
