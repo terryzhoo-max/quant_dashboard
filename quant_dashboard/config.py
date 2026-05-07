@@ -140,9 +140,11 @@ MR_REOPTIMIZE_DAYS = 60
 
 # ── 审计阈值 (统一管理，消灭硬编码) ──
 AUDIT_CONFIG = {
-    # 风控红线 (V5.1: 个股/ETF 差异化止损)
-    "stop_loss_stock": -10.0,           # 个股止损红线 (%) — 个股波动大, 容忍度更高
-    "stop_loss_etf": -8.0,              # ETF止损红线 (%) — ETF波动小, 纪律更严
+    # V23.0 四类差异化止损 (对齐 mr_asset_class_params.json)
+    "stop_loss_stock": -12.0,           # 个股止损红线 (%) — 波动最大, 容忍度最宽
+    "stop_loss_etf": -8.0,              # 行业/主题ETF止损红线 (%) — 中等波动
+    "stop_loss_broad_etf": -6.0,        # 宽基ETF止损红线 (%) — 低波动, 纪律最严
+    "stop_loss_overseas_etf": -8.0,     # 海外ETF止损红线 (%) — 含汇率风险
     "single_position_limit": 20.0,      # 单票集中度上限 (%) ← 与 PortfolioEngine.POSITION_LIMIT 同步
     "sector_limit": 40.0,               # 行业集中度上限 (%)
     "total_position_cap": 95.0,         # 总仓位上限 (%)

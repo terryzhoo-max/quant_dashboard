@@ -2,7 +2,7 @@
 AlphaCore 审计执行器 V4.0 — "带枪保安"
 ========================================
 职责:
-  1. enforce_stop_loss()     — 突破止损线的持仓 → 自动全量卖出 (个股-12%/ETF-8% 差异化)
+  1. enforce_stop_loss()     — 突破止损线的持仓 → 自动全量卖出 (V23.0 四类资产差异化止损)
   2. enforce_trade_block()   — 数据过期 → 写入交易阻断标志文件
   3. get_enforcer_status()   — 查询执行器当前状态
   4. run_post_audit_enforcement() — 审计报告出炉后的统一执行入口
@@ -97,7 +97,7 @@ def _load_audit_config():
         from config import AUDIT_CONFIG
         return dict(AUDIT_CONFIG)
     except ImportError:
-        return {"stop_loss_stock": -10.0, "stop_loss_etf": -8.0, "stale_data_block_days": 5}
+        return {"stop_loss_stock": -12.0, "stop_loss_etf": -8.0, "stop_loss_broad_etf": -6.0, "stop_loss_overseas_etf": -8.0, "stale_data_block_days": 5}
 
 
 # ═══════════════════════════════════════════════════════
@@ -180,22 +180,29 @@ def is_trade_blocked():
 # ═══════════════════════════════════════════════════════
 #  止损强制卖出
 # ═══════════════════════════════════════════════════════
-def enforce_stop_loss(pos_list, stop_loss_stock=-10.0, stop_loss_etf=-8.0):
+def enforce_stop_loss(pos_list, stop_loss_stock=-12.0, stop_loss_etf=-8.0):
     """
     遍历持仓，将突破止损线的标的全量卖出。
-    V5.1: 个股/ETF 差异化止损 (个股-12%, ETF-8%)
+    V23.0: 四类资产差异化止损 (个股-12% / 行业ETF-8% / 宽基ETF-6% / 海外ETF-8%)
+    优先从 mr_asset_class_params.json 读取精确止损线。
     返回: 执行动作列表 [{"ts_code", "name", "pnl_pct", "amount", "price", "result"}]
     """
     actions = []
 
-    # 导入 ETF 识别工具
+    # V23.0: 导入四类资产分类工具
     try:
-        from audit_engine import _is_etf
+        from audit_engine import _get_stop_loss_line, _is_etf
     except ImportError:
         def _is_etf(code):
             if not code: return False
             c = code.split(".")[0]
             return c.startswith(("51", "56", "58", "159", "160", "16"))
+        def _get_stop_loss_line(ts_code, name=""):
+            is_etf = _is_etf(ts_code)
+            sl = stop_loss_etf if is_etf else stop_loss_stock
+            label = "ETF" if is_etf else "个股"
+            cls = "sector_etf" if is_etf else "individual_stock"
+            return sl, cls, label
 
     try:
         from portfolio_engine import get_portfolio_engine
@@ -211,16 +218,16 @@ def enforce_stop_loss(pos_list, stop_loss_stock=-10.0, stop_loss_etf=-8.0):
     for p in pos_list:
         pnl_pct = p.get("pnl_pct", 0)
         ts_code = p.get("ts_code", "")
-        is_etf = _is_etf(ts_code)
-        sl_line = stop_loss_etf if is_etf else stop_loss_stock
+        name = p.get("name", ts_code)
+
+        # V23.0: 四类资产差异化止损线
+        sl_line, asset_class, asset_label = _get_stop_loss_line(ts_code, name)
 
         if pnl_pct >= sl_line:
             continue  # 未触及止损线
 
-        name = p.get("name", ts_code)
         amount = p.get("amount", 0)
         price = p.get("price", p.get("cost", 0))
-        tag = "ETF" if is_etf else "个股"
 
         if amount <= 0 or price <= 0:
             continue
@@ -232,7 +239,8 @@ def enforce_stop_loss(pos_list, stop_loss_stock=-10.0, stop_loss_etf=-8.0):
                 "action": "forced_stop_loss",
                 "ts_code": ts_code,
                 "name": name,
-                "type": tag,
+                "type": asset_label,
+                "asset_class": asset_class,
                 "pnl_pct": round(pnl_pct, 2),
                 "sl_line": sl_line,
                 "amount": amount,
@@ -246,7 +254,8 @@ def enforce_stop_loss(pos_list, stop_loss_stock=-10.0, stop_loss_etf=-8.0):
                 "action": "forced_stop_loss",
                 "ts_code": ts_code,
                 "name": name,
-                "type": tag,
+                "type": asset_label,
+                "asset_class": asset_class,
                 "pnl_pct": round(pnl_pct, 2),
                 "sl_line": sl_line,
                 "amount": amount,
@@ -341,9 +350,9 @@ def run_post_audit_enforcement(audit_report):
         })
         return result
 
-    # ── 1. 止损强制卖出 ──
+    # ── 1. 止损强制卖出 (V23.0: 四类差异化, enforce_stop_loss 内部读取精确止损线) ──
     if enforcer_cfg.get("auto_stop_loss", True):
-        sl_stock = audit_cfg.get("stop_loss_stock", audit_cfg.get("stop_loss_line", -10.0))
+        sl_stock = audit_cfg.get("stop_loss_stock", -12.0)
         sl_etf = audit_cfg.get("stop_loss_etf", -8.0)
 
         # 获取持仓列表 (从风控模块的原始数据)

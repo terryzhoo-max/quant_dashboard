@@ -42,7 +42,8 @@ def _load_audit_cfg():
         return dict(AUDIT_CONFIG)
     except ImportError:
         return {
-            "stop_loss_stock": -10.0, "stop_loss_etf": -8.0,
+            "stop_loss_stock": -12.0, "stop_loss_etf": -8.0,
+            "stop_loss_broad_etf": -6.0, "stop_loss_overseas_etf": -8.0,
             "single_position_limit": 20.0,
             "sector_limit": 40.0, "total_position_cap": 95.0,
             "min_holdings": 5, "daily_stale_warn_days": 3,
@@ -475,8 +476,23 @@ def audit_strategy_health():
 
 
 # ═══════════════════════════════════════════════════════
-#  ETF 识别工具 (V5.1)
+#  V23.0: 四类资产分类 + Regime 差异化止损
+#  对齐 mean_reversion_engine._classify_asset 的四层分类法
 # ═══════════════════════════════════════════════════════
+
+# 海外 ETF 代码白名单 (与 MR 引擎标的池完全一致)
+_OVERSEAS_ETF_CODES = {
+    "513500.SH", "513100.SH", "513520.SH", "513530.SH",
+    "513130.SH", "513180.SH", "513950.SH", "513120.SH",
+    "513090.SH", "159545.SZ", "513970.SH",
+}
+
+# 宽基 ETF 代码白名单
+_BROAD_ETF_CODES = {
+    "510300.SH", "510500.SH", "512100.SH", "159915.SZ", "159949.SZ",
+    "588000.SH", "588220.SH", "159781.SZ",
+}
+
 def _is_etf(ts_code: str) -> bool:
     """
     判断标的是否为 ETF。
@@ -489,6 +505,82 @@ def _is_etf(ts_code: str) -> bool:
     code = ts_code.split(".")[0]
     etf_prefixes = ("51", "56", "58", "159", "160", "16")
     return code.startswith(etf_prefixes)
+
+
+def _classify_asset_for_audit(ts_code: str, name: str = "") -> str:
+    """
+    V23.0 四类资产分类 — 与 mean_reversion_engine._classify_asset 完全对齐:
+      - individual_stock: A股个股 (波动最大, 止损最宽)
+      - sector_etf:       行业/主题ETF (中等波动)
+      - broad_etf:        宽基ETF (低波动, 止损最严)
+      - overseas_etf:     海外宽基ETF (含汇率风险)
+    """
+    if not ts_code:
+        return "sector_etf"
+    # 优先匹配白名单
+    if ts_code in _OVERSEAS_ETF_CODES:
+        return "overseas_etf"
+    if ts_code in _BROAD_ETF_CODES:
+        return "broad_etf"
+    # 名称辅助判断
+    if name:
+        if any(k in name for k in ("标普", "纳指", "日经", "恒生", "港股通", "海外")):
+            return "overseas_etf"
+        if any(k in name for k in ("沪深300", "中证500", "中证1000", "创业板", "科创50", "科创100")):
+            return "broad_etf"
+    # 代码规则: 非 ETF 前缀 = 个股
+    if not _is_etf(ts_code):
+        return "individual_stock"
+    return "sector_etf"
+
+
+# 四类资产默认止损线 (与 mr_asset_class_params.json 同步)
+_DEFAULT_SL_BY_CLASS = {
+    "individual_stock": -12.0,   # 个股: 波动大, 容忍度最宽
+    "sector_etf":       -8.0,    # 行业ETF: 中等
+    "broad_etf":        -6.0,    # 宽基ETF: 低波动, 纪律最严
+    "overseas_etf":     -8.0,    # 海外ETF: 含汇率风险, 适度宽容
+}
+
+_ASSET_CLASS_LABELS = {
+    "individual_stock": "个股",
+    "sector_etf":       "行业ETF",
+    "broad_etf":        "宽基ETF",
+    "overseas_etf":     "海外ETF",
+}
+
+
+def _get_stop_loss_line(ts_code: str, name: str = "") -> tuple:
+    """
+    V23.0: 读取资产类别对应的止损线。
+    优先从 mr_asset_class_params.json 读取 (与交易引擎完全一致),
+    降级到 _DEFAULT_SL_BY_CLASS 硬编码兜底。
+    返回: (stop_loss_pct, asset_class_key, asset_class_label)
+    """
+    asset_class = _classify_asset_for_audit(ts_code, name)
+    label = _ASSET_CLASS_LABELS.get(asset_class, "行业ETF")
+
+    # 尝试从参数矩阵读取 (与 MR 引擎实际执行的止损线完全一致)
+    try:
+        param_path = os.path.join(PROJECT_ROOT, "mr_asset_class_params.json")
+        if os.path.exists(param_path):
+            with open(param_path, 'r', encoding='utf-8') as f:
+                matrix = json.load(f)
+            class_params = matrix.get(asset_class, {})
+            # 取所有 Regime 中最宽松的止损线 (审计红线 = 最后防线)
+            sl_values = []
+            for regime_key in ("BULL", "RANGE", "BEAR"):
+                regime_params = class_params.get(regime_key, {})
+                sl = regime_params.get("stop_loss")
+                if sl is not None:
+                    sl_values.append(abs(float(sl)) * 100)  # 0.12 → 12
+            if sl_values:
+                return -max(sl_values), asset_class, label  # 取最宽松 (最大绝对值)
+    except Exception:
+        pass
+
+    # 降级: 硬编码兜底
+    return _DEFAULT_SL_BY_CLASS.get(asset_class, -8.0), asset_class, label
 
 
 # ═══════════════════════════════════════════════════════
@@ -597,13 +689,13 @@ def audit_risk_control():
         })
         scores.append(100)
         checks.append({
-            "name": "止损合规 (个股-12%/ETF-8%)",
+            "name": "止损合规 (四类差异化)",
             "status": "pass",
             "detail": "无持仓, 无需止损检查",
             "score": 100,
-            "explanation": "差异化止损线: 个股-12%, ETF-8%。个股波动大容忍度更高, ETF波动小纪律更严。",
+            "explanation": "V23.0 四类差异化止损: 个股-12% / 行业ETF-8% / 宽基ETF-6% / 海外ETF-8%。对齐信号评分系统 mr_asset_class_params.json。",
             "threshold": "🟢 0只违规 | 🟡 1只: 警告 | 🔴 ≥2只: 纪律崩溃",
-            "action": "按差异化止损标准执行",
+            "action": "按四类差异化止损标准执行",
         })
     else:
         # ── 检查 1: 单票集中度 (基数=总资产, 阈值从PAUDIT_CFG) ──
@@ -636,22 +728,21 @@ def audit_risk_control():
             "action": f"将超标持仓分批卖出，确保单只不超过总资产的{int(SINGLE_LIMIT)}%",
         })
 
-        # ── 检查 2: 止损合规 V2.1 (个股/ETF 差异化止损) ──
-        SL_STOCK = AUDIT_CFG.get("stop_loss_stock", AUDIT_CFG.get("stop_loss_line", -10.0))
-        SL_ETF = AUDIT_CFG.get("stop_loss_etf", -8.0)
+        # ── 检查 2: 止损合规 V23.0 (四类资产 × Regime 差异化止损) ──
+        # 对齐信号评分系统: 个股-12% / 行业ETF-8% / 宽基ETF-6% / 海外ETF-8%
         breach_list = []
         worst_loss = 0
         worst_name = ""
+        sl_summary = {}  # 汇总每类资产的止损线
 
         for p in pos_list:
             pnl_pct = p.get("pnl_pct", 0)
             ts_code = p.get("ts_code", "")
             name = p.get("name", ts_code or "?")
-            is_etf = _is_etf(ts_code)
-            sl_line = SL_ETF if is_etf else SL_STOCK
-            tag = "ETF" if is_etf else "个股"
+            sl_line, asset_class, asset_label = _get_stop_loss_line(ts_code, name)
+            sl_summary[asset_label] = sl_line
             if pnl_pct < sl_line:
-                breach_list.append(f"{name}[{tag}] ({pnl_pct:.1f}% < {sl_line}%)")
+                breach_list.append(f"{name}[{asset_label}] ({pnl_pct:.1f}% < {sl_line}%)")
             if pnl_pct < worst_loss:
                 worst_loss = pnl_pct
                 worst_name = name
@@ -667,15 +758,19 @@ def audit_risk_control():
         else:
             detail = "全部盈利或持平"
 
+        # 构建四类止损摘要
+        sl_parts = [f"{k}{v}%" for k, v in sorted(sl_summary.items(), key=lambda x: x[1])]
+        sl_display = " / ".join(sl_parts) if sl_parts else "个股-12%/行业ETF-8%/宽基ETF-6%/海外ETF-8%"
+
         checks.append({
-            "name": f"止损合规 (个股{SL_STOCK}%/ETF{SL_ETF}%)",
+            "name": f"止损合规 ({sl_display})",
             "status": "pass" if breach_count == 0 else "fail",
             "detail": detail,
-            "meta": f"个股止损线: {SL_STOCK}% · ETF止损线: {SL_ETF}% · [{data_source}]" + (f" · 最大浮亏: {worst_loss:.1f}%" if worst_loss < 0 else ""),
+            "meta": f"四类差异化止损 · [{data_source}]" + (f" · 最大浮亏: {worst_loss:.1f}%" if worst_loss < 0 else ""),
             "score": s,
-            "explanation": f"差异化止损: 个股波动大允许更宽容忍({SL_STOCK}%), ETF组合型产品波动小执行更严格纪律({SL_ETF}%)。统计显示突破止损线后继续下跌至-20%的概率超过60%。及时止损保护组合存活率。",
+            "explanation": f"V23.0 四类差异化止损 (对齐信号评分系统 mr_asset_class_params.json): 个股波动最大允许-12%; 行业ETF-8%; 宽基ETF波动最小纪律最严-6%; 海外ETF含汇率风险-8%。审计红线取各Regime中最宽松的止损值作为最后防线。",
             "threshold": "🟢 0只违规: 纪律严格 | 🟡 1只: 立即处理 | 🔴 ≥2只: 止损纪律崩溃",
-            "action": f"立即卖出突破止损线的持仓 (个股>{abs(SL_STOCK)}% / ETF>{abs(SL_ETF)}%)" if breach_count > 0 else "继续保持差异化止损纪律",
+            "action": f"立即卖出突破止损线的持仓" if breach_count > 0 else "继续保持四类差异化止损纪律",
         })
 
         # ── 检查 3: 行业集中度 (阈值从AUDIT_CFG) ──
