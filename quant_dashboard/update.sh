@@ -15,7 +15,15 @@ echo ""
 
 # ── Step 1: 拉取代码 ──
 echo "⏳ [1/4] 拉取最新代码..."
-cd /root/quant_dashboard && git pull
+cd /root/quant_dashboard
+
+# 服务器运行时 data_lake/*.parquet 会被应用更新,
+# 导致 git pull 冲突. 先 stash 再拉取, 数据不丢失
+# (因为 docker run 用 -v 挂载 data_lake, 实际数据在宿主机上).
+git stash --include-untracked -q 2>/dev/null || true
+git pull
+git stash drop -q 2>/dev/null || true
+
 echo "✅ 代码已更新: $(git log --oneline -1)"
 
 # ── Step 2: 重建镜像 ──
