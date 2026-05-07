@@ -485,43 +485,121 @@ function renderPositionPath(data) {
     // Data source indicator
     const srcLabel = data.data_source === 'portfolio' ? '🟢 基于实际持仓' : '🟡 基于策略信号';
 
+    // V24.0: Progress tracker bar with delta annotations
+    const stepColors    = ['#a78bfa', '#3b82f6', '#34d399'];
+    const stepColorRGBs = ['167,139,250', '59,130,246', '52,211,153'];
+    const stepIcons     = ['🚀', '⚙️', '🎯'];
+    const allCaps = [data.current_cap, ...data.steps.map(s => s.step_cap)];
+    const progressNodes = [
+        { label: '当前', cap: data.current_cap, color: '#94a3b8', delta: null },
+        ...data.steps.map((s, i) => ({
+            label: s.day, cap: s.step_cap, color: stepColors[i],
+            delta: round1(allCaps[i + 1] - allCaps[i]),
+        })),
+    ];
+    function round1(v) { return Math.round(v * 10) / 10; }
+
+    const progressHtml = `<div class="pp-progress-track">${progressNodes.map((n, i) => {
+        const deltaHtml = n.delta !== null
+            ? `<span class="pp-progress-delta" style="color:${n.delta > 0 ? '#34d399' : '#f87171'}">${n.delta > 0 ? '+' : ''}${n.delta}%</span>`
+            : '';
+        const dot = `<div class="pp-progress-node">
+            <div class="pp-progress-dot" style="background:${n.color}; --node-color:${n.color}">${i === 0 ? '◉' : i}</div>
+            <span class="pp-progress-label">${n.label}</span>
+            <span class="pp-progress-cap" style="color:${n.color}">${n.cap}%</span>
+            ${deltaHtml}
+        </div>`;
+        const line = i < progressNodes.length - 1
+            ? `<div class="pp-progress-line" style="--line-from:${n.color}; --line-to:${progressNodes[i+1].color}"></div>`
+            : '';
+        return dot + line;
+    }).join('')}</div>`;
+
     // Steps
-    const stepColors = ['#a78bfa', '#3b82f6', '#34d399'];
-    const stepIcons = ['🚀', '⚙️', '🎯'];
     const stepsHtml = data.steps.map((step, i) => {
         const hasActions = step.actions && step.actions.length > 0;
+        const stepDelta = hasActions ? step.actions.reduce((s, a) => s + a.delta, 0) : 0;
+        const deltaSign = stepDelta > 0 ? '+' : '';
+        const deltaColor = stepDelta > 0 ? '#34d399' : '#f87171';
+
         const actionRows = hasActions ? step.actions.map(a => {
             const dirIcon = a.action === 'reduce' ? '🔻' : (a.action === 'increase' ? '🔺' : '━');
-            const dirCls = a.action === 'reduce' ? 'pp-action-reduce' : (a.action === 'increase' ? 'pp-action-increase' : '');
-            const deltaSign = a.delta > 0 ? '+' : '';
-            const deltaColor = a.delta > 0 ? '#34d399' : '#f87171';
+            const dirCls  = a.action === 'reduce' ? 'pp-action-reduce' : (a.action === 'increase' ? 'pp-action-increase' : '');
+            const adSign  = a.delta > 0 ? '+' : '';
+            const adColor = a.delta > 0 ? '#34d399' : '#f87171';
+            const reason  = a.reason || '';
+            const isPriority = /止盈|止损|超配|亏/.test(reason);
+            const priCls = isPriority ? ' priority-high' : '';
+            let reasonCls = '';
+            if (/止盈|浮盈/.test(reason)) reasonCls = ' reason-profit';
+            else if (/止损|浮亏|亏/.test(reason)) reasonCls = ' reason-loss';
+            else if (/超配/.test(reason)) reasonCls = ' reason-overweight';
+
             return `
-            <div class="pp-action-row ${dirCls}">
-                <span class="pp-action-icon">${dirIcon}</span>
+            <div class="pp-action-row ${dirCls}${priCls}">
+                <span class="pp-action-icon">${isPriority ? '⚡' : dirIcon}</span>
                 <span class="pp-action-name">${a.name}<span class="pp-action-code">${a.code}</span></span>
                 <span class="pp-action-weights">${a.current_weight}% → ${a.target_weight}%</span>
-                <span class="pp-action-delta" style="color:${deltaColor}">${deltaSign}${a.delta}%</span>
-                <span class="pp-action-reason">${a.reason}</span>
+                <span class="pp-action-delta" style="color:${adColor}">${adSign}${a.delta}%</span>
+                <span class="pp-action-reason${reasonCls}">${reason}</span>
                 ${a.execution_cost ? `
                 <span class="pp-action-cost" title="冲击成本: ${a.execution_cost.impact_cost_pct}% · ${a.execution_cost.liquidity_grade}">
                     ~${a.execution_cost.impact_cost_value.toFixed(0)}元
-                </span>` : ''}
+                </span>` : '<span class="pp-action-cost"></span>'}
             </div>`;
         }).join('') : '<div class="pp-action-row pp-no-action">━ 此步骤无需操作</div>';
 
+        // P3: Step summary
+        const summaryHtml = hasActions ? `
+            <span class="pp-step-summary">
+                <span class="count">${step.actions.length}项</span>
+                <span class="total-delta" style="color:${deltaColor}">${deltaSign}${stepDelta.toFixed(1)}%</span>
+            </span>` : '';
+
+        // P7: Collapsed summary — top 3 actions
+        let collapsedHtml = '';
+        if (hasActions) {
+            const sorted = [...step.actions].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+            const top3 = sorted.slice(0, 3).map(a =>
+                `<span class="pp-collapsed-tag">${a.name} ${a.delta > 0 ? '+' : ''}${a.delta}%</span>`
+            ).join('');
+            const more = sorted.length > 3 ? `<span class="pp-collapsed-more"> +${sorted.length - 3}项</span>` : '';
+            collapsedHtml = `<div class="pp-step-collapsed-summary">${top3}${more}</div>`;
+        }
+
+        // P4: Connector with time span
+        let connectorHtml = '';
+        if (i < data.steps.length - 1) {
+            const nextStep = data.steps[i + 1];
+            const dayDiff = (nextStep.interval_days || 0) - (step.interval_days || 0);
+            connectorHtml = `<div class="pp-step-connector" style="--conn-from:${stepColors[i]}; --conn-to:${stepColors[i+1]}">
+                <span class="pp-conn-label">
+                    <span class="pp-conn-arrow">↓</span>
+                    <span class="pp-conn-days">+${dayDiff}日</span>
+                </span>
+            </div>`;
+        }
+
         return `
-        <div class="pp-step" style="border-left: 3px solid ${stepColors[i]}">
-            <div class="pp-step-header">
-                <span class="pp-step-icon">${stepIcons[i]}</span>
-                <span class="pp-step-day">${step.day}</span>
-                <span class="pp-step-note">${step.note}</span>
-                <span class="pp-step-cap" style="color:${stepColors[i]}">→ ${step.step_cap}%</span>
+        <div class="pp-step" style="--step-color: ${stepColors[i]}; --step-color-rgb: ${stepColorRGBs[i]}" data-step="${i}">
+            <div class="pp-step-header" onclick="this.parentElement.classList.toggle('collapsed')">
+                <div class="pp-step-hdr-left">
+                    <span class="pp-step-icon">${stepIcons[i]}</span>
+                    <span class="pp-step-day">${step.day}</span>
+                    <span class="pp-step-note">${step.note}</span>
+                </div>
+                <div class="pp-step-hdr-right">
+                    ${summaryHtml}
+                    <span class="pp-step-cap" style="color:${stepColors[i]}">→ ${step.step_cap}%</span>
+                    <span class="pp-step-toggle">▼</span>
+                </div>
             </div>
             <div class="pp-step-actions">${actionRows}</div>
-        </div>`;
+            ${collapsedHtml}
+        </div>${connectorHtml}`;
     }).join('');
 
-    body.innerHTML = `${warnHtml}<div class="pp-steps">${stepsHtml}</div>`;
+    body.innerHTML = `${warnHtml}${progressHtml}<div class="pp-steps">${stepsHtml}</div>`;
 
     if (footer) {
         footer.innerHTML = `<span class="pp-src">${srcLabel}</span><span class="pp-disclaimer">以上为系统生成建议，不构成投资指令</span>`;

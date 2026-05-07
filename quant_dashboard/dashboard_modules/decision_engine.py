@@ -1527,84 +1527,122 @@ def generate_position_path(snapshot: dict = None, jcs_data: dict = None) -> dict
     # 按优先级降序 (高分先调)
     scored.sort(key=lambda x: x["priority_score"], reverse=True)
 
-    # ── 生成 3 步路径 ──
+    # ── 生成 3 步路径 (V23.0: 递进式调仓, 权重状态跟踪) ──
     STEPS = _POSITION_RULES["step_intervals"]
     total_gap = gap
     steps = []
     warnings = []
 
     # 紧急风控 (VIX > 30 或 JCS < 40 时前置警告)
+    emergency_mode = False
     if vix_val > 30:
-        warnings.append(f"⚠️ VIX={vix_val:.1f}>30: 首步优先减仓防御，分步幅度缩减50%")
+        warnings.append(f"⚠️ VIX={vix_val:.1f}>30: 首步优先减仓防御")
+        emergency_mode = True
     if jcs_level == "low":
         warnings.append(f"⚠️ JCS={jcs_score:.0f}<40: 仅执行减仓操作，禁止新开仓位")
+        emergency_mode = True
     if aiae_regime >= 4:
         warnings.append(f"⚠️ AIAE R{aiae_regime}: 过热区间，全路径禁止加仓")
 
-    per_step_gap = round(total_gap / len(STEPS), 1)
+    # V23.0: 渐进式 gap 分配 (替代平均分配)
+    if emergency_mode:
+        step_ratios = [0.60, 0.25, 0.15]   # 紧急: 首步加重
+    else:
+        step_ratios = [0.40, 0.35, 0.25]   # 常规: 均衡递进
+
+    # V23.0: 可变权重状态跟踪 (关键修复 — 步骤间权重递进)
+    live_weights = {s["code"]: s["weight"] for s in scored}
+    MIN_REDUCE = 0.3    # 最小操作阈值 (%), 低于此值不产生操作
+    MIN_WEIGHT = 0.5    # 权重下限 (%), 低于此值跳过减仓
+
+    cumulative_delta = 0.0  # 追踪三步总执行量
 
     for step_i, day_offset in enumerate(STEPS):
-        step_gap = per_step_gap
-        # 最后一步吸收余数
+        step_gap = round(total_gap * step_ratios[step_i], 1)
+        # 最后一步吸收余数 (确保精确到达目标)
         if step_i == len(STEPS) - 1:
-            step_gap = round(total_gap - per_step_gap * (len(STEPS) - 1), 1)
+            step_gap = round(total_gap - cumulative_delta, 1)
 
         step_actions = []
         remaining = step_gap
 
-        # 减仓: 从高分持仓开始减
-        if remaining < -0.5:
+        # ── 减仓路径: 从高优先级持仓开始减 ──
+        if remaining < -MIN_REDUCE:
             for s in scored:
                 if remaining >= -0.1:
                     break
-                if s["weight"] <= 0.5:
+                lw = live_weights.get(s["code"], 0)
+                if lw <= MIN_WEIGHT:
                     continue
-                # 单次最多减至 0 或不超过该标的一半
-                max_reduce = min(abs(remaining), s["weight"] * 0.5, 15)
-                reduce_amt = round(min(max_reduce, s["weight"] - 1), 1)
-                if reduce_amt <= 0:
+
+                # 单次最多减半 (防止一步清仓导致冲击成本飙升)
+                max_reduce = min(abs(remaining), lw * 0.5, 15)
+                reduce_amt = round(min(max_reduce, lw - MIN_WEIGHT), 1)
+                if reduce_amt < MIN_REDUCE:
                     continue
+
+                new_weight = round(lw - reduce_amt, 1)
                 step_actions.append({
                     "code": s["code"], "name": s["name"],
                     "action": "reduce",
-                    "current_weight": s["weight"],
-                    "target_weight": round(s["weight"] - reduce_amt, 1),
+                    "current_weight": round(lw, 2),
+                    "target_weight": new_weight,
                     "delta": round(-reduce_amt, 1),
                     "reason": " · ".join(s["reasons"][:2]) or "仓位调整",
                 })
                 remaining += reduce_amt
+                # V23.0: 关键 — 更新活权重, 下一步从新权重开始
+                live_weights[s["code"]] = new_weight
 
-        # 加仓: 禁止操作的条件
-        elif remaining > 0.5:
+        # ── 加仓路径 (禁止条件检查) ──
+        elif remaining > MIN_REDUCE:
             if jcs_level == "low" or aiae_regime >= 4:
                 warnings.append(f"Step {step_i+1}: JCS低/AIAE过热，跳过加仓 (需增加{remaining:.1f}%)")
             else:
                 # 从低权重持仓开始加 (分散化)
-                low_weight = [s for s in scored if s["weight"] < MAX_SINGLE * 0.8]
-                low_weight.sort(key=lambda x: x["weight"])
-                for s in low_weight:
+                low_weight_items = sorted(scored, key=lambda x: live_weights.get(x["code"], 0))
+                for s in low_weight_items:
                     if remaining <= 0.1:
                         break
-                    add_amt = round(min(remaining, MAX_SINGLE - s["weight"], 10), 1)
-                    if add_amt <= 0:
+                    lw = live_weights.get(s["code"], 0)
+                    if lw >= MAX_SINGLE * 0.8:
                         continue
+                    add_amt = round(min(remaining, MAX_SINGLE - lw, 10), 1)
+                    if add_amt < MIN_REDUCE:
+                        continue
+                    new_weight = round(lw + add_amt, 1)
                     step_actions.append({
                         "code": s["code"], "name": s["name"],
                         "action": "increase",
-                        "current_weight": s["weight"],
-                        "target_weight": round(s["weight"] + add_amt, 1),
+                        "current_weight": round(lw, 2),
+                        "target_weight": new_weight,
                         "delta": round(add_amt, 1),
-                        "reason": f"低配分散 · 权重{s['weight']:.1f}%→{s['weight']+add_amt:.1f}%",
+                        "reason": f"低配分散 · 权重{lw:.1f}%→{new_weight:.1f}%",
                     })
                     remaining -= add_amt
+                    live_weights[s["code"]] = new_weight
 
-        step_cap = round(current_cap + sum(a["delta"] for a in step_actions), 1)
-        # 逐步调整 step_cap
-        if step_i > 0:
-            prev_cap = steps[-1]["step_cap"]
-            step_cap = round(prev_cap + sum(a["delta"] for a in step_actions), 1)
+        # ── 累计 delta 追踪 ──
+        step_delta = sum(a["delta"] for a in step_actions)
+        cumulative_delta += step_delta
+
+        # ── step_cap 计算 (基于累计 delta) ──
+        step_cap = round(current_cap + cumulative_delta, 1)
+
+        # ── 动态步骤注释 (基于实际操作内容) ──
+        if step_i == 0:
+            if emergency_mode:
+                note = "紧急防御优先"
+            elif any(a.get("delta", 0) < -3 for a in step_actions):
+                note = "首批减持"
+            elif step_actions:
+                note = "初步调仓"
+            else:
+                note = "观察等待"
+        elif step_i == 1:
+            note = "主力调仓"
         else:
-            step_cap = round(current_cap + sum(a["delta"] for a in step_actions), 1)
+            note = "精细校准"
 
         day_label = f"T+{day_offset}" if day_offset > 0 else "T"
         steps.append({
@@ -1612,11 +1650,13 @@ def generate_position_path(snapshot: dict = None, jcs_data: dict = None) -> dict
             "interval_days": day_offset,
             "actions": step_actions,
             "step_cap": step_cap,
-            "note": (
-                "紧急防御优先" if (step_i == 0 and (vix_val > 30 or jcs_level == "low"))
-                else ("主力调仓" if step_i == 1 else "精细校准")
-            ),
+            "note": note,
         })
+
+    # ── V23.0: 最终校验 — 累计 delta 必须接近 total_gap ──
+    delta_error = abs(cumulative_delta - total_gap)
+    if delta_error > 1.0 and steps:
+        warnings.append(f"⚠️ 路径缺口: 目标{total_gap:.1f}% 实际{cumulative_delta:.1f}% 差异{delta_error:.1f}%")
 
     return {
         "current_cap": current_cap,

@@ -410,7 +410,7 @@
 }
 
 /* ═══════════════════════════════════════════════════
-   V22.0: 仓位调整路径卡片
+   V24.0: 仓位调整路径卡片 (逻辑排版 + 视觉升维)
    ═══════════════════════════════════════════════════ */
 
 .position-path-card {
@@ -425,13 +425,11 @@
 .pp-header {
     display: flex; align-items: center; gap: 10px;
     padding: 12px 16px; cursor: pointer;
-    user-select: none;
-    transition: background 0.2s;
+    user-select: none; transition: background 0.2s;
 }
 .pp-header:hover { background: rgba(255,255,255,0.02); }
 .pp-title {
-    font-size: 0.78rem; font-weight: 600; color: #e2e8f0;
-    flex-shrink: 0;
+    font-size: 0.78rem; font-weight: 600; color: #e2e8f0; flex-shrink: 0;
 }
 .pp-gap-badge {
     font-size: 0.7rem; padding: 2px 8px; border-radius: 6px;
@@ -446,70 +444,268 @@
 .pp-empty {
     text-align: center; padding: 16px; color: #64748b; font-size: 0.78rem;
 }
+
+/* ── P1: 进度追踪条 (精确对齐, 无硬编码偏移) ── */
+.pp-progress-track {
+    display: flex; align-items: stretch; gap: 0;
+    padding: 14px 8px 18px; margin-bottom: 8px;
+}
+.pp-progress-node {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    position: relative; z-index: 2; min-width: 56px;
+}
+.pp-progress-dot {
+    width: 30px; height: 30px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.58rem; font-weight: 800; color: #0f172a;
+    box-shadow: 0 0 14px var(--node-color, rgba(255,255,255,0.15));
+    transition: all 0.3s ease;
+    border: 2px solid rgba(255,255,255,0.1);
+}
+.pp-progress-node:first-child .pp-progress-dot {
+    animation: currentPulse 2.5s ease-in-out infinite;
+}
+@keyframes currentPulse {
+    0%, 100% { box-shadow: 0 0 10px var(--node-color, #94a3b8); }
+    50% { box-shadow: 0 0 22px var(--node-color, #94a3b8), 0 0 4px rgba(255,255,255,0.2); }
+}
+.pp-progress-label {
+    font-size: 0.55rem; color: #94a3b8; font-weight: 600;
+    white-space: nowrap;
+}
+.pp-progress-cap {
+    font-size: 0.62rem; font-weight: 800; color: #e2e8f0;
+    font-variant-numeric: tabular-nums;
+}
+.pp-progress-delta {
+    font-size: 0.5rem; font-weight: 700; color: #f87171;
+    font-variant-numeric: tabular-nums; margin-top: -1px;
+}
+.pp-progress-line {
+    flex: 1; display: flex; align-items: center;
+    padding: 0 2px; align-self: flex-start;
+    margin-top: 14px; /* 精确对齐圆心 */
+}
+.pp-progress-line::after {
+    content: ''; display: block; width: 100%; height: 2px;
+    background: linear-gradient(90deg, var(--line-from, #475569), var(--line-to, #475569));
+    opacity: 0.5; border-radius: 1px;
+}
+
+/* ── 风控警告 (脉冲发光) ── */
 .pp-warnings {
-    margin-bottom: 10px; display: flex; flex-direction: column; gap: 4px;
+    margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px;
 }
 .pp-warn-item {
-    font-size: 0.65rem; color: #fbbf24; padding: 4px 8px;
-    background: rgba(251,191,36,0.06); border-radius: 6px;
-    border: 1px solid rgba(251,191,36,0.12);
+    font-size: 0.68rem; color: #fbbf24; padding: 6px 12px;
+    background: rgba(251,191,36,0.06); border-radius: 8px;
+    border: 1px solid rgba(251,191,36,0.15);
+    display: flex; align-items: center; gap: 6px;
+    animation: warnPulse 3s ease-in-out infinite;
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
 }
-.pp-steps { display: flex; flex-direction: column; gap: 8px; }
+@keyframes warnPulse {
+    0%, 100% { box-shadow: 0 0 6px rgba(251,191,36,0.05); }
+    50% { box-shadow: 0 0 16px rgba(251,191,36,0.15), inset 0 0 8px rgba(251,191,36,0.05); }
+}
+
+/* ── 步骤卡片 (玻璃态) ── */
+.pp-steps { display: flex; flex-direction: column; gap: 0; }
 .pp-step {
-    padding: 10px 12px; border-radius: 8px;
-    background: rgba(15,23,42,0.4);
-    transition: background 0.2s;
+    padding: 0; border-radius: 12px; overflow: hidden;
+    background: rgba(15,23,42,0.35);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.04);
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    position: relative;
 }
-.pp-step:hover { background: rgba(255,255,255,0.02); }
+.pp-step::before {
+    content: ''; position: absolute; top: 0; left: 0; bottom: 0; width: 3px;
+    background: var(--step-color, #64748b);
+    box-shadow: 2px 0 12px var(--step-color, transparent);
+    transition: all 0.3s ease;
+}
+.pp-step:hover {
+    background: rgba(15,23,42,0.5);
+    border-color: rgba(255,255,255,0.08);
+}
+.pp-step:hover::before {
+    width: 4px; box-shadow: 3px 0 20px var(--step-color, transparent);
+}
+
+/* P3: 步骤头部 — 三区布局 */
 .pp-step-header {
-    display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px 8px 16px;
+    cursor: pointer; user-select: none;
+}
+.pp-step-hdr-left {
+    display: flex; align-items: center; gap: 8px; flex-shrink: 0;
 }
 .pp-step-icon { font-size: 0.85rem; }
 .pp-step-day {
-    font-size: 0.72rem; font-weight: 700; color: #cbd5e1;
+    font-size: 0.78rem; font-weight: 800; color: #f1f5f9;
+    letter-spacing: 0.5px;
 }
 .pp-step-note {
-    font-size: 0.6rem; color: #64748b; font-style: italic;
+    font-size: 0.6rem; color: #94a3b8; font-weight: 600;
+    padding: 2px 8px; border-radius: 4px;
+    background: rgba(148,163,184,0.08);
+    border: 1px solid rgba(148,163,184,0.06);
 }
-.pp-step-cap {
-    margin-left: auto; font-size: 0.68rem; font-weight: 700;
+.pp-step-hdr-right {
+    margin-left: auto; display: flex; align-items: center; gap: 10px;
+    flex-shrink: 0;
+}
+.pp-step-summary {
+    font-size: 0.58rem; color: #64748b;
+    display: flex; align-items: center; gap: 6px;
     font-variant-numeric: tabular-nums;
 }
-.pp-step-actions { display: flex; flex-direction: column; gap: 3px; }
+.pp-step-summary .count {
+    padding: 1px 6px; border-radius: 4px;
+    background: rgba(148,163,184,0.08); font-weight: 600;
+}
+.pp-step-summary .total-delta { font-weight: 700; }
+.pp-step-cap {
+    font-size: 0.72rem; font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    padding: 2px 8px; border-radius: 5px;
+    background: rgba(var(--step-color-rgb, 100,116,139), 0.1);
+    border: 1px solid rgba(var(--step-color-rgb, 100,116,139), 0.2);
+    text-shadow: 0 0 8px currentColor;
+}
+.pp-step-toggle {
+    font-size: 0.5rem; color: #475569; margin-left: 2px;
+    transition: transform 0.3s ease; display: inline-block;
+}
+.pp-step.collapsed .pp-step-toggle { transform: rotate(-90deg); }
+
+/* ── 步骤展开/折叠 + P7 缩略行 ── */
+.pp-step-actions {
+    display: flex; flex-direction: column; gap: 1px;
+    padding: 0 6px 8px 6px;
+    max-height: 2000px; overflow: hidden;
+    transition: max-height 0.4s ease, opacity 0.3s ease, padding 0.3s ease;
+}
+.pp-step.collapsed .pp-step-actions {
+    max-height: 0; opacity: 0; padding: 0;
+}
+.pp-step-collapsed-summary {
+    padding: 0 16px 10px;
+    font-size: 0.58rem; color: #64748b;
+    display: none;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.6;
+}
+.pp-step.collapsed .pp-step-collapsed-summary { display: block; }
+.pp-collapsed-tag {
+    display: inline-block; padding: 1px 5px; border-radius: 3px;
+    background: rgba(148,163,184,0.06); margin: 0 2px;
+    color: #94a3b8; font-weight: 600;
+}
+.pp-collapsed-more { color: #475569; font-style: italic; }
+
+/* ── P2: 操作行 (自适应列宽) ── */
 .pp-action-row {
-    display: flex; align-items: center; gap: 8px;
+    display: grid;
+    grid-template-columns: 20px minmax(120px, 1.8fr) minmax(88px, 108px) 55px 1fr minmax(40px, 56px);
+    align-items: center; gap: 4px;
     padding: 5px 8px; border-radius: 6px;
     font-size: 0.65rem; color: #cbd5e1;
-    transition: background 0.15s;
+    transition: all 0.2s ease;
+    border-left: 2px solid transparent;
+    opacity: 0.88;
 }
-.pp-action-row:hover { background: rgba(255,255,255,0.02); }
-.pp-action-reduce { border-left: 2px solid rgba(248,113,113,0.3); }
-.pp-action-increase { border-left: 2px solid rgba(52,211,153,0.3); }
-.pp-no-action { color: #475569; font-style: italic; }
-.pp-action-icon { font-size: 0.7rem; flex-shrink: 0; }
+/* P6: hover 微交互升级 */
+.pp-action-row:hover {
+    background: rgba(255,255,255,0.035);
+    transform: translateX(2px);
+    opacity: 1;
+    box-shadow: 0 0 8px rgba(255,255,255,0.02);
+    border-left-width: 3px;
+}
+.pp-action-row:hover .pp-action-name { color: #f1f5f9; }
+
+/* 操作类型色带 */
+.pp-action-reduce { border-left-color: rgba(248,113,113,0.35); }
+.pp-action-increase { border-left-color: rgba(52,211,153,0.35); }
+
+/* P5: 高优先级操作 — 强化 */
+.pp-action-row.priority-high {
+    background: rgba(251,191,36,0.07);
+    border-left-color: rgba(251,191,36,0.6);
+    border-left-width: 3px; opacity: 1;
+}
+.pp-action-row.priority-high:hover {
+    background: rgba(251,191,36,0.11);
+}
+.pp-action-row.priority-high .pp-action-reason {
+    font-weight: 700;
+}
+
+.pp-no-action { 
+    color: #475569; font-style: italic;
+    display: flex; align-items: center; padding: 8px 12px;
+}
+.pp-action-icon { font-size: 0.65rem; flex-shrink: 0; text-align: center; }
 .pp-action-name {
-    font-weight: 600; min-width: 80px; max-width: 120px;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-weight: 600; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; transition: color 0.2s;
 }
 .pp-action-code {
-    font-size: 0.52rem; color: #475569; margin-left: 4px;
+    font-size: 0.5rem; color: #475569; margin-left: 3px;
+    font-family: 'JetBrains Mono', monospace;
 }
 .pp-action-weights {
     color: #94a3b8; font-variant-numeric: tabular-nums; font-size: 0.6rem;
+    text-align: center; white-space: nowrap;
 }
 .pp-action-delta {
     font-weight: 700; font-variant-numeric: tabular-nums; font-size: 0.62rem;
-    min-width: 36px; text-align: right;
+    text-align: right;
 }
 .pp-action-reason {
-    font-size: 0.55rem; color: #64748b; font-style: italic;
-    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 0.55rem; color: #64748b;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    padding-left: 4px; transition: color 0.2s;
 }
+.pp-action-reason.reason-profit { color: #34d399; }
+.pp-action-reason.reason-loss { color: #f87171; }
+.pp-action-reason.reason-overweight { color: #fbbf24; }
+
 .pp-action-cost {
-    font-size: 0.52rem; color: #fbbf24; font-variant-numeric: tabular-nums;
-    flex-shrink: 0; min-width: 50px; text-align: right;
-    cursor: help;
+    font-size: 0.52rem; color: #64748b; font-variant-numeric: tabular-nums;
+    flex-shrink: 0; text-align: right;
+    cursor: help; transition: color 0.2s;
 }
+.pp-action-row:hover .pp-action-cost { color: #fbbf24; }
+
+/* ── P4: 步骤连接器 (渐变 + 时间标注) ── */
+.pp-step-connector {
+    display: flex; align-items: center; justify-content: center;
+    padding: 4px 0; position: relative;
+}
+.pp-step-connector::before {
+    content: ''; position: absolute; left: 24px;
+    top: 0; bottom: 0; width: 2px;
+    background: linear-gradient(180deg,
+        var(--conn-from, #475569) 0%,
+        var(--conn-to, #475569) 100%);
+    opacity: 0.3; border-radius: 1px;
+}
+.pp-conn-label {
+    display: flex; align-items: center; gap: 6px;
+    background: rgba(15,23,42,0.85); padding: 2px 10px;
+    border-radius: 10px; position: relative; z-index: 1;
+    border: 1px solid rgba(148,163,184,0.06);
+}
+.pp-conn-arrow { font-size: 0.6rem; color: #475569; }
+.pp-conn-days {
+    font-size: 0.52rem; color: #64748b; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
 .pp-footer {
     display: flex; justify-content: space-between; align-items: center;
     padding: 8px 16px; border-top: 1px solid rgba(148,163,184,0.06);
