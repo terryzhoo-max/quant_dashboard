@@ -7,7 +7,7 @@
 
     <link rel="stylesheet" href="./static/css/styles.css?v=12">
     <link rel="stylesheet" href="./static/css/visual_excellence.css?v=3">
-    <link rel="stylesheet" href="./static/css/strategy.css">
+    <link rel="stylesheet" href="./static/css/strategy.css?v=4">
     <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -2373,14 +2373,14 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
 
             <!-- Hero -->
             <section class="st-hero glass-panel" style="background:linear-gradient(135deg,rgba(99,102,241,0.08),rgba(20,24,34,0.5),rgba(16,185,129,0.06)); border-color:rgba(99,102,241,0.25);">
-                <div class="st-hero-badge" style="background:rgba(99,102,241,0.15); border-color:rgba(99,102,241,0.3); color:#a78bfa;">🎯 V4.2 · 机构级 · 完整规则</div>
+                <div class="st-hero-badge" style="background:rgba(99,102,241,0.15); border-color:rgba(99,102,241,0.3); color:#a78bfa;">🎯 V22.0 · 资产分类差异化 · 四类规则</div>
                 <h2 class="st-hero-title" style="background:linear-gradient(110deg,#fff,#a78bfa,#10b981); -webkit-background-clip:text; background-clip:text;">🎯 信号评分系统 · 进场·止盈·止损 完整规则</h2>
-                <p class="st-hero-sub">7维因子评分 · Regime自适应门槛 · 三级止盈阶梯 · 多重止损断路器 · ETF vs 个股适配分析</p>
+                <p class="st-hero-sub">7维因子评分 · 四类资产(个股/行业ETF/宽基/海外)差异规则 · Regime自适应门槛 · 三级止盈阶梯 · ATR动态止损</p>
                 <div class="st-hero-stats">
                     <div class="st-hero-stat"><span class="st-hs-label">评分满分</span><span class="st-hs-value st-gold">100 分</span></div>
-                    <div class="st-hero-stat"><span class="st-hs-label">入场门槛</span><span class="st-hs-value" id="hero-entry-gate">Regime 自适应</span></div>
-                    <div class="st-hero-stat"><span class="st-hs-label">止盈目标</span><span class="st-hs-value st-green">T1+15% / T2+25%</span></div>
-                    <div class="st-hero-stat"><span class="st-hs-label">硬止损</span><span class="st-hs-value" style="color:#f87171;">ETF-8% / 个股-10%</span></div>
+                    <div class="st-hero-stat"><span class="st-hs-label">入场门槛</span><span class="st-hs-value" id="hero-entry-gate">资产×Regime 自适应</span></div>
+                    <div class="st-hero-stat"><span class="st-hs-label">止盈目标</span><span class="st-hs-value st-green" id="hero-tp">T1+15% / T2+22%</span></div>
+                    <div class="st-hero-stat"><span class="st-hs-label">硬止损</span><span class="st-hs-value" style="color:#f87171;" id="hero-sl">8-12%</span></div>
                 </div>
             </section>
 
@@ -2417,22 +2417,17 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                             <!-- 描述 + 指标格 -->
                             <div>
                                 <div id="regime-desc-text" style="font-size:0.85rem; color:var(--text-muted); line-height:1.6; margin-bottom:14px;"></div>
-                                <div style="display:grid; grid-template-columns:repeat(6,1fr); gap:10px;">
+                                <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:10px;">
                                     <div style="background:rgba(0,0,0,0.2); border-radius:8px; padding:10px; text-align:center;">
-                                        <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:3px;">CSI 300</div>
+                                        <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:3px;">CSI300</div>
                                         <div id="rm-csi" style="font-size:1rem; font-weight:700; color:#fff;">—</div>
                                     </div>
                                     <div style="background:rgba(0,0,0,0.2); border-radius:8px; padding:10px; text-align:center;">
-                                        <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:3px;">MA120</div>
-                                        <div id="rm-ma120" style="font-size:1rem; font-weight:700; color:#fff;">—</div>
-                                    </div>
-                                    <div style="background:rgba(0,0,0,0.2); border-radius:8px; padding:10px; text-align:center;">
-                                        <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:3px;">5日涨幅</div>
-                                        <div id="rm-ret5" style="font-size:1rem; font-weight:700;">—</div>
-                                    </div>
-                                    <div style="background:rgba(0,0,0,0.2); border-radius:8px; padding:10px; text-align:center;">
-                                        <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:3px;">20日涨幅</div>
-                                        <div id="rm-ret20" style="font-size:1rem; font-weight:700;">—</div>
+                                        <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:3px;">MA120 · 20日涨幅</div>
+                                        <div style="display:flex;gap:8px;justify-content:center;">
+                                            <span id="rm-ma120" style="font-size:0.9rem;font-weight:700;color:#fff;">—</span>
+                                            <span id="rm-ret20" style="font-size:0.9rem;font-weight:700;">—</span>
+                                        </div>
                                     </div>
                                     <div style="background:rgba(0,0,0,0.2); border-radius:8px; padding:10px; text-align:center;">
                                         <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:3px;">MA120斜率</div>
@@ -2496,90 +2491,21 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                 </div>
             </section>
 
-            <!-- ① ETF vs 个股适用性 -->
+            <!-- ② 入场评分 (V22.0 整合: 资产类别选择器嵌入因子卡片) -->
             <section class="st-section">
-                <h3>🔬 ① ETF vs 个股适用性科学评估</h3>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:20px;">
-                    <!-- ETF 优势 -->
-                    <div class="glass-panel" style="padding:24px; border-color:rgba(16,185,129,0.25); border-left:3px solid #10b981;">
-                        <div style="font-size:1rem; font-weight:700; color:#10b981; margin-bottom:14px;">✅ 行业ETF — 动量策略最优载体</div>
-                        <table style="width:100%; font-size:0.8rem; border-collapse:collapse;">
-                            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
-                                <td style="padding:8px 4px; color:var(--text-muted); width:40%;">单股特质风险</td>
-                                <td style="padding:8px 4px; color:#10b981; font-weight:600;">🟢 无（内部已分散）</td>
-                            </tr>
-                            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
-                                <td style="padding:8px 4px; color:var(--text-muted);">财报黑天鹅</td>
-                                <td style="padding:8px 4px; color:#10b981; font-weight:600;">🟢 ETF不受影响</td>
-                            </tr>
-                            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
-                                <td style="padding:8px 4px; color:var(--text-muted);">退市/ST风险</td>
-                                <td style="padding:8px 4px; color:#10b981; font-weight:600;">🟢 零风险</td>
-                            </tr>
-                            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
-                                <td style="padding:8px 4px; color:var(--text-muted);">动量信号质量</td>
-                                <td style="padding:8px 4px; color:#10b981; font-weight:600;">🟢 行业共振，噪声低</td>
-                            </tr>
-                            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
-                                <td style="padding:8px 4px; color:var(--text-muted);">成交量稳定性</td>
-                                <td style="padding:8px 4px; color:#10b981; font-weight:600;">🟢 主力资金可监测</td>
-                            </tr>
-                            <tr>
-                                <td style="padding:8px 4px; color:var(--text-muted);">回测一致性</td>
-                                <td style="padding:8px 4px; color:#10b981; font-weight:600;">🟢 样本外IR=0.638</td>
-                            </tr>
-                        </table>
-                        <div style="margin-top:14px; padding:10px 14px; background:rgba(16,185,129,0.06); border-radius:8px; font-size:0.78rem; color:var(--text-muted); line-height:1.6;">
-                            <strong style="color:#10b981;">结论：</strong>行业ETF是本策略的<strong style="color:#fff;">最优载体</strong>。回测576组参数验证，样本外超额CAGR +11.85%，Sharpe 1.24，无过拟合。
-                        </div>
-                    </div>
-                    <!-- 个股风险 -->
-                    <div class="glass-panel" style="padding:24px; border-color:rgba(239,68,68,0.2); border-left:3px solid #ef4444;">
-                        <div style="font-size:1rem; font-weight:700; color:#f87171; margin-bottom:14px;">⚠️ 个股应用 — 需增加5层前置过滤</div>
-                        <table style="width:100%; font-size:0.8rem; border-collapse:collapse;">
-                            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
-                                <td style="padding:8px 4px; color:var(--text-muted); width:40%;">单股特质风险</td>
-                                <td style="padding:8px 4px; color:#f87171; font-weight:600;">🔴 爆雷/崩盘风险高</td>
-                            </tr>
-                            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
-                                <td style="padding:8px 4px; color:var(--text-muted);">财报黑天鹅</td>
-                                <td style="padding:8px 4px; color:#f87171; font-weight:600;">🔴 单日跌停风险</td>
-                            </tr>
-                            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
-                                <td style="padding:8px 4px; color:var(--text-muted);">流动性</td>
-                                <td style="padding:8px 4px; color:#fbbf24; font-weight:600;">🟡 需筛选(日成≥5000万)</td>
-                            </tr>
-                            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
-                                <td style="padding:8px 4px; color:var(--text-muted);">动量信号质量</td>
-                                <td style="padding:8px 4px; color:#fbbf24; font-weight:600;">🟡 噪声高，需更强过滤</td>
-                            </tr>
-                            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
-                                <td style="padding:8px 4px; color:var(--text-muted);">止损难度</td>
-                                <td style="padding:8px 4px; color:#f87171; font-weight:600;">🔴 跳空缺口风险</td>
-                            </tr>
-                            <tr>
-                                <td style="padding:8px 4px; color:var(--text-muted);">参数稳定性</td>
-                                <td style="padding:8px 4px; color:#fbbf24; font-weight:600;">🟡 需独立验证</td>
-                            </tr>
-                        </table>
-                        <div style="margin-top:14px; padding:10px 14px; background:rgba(239,68,68,0.05); border-radius:8px; font-size:0.78rem; color:var(--text-muted); line-height:1.6;">
-                            <strong style="color:#fbbf24;">若要用于个股：</strong>必须满足 流通市值≥50亿 + 日成交≥5000万 + 非ST + 上市≥1年 + RSI<75 五项前置条件，止损收窄至 -5%。
-                        </div>
-                    </div>
+                <h3>🟢 ② 入场信号评分系统 V22.0（7维·满分100分·资产分类）</h3>
+                <!-- V22.0: 资产类别选择器 -->
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;padding:10px 14px;background:rgba(139,92,246,0.06);border:1px solid rgba(139,92,246,0.15);border-radius:10px;">
+                    <span style="font-size:0.7rem;color:#a78bfa;font-weight:700;">🏷️ 资产类别:</span>
+                    <select id="asset-class-select" onchange="updateAssetRules()"
+                        style="padding:5px 10px;border-radius:6px;background:rgba(15,23,42,0.8);border:1px solid rgba(255,255,255,0.08);color:#cbd5e1;font-size:0.72rem;">
+                        <option value="individual_stock">📌 A股个股</option>
+                        <option value="sector_etf" selected>🏭 行业/主题ETF</option>
+                        <option value="broad_etf">📊 宽基ETF</option>
+                        <option value="overseas_etf">🌐 海外宽基ETF</option>
+                    </select>
+                    <span style="font-size:0.6rem;color:#64748b;margin-left:auto;">V22.0 资产分类差异化规则</span>
                 </div>
-                <!-- 专家结论横幅 -->
-                <div class="glass-panel" style="padding:16px 24px; border-color:rgba(251,191,36,0.2); background:rgba(251,191,36,0.04); display:flex; align-items:center; gap:16px;">
-                    <span style="font-size:1.8rem;">🏛️</span>
-                    <div>
-                        <div style="font-weight:700; color:#fbbf24; margin-bottom:4px;">专业结论：策略以行业ETF为主战场，个股可作为辅助验证工具</div>
-                        <div style="font-size:0.8rem; color:var(--text-muted);">主仓（≥80%）配置 ETF 动量轮动，副仓（≤20%）用精选个股做行业内穿透，满足流动性+估值+趋势三重准入后方可入场。</div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- ② 5维入场评分 -->
-            <section class="st-section">
-                <h3>🟢 ② 入场信号评分系统 V4.2（7维·满分100分）</h3>
                 <div style="display:grid; grid-template-columns: repeat(4,1fr); gap:14px; margin-bottom:14px;">
                     <!-- 因子① RSI超卖深度 -->
                     <div class="glass-panel" style="padding:18px 14px; text-align:center; border-color:rgba(96,165,250,0.25); position:relative; overflow:hidden;">
@@ -2671,7 +2597,7 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                     </div>
                 </div>
                 <div style="margin-top:12px; font-size:0.72rem; color:var(--text-muted); padding:8px 14px; background:rgba(99,102,241,0.05); border:1px solid rgba(99,102,241,0.12); border-radius:8px;">
-                    💡 门槛值由上方「📡 市场环境实时识别」面板联动自动更新：BULL 宽松（回调即机会） / RANGE 标准 / BEAR 严格（防接飞刀）
+                    💡 V22.0 资产分类差异化门槛: BEAR/<span id="rule-gate-range">75/65/58</span> (熊/震/牛) · 止损 <span id="rule-pos-display">8-12%</span> · 切换上方资产类别查看不同规则
                 </div>
             </section>
 
@@ -2681,21 +2607,21 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                 <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:14px;">
                     <div style="background:rgba(16,185,129,0.05); border:1px solid rgba(16,185,129,0.25); border-radius:12px; padding:20px;">
                         <div style="font-size:0.75rem; color:#10b981; font-weight:700; margin-bottom:10px; letter-spacing:0.05em;">TARGET 1</div>
-                        <div style="font-size:1.6rem; font-weight:900; color:#10b981; margin-bottom:8px;">+15%</div>
+                        <div style="font-size:1.6rem; font-weight:900; color:#10b981; margin-bottom:8px;">+<span id="rule-tp1">15</span>%</div>
                         <div style="font-size:0.82rem; color:#fff; font-weight:600; margin-bottom:6px;">卖出 50%</div>
                         <div style="font-size:0.75rem; color:var(--text-muted); line-height:1.5;">剩余50%继续持有，等候 T2 或追踪止损触发</div>
                     </div>
                     <div style="background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.3); border-radius:12px; padding:20px;">
                         <div style="font-size:0.75rem; color:#10b981; font-weight:700; margin-bottom:10px; letter-spacing:0.05em;">TARGET 2</div>
-                        <div style="font-size:1.6rem; font-weight:900; color:#10b981; margin-bottom:8px;">+25%</div>
+                        <div style="font-size:1.6rem; font-weight:900; color:#10b981; margin-bottom:8px;">+<span id="rule-tp2">22</span>%</div>
                         <div style="font-size:0.82rem; color:#fff; font-weight:600; margin-bottom:6px;">再卖出 25%</div>
                         <div style="font-size:0.75rem; color:var(--text-muted); line-height:1.5;">剩余25%持续运行，追踪止损保护利润</div>
                     </div>
                     <div style="background:rgba(251,191,36,0.05); border:1px solid rgba(251,191,36,0.2); border-radius:12px; padding:20px;">
                         <div style="font-size:0.75rem; color:#fbbf24; font-weight:700; margin-bottom:10px; letter-spacing:0.05em;">TRAILING STOP</div>
-                        <div style="font-size:1.6rem; font-weight:900; color:#fbbf24; margin-bottom:8px;">-10%</div>
+                        <div style="font-size:1.6rem; font-weight:900; color:#fbbf24; margin-bottom:8px;" id="rule-trail">ATR×2.5</div>
                         <div style="font-size:0.82rem; color:#fff; font-weight:600; margin-bottom:6px;">从最高点回撤</div>
-                        <div style="font-size:0.75rem; color:var(--text-muted); line-height:1.5;">触发后全仓清出。追踪止损高于T1时始终有效</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted); line-height:1.5;">V22.0 ATR(14)动态追踪 · 触发后全仓清出</div>
                     </div>
                     <div style="background:rgba(99,102,241,0.05); border:1px solid rgba(99,102,241,0.2); border-radius:12px; padding:20px;">
                         <div style="font-size:0.75rem; color:#a78bfa; font-weight:700; margin-bottom:10px; letter-spacing:0.05em;">FORCED EXIT</div>
@@ -2712,14 +2638,14 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                 <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:16px;">
                     <div style="background:rgba(239,68,68,0.05); border:1px solid rgba(239,68,68,0.3); border-radius:12px; padding:22px;">
                         <div style="font-size:0.75rem; color:#f87171; font-weight:700; margin-bottom:10px;">🔴 硬止损 (HARD STOP)</div>
-                        <div style="font-size:1.4rem; font-weight:900; color:#f87171; margin-bottom:10px;">ETF -8% / 个股 -10%</div>
-                        <div style="font-size:0.82rem; color:#fff; margin-bottom:8px;">ETF浮亏达-8% 或 个股浮亏达-10%</div>
-                        <div style="font-size:0.75rem; color:var(--text-muted); line-height:1.6;">⚡ 立即清仓，同日执行<br>不等调仓周期<br>可设限价单 ETF-7.5%/个股-9.5% 触发</div>
+                        <div style="font-size:1.4rem; font-weight:900; color:#f87171; margin-bottom:10px;"><span id="rule-stop-loss">ETF -8%</span> / 个股 -12%</div>
+                        <div style="font-size:0.82rem; color:#fff; margin-bottom:8px;">宽基-6% · 行业-8% · 海外-8% · 个股-12%</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted); line-height:1.6;">⚡ 立即清仓，同日执行<br>不等调仓周期<br>资产类别差异化 · 按波动率缩放</div>
                     </div>
                     <div style="background:rgba(251,191,36,0.05); border:1px solid rgba(251,191,36,0.2); border-radius:12px; padding:22px;">
                         <div style="font-size:0.75rem; color:#fbbf24; font-weight:700; margin-bottom:10px;">🟡 时间止损 (TIME STOP)</div>
-                        <div style="font-size:1.8rem; font-weight:900; color:#fbbf24; margin-bottom:10px;">20日</div>
-                        <div style="font-size:0.82rem; color:#fff; margin-bottom:8px;">持有超20交易日仍无进展</div>
+                        <div style="font-size:1.8rem; font-weight:900; color:#fbbf24; margin-bottom:10px;" id="rule-time-stop">20日</div>
+                        <div style="font-size:0.82rem; color:#fff; margin-bottom:8px;">持有超N交易日仍无进展</div>
                         <div style="font-size:0.75rem; color:var(--text-muted); line-height:1.6;">收益率 < +5%<br>→ 减半仓位<br>→ 等候新信号确认</div>
                     </div>
                     <div style="background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.35); border-radius:12px; padding:22px;">
@@ -2758,7 +2684,7 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
                     <div>
                         <h3 style="margin:0;">🧮 ⑤ 实时信号评分计算器</h3>
-                        <div style="font-size:0.72rem; color:var(--text-muted); margin-top:3px;">V4.2 · 7维度100分制 · RSI动量方向 + K线形态识别</div>
+                        <div style="font-size:0.72rem; color:var(--text-muted); margin-top:3px;">V22.0 · 7维度100分制 · 资产分类参数 · RSI动量 + K线形态</div>
                     </div>
                     <button id="calc-auto-fill-btn" onclick="autoFillCalcRegime()"
                         style="background:rgba(99,102,241,0.12); color:#a78bfa; border:1px solid rgba(99,102,241,0.3);
@@ -3403,7 +3329,7 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                         <h3>📋 全标的信号表 (<span id="st-total-count">35</span>只)</h3>
                         <div class="glass-panel" style="padding:15px; overflow-x:auto;">
                             <table class="st-table st-full-table" id="st-signal-table">
-                                <thead><tr><th>标的</th><th>代码</th><th>现价</th><th>评分</th><th>%B因子</th><th>RSI(3)</th><th>RSI方向</th><th>K线</th><th>信号</th><th>建议仓位</th></tr></thead>
+                                <thead><tr><th>标的</th><th>代码</th><th title="V22.0 资产类别">类别</th><th>现价</th><th>评分</th><th>%B</th><th>RSI₃</th><th>RSI→</th><th>K线</th><th>信号</th><th title="V22.0 动态仓位上限">仓位</th></tr></thead>
                                 <tbody id="st-table-body"></tbody>
                             </table>
                         </div>

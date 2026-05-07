@@ -1,14 +1,14 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AlphaCore · 深度审计报告 V6.0</title>
-    <meta name="description" content="AlphaCore 系统深度审计 V6.0 — 诊断终端架构：五维可信度评估 + 止损执行器 + 交易阻断 + 一键静音">    <link rel="stylesheet" href="./static/css/fonts.css?v=1">
+    <title>AlphaCore · 深度审计报告 V22.0</title>
+    <meta name="description" content="AlphaCore 系统深度审计 V22.0 — 诊断终端架构：五维可信度评估 + 合规引擎 + 漂移监控 + 止损执行器 + 交易阻断 + 一键静音">    <link rel="stylesheet" href="./static/css/fonts.css?v=1">
 
     <link rel="stylesheet" href="./static/css/styles.css?v=12">
     <link rel="stylesheet" href="./static/css/visual_excellence.css?v=3">
-    <link rel="stylesheet" href="./static/css/audit.css?v=9">
+    <link rel="stylesheet" href="./static/css/audit.css?v=11">
     <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
     <script>window.echarts || document.write('<script src="./static/vendor/echarts.min.js"><\/script>')</script>
@@ -36,7 +36,7 @@
             <a href="./decision.html" class="nav-item">
                 <span class="icon">🧠</span>
                 <span>决策中枢</span>
-                <span class="badge-beta" style="background:rgba(139,92,246,0.15);color:#a78bfa;border-color:rgba(139,92,246,0.3);">V16</span>
+                <span class="badge-beta" style="background:rgba(139,92,246,0.15);color:#a78bfa;border-color:rgba(139,92,246,0.3);">V22</span>
             </a>
 
             <div class="nav-group-title">研 究 审 计</div>
@@ -69,7 +69,7 @@
                     <button class="mute-btn" id="mute-btn" onclick="toggleMute()" title="一键静音">🔇 静音</button>
                     <span class="mute-countdown" id="mute-countdown"></span>
                 </div>
-                <span style="font-size:0.82rem;color:#a78bfa;background:rgba(139,92,246,0.1);padding:4px 16px;border-radius:8px;border:1px solid rgba(139,92,246,0.2);font-weight:600;">🔬 诊断终端 V6.0</span>
+                <span style="font-size:0.82rem;color:#a78bfa;background:rgba(139,92,246,0.1);padding:4px 16px;border-radius:8px;border:1px solid rgba(139,92,246,0.2);font-weight:600;">🔬 诊断终端 V22.0</span>
                 <span id="audit-time" style="font-size:0.72rem;color:#64748b;margin-left:8px;"></span>
             </div>
         </header>
@@ -158,7 +158,7 @@
             <!-- Footer -->
             <div class="audit-footer">
                 <div class="footer-summary">
-                    <span>🔬 AlphaCore 深度审计诊断终端 V6.0</span>
+                    <span>🔬 AlphaCore 深度审计诊断终端 V22.0</span>
                     <span style="margin-left:8px;" id="footer-time">· 等待审计</span>
                     <span class="footer-urgent" id="footer-urgent"></span>
                 </div>
@@ -170,7 +170,7 @@
         </div>
     </main>
 
-    <script src="./static/js/audit.js?v=63"></script>
+    <script src="./static/js/audit.js?v=69"></script>
 
     <!-- V6.0: Enforcer Confirm Modal -->
     <div class="confirm-modal-overlay" id="confirm-modal-overlay">

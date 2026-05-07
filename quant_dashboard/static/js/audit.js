@@ -1,7 +1,7 @@
 /**
- * AlphaCore 深度审计诊断终端 V6.0
+ * AlphaCore 深度审计诊断终端 V22.0
  * Scientific Diagnostic Terminal
- * 五维审计 · Enforcer 执行器 · 确认弹窗 · 一键静音 · 审计趋势 · 自动展开
+ * 五维审计 · 合规引擎 · 漂移监控 · Enforcer 执行器 · 确认弹窗 · 一键静音 · 审计趋势 · 自动展开
  */
 
 const MODULE_META = {
@@ -15,6 +15,8 @@ const MODULE_META = {
 const GRADE_COLORS = { A: '#34d399', B: '#60a5fa', C: '#fbbf24', D: '#f87171' };
 
 let auditData = null;
+let _auditRunning = false;  // V22.0: 防并发调用
+let _auditGeneration = 0;   // V22.0: 防止过期回调
 
 // V7.2: ECharts 生命周期管理 (防内存泄漏)
 let _gaugeChart = null, _radarChart = null, _timelineChart = null;
@@ -25,33 +27,63 @@ let _gaugeChart = null, _radarChart = null, _timelineChart = null;
 document.addEventListener('DOMContentLoaded', () => { runAudit(); });
 
 async function runAudit() {
+    if (_auditRunning) return;  // V22.0: 防并发
+    _auditRunning = true;
+
     const btn = document.getElementById('audit-refresh-btn');
     const spinner = document.getElementById('audit-spinner');
-    btn.disabled = true;
-    spinner.style.display = 'inline-block';
+    if (btn) btn.disabled = true;
+    if (spinner) spinner.style.display = 'inline-block';
 
-    document.getElementById('audit-loading').style.display = 'block';
-    document.getElementById('trust-hero').style.display = 'none';
-    document.getElementById('audit-overview').style.display = 'none';
-    document.getElementById('detail-section').classList.remove('visible');
-    document.getElementById('alert-banner').classList.remove('visible');
-    document.getElementById('warning-dashboard').classList.remove('visible');
-    document.getElementById('audit-timeline').style.display = 'none';
+    // V22.0: 安全 set display (null-guard)
+    const _safe = (id) => { const el = document.getElementById(id); return el; };
+    const _show = (id, v) => { const el = _safe(id); if (el) el.style.display = v; };
+    const _hide = (id) => { const el = _safe(id); if (el) el.classList.remove('visible'); };
+
+    _show('audit-loading', 'block');
+    _show('trust-hero', 'none');
+    _show('audit-overview', 'none');
+    _hide('detail-section');
+    _hide('alert-banner');
+    _hide('warning-dashboard');
+    _show('audit-timeline', 'none');
 
     try {
         const resp = await fetch('/api/v1/audit');
-        if (!resp.ok) throw new Error(`服务器错误 (HTTP ${resp.status})`);
+        if (!resp.ok) {
+            const errData = await resp.json().catch(() => ({}));
+            throw new Error(errData.message || `服务器错误 (HTTP ${resp.status})`);
+        }
         const data = await resp.json();
-        if (data.status !== 'ok') throw new Error(data.message || '审计失败');
+        if (data.status !== 'ok') {
+            showAuditError(data.message || '审计引擎返回异常', data.error || '');
+            return;
+        }
         auditData = data;
         renderAll(data);
     } catch (e) {
         console.error('审计失败:', e);
         showNetworkError(e.message || '未知错误，请确认服务器已启动');
     } finally {
-        btn.disabled = false;
-        spinner.style.display = 'none';
+        _auditRunning = false;
+        if (btn) btn.disabled = false;
+        if (spinner) spinner.style.display = 'none';
     }
+}
+
+// V22.0: API 级别的错误展示 (区别于网络中断)
+function showAuditError(message, detail) {
+    const loading = document.getElementById('audit-loading');
+    if (!loading) return;
+    loading.innerHTML = `
+        <div style="text-align:center;padding:40px 30px;">
+            <div style="font-size:2rem;margin-bottom:12px;">⚠️</div>
+            <div style="font-size:0.9rem;font-weight:700;color:#fbbf24;margin-bottom:6px;">审计引擎异常</div>
+            <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:6px;">${message}</div>
+            ${detail ? `<div style="font-size:0.65rem;color:#64748b;margin-bottom:16px;">${detail}</div>` : ''}
+            <button onclick="runAudit()" class="audit-btn" style="font-size:0.78rem;">🔄 重新审计</button>
+        </div>`;
+    loading.style.display = 'block';
 }
 
 // ═══════════════════════════════════════════════════════
@@ -85,14 +117,17 @@ function renderAll(data) {
     layout.classList.add('scan-complete');
 
     // 自动展开得分最低的模块 (noScroll=true, never steal viewport)
-    setTimeout(() => autoExpandWorst(data), 800);
+    const gen = ++_auditGeneration;
+    setTimeout(() => {
+        if (gen === _auditGeneration) autoExpandWorst(data);
+    }, 800);
 }
 
 // ═══════════════════════════════════════════════════════
 //  Counter-Up 动画引擎
 // ═══════════════════════════════════════════════════════
 function counterUp(el, target, suffix = '', duration = 1200) {
-    if (!el) return;
+    if (!el || target == null || isNaN(target)) return;
     const startTime = performance.now();
     const isInt = Number.isInteger(target);
     function tick(now) {
@@ -109,8 +144,8 @@ function counterUp(el, target, suffix = '', duration = 1200) {
 //  1. Trust Score Hero V7.0 — 三栏诊断报告头
 // ═══════════════════════════════════════════════════════
 function renderTrustHero(data) {
-    const score = data.trust_score;
-    const grade = data.trust_grade;
+    const score = data.trust_score ?? 0;
+    const grade = data.trust_grade || 'C';
     const gc = GRADE_COLORS[grade] || '#94a3b8';
 
     // Big Score (center column primary visual)
@@ -162,8 +197,12 @@ function renderTrustHero(data) {
     document.getElementById('trust-equalizer').innerHTML = eqHtml;
 
     // Gauge Chart (V7.0: no center number — score shown in center column)
-    if (_gaugeChart) { AC.disposeChart(_gaugeChart); }
-    _gaugeChart = AC.registerChart(echarts.init(document.getElementById('trust-gauge-chart')));
+    const gaugeEl = document.getElementById('trust-gauge-chart');
+    if (_gaugeChart && typeof AC !== 'undefined') { AC.disposeChart(_gaugeChart); _gaugeChart = null; }
+    if (gaugeEl && typeof echarts !== 'undefined') {
+        _gaugeChart = typeof AC !== 'undefined' ? AC.registerChart(echarts.init(gaugeEl)) : echarts.init(gaugeEl);
+    }
+    if (!_gaugeChart) return;
     const chart = _gaugeChart;
     chart.setOption({
         series: [{
@@ -196,8 +235,12 @@ function renderRadar(data) {
     const indicator = keys.map(k => ({ name: MODULE_META[k].label, max: 100 }));
     const values = keys.map(k => modules[k]?.score ?? 0);
 
-    if (_radarChart) { AC.disposeChart(_radarChart); }
-    _radarChart = AC.registerChart(echarts.init(document.getElementById('radar-chart')));
+    const radarEl = document.getElementById('radar-chart');
+    if (_radarChart && typeof AC !== 'undefined') { AC.disposeChart(_radarChart); _radarChart = null; }
+    if (radarEl && typeof echarts !== 'undefined') {
+        _radarChart = typeof AC !== 'undefined' ? AC.registerChart(echarts.init(radarEl)) : echarts.init(radarEl);
+    }
+    if (!_radarChart) return;
     const chart = _radarChart;
     chart.setOption({
         radar: {
@@ -611,8 +654,12 @@ function renderTimeline(data) {
         document.getElementById('timeline-trend').textContent = '— 首次审计';
         document.getElementById('timeline-trend').className = 'timeline-trend stable';
         // Still render a single-point chart
-        if (_timelineChart) { AC.disposeChart(_timelineChart); }
-        _timelineChart = AC.registerChart(echarts.init(document.getElementById('timeline-chart')));
+        const tlEl = document.getElementById('timeline-chart');
+        if (_timelineChart && typeof AC !== 'undefined') { AC.disposeChart(_timelineChart); _timelineChart = null; }
+        if (tlEl && typeof echarts !== 'undefined') {
+            _timelineChart = typeof AC !== 'undefined' ? AC.registerChart(echarts.init(tlEl)) : echarts.init(tlEl);
+        }
+        if (!_timelineChart) return;
         _timelineChart.setOption({
             grid: { top: 8, bottom: 24, left: 40, right: 16 },
             xAxis: { type: 'category', data: [data.audit_time?.split(' ')[1] || 'now'], axisLabel: { fontSize: 10, color: '#475569' }, axisLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } } },
@@ -632,8 +679,12 @@ function renderTimeline(data) {
     else if (curr < prev) { trendEl.textContent = `↓ ${curr - prev}`; trendEl.className = 'timeline-trend down'; }
     else { trendEl.textContent = '→ 稳定'; trendEl.className = 'timeline-trend stable'; }
 
-    if (_timelineChart) { AC.disposeChart(_timelineChart); }
-    _timelineChart = AC.registerChart(echarts.init(document.getElementById('timeline-chart')));
+    const tlEl2 = document.getElementById('timeline-chart');
+    if (_timelineChart && typeof AC !== 'undefined') { AC.disposeChart(_timelineChart); _timelineChart = null; }
+    if (tlEl2 && typeof echarts !== 'undefined') {
+        _timelineChart = typeof AC !== 'undefined' ? AC.registerChart(echarts.init(tlEl2)) : echarts.init(tlEl2);
+    }
+    if (!_timelineChart) return;
     const chart = _timelineChart;
     chart.setOption({
         grid: { top: 8, bottom: 24, left: 40, right: 16 },

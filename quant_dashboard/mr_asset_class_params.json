@@ -1,0 +1,118 @@
+{
+  "_version": "V22.0",
+  "_description": "资产类别 × Regime 差异化参数矩阵。替代旧版通用 mr_per_regime_params.json。",
+  "_principle": "调整公式: adjusted = base × σ_asset/σ_baseline × regime_multiplier, σ_baseline=20%",
+
+  "individual_stock": {
+    "_label": "A股个股",
+    "_vol_baseline": 40,
+    "_max_pos_base": 8,
+    "_score_gate_base": 68,
+    "BEAR":  {
+      "rsi_period": 7,  "rsi_buy": 25, "rsi_sell": 60,
+      "bias_buy": -8.0, "bias_sell": 5.0,
+      "stop_loss": 0.12, "take_profit_t1": 0.20, "take_profit_t2": 0.35,
+      "trailing_stop_atr_mult": 3.0, "time_stop_days": 15,
+      "entry_gate": 85, "N_trend": 30
+    },
+    "RANGE": {
+      "rsi_period": 7,  "rsi_buy": 22, "rsi_sell": 65,
+      "bias_buy": -6.0, "bias_sell": 3.0,
+      "stop_loss": 0.12, "take_profit_t1": 0.20, "take_profit_t2": 0.35,
+      "trailing_stop_atr_mult": 3.0, "time_stop_days": 15,
+      "entry_gate": 75, "N_trend": 50
+    },
+    "BULL":  {
+      "rsi_period": 7,  "rsi_buy": 18, "rsi_sell": 70,
+      "bias_buy": -5.0, "bias_sell": 2.0,
+      "stop_loss": 0.12, "take_profit_t1": 0.20, "take_profit_t2": 0.35,
+      "trailing_stop_atr_mult": 3.0, "time_stop_days": 15,
+      "entry_gate": 65, "N_trend": 80
+    }
+  },
+
+  "sector_etf": {
+    "_label": "行业/主题ETF",
+    "_vol_baseline": 30,
+    "_max_pos_base": 12,
+    "_score_gate_base": 65,
+    "BEAR":  {
+      "rsi_period": 14, "rsi_buy": 30, "rsi_sell": 60,
+      "bias_buy": -5.0, "bias_sell": 3.0,
+      "stop_loss": 0.08, "take_profit_t1": 0.15, "take_profit_t2": 0.22,
+      "trailing_stop_atr_mult": 2.5, "time_stop_days": 20,
+      "entry_gate": 75, "N_trend": 35
+    },
+    "RANGE": {
+      "rsi_period": 14, "rsi_buy": 25, "rsi_sell": 65,
+      "bias_buy": -3.5, "bias_sell": 2.0,
+      "stop_loss": 0.08, "take_profit_t1": 0.15, "take_profit_t2": 0.22,
+      "trailing_stop_atr_mult": 2.5, "time_stop_days": 20,
+      "entry_gate": 65, "N_trend": 70
+    },
+    "BULL":  {
+      "rsi_period": 14, "rsi_buy": 22, "rsi_sell": 70,
+      "bias_buy": -2.5, "bias_sell": 1.5,
+      "stop_loss": 0.08, "take_profit_t1": 0.15, "take_profit_t2": 0.22,
+      "trailing_stop_atr_mult": 2.5, "time_stop_days": 20,
+      "entry_gate": 58, "N_trend": 100
+    }
+  },
+
+  "broad_etf": {
+    "_label": "宽基ETF",
+    "_vol_baseline": 20,
+    "_max_pos_base": 20,
+    "_score_gate_base": 60,
+    "BEAR":  {
+      "rsi_period": 14, "rsi_buy": 35, "rsi_sell": 58,
+      "bias_buy": -3.0, "bias_sell": 2.5,
+      "stop_loss": 0.06, "take_profit_t1": 0.10, "take_profit_t2": 0.15,
+      "trailing_stop_atr_mult": 2.0, "time_stop_days": 30,
+      "entry_gate": 70, "N_trend": 40
+    },
+    "RANGE": {
+      "rsi_period": 14, "rsi_buy": 30, "rsi_sell": 62,
+      "bias_buy": -2.0, "bias_sell": 1.8,
+      "stop_loss": 0.06, "take_profit_t1": 0.10, "take_profit_t2": 0.15,
+      "trailing_stop_atr_mult": 2.0, "time_stop_days": 30,
+      "entry_gate": 60, "N_trend": 80
+    },
+    "BULL":  {
+      "rsi_period": 14, "rsi_buy": 25, "rsi_sell": 68,
+      "bias_buy": -1.5, "bias_sell": 1.2,
+      "stop_loss": 0.06, "take_profit_t1": 0.10, "take_profit_t2": 0.15,
+      "trailing_stop_atr_mult": 2.0, "time_stop_days": 30,
+      "entry_gate": 55, "N_trend": 110
+    }
+  },
+
+  "overseas_etf": {
+    "_label": "海外宽基ETF",
+    "_vol_baseline": 18,
+    "_max_pos_base": 15,
+    "_score_gate_base": 58,
+    "BEAR":  {
+      "rsi_period": 14, "rsi_buy": 32, "rsi_sell": 55,
+      "bias_buy": -3.0, "bias_sell": 2.0,
+      "stop_loss": 0.08, "take_profit_t1": 0.12, "take_profit_t2": 0.18,
+      "trailing_stop_atr_mult": 2.5, "time_stop_days": 25,
+      "entry_gate": 72, "N_trend": 35,
+      "_overseas_notes": "RMB升值>3%联动减半仓, 溢价>3%暂缓买入, 仅对应市场开盘日调仓"
+    },
+    "RANGE": {
+      "rsi_period": 14, "rsi_buy": 28, "rsi_sell": 60,
+      "bias_buy": -2.5, "bias_sell": 1.5,
+      "stop_loss": 0.08, "take_profit_t1": 0.12, "take_profit_t2": 0.18,
+      "trailing_stop_atr_mult": 2.5, "time_stop_days": 25,
+      "entry_gate": 62, "N_trend": 70
+    },
+    "BULL":  {
+      "rsi_period": 14, "rsi_buy": 24, "rsi_sell": 65,
+      "bias_buy": -2.0, "bias_sell": 1.2,
+      "stop_loss": 0.08, "take_profit_t1": 0.12, "take_profit_t2": 0.18,
+      "trailing_stop_atr_mult": 2.5, "time_stop_days": 25,
+      "entry_gate": 55, "N_trend": 100
+    }
+  }
+}

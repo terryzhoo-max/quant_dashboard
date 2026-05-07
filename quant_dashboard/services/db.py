@@ -115,6 +115,27 @@ def init_db():
             acknowledged INTEGER DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_alert_rule_time ON signal_alerts(rule_id, created_at);
+
+        -- V22.0: 审计历史持久化
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            audit_time TEXT NOT NULL,
+            trust_score REAL NOT NULL,
+            trust_grade TEXT NOT NULL,
+            total_checks INTEGER,
+            pass_count INTEGER,
+            warn_count INTEGER,
+            fail_count INTEGER,
+            elapsed_seconds REAL,
+            data_quality_score REAL,
+            strategy_health_score REAL,
+            risk_control_score REAL,
+            factor_decay_score REAL,
+            system_status_score REAL,
+            summary_json TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_log(audit_time);
     """)
     conn.commit()
     logger.info("SQLite 数据库初始化完成 · %s", DB_PATH)
@@ -617,4 +638,57 @@ def get_unread_alert_count() -> int:
     conn = _get_conn()
     row = conn.execute("SELECT COUNT(*) as c FROM signal_alerts WHERE acknowledged = 0").fetchone()
     return row["c"] if row else 0
+
+
+# ══════════════════════════════════════════════════════════
+#  V22.0: 审计日志持久化
+# ══════════════════════════════════════════════════════════
+
+def save_audit_log(report: dict):
+    """持久化审计报告到 audit_log 表"""
+    conn = _get_conn()
+    modules = report.get("modules", {})
+    dq = modules.get("data_quality", {}).get("score", 0)
+    sh = modules.get("strategy_health", {}).get("score", 0)
+    rc = modules.get("risk_control", {}).get("score", 0)
+    fd = modules.get("factor_decay", {}).get("score", 0)
+    ss = modules.get("system_status", {}).get("score", 0)
+
+    conn.execute(
+        """INSERT INTO audit_log
+           (audit_time, trust_score, trust_grade, total_checks,
+            pass_count, warn_count, fail_count, elapsed_seconds,
+            data_quality_score, strategy_health_score, risk_control_score,
+            factor_decay_score, system_status_score, summary_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            report.get("audit_time", ""),
+            report.get("trust_score", 0),
+            report.get("trust_grade", "D"),
+            report.get("total_checks", 0),
+            report.get("pass_count", 0),
+            report.get("warn_count", 0),
+            report.get("fail_count", 0),
+            report.get("elapsed_seconds", 0),
+            dq, sh, rc, fd, ss,
+            None,  # summary_json placeholder
+        )
+    )
+    conn.commit()
+
+    # 保留最近 90 天
+    conn.execute("DELETE FROM audit_log WHERE created_at < datetime('now', '-90 days')")
+    conn.commit()
+
+
+def get_audit_history(limit: int = 10) -> list:
+    """获取最近 N 次审计记录"""
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT audit_time, trust_score, trust_grade, fail_count, warn_count, "
+        "pass_count, elapsed_seconds, total_checks "
+        "FROM audit_log ORDER BY created_at DESC LIMIT ?",
+        (limit,)
+    ).fetchall()
+    return [dict(r) for r in rows]
 

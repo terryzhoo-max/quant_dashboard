@@ -14,10 +14,11 @@ import numpy as np
 from datetime import datetime, timedelta
 
 # ── 路径常量 ──
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_LAKE = os.path.join(BASE_DIR, "data_lake")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))       # engines/
+PROJECT_ROOT = os.path.dirname(BASE_DIR)                    # quant_dashboard/
+DATA_LAKE = os.path.join(PROJECT_ROOT, "data_lake")
 DAILY_DIR = os.path.join(DATA_LAKE, "daily_prices")
-FINA_DIR = os.path.join(DATA_LAKE, "financials")
+FINA_DIR  = os.path.join(DATA_LAKE, "financials")
 
 OPTIMIZATION_FILES = {
     "均值回归": "mr_optimization_results.json",
@@ -88,12 +89,28 @@ def _last_trading_day():
 
 
 def _stale_days(date_str):
-    """计算距今天数 (date_str 格式: YYYYMMDD 或 YYYY-MM-DD)"""
+    """计算距今交易日天数 (排除周末+法定假日, 避免周末误报)"""
     try:
         clean = str(date_str).replace("-", "")[:8]
         dt = datetime.strptime(clean, "%Y%m%d")
-        return (datetime.now() - dt).days
-    except:
+        # 计算自然日差
+        cal_days = (datetime.now() - dt).days
+        if cal_days <= 0:
+            return 0
+        # 快速路径: 1-2 自然日 → 计算精确交易日
+        trading_days = 0
+        cursor = dt + timedelta(days=1)
+        end = datetime.now()
+        # 限制循环上限防止极端值卡死
+        max_iter = min(cal_days, 400)
+        for _ in range(max_iter):
+            if cursor > end:
+                break
+            if _is_trading_day(cursor):
+                trading_days += 1
+            cursor += timedelta(days=1)
+        return trading_days
+    except Exception:
         return 999
 
 
@@ -283,6 +300,50 @@ def audit_data_quality():
             scores.append(70)
             checks.append({"name": "数据完整性 (抽检)", "status": "warn", "detail": "抽检异常", "score": 70, "explanation": "数据文件存在但读取失败，可能是文件损坏或格式异常。", "threshold": "🟢 <1% | 🟡 1-5% | 🔴 >5%/读取失败", "action": "删除损坏文件后重新同步"})
 
+    # ── V22.0: 新增数据完整性检查 ──
+    # 资产参数矩阵
+    param_path = os.path.join(PROJECT_ROOT, "mr_asset_class_params.json")
+    if os.path.exists(param_path):
+        try:
+            with open(param_path, 'r', encoding='utf-8') as f:
+                acp = json.load(f)
+            classes = [k for k in acp if not k.startswith("_")]
+            scores.append(100 if len(classes) >= 3 else 80)
+            checks.append({
+                "name": "V22.0 资产参数矩阵",
+                "status": "pass" if len(classes) >= 3 else "warn",
+                "detail": f"{len(classes)} 类资产参数就绪 ({', '.join(classes[:4])})",
+                "score": 100 if len(classes) >= 3 else 80,
+                "explanation": "资产类别差异化参数矩阵是信号评分系统的核心。缺失时引擎回退到旧版通用参数，信号无法按波动率自适应调整。",
+                "threshold": "🟢 ≥3类就绪 | 🔴 缺失",
+                "action": "检查 mr_asset_class_params.json 文件完整性",
+            })
+        except Exception:
+            scores.append(40)
+            checks.append({"name": "V22.0 资产参数矩阵", "status": "fail", "detail": "JSON 解析失败", "score": 40, "explanation": "参数文件格式损坏。", "action": "从 git 恢复 mr_asset_class_params.json"})
+    else:
+        scores.append(30)
+        checks.append({"name": "V22.0 资产参数矩阵", "status": "fail", "detail": "文件不存在", "score": 30, "explanation": "V22.0 核心配置文件缺失, 引擎将使用旧版通用参数。", "action": "运行 python 重新生成参数文件"})
+
+    # 市场事件日志健康
+    event_log = os.path.join(DATA_LAKE, "market_events.json")
+    if os.path.exists(event_log):
+        try:
+            size = os.path.getsize(event_log)
+            events_ok = size < 5 * 1024 * 1024  # < 5MB
+            scores.append(100 if events_ok else 70)
+            checks.append({
+                "name": "V22.0 事件日志健康",
+                "status": "pass" if events_ok else "warn",
+                "detail": f"{size/1024:.0f}KB" + (" (正常)" if events_ok else " (偏大, 建议清理)"),
+                "score": 100 if events_ok else 70,
+                "explanation": "市场事件日志记录 VIX 跳变、Regime 切换等突变。过大说明事件记录频率异常或清理机制失效。",
+                "threshold": "🟢 <5MB | 🟡 5-10MB | 🔴 >10MB",
+                "action": "删除 data_lake/market_events.json 重置日志" if not events_ok else None,
+            })
+        except Exception:
+            pass
+
     final_score = int(np.mean(scores)) if scores else 0
     return {
         "module": "data_quality",
@@ -321,7 +382,7 @@ def audit_strategy_health():
     }
 
     for name, filename in OPTIMIZATION_FILES.items():
-        fp = os.path.join(BASE_DIR, filename)
+        fp = os.path.join(PROJECT_ROOT, filename)
         if os.path.exists(fp):
             mtime = os.path.getmtime(fp)
             age_days = (time.time() - mtime) / 86400
@@ -379,7 +440,7 @@ def audit_strategy_health():
             })
 
     # ── Regime 参数文件检查 ──
-    regime_fp = os.path.join(BASE_DIR, "mr_per_regime_params.json")
+    regime_fp = os.path.join(PROJECT_ROOT, "mr_per_regime_params.json")
     if os.path.exists(regime_fp):
         try:
             with open(regime_fp, "r", encoding="utf-8") as f:
@@ -469,7 +530,7 @@ def _get_live_portfolio():
         print(f"[Audit] portfolio_engine 不可用, 降级为成本估算: {e}")
 
     # ── 降级: 从 JSON 手动解析 (成本估算) ──
-    pf_path = os.path.join(BASE_DIR, "portfolio_store.json")
+    pf_path = os.path.join(PROJECT_ROOT, "portfolio_store.json")
     if not os.path.exists(pf_path):
         return [], 0, 0, False, None
     try:
@@ -732,7 +793,7 @@ def audit_risk_control():
             pass  # 缓存不可用时静默跳过
 
     # ── 检查 6: 历史最大回撤 ──
-    mr_fp = os.path.join(BASE_DIR, "mr_optimization_results.json")
+    mr_fp = os.path.join(PROJECT_ROOT, "mr_optimization_results.json")
     if os.path.exists(mr_fp):
         try:
             with open(mr_fp, "r", encoding="utf-8") as f:
@@ -754,6 +815,31 @@ def audit_risk_control():
                 })
         except:
             pass
+
+    # ── V22.0: 合规引擎就绪 (独立 try/except, 不影响其他检查) ──
+    try:
+        from engines.compliance_engine import COMPLIANCE_RULES
+        rule_count = len(COMPLIANCE_RULES)
+        scores.append(100 if rule_count >= 5 else 80)
+        checks.append({
+            "name": "V22.0 合规引擎",
+            "status": "pass",
+            "detail": f"{rule_count} 条合规规则就绪 · 含硬阻断+软警告+提示三级",
+            "score": 100,
+            "explanation": "合规引擎在每次交易决策输出前执行6条规则检查：单票上限20%、板块集中度40%、AIAE过热限制、JCS门槛、VIX紧急刹车、最低分散持仓。硬阻断会禁止违规操作执行。",
+            "threshold": "🟢 ≥5规则就绪 | 🔴 引擎缺失",
+        })
+    except ImportError:
+        scores.append(50)
+        checks.append({
+            "name": "V22.0 合规引擎",
+            "status": "warn",
+            "detail": "合规引擎未加载, 预交易合规检查不可用",
+            "score": 50,
+            "explanation": "合规引擎是 V22.0 的核心升级——从展示风控到执行风控。离线时交易决策不受硬阻断保护。",
+            "threshold": "🟢 就绪 | 🔴 缺失",
+            "action": "检查 engines/compliance_engine.py 文件完整性",
+        })
 
     final_score = int(np.mean(scores)) if scores else 0
     return {
@@ -959,7 +1045,7 @@ def audit_system_status():
     })
 
     # ── 5.4 ECharts 前端资源 ──
-    echarts_path = os.path.join(BASE_DIR, "static", "vendor", "echarts.min.js")
+    echarts_path = os.path.join(PROJECT_ROOT, "static", "vendor", "echarts.min.js")
     if os.path.exists(echarts_path):
         esize = os.path.getsize(echarts_path) / 1024
         scores.append(100)
@@ -987,6 +1073,54 @@ def audit_system_status():
         "threshold": "🟢 运行中: 系统正常 | 🔴 崩溃: 无法访问",
         "action": "运行 python main.py 或双击 启动服务器.bat",
     })
+
+    # ── V22.0: 新模块就绪检查 ──
+    v22_modules = [
+        ("compliance_engine", "预交易合规引擎"),
+        ("drift_monitor", "策略漂移监控"),
+    ]
+    for mod_name, mod_label in v22_modules:
+        try:
+            __import__(f"engines.{mod_name}")
+            scores.append(100)
+            checks.append({
+                "name": f"V22.0 {mod_label}",
+                "status": "pass",
+                "detail": f"模块 {mod_name} 就绪",
+                "score": 100,
+                "explanation": f"{mod_label}是 V22.0 新增的生产级风控模块。离线不影响核心数据流，但会失去预交易合规检查和策略漂移预警能力。",
+                "threshold": "🟢 就绪: 正常 | 🔴 缺失: 失去风控增强",
+            })
+        except ImportError:
+            scores.append(60)
+            checks.append({
+                "name": f"V22.0 {mod_label}",
+                "status": "warn",
+                "detail": f"模块 {mod_name} 未加载",
+                "score": 60,
+                "explanation": f"{mod_label}未正确加载。请检查 engines/{mod_name}.py 文件是否存在。",
+                "threshold": "🟢 就绪 | 🔴 缺失",
+                "action": f"检查 engines/{mod_name}.py 文件完整性",
+            })
+
+    # ── V22.0: 事件日志文件 ── (os already imported at module level)
+    event_log = os.path.join(DATA_LAKE, "market_events.json")
+    snapshot_file = os.path.join(DATA_LAKE, "event_last_snapshot.json")
+    for fpath, fname in [(event_log, "市场事件日志"), (snapshot_file, "事件快照")]:
+        if os.path.exists(fpath):
+            try:
+                size = os.path.getsize(fpath)
+                scores.append(100)
+                checks.append({
+                    "name": f"V22.0 {fname}",
+                    "status": "pass",
+                    "detail": f"{fname} 就绪 ({size} bytes)",
+                    "score": 100,
+                    "explanation": f"{fname}是 V22.0 动态事件驱动引擎的持久化文件。",
+                    "threshold": "🟢 就绪 | 🔴 缺失",
+                })
+            except Exception:
+                pass
 
     final_score = int(np.mean(scores)) if scores else 0
     return {
@@ -1118,8 +1252,9 @@ def run_full_audit():
         }
 
     elapsed_total = time.time() - start
+    audit_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    return {
+    report = {
         "trust_score": trust_score,
         "trust_grade": _grade(trust_score),
         "total_checks": total_checks,
@@ -1129,12 +1264,20 @@ def run_full_audit():
         "muted_count": muted_count,
         "modules": modules,
         "weights": WEIGHTS,
-        "audit_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "audit_time": audit_time_str,
         "elapsed_seconds": round(elapsed_total, 2),
-        # V4.0 新增字段
         "enforcement": enforcement_result,
-        "version": "4.0",
+        "version": "V22.0",
     }
+
+    # V22.0: 服务端持久化 (非阻塞, 异常不影响审计结果)
+    try:
+        from services.db import save_audit_log
+        save_audit_log(report)
+    except Exception:
+        pass  # 持久化失败不影响审计报告返回
+
+    return report
 
 
 if __name__ == "__main__":

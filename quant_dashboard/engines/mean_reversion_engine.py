@@ -46,6 +46,201 @@ FALLBACK_PARAMS = {
     "BULL":  {"N_trend": 120,"rsi_period": 14, "rsi_buy": 45, "rsi_sell": 75, "bias_buy": -1.5, "stop_loss": 0.06},
 }
 
+# ═══════════════════════════════════════════════════════════
+#  V22.0: 资产类别分类 + 差异化参数加载
+# ═══════════════════════════════════════════════════════════
+
+# 资产类别定义
+_ASSET_CLASS_RULES = [
+    # (类别键, 名称, 判断函数)
+    ("broad_etf", "宽基ETF", lambda code, name: (
+        code in ("510300.SH", "510500.SH", "512100.SH", "159915.SZ", "159949.SZ",
+                 "588000.SH", "588220.SH", "159781.SZ") or
+        ("沪深300" in name or "中证500" in name or "中证1000" in name or
+         "创业板" in name or "科创50" in name or "科创100" in name)
+    )),
+    ("overseas_etf", "海外ETF", lambda code, name: (
+        code in ("513500.SH", "513100.SH", "513520.SH", "513530.SH",
+                 "513130.SH", "513180.SH", "513950.SH", "513120.SH",
+                 "513090.SH", "159545.SZ", "513970.SH") or
+        ("标普" in name or "纳指" in name or "日经" in name or
+         "恒生" in name or "港股通" in name or "海外" in name)
+    )),
+    ("individual_stock", "个股", lambda code, name: (
+        code.endswith((".SZ", ".SH")) and not code.startswith(("51", "56", "58", "15"))
+    )),
+]
+# 其余默认为 sector_etf
+
+def _classify_asset(code: str, name: str = "") -> str:
+    """自动识别标的产品类别"""
+    for class_key, class_label, check_fn in _ASSET_CLASS_RULES:
+        if check_fn(code, name):
+            return class_key
+    return "sector_etf"  # 默认行业ETF
+
+
+def _load_asset_params():
+    """加载 V22.0 资产类别差异化参数矩阵"""
+    import json, os
+    path = os.path.join(os.path.dirname(__file__), "..", "mr_asset_class_params.json")
+    # 标准化路径
+    path = os.path.normpath(path)
+    if not os.path.exists(path):
+        path = "mr_asset_class_params.json"  # fallback to CWD
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+# 模块级缓存
+_ASSET_PARAMS_CACHE = None
+
+
+def get_asset_params(code: str, regime: str, name: str = "") -> dict:
+    """
+    V22.0: 按资产类别 + Regime 获取差异化参数。
+
+    返回: {rsi_period, rsi_buy, rsi_sell, bias_buy, bias_sell,
+           stop_loss, take_profit_t1, take_profit_t2,
+           trailing_stop_atr_mult, time_stop_days, entry_gate, N_trend, ...}
+    """
+    global _ASSET_PARAMS_CACHE
+    if _ASSET_PARAMS_CACHE is None:
+        _ASSET_PARAMS_CACHE = _load_asset_params()
+
+    asset_class = _classify_asset(code, name)
+    regime_key = regime.upper() if regime else "RANGE"
+    if regime_key not in ("BULL", "RANGE", "BEAR", "CRASH"):
+        regime_key = "RANGE"
+
+    # 尝试从资产类别参数矩阵读取
+    try:
+        class_params = _ASSET_PARAMS_CACHE.get(asset_class, {})
+        regime_params = class_params.get(regime_key)
+        if regime_params and isinstance(regime_params, dict) and "rsi_buy" in regime_params:
+            return regime_params
+    except Exception:
+        pass
+
+    # Fallback: 旧版通用参数
+    return FALLBACK_PARAMS.get(regime_key, FALLBACK_PARAMS["RANGE"])
+
+
+def get_asset_class_label(code: str, name: str = "") -> str:
+    """返回资产类别中文标签"""
+    class_map = {
+        "individual_stock": "个股",
+        "sector_etf": "行业ETF",
+        "broad_etf": "宽基ETF",
+        "overseas_etf": "海外ETF",
+    }
+    return class_map.get(_classify_asset(code, name), "行业ETF")
+
+
+def dynamic_position_cap(code: str, name: str = "", regime: str = "RANGE") -> float:
+    """
+    V22.0: 动态仓位上限 = 基础上限 × σ基准/σ资产 × Regime系数
+
+    从日线 parquet 读取实际波动率，自动缩放仓位。
+    高波动资产 → 降仓；低波动资产 → 提仓（不超过基础上限 1.3x）。
+    """
+    asset_class = _classify_asset(code, name)
+    params = get_asset_params(code, regime, name)
+    base_cap = params.get("_max_pos_base", 12)
+    if isinstance(base_cap, dict):
+        base_cap = base_cap.get("default", 12)
+    base_cap = float(base_cap)
+
+    # 估算年化波动率
+    annual_vol = _estimate_annual_vol(code)
+    vol_baseline = params.get("_vol_baseline", 20)
+    if isinstance(vol_baseline, dict):
+        vol_baseline = 20
+    vol_baseline = float(vol_baseline)
+
+    vol_scale = vol_baseline / max(annual_vol, 8)  # 最小波动 8%
+    vol_scale = max(0.4, min(vol_scale, 1.3))
+
+    # Regime 系数
+    regime_scale = {"BULL": 1.0, "RANGE": 0.85, "BEAR": 0.6, "CRASH": 0.0}
+    rs = regime_scale.get(regime, 0.85)
+
+    return round(min(base_cap * vol_scale * rs, 25), 1)  # 上限 25%
+
+
+def _estimate_annual_vol(code: str) -> float:
+    """从 parquet 日线估算年化波动率"""
+    import os
+    try:
+        fpath = f"data_lake/daily_prices/{code}.parquet"
+        if not os.path.exists(fpath):
+            return 30  # 默认 30%
+        df = pd.read_parquet(fpath)
+        if "close" not in df.columns or len(df) < 20:
+            return 30
+        returns = df["close"].pct_change().dropna().tail(60)
+        daily_vol = float(returns.std())
+        return round(daily_vol * (252 ** 0.5) * 100, 1)
+    except Exception:
+        return 30
+
+
+def compute_atr_trailing_stop(code: str, current_price: float,
+                              entry_price: float, regime: str = "RANGE") -> dict:
+    """
+    V22.0: ATR 动态追踪止盈。
+
+    返回: {atr_value, trailing_stop_price, stop_pct, multiplier}
+    """
+    import os
+    try:
+        fpath = f"data_lake/daily_prices/{code}.parquet"
+        if not os.path.exists(fpath):
+            return _atr_fallback(current_price, entry_price)
+        df = pd.read_parquet(fpath)
+        if len(df) < 15:
+            return _atr_fallback(current_price, entry_price)
+
+        # 计算 14 日 ATR
+        high = df["high"] if "high" in df.columns else df["close"]
+        low = df["low"] if "low" in df.columns else df["close"]
+        close_prev = df["close"].shift(1)
+        tr = pd.concat([
+            high - low,
+            (high - close_prev).abs(),
+            (low - close_prev).abs(),
+        ], axis=1).max(axis=1)
+        atr = float(tr.tail(14).mean())
+
+        multi = {"BULL": 2.0, "RANGE": 2.5, "BEAR": 3.0, "CRASH": 3.5}.get(regime, 2.5)
+        stop_price = current_price - multi * atr
+        stop_pct = round((stop_price / current_price - 1) * 100, 1)
+
+        return {
+            "atr_value": round(atr, 3),
+            "trailing_stop_price": round(stop_price, 2),
+            "stop_pct": stop_pct,
+            "atr_multiplier": multi,
+            "method": "ATR(14)",
+        }
+    except Exception:
+        return _atr_fallback(current_price, entry_price)
+
+
+def _atr_fallback(price, entry, stop_pct=-8.0):
+    """ATR 不可用时的固定百分比回退"""
+    return {
+        "atr_value": 0,
+        "trailing_stop_price": round(price * (1 + stop_pct / 100), 2),
+        "stop_pct": stop_pct,
+        "atr_multiplier": 2.5,
+        "method": "fixed_pct",
+    }
+
+
 # 各态仓位上限 (从 config.POSITION_CONFIG 统一读取)
 from config import POSITION_CONFIG as _POS_CFG
 REGIME_POS_CAP = {k: v / 100.0 for k, v in _POS_CFG["mr_regime_cap"].items()}
@@ -390,13 +585,17 @@ def _sigmoid_score(x, center, steepness, max_score):
     return float(max_score / (1 + np.exp(steepness * (x - center))))
 
 
-def calculate_score(indicators: dict) -> dict:
+def calculate_score(indicators: dict, code: str = "", name: str = "") -> dict:
     """
-    V4.3 评分：7维度100分制 · Sigmoid连续映射（消除断崖效应）
-    升级：① ~ ⑥ 全部从离散阶梯升级为Sigmoid连续函数
-    保留：⑦ K线形态（离散分类本身不适合连续化）
+    V22.0 评分：7维度100分制 · Sigmoid连续映射 · 资产类别差异化参数
+
+    升级：
+      - ① ~ ⑥ Sigmoid 连续函数（V4.3）
+      - V22.0: 按资产类别（个股/行业ETF/宽基ETF/海外ETF）使用差异化阈值
     """
-    p = indicators.get("regime_params", FALLBACK_PARAMS["RANGE"])
+    # V22.0: 优先使用资产类别差异化参数
+    regime = indicators.get("regime", "RANGE")
+    p = get_asset_params(code, regime, name) if code else indicators.get("regime_params", FALLBACK_PARAMS["RANGE"])
     rsi_buy_opt  = p.get("rsi_buy", 40)
     bias_buy_opt = p.get("bias_buy", -2.0)
 
@@ -532,32 +731,44 @@ def _fetch_and_calc_mr(code, regime_info, start_date, end_date, pro):
         if df is None or df.empty:
             return {"ts_code": code, "signal": "error", "error": "数据为空"}
 
+        name = next((e["name"] for e in MR_POOL if e["code"] == code), code)
         indicators  = calculate_indicators(df, regime_info=regime_info)
-        score_dict  = calculate_score(indicators)
+        score_dict  = calculate_score(indicators, code=code, name=name)  # V22.0: 资产类别差异化
         score       = score_dict["total"]
         breakdown   = score_dict["breakdown"]
         signal      = generate_signal(indicators, score)
 
         name = next((e["name"] for e in MR_POOL if e["code"] == code), code)
+
+        # V22.0: 动态仓位 + ATR 追踪止盈
+        regime = indicators.get("regime", "RANGE")
+        dyn_cap = dynamic_position_cap(code, name, regime)
+        atr_stop = compute_atr_trailing_stop(code, indicators["close"],
+                                             indicators["close"], regime)
+
         return {
             "ts_code":       code,
             "name":          name,
             "signal":        signal,
             "signal_score":  score,
-            "score_breakdown": breakdown,       # V4.2 新增明细
+            "score_breakdown": breakdown,
             "rsi":           round(indicators["rsi"], 1),
             "rsi_3":         round(indicators["rsi_3"], 1),
-            "rsi_slope5":    round(indicators.get("rsi_slope5", 0), 2),  # V4.2
-            "kline_pattern": indicators.get("kline_pattern", "neutral"), # V4.2
+            "rsi_slope5":    round(indicators.get("rsi_slope5", 0), 2),
+            "kline_pattern": indicators.get("kline_pattern", "neutral"),
             "bias":          round(indicators["bias"], 2),
             "percent_b":     round(indicators["percent_b"], 3),
             "vol_ratio":     round(indicators["vol_ratio"], 2),
             "close":         round(indicators["close"], 3),
             "ma20":          round(indicators["ma20"], 3),
             "ma_n":          round(indicators["ma_n"], 3),
-            "regime":        indicators["regime"],
+            "regime":        regime,
             "regime_params": indicators["regime_params"],
             "pos_cap":       indicators["pos_cap"],
+            # V22.0: 动态仓位 + ATR 追踪止盈
+            "dynamic_pos_cap": round(dyn_cap, 1),
+            "asset_class":     get_asset_class_label(code, name),
+            "atr_trailing":    atr_stop,
             "score_gate":    indicators["score_gate"],
             "needs_reopt":   indicators["needs_reopt"],
         }

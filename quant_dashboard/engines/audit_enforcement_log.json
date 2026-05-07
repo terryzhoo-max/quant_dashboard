@@ -1,0 +1,74 @@
+[
+  {
+    "action": "trade_block",
+    "reason": "日线数据过期 999 天 (阈值: 5天)",
+    "status": "executed",
+    "timestamp": "2026-05-07 02:05:31"
+  },
+  {
+    "action": "trade_block",
+    "reason": "日线数据过期 999 天 (阈值: 5天)",
+    "status": "executed",
+    "timestamp": "2026-05-07 02:13:17"
+  },
+  {
+    "action": "trade_block",
+    "reason": "日线数据过期 999 天 (阈值: 5天)",
+    "status": "executed",
+    "timestamp": "2026-05-07 02:22:58"
+  },
+  {
+    "action": "trade_block",
+    "reason": "日线数据过期 999 天 (阈值: 5天)",
+    "status": "executed",
+    "timestamp": "2026-05-07 02:23:07"
+  },
+  {
+    "action": "trade_block",
+    "reason": "日线数据过期 999 天 (阈值: 5天)",
+    "status": "executed",
+    "timestamp": "2026-05-07 19:00:22"
+  },
+  {
+    "action": "trade_block",
+    "reason": "日线数据过期 999 天 (阈值: 5天)",
+    "status": "executed",
+    "timestamp": "2026-05-07 19:08:36"
+  },
+  {
+    "action": "trade_block",
+    "reason": "日线数据过期 999 天 (阈值: 5天)",
+    "status": "executed",
+    "timestamp": "2026-05-07 19:14:20"
+  },
+  {
+    "action": "trade_block",
+    "reason": "日线数据过期 999 天 (阈值: 5天)",
+    "status": "executed",
+    "timestamp": "2026-05-07 19:17:50"
+  },
+  {
+    "action": "trade_block",
+    "reason": "日线数据过期 999 天 (阈值: 5天)",
+    "status": "executed",
+    "timestamp": "2026-05-07 19:18:12"
+  },
+  {
+    "action": "trade_block",
+    "reason": "日线数据过期 999 天 (阈值: 5天)",
+    "status": "executed",
+    "timestamp": "2026-05-07 19:25:26"
+  },
+  {
+    "action": "trade_block",
+    "reason": "日线数据过期 999 天 (阈值: 5天)",
+    "status": "executed",
+    "timestamp": "2026-05-07 19:29:09"
+  },
+  {
+    "action": "trade_unblock",
+    "reason": "数据恢复正常，自动解除阻断",
+    "status": "executed",
+    "timestamp": "2026-05-07 19:39:44"
+  }
+]

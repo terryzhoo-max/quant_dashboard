@@ -30,3 +30,15 @@ const _fmt = (v, d = 1, fallback = '--') =>
 
 /** risk-matrix 响应缓存 (Tab1 风控护栏 + Tab3 风险矩阵共用) */
 let _riskMatrixCache = null;
+
+/** V22.0 O2: 颜色工具 — hex '#ff00ff' → '255,0,255' (CSS 变量注入用) */
+const _hexToRgb = (hex) => {
+    if (!hex || hex.length < 7) return '148,163,184';
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return isNaN(r) ? '148,163,184' : `${r},${g},${b}`;
+};
+
+/** V22.0 O4: AC 就绪标志 — 供各模块在调用前快速检查依赖就绪状态 */
+window.AC_READY = typeof AC !== 'undefined';

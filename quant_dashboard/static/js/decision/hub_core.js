@@ -325,15 +325,8 @@ function renderAIAEHub(snapshot) {
     if (strip) {
         strip.innerHTML = _REGIME_DEFS.map(d => {
             const isActive = d.r === regime;
-            // Convert hex to RGB for CSS variable
-            const hexToRgb = (hex) => {
-                const r = parseInt(hex.slice(1, 3), 16);
-                const g = parseInt(hex.slice(3, 5), 16);
-                const b = parseInt(hex.slice(5, 7), 16);
-                return `${r},${g},${b}`;
-            };
             const activeStyle = isActive
-                ? `--regime-color:${d.color}40;--regime-rgb:${hexToRgb(d.color)};background:rgba(255,255,255,0.04);border-color:${d.color}30;`
+                ? `--regime-color:${d.color}40;--regime-rgb:${_hexToRgb(d.color)};background:rgba(255,255,255,0.04);border-color:${d.color}30;`
                 : '';
             return `
             <div class="aiae-hub-regime-item${isActive ? ' active' : ''}" style="${activeStyle}">
@@ -380,5 +373,157 @@ function renderAIAEHub(snapshot) {
                 <div class="aiae-hub-warn-status ${w.danger ? 'danger' : 'ok'}">${w.danger ? '⚠️' : 'OK'}</div>
             </div>
         `).join('');
+    }
+}
+
+// ═══════════════════════════════════════════════════
+//  V22.0: 信号时效衰减指示器
+//  放射性衰变模型: reliability = 0.5^(age / half_life)
+// ═══════════════════════════════════════════════════
+
+function renderSignalDecay(decay) {
+    const bars = document.getElementById('signal-decay-bars');
+    const panel = document.getElementById('signal-decay');
+    if (!bars || !decay) return;
+    if (panel) panel.style.display = 'block';
+
+    const engines = ['aiae', 'erp', 'vix', 'mr'];
+    const getColor = (rel) => {
+        if (rel >= 0.85) return '#34d399';
+        if (rel >= 0.60) return '#a78bfa';
+        if (rel >= 0.30) return '#fbbf24';
+        return '#f87171';
+    };
+    const getLabel = (rel) => {
+        if (rel >= 0.85) return '鲜';
+        if (rel >= 0.60) return '可';
+        if (rel >= 0.30) return '衰';
+        return '旧';
+    };
+
+    bars.innerHTML = engines.map(key => {
+        const d = decay[key];
+        if (!d) return '';
+        const rel = d.reliability;
+        const pct = Math.max(2, Math.round(rel * 100));
+        const color = getColor(rel);
+        const label = getLabel(rel);
+        const ageStr = d.age_min >= 0
+            ? (d.age_min < 60 ? d.age_min + 'm' : (d.age_min / 60).toFixed(0) + 'h')
+            : '—';
+        return `
+        <div class="sd-bar-row">
+            <span class="sd-bar-engine">${d.label}</span>
+            <div class="sd-bar-track">
+                <div class="sd-bar-fill" style="width:${pct}%;background:${color}"></div>
+            </div>
+            <span class="sd-bar-age" title="数据年龄">${ageStr}</span>
+            <span class="sd-bar-badge" style="color:${color};border-color:${color}40">${label}</span>
+        </div>`;
+    }).join('');
+
+    // 更新脚注
+    const overallRel = Math.min(...engines.map(k => (decay[k] || {}).reliability || 0));
+    let noteEl = document.getElementById('signal-decay-note');
+    if (!noteEl) {
+        noteEl = document.createElement('div');
+        noteEl.id = 'signal-decay-note';
+        noteEl.className = 'sd-footnote';
+        bars.parentElement.appendChild(noteEl);
+    }
+    noteEl.textContent = overallRel < 0.6
+        ? '⚠️ 部分引擎数据老化，JCS 可能偏离当前市场'
+        : '可靠性 = 0.5^(年龄/半衰期) · 指数衰减模型';
+}
+
+// ═══════════════════════════════════════════════════
+//  V22.0: 仓位调整路径渲染
+// ═══════════════════════════════════════════════════
+
+async function fetchPositionPath() {
+    const card = document.getElementById('position-path-card');
+    const body = document.getElementById('pp-body');
+    if (!card || !body) return;
+
+    card.classList.remove('initially-hidden');
+    body.innerHTML = '<div class="loading-spinner">⏳ 生成执行路径...</div>';
+
+    try {
+        const resp = await fetch(`${API_BASE}/position-path`);
+        const data = await resp.json();
+        if (data.status === 'success') {
+            renderPositionPath(data);
+        } else {
+            body.innerHTML = `<div class="pp-empty">⚠️ ${data.error || '路径生成失败'}</div>`;
+        }
+    } catch (e) {
+        body.innerHTML = '<div class="pp-empty">⚠️ 网络异常，请点击「刷新决策数据」重试</div>';
+    }
+}
+
+function renderPositionPath(data) {
+    const body = document.getElementById('pp-body');
+    const badge = document.getElementById('pp-gap-badge');
+    const footer = document.getElementById('pp-footer');
+    if (!body) return;
+
+    // Gap badge
+    if (badge) {
+        const dirIcon = data.direction === 'increase' ? '▲' : (data.direction === 'decrease' ? '▼' : '━');
+        const dirColor = data.direction === 'increase' ? '#34d399' : (data.direction === 'decrease' ? '#f87171' : '#94a3b8');
+        const gapSign = data.gap > 0 ? '+' : '';
+        badge.innerHTML = `${dirIcon} <span style="color:${dirColor}">${gapSign}${data.gap}%</span>`;
+        badge.title = `当前 ${data.current_cap}% → 目标 ${data.target_cap}%`;
+    }
+
+    // Warnings
+    let warnHtml = '';
+    if (data.warnings && data.warnings.length > 0) {
+        warnHtml = `<div class="pp-warnings">${data.warnings.map(w => `<div class="pp-warn-item">${w}</div>`).join('')}</div>`;
+    }
+
+    // Data source indicator
+    const srcLabel = data.data_source === 'portfolio' ? '🟢 基于实际持仓' : '🟡 基于策略信号';
+
+    // Steps
+    const stepColors = ['#a78bfa', '#3b82f6', '#34d399'];
+    const stepIcons = ['🚀', '⚙️', '🎯'];
+    const stepsHtml = data.steps.map((step, i) => {
+        const hasActions = step.actions && step.actions.length > 0;
+        const actionRows = hasActions ? step.actions.map(a => {
+            const dirIcon = a.action === 'reduce' ? '🔻' : (a.action === 'increase' ? '🔺' : '━');
+            const dirCls = a.action === 'reduce' ? 'pp-action-reduce' : (a.action === 'increase' ? 'pp-action-increase' : '');
+            const deltaSign = a.delta > 0 ? '+' : '';
+            const deltaColor = a.delta > 0 ? '#34d399' : '#f87171';
+            return `
+            <div class="pp-action-row ${dirCls}">
+                <span class="pp-action-icon">${dirIcon}</span>
+                <span class="pp-action-name">${a.name}<span class="pp-action-code">${a.code}</span></span>
+                <span class="pp-action-weights">${a.current_weight}% → ${a.target_weight}%</span>
+                <span class="pp-action-delta" style="color:${deltaColor}">${deltaSign}${a.delta}%</span>
+                <span class="pp-action-reason">${a.reason}</span>
+                ${a.execution_cost ? `
+                <span class="pp-action-cost" title="冲击成本: ${a.execution_cost.impact_cost_pct}% · ${a.execution_cost.liquidity_grade}">
+                    ~${a.execution_cost.impact_cost_value.toFixed(0)}元
+                </span>` : ''}
+            </div>`;
+        }).join('') : '<div class="pp-action-row pp-no-action">━ 此步骤无需操作</div>';
+
+        return `
+        <div class="pp-step" style="border-left: 3px solid ${stepColors[i]}">
+            <div class="pp-step-header">
+                <span class="pp-step-icon">${stepIcons[i]}</span>
+                <span class="pp-step-day">${step.day}</span>
+                <span class="pp-step-note">${step.note}</span>
+                <span class="pp-step-cap" style="color:${stepColors[i]}">→ ${step.step_cap}%</span>
+            </div>
+            <div class="pp-step-actions">${actionRows}</div>
+        </div>`;
+    }).join('');
+
+    body.innerHTML = `${warnHtml}<div class="pp-steps">${stepsHtml}</div>`;
+
+    if (footer) {
+        footer.innerHTML = `<span class="pp-src">${srcLabel}</span><span class="pp-disclaimer">以上为系统生成建议，不构成投资指令</span>`;
     }
 }

@@ -233,7 +233,7 @@ def _build_markdown(date, weekday, snapshot, jcs, conflicts,
 
     lines = []
     lines.append(f"# 📊 AlphaCore 每日决策简报")
-    lines.append(f"> {date} ({weekday}) · 收盘后自动生成 · V21.0")
+    lines.append(f"> {date} ({weekday}) · 收盘后自动生成 · V22.0")
     lines.append("")
     lines.append("---")
     lines.append("")
@@ -250,6 +250,15 @@ def _build_markdown(date, weekday, snapshot, jcs, conflicts,
     lines.append(f"| **矛盾信号** | {conflict_count} 个 {'✅' if conflict_count == 0 else '⚠️'} | {prev_conflict if prev_conflict is not None else '--'} 个 | {_delta_str(conflict_count, prev_conflict, '{:.0f}')} |")
     lines.append("")
     lines.append(f"**今日决策**: {decision_text}")
+    lines.append("")
+
+    # V22.0: AI 叙事分析 (基于引擎读数的自然语言总结)
+    lines.append("### 🧠 市场叙事")
+    lines.append("")
+    commentary = _build_narrative(snapshot, jcs, conflicts, tail_risk, prev)
+    for para in commentary:
+        lines.append(para)
+        lines.append("")
     lines.append("")
 
     # ── 执行建议 ──
@@ -352,7 +361,7 @@ def _build_markdown(date, weekday, snapshot, jcs, conflicts,
 
     lines.append("## 📋 合规声明")
     lines.append("")
-    lines.append("本报告由 AlphaCore V21.0 自动生成，基于 AIAE/ERP/VIX/MR 四引擎联合分析。")
+    lines.append("本报告由 AlphaCore V22.0 自动生成，含市场叙事分析。基于 AIAE/ERP/VIX/MR 四引擎联合分析。")
     lines.append("所有数据为收盘后快照，不构成投资建议。决策时请结合实际市场情况。")
     lines.append(f"数据质量: {real_sources}/{total_expected} 引擎正常 · 报告 ID: {report_id}")
     lines.append("")
@@ -443,3 +452,127 @@ def auto_generate_report():
             logger.warning("日报自动生成返回非成功状态: %s", result)
     except Exception as e:
         logger.error("日报自动生成异常: %s", e)
+
+
+# ═══════════════════════════════════════════════════════════
+#  V22.0: 市场叙事生成器 (确定性引擎, 零外部 API 依赖)
+#  将引擎读数翻译为 2-3 段自然语言专业分析。
+# ═══════════════════════════════════════════════════════════
+
+def _build_narrative(snapshot: dict, jcs: dict, conflicts: dict,
+                     tail_risk: dict, prev: dict) -> list:
+    """
+    基于引擎状态生成市场叙事段落。
+
+    返回: 2-3 段中文自然语言文本。
+    """
+    paragraphs = []
+
+    jcs_score = jcs.get("score", 50)
+    jcs_level = jcs.get("level", "medium")
+    directions = jcs.get("directions", {})
+    regime = snapshot.get("aiae_regime", 3)
+    aiae_v1 = snapshot.get("aiae_v1", 22)
+    erp_val = snapshot.get("erp_val", 4.5)
+    erp_score = snapshot.get("erp_score", 50)
+    vix_val = snapshot.get("vix_val", 20)
+    mr_regime = snapshot.get("mr_regime", "RANGE")
+    position = snapshot.get("suggested_position", 55)
+    conflict_count = conflicts.get("conflict_count", 0)
+    tail_score = tail_risk.get("score", 0)
+
+    # 计算方向一致性
+    bull_count = sum(1 for d in directions.values() if d == 1)
+    bear_count = sum(1 for d in directions.values() if d == -1)
+    neutral_count = sum(1 for d in directions.values() if d == 0)
+    majority = "bull" if bull_count > bear_count else ("bear" if bear_count > bull_count else "neutral")
+
+    # ── 段落 1: 宏观环境 + 仓位锚 ──
+    regime_desc = {
+        1: ("极度恐慌", "VIX 高企而配置热度冰点。这是历史级别的左侧建仓窗口，但需承受短期波动。"),
+        2: ("低配置区", "配置热度偏低，市场情绪谨慎。适合分批建仓，逐步提升仓位至建议水平。"),
+        3: ("中性均衡", "配置热度处于中性区间，市场既无恐慌也无亢奋。维持均衡配置，等待方向性信号。"),
+        4: ("偏热区域", "配置热度偏高，市场情绪趋向乐观。应系统性减仓，锁定已实现利润。"),
+        5: ("极度过热", "配置热度达到极端，历史上此区间后 6 个月回撤概率最高。建议大幅降仓至防御水平。"),
+    }
+    rd = regime_desc.get(regime, regime_desc[3])
+
+    p1 = (
+        f"当前市场处于 **{rd[0]}** 状态，AIAE 配置热度 {aiae_v1:.1f}%，"
+        f"对应建议仓位 {position:.0f}%。{rd[1]}"
+    )
+
+    # 添加 VIX 状态
+    if vix_val > 30:
+        p1 += f" VIX 恐慌指数 {vix_val:.1f}，处于极端恐慌区间，市场波动率显著高于正常水平，应严格控制仓位。"
+    elif vix_val > 25:
+        p1 += f" VIX {vix_val:.1f} 偏高，市场存在一定焦虑情绪，建议预留现金缓冲。"
+    elif vix_val < 16:
+        p1 += f" VIX {vix_val:.1f} 处于低波动区间，市场情绪稳定，适合执行常规配置计划。"
+    else:
+        p1 += f" VIX {vix_val:.1f} 处于正常区间，市场情绪平稳。"
+    paragraphs.append(p1)
+
+    # ── 段落 2: 信号方向 + 矛盾分析 ──
+    if conflict_count == 0 and bull_count >= 3:
+        p2 = (
+            f"四引擎信号高度一致：**{bull_count}/4 引擎看多**，JCS 联合置信度 {jcs_score:.0f} 分（{jcs_level}）。"
+            f"ERP 估值 {erp_val:.2f}%（得分 {erp_score:.0f}），"
+            + ("处于低估区间，提供较高安全边际。" if erp_score > 55 else
+               ("处于高估区间，需警惕估值回归风险。" if erp_score < 35 else "估值中性。"))
+        )
+    elif conflict_count == 0 and bear_count >= 3:
+        p2 = (
+            f"四引擎信号高度一致：**{bear_count}/4 引擎看空**，JCS 联合置信度 {jcs_score:.0f} 分（{jcs_level}）。"
+            f"MR 技术面处于 **{mr_regime}** 状态，"
+            + ("价格结构显示下行趋势，不宜逆势加仓。" if mr_regime in ("BEAR", "CRASH")
+               else "技术面信号偏空，需确认是否为短期调整。")
+        )
+    elif conflict_count > 0:
+        severe = conflicts.get("has_severe", False)
+        conflict_desc = conflicts.get("conflicts", [])
+        first_conflict = conflict_desc[0].get("desc", "") if conflict_desc else ""
+        p2 = (
+            f"检测到 **{conflict_count} 个引擎矛盾**{'（含严重矛盾）' if severe else ''}，JCS 降至 {jcs_score:.0f} 分。"
+            f"主要矛盾：{first_conflict}。"
+            f"在矛盾信号消解前，建议保持观望，不执行大幅调仓操作。"
+        )
+    else:
+        p2 = (
+            f"引擎信号方向分散（{bull_count} 看多 / {bear_count} 看空 / {neutral_count} 中性），"
+            f"JCS 联合置信度 {jcs_score:.0f} 分（{jcs_level}）。"
+            f"市场缺乏明确的单边方向，适合维持现有仓位，等待更强信号出现。"
+        )
+    paragraphs.append(p2)
+
+    # ── 段落 3: 尾部风险 + 操作提示 ──
+    if tail_score >= 60:
+        p3 = (
+            f"⚠️ **尾部风险偏高**（{tail_score:.0f} 分）。综合集中度、VIX、AIAE 和矛盾信号，"
+            f"当前市场环境下行风险显著。建议：① 将仓位降至建议水平的 70%；② 严格单票止损；③ 增加现金或防御类资产配置。"
+        )
+    elif tail_score >= 30:
+        p3 = (
+            f"尾部风险 **中等**（{tail_score:.0f} 分），处于可控区间。"
+            f"建议：① 单票仓位不超过 20%；② 关注板块集中度；③ 设置移动止盈保护已实现利润。"
+        )
+    else:
+        p3 = (
+            f"尾部风险 **较低**（{tail_score:.0f} 分），"
+            f"组合风险暴露处于安全区间。可按照标准 SOP 执行常规仓位管理。"
+        )
+
+    # Delta 提示 (与前一日对比)
+    if prev:
+        prev_jcs = prev.get("jcs_score")
+        prev_pos = prev.get("suggested_position")
+        if prev_jcs is not None and abs(jcs_score - prev_jcs) > 5:
+            direction = "上升" if jcs_score > prev_jcs else "下降"
+            p3 += f" 较昨日 JCS {direction} {abs(jcs_score - prev_jcs):.0f} 分，信号{'改善' if jcs_score > prev_jcs else '恶化'}。"
+        if prev_pos is not None and abs(position - prev_pos) > 5:
+            direction = "上调" if position > prev_pos else "下调"
+            p3 += f" 仓位目标{direction} {abs(position - prev_pos):.0f}%。"
+
+    paragraphs.append(p3)
+
+    return paragraphs

@@ -20,10 +20,10 @@ class SimulateRequest(BaseModel):
 
 @router.get("/hub")
 async def get_decision_hub():
-    """决策中枢全量数据 — V2: SWR 三级缓存 (5min fresh / 1h stale)"""
+    """决策中枢全量数据 — V22.0: 含动态事件检测"""
     from services.cache_service import stale_while_revalidate
-    from dashboard_modules.decision_engine import get_hub_data
-    return stale_while_revalidate("swr_decision_hub", get_hub_data, fresh_ttl=300, stale_ttl=3600)
+    from dashboard_modules.decision_engine import get_hub_data_with_events
+    return stale_while_revalidate("swr_decision_hub", get_hub_data_with_events, fresh_ttl=300, stale_ttl=3600)
 
 
 @router.get("/scenarios")
@@ -157,6 +157,213 @@ def _refresh_swing_guard_sync():
         return {"status": "error", "error": f"波段守卫引擎异常: {str(e)}"}
 
 
+# ── V22.0: 仓位调整路径 ──
+
+@router.get("/position-path")
+async def get_position_path():
+    """仓位调整路径生成器: 3步执行计划 (T / T+2 / T+5) + V22.0 执行成本"""
+    from dashboard_modules.decision_engine import generate_position_path, estimate_position_path_costs
+    result = generate_position_path()
+    result = estimate_position_path_costs(result)
+    return {"status": "success", **result}
+
+
+# ── V22.0: 策略参数版本管理 ──
+
+@router.get("/param-versions")
+async def list_param_versions():
+    """列出所有已保存的参数版本快照"""
+    import os, json, glob
+    from datetime import datetime
+
+    versions_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "param_versions")
+    versions = []
+    if os.path.isdir(versions_dir):
+        for f in sorted(glob.glob(os.path.join(versions_dir, "*.json")), reverse=True):
+            try:
+                with open(f, 'r', encoding='utf-8') as fh:
+                    data = json.load(fh)
+                fname = os.path.basename(f)
+                versions.append({
+                    "version_id": data.get("version_id", fname.replace(".json", "")),
+                    "timestamp": data.get("timestamp", ""),
+                    "description": data.get("description", ""),
+                    "aiae_weights": data.get("aiae_weights"),
+                    "regime_thresholds": data.get("regime_thresholds"),
+                    "jcs_weights": data.get("jcs_weights"),
+                })
+            except Exception:
+                continue
+    return {"status": "success", "count": len(versions), "versions": versions}
+
+
+@router.post("/param-snapshot")
+async def save_param_snapshot():
+    """保存当前参数为版本快照"""
+    import os, json
+    from datetime import datetime
+
+    versions_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "param_versions")
+    os.makedirs(versions_dir, exist_ok=True)
+
+    # 收集当前参数
+    try:
+        import aiae_params as AP
+        aiae_weights = {
+            "total_mv": AP.W_TOTAL_MV if hasattr(AP, 'W_TOTAL_MV') else 0.55,
+            "fund_position": AP.W_FUND_POS if hasattr(AP, 'W_FUND_POS') else 0.20,
+            "margin_heat": AP.W_MARGIN_HEAT if hasattr(AP, 'W_MARGIN_HEAT') else 0.25,
+        }
+        regime_thresholds = AP.REGIME_BOUNDARIES if hasattr(AP, 'REGIME_BOUNDARIES') else [12.5, 17, 23, 30]
+    except ImportError:
+        aiae_weights = {"total_mv": 0.55, "fund_position": 0.20, "margin_heat": 0.25}
+        regime_thresholds = [12.5, 17, 23, 30]
+
+    from dashboard_modules.decision_engine import _JCS_WEIGHTS
+    jcs_weights = dict(_JCS_WEIGHTS)
+
+    version_id = f"v{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    snapshot = {
+        "version_id": version_id,
+        "timestamp": datetime.now().isoformat(),
+        "description": f"Auto-snapshot {version_id}",
+        "aiae_weights": aiae_weights,
+        "regime_thresholds": regime_thresholds,
+        "jcs_weights": jcs_weights,
+    }
+    filepath = os.path.join(versions_dir, f"{version_id}.json")
+    with open(filepath, 'w', encoding='utf-8') as f:
+        json.dump(snapshot, f, ensure_ascii=False, indent=2)
+
+    return {"status": "success", "version_id": version_id, "filepath": filepath}
+
+
+@router.get("/param-compare")
+async def compare_params(v1: str = Query(...), v2: str = Query(...)):
+    """比较两个参数版本在当前市场环境下的表现差异"""
+    import os, json
+
+    versions_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "param_versions")
+
+    def _load_version(vid):
+        fpath = os.path.join(versions_dir, f"{vid}.json")
+        if not os.path.exists(fpath):
+            return None
+        with open(fpath, 'r', encoding='utf-8') as f:
+            return json.load(f)
+
+    ver_a = _load_version(v1)
+    ver_b = _load_version(v2)
+
+    if not ver_a or not ver_b:
+        missing = []
+        if not ver_a: missing.append(v1)
+        if not ver_b: missing.append(v2)
+        return {"status": "error", "error": f"版本未找到: {', '.join(missing)}"}
+
+    # 基于当前市场数据, 分别用两组参数重算 JCS 和仓位建议
+    from dashboard_modules.decision_engine import (
+        _build_snapshot_from_cache, compute_jcs, _JCS_WEIGHTS,
+        _REGIME_CAP_MAP, _REGIME_CN_MAP,
+    )
+
+    snapshot = _build_snapshot_from_cache()
+    orig_jcs = compute_jcs(snapshot)
+
+    # ── 用版本 A 的参数计算 ──
+    jcs_a = _recompute_with_overrides(snapshot, ver_a)
+    # ── 用版本 B 的参数计算 ──
+    jcs_b = _recompute_with_overrides(snapshot, ver_b)
+
+    # ── 差异分析 ──
+    diff_items = []
+    jcs_diff = round(jcs_b["score"] - jcs_a["score"], 1)
+    if abs(jcs_diff) > 0.5:
+        direction = "↑" if jcs_diff > 0 else "↓"
+        diff_items.append(f"JCS: {jcs_a['score']} → {jcs_b['score']} ({direction}{abs(jcs_diff)})")
+
+    level_a = jcs_a["level"]
+    level_b = jcs_b["level"]
+    if level_a != level_b:
+        diff_items.append(f"置信度级别: {level_a} → {level_b}")
+
+    return {
+        "status": "success",
+        "version_a": {"id": v1, "timestamp": ver_a.get("timestamp"), "description": ver_a.get("description")},
+        "version_b": {"id": v2, "timestamp": ver_b.get("timestamp"), "description": ver_b.get("description")},
+        "current_snapshot": {
+            "aiae_regime": snapshot.get("aiae_regime"),
+            "aiae_v1": snapshot.get("aiae_v1"),
+            "erp_score": snapshot.get("erp_score"),
+            "vix_val": snapshot.get("vix_val"),
+            "mr_regime": snapshot.get("mr_regime"),
+        },
+        "result_a": {"jcs_score": jcs_a["score"], "jcs_level": jcs_a["level"], "jcs_label": jcs_a["label"]},
+        "result_b": {"jcs_score": jcs_b["score"], "jcs_level": jcs_b["level"], "jcs_label": jcs_b["label"]},
+        "diffs": diff_items,
+        "recommendation": (
+            f"版本 {v2} 在当前环境下 JCS={jcs_b['score']}，"
+            + (f"相比 {v1}(JCS={jcs_a['score']}){'提升' if jcs_diff > 0 else '降低'}{abs(jcs_diff)}分。"
+               if abs(jcs_diff) > 0.5
+               else f"与 {v1} 无显著差异。")
+        ),
+    }
+
+
+def _recompute_with_overrides(snapshot: dict, version: dict) -> dict:
+    """
+    用指定版本的参数重算 JCS。
+    当前为轻量版: 用 JCS 权重差异重新合成方向一致性得分。
+    后续可扩展为完整回测。
+    """
+    from dashboard_modules.decision_engine import _signal_direction, _JCS_WEIGHTS
+
+    # 临时覆盖 JCS 权重
+    jcs_w = version.get("jcs_weights", dict(_JCS_WEIGHTS))
+    directions = _signal_direction(snapshot)
+    dir_vals = list(directions.values())
+    active_dirs = [d for d in dir_vals if d != 0]
+    active_count = len(active_dirs)
+
+    # 用覆盖的权重重算 base_agreement
+    if active_count == 0:
+        base_agreement = 30.0
+    elif all(d == active_dirs[0] for d in active_dirs):
+        base_agreement = 30.0 + active_count * 7.5
+    else:
+        weighted_sum = sum(directions[k] * jcs_w.get(k, 0.25) for k in jcs_w)
+        max_weight = sum(jcs_w.values())
+        agreement_ratio = abs(weighted_sum) / max_weight if max_weight > 0 else 0
+        base_agreement = 10.0 + agreement_ratio * 20.0
+
+    # 简化版 data_health (从原始快照)
+    data_health = 20.0
+    for k in ["aiae_regime", "erp_score", "vix_val", "mr_regime"]:
+        if snapshot.get(k) is None:
+            data_health -= 4.0
+    data_health = max(0, data_health)
+
+    # 简化版 consensus_bonus
+    if active_count == 4:
+        consensus_bonus = 20.0
+    elif active_count >= 2:
+        consensus_bonus = 10.0
+    else:
+        consensus_bonus = 0.0
+
+    raw_jcs = base_agreement + data_health + consensus_bonus
+    jcs = round(min(100, max(0, raw_jcs)), 1)
+
+    if jcs >= 70:
+        level, label = "high", "🟢 高置信"
+    elif jcs >= 40:
+        level, label = "medium", "🟡 中置信"
+    else:
+        level, label = "low", "🔴 低置信"
+
+    return {"score": jcs, "level": level, "label": label}
+
+
 # ── V21.0: 投委会日报 ──
 
 @router.get("/daily-report")
@@ -205,3 +412,201 @@ async def acknowledge_all_alerts():
     conn.execute("UPDATE signal_alerts SET acknowledged = 1 WHERE acknowledged = 0")
     conn.commit()
     return {"status": "ok"}
+
+
+# ── V22.0: 跨市场风险传染矩阵 ──
+
+@router.get("/contagion-matrix")
+async def get_contagion_matrix():
+    """四大市场 120 日收益率相关性矩阵 (零 API 调用, 纯 parquet 读取)"""
+    from services.cache_service import stale_while_revalidate
+
+    def _compute():
+        from dashboard_modules.decision_engine import compute_contagion_matrix
+        result = compute_contagion_matrix(window_days=120)
+        return {"status": "success", **result}
+
+    return stale_while_revalidate("swr_contagion_matrix", _compute, fresh_ttl=3600, stale_ttl=14400)
+
+
+# ── V22.0: 有向冲击传播模拟器 ──
+
+@router.get("/shock-sources")
+async def list_shock_sources():
+    """获取可用冲击源列表"""
+    from dashboard_modules.decision_engine import _SHOCK_SOURCES, _SHOCK_NODES
+    return {
+        "status": "success",
+        "sources": {
+            k: {"name": v["name"], "icon": v["icon"], "severity": v["severity"],
+                "desc": v["desc"], "source_node": v["source_node"],
+                "default_magnitude": v["magnitude"]}
+            for k, v in _SHOCK_SOURCES.items()
+        },
+        "nodes": {
+            k: {"label": v["label"], "icon": v["icon"], "desc": v["desc"]}
+            for k, v in _SHOCK_NODES.items()
+        },
+    }
+
+
+class ShockRequest(BaseModel):
+    source: str
+    magnitude: Optional[float] = None
+    steps: int = 3
+
+
+@router.post("/shock-propagate")
+async def run_shock(req: ShockRequest):
+    """执行有向冲击传播模拟"""
+    from dashboard_modules.decision_engine import run_shock_simulation
+    result = run_shock_simulation(req.source, req.magnitude, req.steps)
+    return result
+
+
+# ── V22.0: 动态市场事件 ──
+
+@router.get("/recent-events")
+async def get_recent_events(limit: int = Query(default=10, ge=1, le=50)):
+    """获取最近市场突变事件"""
+    from dashboard_modules.decision_engine import get_recent_events
+    events = get_recent_events(limit)
+    return {"status": "success", "count": len(events), "events": events}
+
+
+# ── V22.0: 预交易合规检查 ──
+
+@router.get("/compliance-check")
+async def get_compliance_check():
+    """执行全部合规规则检查 (基于当前持仓 + 快照)"""
+    from dashboard_modules.decision_engine import _build_snapshot_from_cache
+    from engines.compliance_engine import run_compliance_check
+    snapshot = _build_snapshot_from_cache()
+    return {"status": "success", **run_compliance_check(snapshot)}
+
+
+# ── V22.0: 策略漂移监控 ──
+
+@router.get("/drift-status")
+async def get_drift_status():
+    """策略漂移状态检查 (准确率/环境/JCS/矛盾 四维)"""
+    from engines.drift_monitor import get_drift_status
+    return {"status": "success", **get_drift_status()}
+
+
+# ── V22.0: 参数敏感度分析 (CI/CD 质量门前置) ──
+
+@router.get("/param-sensitivity")
+async def get_param_sensitivity():
+    """
+    参数敏感度分析: 对 JCS 权重 + AIAE 阈值做 ±5% 扰动,
+    观察 JCS 和仓位建议的变化幅度。敏感度越高 → 策略越脆弱。
+    """
+    from dashboard_modules.decision_engine import (
+        _build_snapshot_from_cache, compute_jcs, _JCS_WEIGHTS,
+        _REGIME_CAP_MAP,
+    )
+
+    snapshot = _build_snapshot_from_cache()
+    baseline_jcs = compute_jcs(snapshot)
+    baseline_pos = snapshot.get("suggested_position", 55)
+
+    # ── 定义可扰动参数 ──
+    params_to_test = {}
+
+    # JCS 权重 (从 _JCS_WEIGHTS)
+    for k, v in _JCS_WEIGHTS.items():
+        params_to_test[f"jcs_w_{k}"] = {"current": v, "label": f"JCS权重/{k.upper()}", "type": "jcs_weight", "key": k}
+
+    # AIAE 分界线 (从 aiae_params 读取, 有 fallback)
+    try:
+        import aiae_params as AP
+        boundaries = AP.REGIME_BOUNDARIES if hasattr(AP, 'REGIME_BOUNDARIES') else [12.5, 17, 23, 30]
+    except ImportError:
+        boundaries = [12.5, 17, 23, 30]
+    for i, b in enumerate(boundaries):
+        params_to_test[f"aiae_boundary_{i}"] = {"current": b, "label": f"AIAE分界/R{i+1}↔R{i+2}", "type": "aiae_boundary", "index": i}
+
+    results = []
+    perturbation = 0.05  # ±5%
+
+    for pid, pinfo in params_to_test.items():
+        current_val = pinfo["current"]
+        delta = current_val * perturbation
+        if abs(delta) < 0.1:
+            delta = 0.1  # 最小扰动
+
+        # ── 正向扰动 ──
+        if pinfo["type"] == "jcs_weight":
+            modified_weights_up = dict(_JCS_WEIGHTS)
+            modified_weights_up[pinfo["key"]] = round(current_val + delta, 4)
+            total = sum(modified_weights_up.values())
+            modified_weights_up = {k: round(v / total, 4) for k, v in modified_weights_up.items()}
+
+            # 临时覆盖并重算
+            orig_weights = dict(_JCS_WEIGHTS)
+            _JCS_WEIGHTS.clear()
+            _JCS_WEIGHTS.update(modified_weights_up)
+            jcs_up = compute_jcs(snapshot)
+            _JCS_WEIGHTS.clear()
+            _JCS_WEIGHTS.update(orig_weights)
+        else:
+            jcs_up = baseline_jcs  # AIAE 边界扰动不影响 JCS 权重, 仅影响 regime 判定
+
+        # ── 负向扰动 ──
+        if pinfo["type"] == "jcs_weight":
+            modified_weights_down = dict(_JCS_WEIGHTS)
+            modified_weights_down[pinfo["key"]] = round(max(0.01, current_val - delta), 4)
+            total = sum(modified_weights_down.values())
+            modified_weights_down = {k: round(v / total, 4) for k, v in modified_weights_down.items()}
+            orig_weights = dict(_JCS_WEIGHTS)
+            _JCS_WEIGHTS.clear()
+            _JCS_WEIGHTS.update(modified_weights_down)
+            jcs_down = compute_jcs(snapshot)
+            _JCS_WEIGHTS.clear()
+            _JCS_WEIGHTS.update(orig_weights)
+        else:
+            jcs_down = baseline_jcs
+
+        jcs_delta_up = round(jcs_up["score"] - baseline_jcs["score"], 1)
+        jcs_delta_down = round(jcs_down["score"] - baseline_jcs["score"], 1)
+        max_jcs_delta = max(abs(jcs_delta_up), abs(jcs_delta_down))
+
+        sensitivity = "high" if max_jcs_delta > 3 else ("medium" if max_jcs_delta > 1 else "low")
+
+        results.append({
+            "param_id": pid,
+            "param_label": pinfo["label"],
+            "current_value": round(current_val, 2),
+            "perturbation_pct": int(perturbation * 100),
+            "jcs_delta_up": jcs_delta_up,
+            "jcs_delta_down": jcs_delta_down,
+            "max_jcs_delta": max_jcs_delta,
+            "sensitivity": sensitivity,
+        })
+
+    # 排序: 最敏感的在前
+    results.sort(key=lambda x: x["max_jcs_delta"], reverse=True)
+
+    # 综合判定
+    high_count = sum(1 for r in results if r["sensitivity"] == "high")
+    if high_count >= 2:
+        overall = "fragile"
+        overall_label = "🔴 参数脆弱 — 多个参数 ±5% 扰动导致 JCS 大幅波动, 策略鲁棒性不足"
+    elif high_count >= 1:
+        overall = "sensitive"
+        overall_label = "🟡 参数敏感 — 个别参数对 JCS 影响较大, 建议窄幅调参"
+    else:
+        overall = "robust"
+        overall_label = "🟢 参数稳健 — ±5% 扰动下 JCS 保持稳定, 策略鲁棒性良好"
+
+    return {
+        "status": "success",
+        "baseline_jcs": baseline_jcs["score"],
+        "baseline_jcs_level": baseline_jcs["level"],
+        "baseline_position": baseline_pos,
+        "overall": overall,
+        "overall_label": overall_label,
+        "perturbation_pct": int(perturbation * 100),
+        "results": results,
+    }

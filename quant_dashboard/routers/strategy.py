@@ -49,6 +49,100 @@ ERP_TARGET_POOL = [
 #  单策略 API
 # ═══════════════════════════════════════════════
 
+# ── V22.0: 信号参数对比 (旧通用 vs 新资产分类) ──
+
+@router.get("/strategy/signal-compare")
+async def signal_compare():
+    """
+    对比新旧参数系统的信号差异。
+    使用缓存的 MR 信号数据 + 资产类别参数重新评分。
+    """
+    from services.cache_service import cache_manager
+    from engines.mean_reversion_engine import (
+        calculate_score, get_asset_params, get_asset_class_label,
+        FALLBACK_PARAMS, MR_POOL,
+    )
+
+    cached = cache_manager.get_json("strategy_results", {})
+    mr_data = cached.get("mr", {})
+    if isinstance(mr_data, dict):
+        signals = mr_data.get("data", {}).get("buy_signals", []) + \
+                  mr_data.get("data", {}).get("hold_signals", []) + \
+                  mr_data.get("data", {}).get("sell_signals", [])
+    else:
+        signals = []
+
+    if not signals:
+        return {"status": "error", "message": "无缓存 MR 信号, 请先运行策略"}
+
+    comparison = []
+    for s in signals[:25]:  # 最多 25 只
+        code = s.get("ts_code") or s.get("code", "")
+        name = s.get("name", "")
+        regime = s.get("regime", "RANGE")
+
+        # 当前信号分数
+        old_score = s.get("signal_score") or s.get("score", 0)
+
+        # 用新参数重算评分 (基于现有指标值的理论分数)
+        # 注意: 这里用现有指标近似估算, 非完整重新计算
+        try:
+            asset_class = get_asset_class_label(code, name)
+            new_params = get_asset_params(code, regime, name)
+            old_params = FALLBACK_PARAMS.get(regime, FALLBACK_PARAMS["RANGE"])
+
+            # 关键参数差异
+            rsi_buy_old = old_params.get("rsi_buy", 40)
+            rsi_buy_new = new_params.get("rsi_buy", 40)
+            bias_buy_old = old_params.get("bias_buy", -2.0)
+            bias_buy_new = new_params.get("bias_buy", -2.0)
+            stop_old = f'{old_params.get("stop_loss", 0.07)*100:.0f}%'
+            stop_new = f'{new_params.get("stop_loss", 0.08)*100:.0f}%'
+
+            rsi_val = s.get("rsi", 50)
+            # RSI 阈值越紧 → 信号越难触发 → 当前分数理论降低
+            rsi_delta = (rsi_buy_old - rsi_buy_new) * (-0.3)  # 粗略映射
+            bias_val = s.get("bias", 0)
+            bias_delta = (abs(bias_buy_old) - abs(bias_buy_new)) * 1.5
+
+            new_score_est = min(100, max(0, round(old_score + rsi_delta + bias_delta)))
+            score_delta = round(new_score_est - old_score, 1)
+
+            comparison.append({
+                "code": code,
+                "name": name,
+                "asset_class": asset_class,
+                "regime": regime,
+                "old_score": old_score,
+                "new_score_est": new_score_est,
+                "score_delta": score_delta,
+                "rsi_buy_old": rsi_buy_old,
+                "rsi_buy_new": rsi_buy_new,
+                "bias_buy_old": bias_buy_old,
+                "bias_buy_new": bias_buy_new,
+                "stop_loss_old": stop_old,
+                "stop_loss_new": stop_new,
+            })
+        except Exception:
+            comparison.append({
+                "code": code, "name": name, "error": "计算异常",
+            })
+
+    # 统计
+    improved = sum(1 for c in comparison if c.get("score_delta", 0) > 3)
+    worsened = sum(1 for c in comparison if c.get("score_delta", 0) < -3)
+    changed = sum(1 for c in comparison if abs(c.get("score_delta", 0)) > 3)
+
+    return {
+        "status": "success",
+        "total": len(comparison),
+        "improved": improved,
+        "worsened": worsened,
+        "unchanged": len(comparison) - changed,
+        "comparison": comparison,
+    }
+
+
 @router.get("/strategy")
 async def get_strategy():
     """均值回归策略详情 — V4.2 包装层"""

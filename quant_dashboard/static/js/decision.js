@@ -97,6 +97,8 @@ async function initDecisionHub() {
             const labelEl = document.getElementById('jcs-label');
             if (labelEl) labelEl.textContent = data.jcs.label;
             renderJCSComponents(data.jcs);
+            // V22.0: 信号时效衰减指示器
+            if (data.signal_decay) renderSignalDecay(data.signal_decay);
 
             // ④ 方向指示器
             renderDirections(data.jcs.directions, data.snapshot);
@@ -107,11 +109,23 @@ async function initDecisionHub() {
             // ⑥ 执行指令
             if (data.action_plan) renderActionPlan(data.action_plan);
 
+            // V22.0: 合规检查徽章
+            if (data.compliance) renderComplianceBadge(data.compliance);
+
+            // V22.0: 仓位调整路径 (独立异步, 不阻塞主流程)
+            fetchPositionPath();
+
             // ⑦ 信号阈值速查表
             if (data.snapshot) highlightThresholdTable(data.snapshot);
 
+            // V22.0: 动态市场事件
+            if (data.market_events && data.market_events.length > 0) renderMarketEvents(data.market_events);
+
             // ⑧ 全球市场温度仪表板
             if (data.global_temperature) renderGlobalTemperature(data.global_temperature);
+
+            // V22.0: 跨市场风险传染热度图 (独立异步, 不阻塞主流程)
+            fetchContagionMatrix();
 
             // ⑨ 情景模拟器
             renderScenarioCards(data.scenarios);
@@ -160,3 +174,449 @@ document.addEventListener('DOMContentLoaded', () => {
     initDecisionHub();
     startAlertPolling();
 });
+
+// ═══════════════════════════════════════════════════
+//  V22.0: 策略参数版本对比器
+// ═══════════════════════════════════════════════════
+
+let _paramVersions = [];
+
+async function openParamCompare() {
+    const overlay = document.getElementById('param-compare-overlay');
+    if (!overlay) return;
+
+    // 加载版本列表
+    try {
+        const resp = await fetch(`${API_BASE}/param-versions`);
+        const data = await resp.json();
+        if (data.status === 'success') {
+            _paramVersions = data.versions || [];
+            _populateVersionSelects();
+        }
+    } catch (e) {
+        console.warn('Param versions load error:', e);
+    }
+
+    overlay.classList.add('active');
+    document.addEventListener('keydown', _pcEscHandler);
+}
+
+function closeParamCompare(e) {
+    if (e && e.target && !e.target.classList.contains('report-overlay')) return;
+    const overlay = document.getElementById('param-compare-overlay');
+    if (overlay) overlay.classList.remove('active');
+    document.removeEventListener('keydown', _pcEscHandler);
+}
+
+function _pcEscHandler(e) {
+    if (e.key === 'Escape') closeParamCompare();
+}
+
+function _populateVersionSelects() {
+    const selA = document.getElementById('pc-version-a');
+    const selB = document.getElementById('pc-version-b');
+    const btn = document.getElementById('btn-compare-run');
+    if (!selA || !selB) return;
+
+    const options = _paramVersions.map(v =>
+        `<option value="${v.version_id}">${v.version_id} — ${v.description || v.timestamp}</option>`
+    ).join('');
+
+    selA.innerHTML = '<option value="">-- 选择版本 --</option>' + options;
+    selB.innerHTML = '<option value="">-- 选择版本 --</option>' + options;
+
+    // Auto-enable compare button when both selected
+    const checkReady = () => {
+        if (btn) btn.disabled = !(selA.value && selB.value);
+    };
+    selA.addEventListener('change', checkReady);
+    selB.addEventListener('change', checkReady);
+}
+
+async function saveParamSnapshot() {
+    const btn = document.querySelector('#param-compare-overlay .btn-sm');
+    if (!btn) return;
+    const origText = btn.textContent;
+    btn.textContent = '⏳ 保存中...';
+    btn.disabled = true;
+
+    try {
+        const resp = await fetch(`${API_BASE}/param-snapshot`, { method: 'POST' });
+        const data = await resp.json();
+        if (data.status === 'success') {
+            btn.textContent = '✅ 已保存 ' + data.version_id;
+            // 刷新列表
+            const listResp = await fetch(`${API_BASE}/param-versions`);
+            const listData = await listResp.json();
+            if (listData.status === 'success') {
+                _paramVersions = listData.versions || [];
+                _populateVersionSelects();
+            }
+        } else {
+            btn.textContent = '❌ 保存失败';
+        }
+    } catch (e) {
+        btn.textContent = '❌ 网络错误';
+    } finally {
+        setTimeout(() => {
+            btn.textContent = origText;
+            btn.disabled = false;
+        }, 2000);
+    }
+}
+
+async function runParamCompare() {
+    const selA = document.getElementById('pc-version-a');
+    const selB = document.getElementById('pc-version-b');
+    const result = document.getElementById('pc-result');
+    if (!selA || !selB || !result) return;
+
+    const v1 = selA.value;
+    const v2 = selB.value;
+    if (!v1 || !v2) return;
+
+    result.innerHTML = '<div style="text-align:center;padding:20px;color:#94a3b8;">⏳ 对比中...</div>';
+
+    try {
+        const resp = await fetch(`${API_BASE}/param-compare?v1=${encodeURIComponent(v1)}&v2=${encodeURIComponent(v2)}`);
+        const data = await resp.json();
+
+        if (data.status === 'success') {
+            const jcsDiff = data.result_b.jcs_score - data.result_a.jcs_score;
+            const diffSign = jcsDiff > 0 ? '+' : '';
+            const diffColor = jcsDiff > 0 ? '#34d399' : (jcsDiff < 0 ? '#f87171' : '#94a3b8');
+
+            const levelMap = { high: '🟢 高', medium: '🟡 中', low: '🔴 低' };
+
+            result.innerHTML = `
+            <div class="pc-compare-grid">
+                <div class="pc-compare-col pc-col-a">
+                    <div class="pc-col-header">版本 A: ${v1}</div>
+                    <div class="pc-metric"><span>JCS</span><span class="pc-val">${data.result_a.jcs_score}</span></div>
+                    <div class="pc-metric"><span>置信度</span><span>${levelMap[data.result_a.jcs_level] || data.result_a.jcs_level}</span></div>
+                    <div class="pc-params-preview">${_renderParamPreview(data.version_a)}</div>
+                </div>
+                <div class="pc-compare-col pc-col-b">
+                    <div class="pc-col-header">版本 B: ${v2}</div>
+                    <div class="pc-metric"><span>JCS</span><span class="pc-val">${data.result_b.jcs_score}</span></div>
+                    <div class="pc-metric"><span>置信度</span><span>${levelMap[data.result_b.jcs_level] || data.result_b.jcs_level}</span></div>
+                    <div class="pc-params-preview">${_renderParamPreview(data.version_b)}</div>
+                </div>
+            </div>
+            <div class="pc-diff-bar">
+                <span>JCS 差异: </span>
+                <span style="font-weight:700;color:${diffColor};font-size:1.1rem;">${diffSign}${jcsDiff.toFixed(1)}</span>
+                ${data.diffs && data.diffs.length > 0 ? data.diffs.map(d => `<span class="pc-diff-item"> · ${d}</span>`).join('') : ''}
+            </div>
+            <div class="pc-recommendation">💡 ${data.recommendation || ''}</div>
+            <div class="pc-snapshot-note">📊 基于当前市场环境快照: AIAE R${data.current_snapshot?.aiae_regime || '?'} · ERP ${data.current_snapshot?.erp_score || '?'} · VIX ${data.current_snapshot?.vix_val || '?'}</div>
+            `;
+        } else {
+            result.innerHTML = `<div style="text-align:center;padding:20px;color:#f87171;">⚠️ ${data.error || '对比失败'}</div>`;
+        }
+    } catch (e) {
+        result.innerHTML = '<div style="text-align:center;padding:20px;color:#f87171;">⚠️ 网络异常</div>';
+    }
+}
+
+function _renderParamPreview(ver) {
+    if (!ver) return '';
+    const w = ver.aiae_weights || ver.jcs_weights || {};
+    return Object.entries(w).slice(0, 3).map(([k, v]) =>
+        `<span class="pc-param-chip">${k}: ${typeof v === 'number' ? v.toFixed(2) : v}</span>`
+    ).join('');
+}
+
+// ═══════════════════════════════════════════════════
+//  V22.0: 有向冲击传播模拟器
+// ═══════════════════════════════════════════════════
+
+let _shockSources = {};
+let _shockNodes = {};
+
+// 加载冲击源列表 (页面初始化时调用)
+async function loadShockSources() {
+    try {
+        const resp = await fetch(`${API_BASE}/shock-sources`);
+        const data = await resp.json();
+        if (data.status === 'success') {
+            _shockSources = data.sources || {};
+            _shockNodes = data.nodes || {};
+            _populateShockSelect();
+        }
+    } catch (e) { console.warn('Shock sources load:', e); }
+}
+
+function _populateShockSelect() {
+    const sel = document.getElementById('shock-source-select');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">-- 选择冲击源 --</option>' +
+        Object.entries(_shockSources).map(([id, s]) =>
+            `<option value="${id}">${s.icon} ${s.name}</option>`
+        ).join('');
+}
+
+function switchSimMode(mode) {
+    document.querySelectorAll('.sim-mode-tab').forEach(t => t.classList.remove('active'));
+    document.querySelector(`.sim-mode-tab[data-mode="${mode}"]`)?.classList.add('active');
+
+    const grid = document.getElementById('scenario-grid');
+    const panel = document.getElementById('shock-panel');
+    const result = document.getElementById('sim-result');
+
+    if (mode === 'shock') {
+        if (grid) grid.style.display = 'none';
+        if (panel) panel.classList.remove('initially-hidden');
+        if (result) { result.classList.remove('visible'); result.innerHTML = ''; }
+        if (Object.keys(_shockSources).length === 0) loadShockSources();
+    } else {
+        if (grid) grid.style.display = '';
+        if (panel) panel.classList.add('initially-hidden');
+    }
+}
+
+function onShockSourceChange() {
+    const sel = document.getElementById('shock-source-select');
+    const btn = document.getElementById('btn-shock-run');
+    const src = _shockSources[sel?.value];
+    if (btn) btn.disabled = !sel?.value;
+    if (src) {
+        const mag = document.getElementById('shock-magnitude');
+        const val = document.getElementById('shock-mag-val');
+        if (mag && val) {
+            mag.value = src.default_magnitude;
+            val.textContent = src.default_magnitude.toFixed(1) + 'σ';
+        }
+    }
+}
+
+function onShockMagChange() {
+    const mag = document.getElementById('shock-magnitude');
+    const val = document.getElementById('shock-mag-val');
+    if (mag && val) val.textContent = parseFloat(mag.value).toFixed(1) + 'σ';
+}
+
+async function runShockPropagation() {
+    const sel = document.getElementById('shock-source-select');
+    const mag = document.getElementById('shock-magnitude');
+    const panel = document.getElementById('shock-propagation');
+    if (!sel?.value || !panel) return;
+
+    panel.innerHTML = '<div class="loading-spinner">⏳ 冲击传播中...</div>';
+
+    try {
+        const resp = await fetch(`${API_BASE}/shock-propagate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                source: sel.value,
+                magnitude: parseFloat(mag?.value || 1.0),
+                steps: 3,
+            }),
+        });
+        const data = await resp.json();
+
+        if (data.status === 'success') {
+            renderShockResult(data);
+        } else {
+            panel.innerHTML = `<div class="shock-error">⚠️ ${data.error || '模拟失败'}</div>`;
+        }
+    } catch (e) {
+        panel.innerHTML = '<div class="shock-error">⚠️ 网络异常</div>';
+    }
+}
+
+function renderShockResult(data) {
+    const panel = document.getElementById('shock-propagation');
+    if (!panel) return;
+
+    const prop = data.propagation;
+    const nodeLabels = _shockNodes;
+
+    // ── 传播路径卡片 ──
+    const pathByStep = {};
+    (prop.propagation_path || []).forEach(p => {
+        pathByStep[p.step] = pathByStep[p.step] || [];
+        pathByStep[p.step].push(p);
+    });
+
+    let pathHtml = '';
+    Object.entries(pathByStep).forEach(([step, items]) => {
+        const stepNum = parseInt(step);
+        const stepLabel = stepNum === 0 ? '🎯 冲击源' : `↳ 第 ${stepNum} 跳`;
+        const itemsHtml = items.map(p => {
+            const nd = nodeLabels[p.node] || {};
+            const dirIcon = p.shock_value > 0 ? '↑' : (p.shock_value < 0 ? '↓' : '→');
+            const dirColor = p.shock_value > 0 ? '#f87171' : (p.shock_value < 0 ? '#60a5fa' : '#64748b');
+            return `
+            <div class="shock-node-card">
+                <span class="shock-node-icon">${nd.icon || '●'}</span>
+                <span class="shock-node-label">${nd.label || p.node}</span>
+                <span class="shock-node-from">← ${p.incoming_from}</span>
+                <span class="shock-node-val" style="color:${dirColor}">${dirIcon} ${Math.abs(p.shock_value).toFixed(2)}σ</span>
+                <span class="shock-node-net">净: ${p.net_impact.toFixed(2)}σ</span>
+            </div>`;
+        }).join('');
+        pathHtml += `<div class="shock-step-group">
+            <div class="shock-step-label">${stepLabel}</div>
+            <div class="shock-step-nodes">${itemsHtml}</div>
+        </div>`;
+    });
+
+    // ── 影响对比 ──
+    const b = data.before;
+    const a = data.after;
+    const jcsDiff = data.jcs_after.score - data.jcs_before.score;
+    const mrMap = { BULL: '🟢', BEAR: '🔴', CRASH: '🛑', RANGE: '🟡' };
+
+    panel.innerHTML = `
+    <div class="shock-result-grid">
+        <div class="shock-path-col">
+            <div class="shock-path-title">🦠 传播路径</div>
+            ${pathHtml}
+            <div class="shock-summary">📊 ${prop.summary || ''}</div>
+        </div>
+        <div class="shock-compare-col">
+            <div class="shock-path-title">📊 状态对比</div>
+            <table class="shock-compare-table">
+                <tr><th></th><th>冲击前</th><th>冲击后</th><th>Δ</th></tr>
+                <tr><td>AIAE</td><td>R${b.aiae_regime} ${(b.aiae_v1||0).toFixed(1)}%</td><td>R${a.aiae_regime} ${(a.aiae_v1||0).toFixed(1)}%</td><td class="shock-delta">${(a.aiae_v1 - b.aiae_v1).toFixed(1)}%</td></tr>
+                <tr><td>ERP</td><td>${(b.erp_val||0).toFixed(2)}% · ${b.erp_score}分</td><td>${(a.erp_val||0).toFixed(2)}% · ${a.erp_score}分</td><td class="shock-delta">${((a.erp_val||0) - (b.erp_val||0)).toFixed(2)}%</td></tr>
+                <tr><td>VIX</td><td>${(b.vix_val||0).toFixed(1)}</td><td>${(a.vix_val||0).toFixed(1)}</td><td class="shock-delta">${((a.vix_val||0) - (b.vix_val||0)).toFixed(1)}</td></tr>
+                <tr><td>MR</td><td>${mrMap[b.mr_regime]||''} ${b.mr_regime}</td><td>${mrMap[a.mr_regime]||''} ${a.mr_regime}</td><td class="shock-delta">${b.mr_regime !== a.mr_regime ? '⚠️ 切换' : '━'}</td></tr>
+                <tr><td>仓位</td><td>${b.suggested_position}%</td><td>${a.suggested_position}%</td><td class="shock-delta" style="color:${a.suggested_position > b.suggested_position ? '#34d399' : '#f87171'}">${a.suggested_position > b.suggested_position ? '+' : ''}${a.suggested_position - b.suggested_position}%</td></tr>
+                <tr class="shock-jcs-row"><td>JCS</td><td>${data.jcs_before.score} · ${data.jcs_before.level}</td><td>${data.jcs_after.score} · ${data.jcs_after.level}</td><td class="shock-delta" style="color:${jcsDiff > 0 ? '#34d399' : '#f87171'}">${jcsDiff > 0 ? '+' : ''}${jcsDiff.toFixed(0)}</td></tr>
+            </table>
+            ${data.impact_summary && data.impact_summary.length > 0 ? `
+            <div class="shock-impact-list">
+                ${data.impact_summary.map(i => `<div class="shock-impact-item">• ${i}</div>`).join('')}
+            </div>` : ''}
+        </div>
+    </div>`;
+}
+
+// ═══════════════════════════════════════════════════
+//  V22.0: 动态市场事件卡片
+// ═══════════════════════════════════════════════════
+
+function renderMarketEvents(events) {
+    const strip = document.getElementById('events-strip');
+    const cards = document.getElementById('events-cards');
+    if (!strip || !cards || !events.length) return;
+
+    strip.classList.remove('initially-hidden');
+
+    const sevColors = { extreme: '#ef4444', high: '#f97316', medium: '#fbbf24', low: '#64748b' };
+    const sevLabels = { extreme: '极端', high: '高影响', medium: '中等', low: '信息' };
+
+    cards.innerHTML = events.slice(0, 6).map(e => {
+        const color = sevColors[e.severity] || '#64748b';
+        const shockInfo = e.shock_result
+            ? `<div class="event-shock">
+                JCS ${e.shock_result.jcs_before.toFixed(0)} → ${e.shock_result.jcs_after.toFixed(0)}
+                ${(e.shock_result.impact || []).slice(0, 2).map(i => `<span class="event-impact-chip">${i}</span>`).join('')}
+               </div>`
+            : '';
+        return `
+        <div class="event-card" style="border-left: 2px solid ${color}">
+            <div class="event-card-header">
+                <span class="event-icon">${e.icon}</span>
+                <span class="event-title">${e.title}</span>
+                <span class="event-severity" style="color:${color};border-color:${color}30">${sevLabels[e.severity] || e.severity}</span>
+                <span class="event-time">${(e.detected_at || '').replace('T', ' ').slice(0, 16)}</span>
+            </div>
+            <div class="event-detail">${e.detail}</div>
+            ${shockInfo}
+        </div>`;
+    }).join('');
+}
+
+// ═══════════════════════════════════════════════════
+//  V22.0: 合规检查徽章
+// ═══════════════════════════════════════════════════
+
+function renderComplianceBadge(compliance) {
+    const badge = document.getElementById('compliance-badge');
+    if (!badge || !compliance) return;
+
+    badge.style.display = '';
+    const status = compliance.status;
+    if (status === 'passed') {
+        badge.className = 'compliance-badge passed';
+        badge.textContent = '🟢 合规';
+        badge.title = compliance.summary || '全部规则通过';
+    } else if (status === 'blocked') {
+        badge.className = 'compliance-badge blocked';
+        badge.textContent = '🛑 阻断';
+        badge.title = (compliance.blocks || []).map(b => b.rule_name).join('; ');
+    } else if (status === 'warning') {
+        badge.className = 'compliance-badge warning';
+        badge.textContent = '⚠️ 警告';
+        badge.title = compliance.summary || '';
+    } else {
+        badge.textContent = '--';
+    }
+
+    // 如果有阻断, 灰化执行指令
+    if (status === 'blocked') {
+        const actionEl = document.getElementById('action-inline');
+        if (actionEl) actionEl.style.opacity = '0.5';
+    }
+}
+
+// ═══════════════════════════════════════════════════
+//  V22.0: 参数敏感度分析 (CI/CD 质量门)
+// ═══════════════════════════════════════════════════
+
+async function runSensitivityAnalysis() {
+    const result = document.getElementById('pc-result');
+    if (!result) return;
+
+    result.innerHTML = '<div style="text-align:center;padding:20px;color:#94a3b8;">⏳ 敏感度分析中 (±5% 扰动)...</div>';
+
+    try {
+        const resp = await fetch(`${API_BASE}/param-sensitivity`);
+        const data = await resp.json();
+        if (data.status === 'success') {
+            renderSensitivity(data);
+        } else {
+            result.innerHTML = `<div style="text-align:center;padding:20px;color:#f87171;">⚠️ ${data.error || '分析失败'}</div>`;
+        }
+    } catch (e) {
+        result.innerHTML = '<div style="text-align:center;padding:20px;color:#f87171;">⚠️ 网络异常</div>';
+    }
+}
+
+function renderSensitivity(data) {
+    const result = document.getElementById('pc-result');
+    if (!result) return;
+
+    const overallColors = { robust: '#34d399', sensitive: '#fbbf24', fragile: '#f87171' };
+    const overallIcons = { robust: '🟢', sensitive: '🟡', fragile: '🔴' };
+    const sensColors = { high: '#f87171', medium: '#fbbf24', low: '#34d399' };
+    const sensLabels = { high: '高', medium: '中', low: '低' };
+
+    const maxDelta = Math.max(...data.results.map(r => r.max_jcs_delta), 1);
+
+    result.innerHTML = `
+    <div class="ps-overall" style="color:${overallColors[data.overall] || '#64748b'}">
+        ${overallIcons[data.overall] || ''} ${data.overall_label}
+        <span class="ps-baseline">基线 JCS: ${data.baseline_jcs} · 仓位: ${data.baseline_position}%</span>
+    </div>
+    <div class="ps-bars">
+        ${data.results.slice(0, 8).map(r => {
+            const barPct = Math.min(100, (r.max_jcs_delta / maxDelta) * 100);
+            const color = sensColors[r.sensitivity] || '#64748b';
+            return `
+            <div class="ps-bar-row">
+                <span class="ps-bar-label">${r.param_label}</span>
+                <div class="ps-bar-track">
+                    <div class="ps-bar-fill" style="width:${barPct}%;background:${color}"></div>
+                </div>
+                <span class="ps-bar-delta" style="color:${color}">±${r.max_jcs_delta}</span>
+                <span class="ps-bar-sens" style="color:${color}">${sensLabels[r.sensitivity]}</span>
+            </div>`;
+        }).join('')}
+    </div>
+    <div class="ps-footnote">🔬 ±${data.perturbation_pct}% 参数扰动下 JCS 变动幅度 · 敏感度越高 → 策略越脆弱</div>`;
+}

@@ -5,3 +5,4 @@
 迁移完成后可安全删除。
 """
 from engines.mean_reversion_engine import *  # noqa: F401,F403
+from engines.mean_reversion_engine import _classify_regime_from_series  # noqa: F401

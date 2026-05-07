@@ -354,3 +354,106 @@ function highlightThresholdTable(snap) {
         }
     });
 }
+
+// ═══════════════════════════════════════════════════
+//  V22.0: 跨市场风险传染热度图
+// ═══════════════════════════════════════════════════
+
+async function fetchContagionMatrix() {
+    const card = document.getElementById('contagion-card');
+    const grid = document.getElementById('contagion-grid');
+    if (!card || !grid) return;
+
+    card.classList.remove('initially-hidden');
+    grid.innerHTML = '<div class="loading-spinner">⏳ 分析跨市场相关性...</div>';
+
+    try {
+        const resp = await fetch(`${API_BASE}/contagion-matrix`);
+        const data = await resp.json();
+        if (data.status === 'success') {
+            renderContagionMatrix(data);
+        } else {
+            grid.innerHTML = `<div class="contagion-empty">⚠️ ${data.message || '数据不足'}</div>`;
+        }
+    } catch (e) {
+        grid.innerHTML = '<div class="contagion-empty">⚠️ 网络异常</div>';
+    }
+}
+
+function renderContagionMatrix(data) {
+    const grid = document.getElementById('contagion-grid');
+    const badge = document.getElementById('contagion-risk-badge');
+    const note = document.getElementById('contagion-note');
+    if (!grid) return;
+
+    const markets = data.markets || [];
+    const matrix = data.correlation_matrix || [];
+    const n = markets.length;
+
+    if (n < 2) {
+        grid.innerHTML = `<div class="contagion-empty">📊 ${data.contagion_note || '数据不足'}</div>`;
+        if (note) note.innerHTML = '';
+        return;
+    }
+
+    // Risk badge
+    if (badge) {
+        const icons = { high: '🔴', medium: '🟡', low: '🟢', unknown: '⚪' };
+        const labels = { high: '高传染', medium: '中等联动', low: '低传染', unknown: '--' };
+        badge.textContent = `${icons[data.contagion_risk] || ''} ${labels[data.contagion_risk] || data.contagion_risk}`;
+        badge.className = `contagion-risk-badge ${data.contagion_risk}`;
+    }
+
+    // Color mapping: -1=blue, 0=white/grey, 1=red
+    const corrToColor = (v) => {
+        if (v > 0.8) return '#ef4444';
+        if (v > 0.6) return '#f97316';
+        if (v > 0.3) return '#fbbf24';
+        if (v > -0.3) return '#475569';
+        if (v > -0.6) return '#60a5fa';
+        return '#3b82f6';
+    };
+    const corrToBg = (v) => {
+        const absV = Math.abs(v);
+        const alpha = 0.06 + absV * 0.25;
+        if (v > 0) return `rgba(239,68,68,${alpha})`;
+        if (v < 0) return `rgba(59,130,246,${alpha})`;
+        return 'rgba(148,163,184,0.04)';
+    };
+
+    // Build grid
+    let html = '<div class="contagion-axes"><div class="contagion-corner"></div>';
+    markets.forEach(m => {
+        html += `<div class="contagion-col-label">${m.flag} ${m.label}</div>`;
+    });
+    html += '</div>';
+
+    for (let i = 0; i < n; i++) {
+        html += '<div class="contagion-row">';
+        html += `<div class="contagion-row-label">${markets[i].flag} ${markets[i].label}</div>`;
+        for (let j = 0; j < n; j++) {
+            const v = matrix[i] ? (matrix[i][j] != null ? matrix[i][j] : 0) : 0;
+            const isDiag = i === j;
+            const color = corrToColor(v);
+            const bg = isDiag ? 'rgba(148,163,184,0.03)' : corrToBg(v);
+            const label = isDiag ? '1.00' : (v > 0 ? '+' : '') + v.toFixed(2);
+            const cls = isDiag ? 'contagion-cell diag' : 'contagion-cell';
+            html += `<div class="${cls}" style="background:${bg};color:${isDiag ? '#64748b' : color};font-weight:${isDiag ? '400' : '600'};">
+                ${label}
+            </div>`;
+        }
+        html += '</div>';
+    }
+    grid.innerHTML = html;
+
+    // High pairs
+    if (note && data.high_pairs && data.high_pairs.length > 0) {
+        note.innerHTML = `<span class="contagion-high-pairs">
+            🔗 高联对: ${data.high_pairs.map(p =>
+                `<span class="contagion-pair-tag ${p.level}">${p.a}↔${p.b} ρ=${p.corr > 0 ? '+' : ''}${p.corr.toFixed(2)} ${p.direction}</span>`
+            ).join(' ')}
+        </span><br>${data.contagion_note || ''}`;
+    } else if (note) {
+        note.innerHTML = data.contagion_note || '';
+    }
+}

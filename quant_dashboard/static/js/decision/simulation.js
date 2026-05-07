@@ -17,7 +17,7 @@ async function runSimulation(scenarioId) {
     if (resultEl) { resultEl.classList.remove('visible'); resultEl.innerHTML = '<div class="loading-spinner">⏳ 模拟推演中...</div>'; resultEl.classList.add('visible'); }
 
     try {
-        if (typeof AC === 'undefined' || typeof AC.secureFetch !== 'function') {
+        if (!window.AC_READY || typeof AC.secureFetch !== 'function') {
             if (resultEl) resultEl.innerHTML = '<div class="loading-spinner">🔒 安全模块未就绪，请刷新页面 (Ctrl+Shift+R)</div>';
             console.error('AC.secureFetch not available - alphacore_utils.js may not be loaded');
             return;
@@ -224,8 +224,61 @@ async function loadRiskMatrix() {
         loadPerformanceAnalytics();
         // V21.1: 持仓相关性 + MCTR (独立请求, 不阻塞)
         loadCorrelationMatrix();
+        // V22.0: 策略漂移监控
+        loadDriftStatus();
         riskLoaded = true;
     } catch (e) { console.error('Risk matrix load error:', e); }
+}
+
+async function loadDriftStatus() {
+    const card = document.getElementById('drift-card');
+    const grid = document.getElementById('drift-grid');
+    if (!card || !grid) return;
+
+    card.classList.remove('initially-hidden');
+    try {
+        const resp = await fetch(`${API_BASE}/drift-status`);
+        const data = await resp.json();
+        if (data.status === 'success') {
+            renderDriftStatus(data);
+        } else {
+            grid.innerHTML = '<div style="text-align:center;padding:12px;color:#64748b;">漂移数据不可用</div>';
+        }
+    } catch (e) {
+        grid.innerHTML = '<div style="text-align:center;padding:12px;color:#64748b;">加载异常</div>';
+    }
+}
+
+function renderDriftStatus(data) {
+    const badge = document.getElementById('drift-status-badge');
+    const grid = document.getElementById('drift-grid');
+    if (!grid) return;
+
+    if (badge) {
+        const statusIcons = { ok: '🟢', warning: '🟡', critical: '🔴' };
+        badge.textContent = (statusIcons[data.status] || '') + ' ' + data.summary;
+        badge.className = 'drift-status-badge ' + data.status;
+    }
+
+    const checks = data.checks || {};
+    const checkOrder = ['accuracy', 'regime_shift', 'jcs_trend', 'conflict_trend'];
+    const checkLabels = { accuracy: '准确率漂移', regime_shift: '环境偏移', jcs_trend: 'JCS 趋势', conflict_trend: '矛盾趋势' };
+    const statusColors = { ok: '#34d399', warning: '#fbbf24', critical: '#f87171', insufficient_data: '#64748b', info: '#60a5fa' };
+
+    grid.innerHTML = checkOrder.map(key => {
+        const c = checks[key];
+        if (!c) return '';
+        const color = statusColors[c.status] || '#64748b';
+        return `
+        <div class="drift-item">
+            <div class="drift-item-header">
+                <span class="drift-item-dot" style="background:${color}"></span>
+                <span class="drift-item-name">${checkLabels[key]}</span>
+                <span class="drift-item-label" style="color:${color}">${c.label || '--'}</span>
+            </div>
+            <div class="drift-item-detail">${c.detail || ''}</div>
+        </div>`;
+    }).join('');
 }
 
 function renderOverlapMatrix(data) {

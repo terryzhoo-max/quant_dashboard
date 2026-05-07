@@ -828,13 +828,10 @@ function renderRegime(d) {
     _setText('rm-csi',    d.csi300?.toFixed(0) ?? '—');
     _setText('rm-ma120',  d.ma120?.toFixed(0)  ?? '—');
 
-    // Field names matched to backend
-    const r5  = d.ret5d  ?? 0;
+    // Field names matched to backend (V22.0: 5日合并到20日卡片)
     const r20 = d.ret20d ?? 0;
-    const el5  = document.getElementById('rm-ret5');
     const el20 = document.getElementById('rm-ret20');
-    if (el5)  { el5.textContent  = (r5  >= 0 ? '+' : '') + r5.toFixed(2)  + '%'; el5.style.color  = r5  >= 0 ? '#10b981' : '#f87171'; }
-    if (el20) { el20.textContent = (r20 >= 0 ? '+' : '') + r20.toFixed(2) + '%'; el20.style.color = r20 >= 0 ? '#10b981' : '#f87171'; }
+    if (el20) { el20.textContent = (r20 >= 0 ? '+' : '') + r20.toFixed(1) + '%'; el20.style.color = r20 >= 0 ? '#10b981' : '#f87171'; }
 
     const slope = d.ma120_slope5 ?? 0;
     const slopeEl = document.getElementById('rm-slope');
@@ -849,7 +846,7 @@ function renderRegime(d) {
     _setText('rm-p-rb',    p.rebalance_days  ?? 5);
     _setText('rm-p-poscap',p.pos_cap         ?? 66);
     const slETF = p.stop_loss ?? -8;
-    _setText('rm-p-sl', `ETF${slETF} / 股-10`);
+    _setText('rm-p-sl', `${Math.abs(slETF)}%`);
     _setText('rm-p-gate',  p.entry_threshold ?? 65);
     _setText('regime-param-note', p.note || '');
 
@@ -1582,9 +1579,16 @@ function renderSignalTable(signals) {
         const klineMap = { 'hammer': '🔨 锤子', 'doji': '✖ 十字星', 'engulfing': '🟢 包裹', 'neutral': '—' };
         const klineTag = klineMap[s.kline_pattern] || '—';
 
+        // V22.0: 资产类别 + 动态仓位
+        const assetLabel = s.asset_class || '—';
+        const assetColor = assetLabel === '个股' ? '#f87171' : (assetLabel === '行业ETF' ? '#fbbf24' : (assetLabel === '宽基ETF' ? '#34d399' : '#60a5fa'));
+        const dynCap = s.dynamic_pos_cap || 0;
+        const capDisplay = dynCap > 0 ? dynCap + '%' : (s.suggested_position > 0 ? s.suggested_position + '%' : '—');
+
         return `<tr class="${rowClass}">
             <td style="font-weight:600;color:#fff">${s.name}</td>
             <td style="font-family:monospace;color:#60a5fa;font-size:0.75rem">${s.ts_code || s.code}</td>
+            <td style="font-size:0.58rem;color:${assetColor};font-weight:600">${assetLabel}</td>
             <td>${s.close}</td>
             <td style="color:${scoreColor};font-weight:700">${score}</td>
             <td style="color:${s.percent_b <= 0 ? '#10b981' : (s.percent_b >= 1 ? '#ef4444' : 'inherit')};font-weight:${s.percent_b <= 0 || s.percent_b >= 1 ? '700' : '400'}">${s.percent_b}</td>
@@ -1592,7 +1596,7 @@ function renderSignalTable(signals) {
             <td style="color:${rsiDirColor};font-size:0.8rem">${rsiDirIcon} ${rsiSlope > 0 ? '+' : ''}${rsiSlope}</td>
             <td style="font-size:0.8rem;color:var(--text-muted)">${klineTag}</td>
             <td>${signalTag}</td>
-            <td style="font-weight:600">${s.suggested_position > 0 ? s.suggested_position + '%' : '—'}</td>
+            <td style="font-weight:600" title="动态仓位上限: σ缩放×Regime">${capDisplay}</td>
         </tr>`;
     }).join('');
 }
@@ -2075,6 +2079,72 @@ if (document.readyState === 'loading') {
 } else {
     initAllCustomPools();
 }
+
+// ═══════════════════════════════════════════════════
+//  V22.0: 资产类别差异化规则展示
+// ═══════════════════════════════════════════════════
+
+const ASSET_PARAMS = {
+    individual_stock: {
+        label: 'A股个股', rsi_buy: {BEAR:25,RANGE:22,BULL:18},
+        bias_buy: {BEAR:'-8.0%',RANGE:'-6.0%',BULL:'-5.0%'},
+        stop_loss: '12%', tp1: '20%', tp2: '35%', gate: {BEAR:85,RANGE:75,BULL:65},
+        pos: '5-8%', time_stop: '15日', atr: '3.0x',
+    },
+    sector_etf: {
+        label: '行业/主题ETF', rsi_buy: {BEAR:30,RANGE:25,BULL:22},
+        bias_buy: {BEAR:'-5.0%',RANGE:'-3.5%',BULL:'-2.5%'},
+        stop_loss: '8%', tp1: '15%', tp2: '22%', gate: {BEAR:75,RANGE:65,BULL:58},
+        pos: '8-12%', time_stop: '20日', atr: '2.5x',
+    },
+    broad_etf: {
+        label: '宽基ETF', rsi_buy: {BEAR:35,RANGE:30,BULL:25},
+        bias_buy: {BEAR:'-3.0%',RANGE:'-2.0%',BULL:'-1.5%'},
+        stop_loss: '6%', tp1: '10%', tp2: '15%', gate: {BEAR:70,RANGE:60,BULL:55},
+        pos: '15-20%', time_stop: '30日', atr: '2.0x',
+    },
+    overseas_etf: {
+        label: '海外宽基ETF', rsi_buy: {BEAR:32,RANGE:28,BULL:24},
+        bias_buy: {BEAR:'-3.0%',RANGE:'-2.5%',BULL:'-2.0%'},
+        stop_loss: '8%', tp1: '12%', tp2: '18%', gate: {BEAR:72,RANGE:62,BULL:55},
+        pos: '10-15%', time_stop: '25日', atr: '2.5x',
+    },
+};
+
+function updateAssetRules() {
+    const sel = document.getElementById('asset-class-select');
+    if (!sel) return;
+    const cls = sel.value;
+    const p = ASSET_PARAMS[cls];
+    if (!p) return;
+
+    // ── 更新 hero 区 ──
+    const heroTp = document.getElementById('hero-tp');
+    if (heroTp) heroTp.textContent = `T1+${p.tp1} / T2+${p.tp2}`;
+    const heroSl = document.getElementById('hero-sl');
+    if (heroSl) heroSl.textContent = p.stop_loss;
+    const heroGate = document.getElementById('hero-entry-gate');
+    if (heroGate) heroGate.textContent = `${p.label}: ${p.gate.BEAR}/${p.gate.RANGE}/${p.gate.BULL}`;
+
+    // ── 更新止损规则区 ──
+    const slEl = document.getElementById('rule-stop-loss');
+    if (slEl) slEl.textContent = `${p.label} ${p.stop_loss}`;
+    const tp1El = document.getElementById('rule-tp1');
+    if (tp1El) tp1El.textContent = p.tp1;
+    const tp2El = document.getElementById('rule-tp2');
+    if (tp2El) tp2El.textContent = p.tp2;
+    const gateEl = document.getElementById('rule-gate-range');
+    if (gateEl) gateEl.textContent = `${p.gate.BEAR}/${p.gate.RANGE}/${p.gate.BULL}`;
+    const trailEl = document.getElementById('rule-trail');
+    if (trailEl) trailEl.textContent = `ATR×${p.atr}`;
+    const timeEl = document.getElementById('rule-time-stop');
+    if (timeEl) timeEl.textContent = p.time_stop;
+    const posEl = document.getElementById('rule-pos-display');
+    if (posEl) posEl.textContent = p.pos;
+}
+
+// 页面加载时初始化
+document.addEventListener('DOMContentLoaded', () => { updateAssetRules(); });
 
 // ====== ERP择时引擎 V2.0 · 前端渲染模块 ======
 

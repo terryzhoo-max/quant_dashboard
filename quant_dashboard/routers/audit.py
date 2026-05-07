@@ -77,3 +77,16 @@ async def get_audit_enforcer_log(limit: int = 20):
         return {"status": "ok", "logs": logs}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+# ── V22.0: 审计历史 ──
+
+@router.get("/audit/history")
+async def get_audit_history(limit: int = 10):
+    """获取审计历史 (服务端持久化)"""
+    try:
+        from services.db import get_audit_history
+        history = get_audit_history(limit)
+        return {"status": "ok", "count": len(history), "history": history}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
