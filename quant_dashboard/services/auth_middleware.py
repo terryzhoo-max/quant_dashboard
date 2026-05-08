@@ -38,7 +38,10 @@ _PUBLIC_PATHS = {
 _PUBLIC_PREFIXES = (
     "/docs",
     "/redoc",
-    "/api/v1/decision/alerts",  # V21.2: 预警已读操作 (前端用户按钮, 非外部 API)
+    "/api/v1/decision/alerts",      # V21.2: 预警已读操作 (前端用户按钮)
+    "/api/v1/decision/simulate",    # V23.0: 情景模拟 (纯数学推演, 无副作用)
+    "/api/v1/decision/shock",       # V23.0: 冲击传播 (纯数学推演, 无副作用)
+    "/api/v1/decision/param-snapshot",  # V23.0: 参数快照 (用户操作)
 )
 
 # 免认证的 HTTP 方法 (只读操作)

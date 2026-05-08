@@ -22,7 +22,10 @@ logger = get_logger("ac.decision")
 
 
 # ═══════════════════════════════════════════════════════════
-#  预设情景库 (6 个核心情景)
+#  预设情景库 (8 个核心情景)
+#  V23.0: shock_bridge 桥接冲击传播引擎, 实现因果级联
+#         - 有 shock_bridge → 走 BFS 级联传播 (科学因果链)
+#         - 无 shock_bridge → 走手动 delta 覆盖 (多变量联合设定)
 # ═══════════════════════════════════════════════════════════
 
 SCENARIOS = {
@@ -31,7 +34,8 @@ SCENARIOS = {
         "desc": "全球恐慌指数飙升至极端水平，触发风控降级",
         "icon": "🌪️",
         "severity": "extreme",
-        "deltas": {"vix_val": 40},
+        "shock_bridge": {"source": "vix", "magnitude": 2.5},
+        "deltas": {},
     },
     "erp_extreme_bull": {
         "name": "ERP 突破 7%",
@@ -49,17 +53,19 @@ SCENARIOS = {
     },
     "rate_cut_50bp": {
         "name": "降息 50bps",
-        "desc": "央行紧急降息，流动性大幅宽松",
+        "desc": "央行紧急降息，流动性大幅宽松，全链路联动",
         "icon": "📉",
         "severity": "high",
-        "deltas": {"vix_val": 15},  # 降息通常伴随 VIX 回落
+        "shock_bridge": {"source": "rate", "magnitude": -1.5},
+        "deltas": {},
     },
     "liquidity_crisis": {
         "name": "流动性熔断",
-        "desc": "个股跌停占比 >10%，触发流动性熔断机制",
+        "desc": "回购利率飙升，市场流动性急剧萎缩，触发熔断",
         "icon": "🚨",
         "severity": "extreme",
-        "deltas": {"vix_val": 45, "is_circuit_breaker": True},
+        "shock_bridge": {"source": "liquidity", "magnitude": -2.5},
+        "deltas": {"is_circuit_breaker": True},
     },
     "golden_cross": {
         "name": "黄金买点",
@@ -67,6 +73,23 @@ SCENARIOS = {
         "icon": "🏆",
         "severity": "positive",
         "deltas": {"aiae_regime": 1, "erp_val": 6.8, "erp_score": 88, "vix_val": 14},
+    },
+    # ── V23.0 新增机构级情景 ──
+    "stagflation": {
+        "name": "滞胀风暴",
+        "desc": "CPI超预期 + 加息预期 + 经济放缓，三重压力共振",
+        "icon": "🌊",
+        "severity": "extreme",
+        "shock_bridge": {"source": "rate", "magnitude": 2.0},
+        "deltas": {"aiae_regime": 4},  # 叠加过热信号
+    },
+    "tech_rotation": {
+        "name": "科技→价值轮动",
+        "desc": "高估值板块资金流出，防御型资产获青睐",
+        "icon": "🔄",
+        "severity": "high",
+        "shock_bridge": {"source": "sentiment", "magnitude": -1.2},
+        "deltas": {},
     },
 }
 
@@ -372,16 +395,69 @@ def _recalc_hub_composite(snapshot: dict) -> float:
 
 def simulate_scenario(scenario_id: str, current_snapshot: dict) -> dict:
     """
-    纯数学情景推演:
-    1. 深拷贝当前快照
-    2. 应用情景 delta
-    3. 重算受影响的衍生指标
-    4. 返回 before/after 对比
+    V23.0 情景推演 (双模式):
+      - shock_bridge 模式: 走冲击传播引擎 (BFS 因果级联)
+      - delta 模式: 手动覆盖 (多变量联合设定)
     """
     if scenario_id not in SCENARIOS:
         return {"error": f"未知情景: {scenario_id}"}
 
     scenario = SCENARIOS[scenario_id]
+
+    # ── V23.0: shock_bridge 模式 → 复用冲击传播引擎 ──
+    if "shock_bridge" in scenario:
+        bridge = scenario["shock_bridge"]
+        shock_result = run_shock_simulation(
+            bridge["source"], bridge.get("magnitude"), steps=3
+        )
+        if shock_result.get("status") != "success":
+            return {"error": shock_result.get("error", "冲击传播失败")}
+
+        # 如果还有手动 deltas (如 is_circuit_breaker, aiae_regime 叠加)
+        extra_deltas = scenario.get("deltas", {})
+        if extra_deltas:
+            after_snap = shock_result["after"]
+            for k, v in extra_deltas.items():
+                after_snap[k] = v
+            # 联锁: is_circuit_breaker → 仓位归零
+            if extra_deltas.get("is_circuit_breaker"):
+                after_snap["suggested_position"] = 0
+                after_snap["liquidity_score"] = 0
+            # 联锁: aiae_regime 手动覆盖 → 重算仓位
+            if "aiae_regime" in extra_deltas:
+                after_snap["suggested_position"] = _REGIME_CAP_MAP.get(
+                    extra_deltas["aiae_regime"], 55
+                )
+            # 重算 JCS
+            shock_result["jcs_after"] = {
+                k: v for k, v in compute_jcs(after_snap).items()
+                if k in ("score", "level", "label")
+            }
+
+        # 统一格式: 补充 scenario 元数据
+        return {
+            "status": "success",
+            "scenario": {
+                "id": scenario_id,
+                "name": scenario["name"],
+                "desc": scenario["desc"],
+                "icon": scenario["icon"],
+                "severity": scenario["severity"],
+            },
+            "before": shock_result["before"],
+            "after": shock_result["after"],
+            "impact": shock_result.get("impact_summary", []),
+            "position_delta": (
+                shock_result["after"].get("suggested_position", 55)
+                - shock_result["before"].get("suggested_position", 55)
+            ),
+            # V23.0: 传播路径 (前端可展示因果链)
+            "propagation": shock_result.get("propagation"),
+            "jcs_before": shock_result.get("jcs_before"),
+            "jcs_after": shock_result.get("jcs_after"),
+        }
+
+    # ── 传统 delta 模式 (golden_cross / erp_extreme_bull 等) ──
     deltas = scenario["deltas"]
 
     before = copy.deepcopy(current_snapshot)

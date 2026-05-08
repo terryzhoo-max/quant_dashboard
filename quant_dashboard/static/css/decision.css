@@ -1061,6 +1061,66 @@
 .sim-impact-item { font-size: 0.85rem; color: #e2e8f0; padding: 4px 0; display: flex; align-items: center; gap: 8px; }
 .sim-impact-item::before { content: '▸'; color: #a78bfa; }
 
+/* ── V23.0: 增强箭头列 ── */
+.sim-arrow-col {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+}
+.sim-pos-delta { text-shadow: 0 0 12px currentColor; }
+.sim-jcs-delta { text-shadow: 0 0 8px currentColor; }
+
+/* ── V23.0: JCS 高亮行 ── */
+.sim-metric-jcs { border-top: 1px solid rgba(167,139,250,0.15); margin-top: 4px; padding-top: 8px; }
+.sim-metric-jcs .sim-metric-name { color: #a78bfa; font-weight: 600; }
+
+/* ── V23.0: 因果传播链 ── */
+.sim-propagation {
+    margin-top: 16px; padding: 16px 18px; border-radius: 12px;
+    background: rgba(59, 130, 246, 0.06); border: 1px solid rgba(59, 130, 246, 0.15);
+    position: relative; z-index: 2;
+}
+.sim-propagation-title {
+    font-size: 0.78rem; color: #60a5fa; margin-bottom: 10px; font-weight: 700;
+    letter-spacing: 0.5px;
+}
+.sim-propagation-flow {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    padding: 8px 0;
+}
+.sim-prop-node {
+    display: inline-flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 6px 10px; border-radius: 8px;
+    background: rgba(15,23,42,0.6); border: 1px solid rgba(255,255,255,0.08);
+    font-size: 0.75rem; min-width: 50px;
+}
+.sim-prop-source {
+    background: rgba(139,92,246,0.15); border-color: rgba(139,92,246,0.3);
+    color: #c4b5fd; font-weight: 600;
+}
+.sim-prop-name { color: #e2e8f0; font-weight: 600; font-size: 0.72rem; }
+.sim-prop-val { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; font-weight: 700; }
+.sim-prop-arrow { color: #475569; font-size: 0.85rem; }
+.sim-propagation-summary {
+    margin-top: 8px; font-size: 0.72rem; color: #94a3b8; line-height: 1.5;
+    padding-top: 8px; border-top: 1px dashed rgba(255,255,255,0.06);
+}
+
+/* ── V23.0: 卡片 Active 发光 + Loading Pulse ── */
+.scenario-card.active {
+    transform: translateY(-3px);
+    box-shadow: 0 0 20px rgba(139,92,246,0.25), 0 8px 32px rgba(0,0,0,0.3);
+}
+.scenario-card.sev-extreme.active { box-shadow: 0 0 20px rgba(239,68,68,0.25), 0 8px 32px rgba(0,0,0,0.3); }
+.scenario-card.sev-high.active { box-shadow: 0 0 20px rgba(245,158,11,0.25), 0 8px 32px rgba(0,0,0,0.3); }
+.scenario-card.sev-positive.active { box-shadow: 0 0 20px rgba(16,185,129,0.25), 0 8px 32px rgba(0,0,0,0.3); }
+
+.scenario-card.active .scenario-icon {
+    animation: simPulse 1.2s ease-in-out infinite;
+}
+@keyframes simPulse {
+    0%, 100% { transform: scale(1); opacity: 0.8; }
+    50% { transform: scale(1.15); opacity: 1; }
+}
+
 /* ── 决策时间线 (Tab 2 — 赛博升维) ── */
 .timeline-chart-wrap {
     padding: 20px 24px; margin-bottom: 20px;

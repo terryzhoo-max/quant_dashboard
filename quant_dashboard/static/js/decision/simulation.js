@@ -44,28 +44,85 @@ function renderSimResult(data) {
 
     const b = data.before;
     const a = data.after;
+
+    // V23.0: 统一 JCS 取值 (shock_bridge 模式 vs delta 模式)
+    const jcsBefore = data.jcs_before ? data.jcs_before.score : (b.jcs ?? '--');
+    const jcsAfter = data.jcs_after ? data.jcs_after.score : (a.jcs ?? '--');
+    const jcsDelta = (typeof jcsBefore === 'number' && typeof jcsAfter === 'number') ? jcsAfter - jcsBefore : null;
+
+    const _delta = (bv, av, suffix = '') => {
+        if (bv == null || av == null || bv === '--' || av === '--') return '';
+        const d = typeof av === 'number' ? (av - bv) : 0;
+        if (d === 0) return '';
+        const sign = d > 0 ? '+' : '';
+        const color = d > 0 ? '#34d399' : '#f87171';
+        return `<span style="font-size:0.7rem;color:${color};margin-left:4px;">${sign}${typeof d === 'number' ? d.toFixed(1) : d}${suffix}</span>`;
+    };
+
     const metrics = [
         ['AIAE 档位', b.aiae_regime ?? '--', a.aiae_regime ?? '--'],
         ['ERP 估值', (b.erp_val ?? '--') + '%', (a.erp_val ?? '--') + '%'],
         ['ERP 评分', b.erp_score ?? '--', a.erp_score ?? '--'],
         ['VIX', b.vix_val ?? '--', a.vix_val ?? '--'],
         ['建议仓位', (b.suggested_position ?? '--') + '%', (a.suggested_position ?? '--') + '%'],
-        ['JCS', b.jcs ?? '--', a.jcs ?? '--'],
-        ['Composite', b.hub_composite ?? '--', a.hub_composite ?? '--'],
     ];
+
+    // 仓位 delta 色温
+    const posDelta = (a.suggested_position ?? 0) - (b.suggested_position ?? 0);
+    const posDeltaColor = posDelta > 0 ? '#34d399' : (posDelta < 0 ? '#f87171' : '#94a3b8');
+    const posDeltaText = posDelta !== 0 ? `${posDelta > 0 ? '↑' : '↓'}${Math.abs(posDelta)}%` : '━';
+
+    // V23.0: 传播路径 (shock_bridge 模式)
+    const prop = data.propagation;
+    let propHtml = '';
+    if (prop && prop.propagation_path && prop.propagation_path.length > 1) {
+        const topNodes = prop.propagation_path
+            .filter(p => p.step > 0)
+            .sort((a, b) => Math.abs(b.shock_value) - Math.abs(a.shock_value))
+            .slice(0, 5);
+        propHtml = `
+        <div class="sim-propagation">
+            <div class="sim-propagation-title">🔗 因果传播链</div>
+            <div class="sim-propagation-flow">
+                <span class="sim-prop-node sim-prop-source">🎯 ${prop.source_label || prop.source}</span>
+                ${topNodes.map(p => {
+                    const dir = p.shock_value > 0 ? '↑' : '↓';
+                    const color = p.shock_value > 0 ? '#f87171' : '#60a5fa';
+                    return `<span class="sim-prop-arrow">→</span>
+                    <span class="sim-prop-node">
+                        <span class="sim-prop-name">${p.node}</span>
+                        <span class="sim-prop-val" style="color:${color}">${dir}${Math.abs(p.shock_value).toFixed(1)}σ</span>
+                    </span>`;
+                }).join('')}
+            </div>
+            <div class="sim-propagation-summary">${prop.summary || ''}</div>
+        </div>`;
+    }
 
     el.innerHTML = `
         <div class="sim-compare">
             <div class="sim-col before">
                 <div class="sim-col-title">📍 当前状态</div>
                 ${metrics.map(m => `<div class="sim-metric"><span class="sim-metric-name">${m[0]}</span><span class="sim-metric-val">${m[1]}</span></div>`).join('')}
+                <div class="sim-metric sim-metric-jcs"><span class="sim-metric-name">JCS</span><span class="sim-metric-val">${jcsBefore}</span></div>
             </div>
-            <div class="sim-arrow">→</div>
+            <div class="sim-arrow-col">
+                <div class="sim-arrow">→</div>
+                <div class="sim-pos-delta" style="color:${posDeltaColor};font-size:1.2rem;font-weight:800;">${posDeltaText}</div>
+                ${jcsDelta !== null ? `<div class="sim-jcs-delta" style="color:${jcsDelta > 0 ? '#34d399' : (jcsDelta < 0 ? '#f87171' : '#94a3b8')};font-size:0.82rem;font-weight:600;">JCS ${jcsDelta > 0 ? '+' : ''}${jcsDelta.toFixed(0)}</div>` : ''}
+            </div>
             <div class="sim-col after">
                 <div class="sim-col-title">🔮 ${data.scenario.name}</div>
-                ${metrics.map(m => `<div class="sim-metric"><span class="sim-metric-name">${m[0]}</span><span class="sim-metric-val">${m[2]}</span></div>`).join('')}
+                ${metrics.map((m, i) => {
+                    const bv = [b.aiae_regime, b.erp_val, b.erp_score, b.vix_val, b.suggested_position][i];
+                    const av = [a.aiae_regime, a.erp_val, a.erp_score, a.vix_val, a.suggested_position][i];
+                    const dHtml = _delta(bv, av, i === 1 || i === 4 ? '%' : '');
+                    return `<div class="sim-metric"><span class="sim-metric-name">${m[0]}</span><span class="sim-metric-val">${m[2]}${dHtml}</span></div>`;
+                }).join('')}
+                <div class="sim-metric sim-metric-jcs"><span class="sim-metric-name">JCS</span><span class="sim-metric-val">${jcsAfter}${_delta(jcsBefore, jcsAfter)}</span></div>
             </div>
         </div>
+        ${propHtml}
         ${data.impact && data.impact.length > 0 ? `
         <div class="sim-impact">
             <div class="sim-impact-title">📊 影响摘要</div>

@@ -241,7 +241,10 @@ async function saveParamSnapshot() {
     btn.disabled = true;
 
     try {
-        const resp = await fetch(`${API_BASE}/param-snapshot`, { method: 'POST' });
+        const headers = {};
+        const apiKey = localStorage.getItem('alphacore_api_key');
+        if (apiKey) headers['X-API-Key'] = apiKey;
+        const resp = await fetch(`${API_BASE}/param-snapshot`, { method: 'POST', headers });
         const data = await resp.json();
         if (data.status === 'success') {
             btn.textContent = '✅ 已保存 ' + data.version_id;
@@ -364,10 +367,17 @@ function switchSimMode(mode) {
     const panel = document.getElementById('shock-panel');
     const result = document.getElementById('sim-result');
 
+    // V23.0: 切换时清除两侧残影
+    if (result) { result.classList.remove('visible'); result.innerHTML = ''; }
+
     if (mode === 'shock') {
         if (grid) grid.style.display = 'none';
         if (panel) panel.classList.remove('initially-hidden');
-        if (result) { result.classList.remove('visible'); result.innerHTML = ''; }
+        // 清除预设卡片选中态
+        document.querySelectorAll('.scenario-card.active').forEach(c => c.classList.remove('active'));
+        // 清除冲击面板旧结果
+        const prop = document.getElementById('shock-propagation');
+        if (prop) prop.innerHTML = '';
         if (Object.keys(_shockSources).length === 0) loadShockSources();
     } else {
         if (grid) grid.style.display = '';
@@ -405,15 +415,26 @@ async function runShockPropagation() {
     panel.innerHTML = '<div class="loading-spinner">⏳ 冲击传播中...</div>';
 
     try {
+        // V23.0: 统一认证 (POST 需要 API Key)
+        const headers = { 'Content-Type': 'application/json' };
+        const apiKey = localStorage.getItem('alphacore_api_key');
+        if (apiKey) headers['X-API-Key'] = apiKey;
+
         const resp = await fetch(`${API_BASE}/shock-propagate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: headers,
             body: JSON.stringify({
                 source: sel.value,
                 magnitude: parseFloat(mag?.value || 1.0),
                 steps: 3,
             }),
         });
+
+        if (resp.status === 401 || resp.status === 403) {
+            panel.innerHTML = '<div class="shock-error">🔒 需要 API Key 认证，请先在「预设情景」中触发一次模拟以输入 Key</div>';
+            return;
+        }
+
         const data = await resp.json();
 
         if (data.status === 'success') {
