@@ -13,9 +13,12 @@ import pandas as pd
 import numpy as np
 import json
 import os
+import logging
 from datetime import datetime
 from data_manager import FactorDataManager
 from services import db as ac_db
+
+logger = logging.getLogger("alphacore.portfolio")
 
 # ─── 全局单例 ───
 _engine_instance = None
@@ -256,6 +259,13 @@ class PortfolioEngine:
     def _infer_industry(code: str, name: str) -> str:
         """智能推断 ETF 和 港股 的行业归属"""
         name_lower = name.lower()
+        # ── 国债逆回购 ──
+        code_num = code.split('.')[0]
+        if code_num.startswith('131') or code_num.startswith('204'):
+            return "国债逆回购"
+        if "逆回购" in name_lower:
+            return "国债逆回购"
+        # ── 行业 ETF ──
         if "半导体" in name_lower or "芯片" in name_lower:
             return "半导体"
         if "电网" in name_lower or "电力" in name_lower or "绿电" in name_lower:
@@ -266,10 +276,19 @@ class PortfolioEngine:
             return "贵金属"
         if "机器" in name_lower or "机床" in name_lower:
             return "机械设备"
+        if "游戏" in name_lower or "传媒" in name_lower:
+            return "主题ETF"
+        if "消费" in name_lower or "白酒" in name_lower or "食品" in name_lower or "饮料" in name_lower:
+            return "食品饮料"
+        if "新能" in name_lower or "光伏" in name_lower or "碳中和" in name_lower:
+            return "新能源"
+        if "人工智能" in name_lower or "AI" in name or "算力" in name_lower:
+            return "人工智能"
         if "红利" in name_lower or "高股息" in name_lower or "低波" in name_lower:
             if "恒生" in name_lower or "港股" in name_lower:
                 return "港股-红利"
             return "红利/低波"
+        # ── 宽基 ETF ──
         if "科创50" in name_lower or "科创板" in name_lower:
             return "宽基-科创板"
         if "中证500" in name_lower or "500etf" in name_lower:
@@ -278,25 +297,35 @@ class PortfolioEngine:
             return "宽基-沪深300"
         if "创业板" in name_lower:
             return "宽基-创业板"
+        if "中证1000" in name_lower or "1000etf" in name_lower:
+            return "宽基-中证1000"
+        # ── 港股/中概 ──
         if "恒生科技" in name_lower or "中概" in name_lower:
             return "港股-科技"
         if "恒生" in name_lower or "港股" in name_lower:
             return "港股-宽基"
+        # ── A股行业 ──
         if "新材" in name_lower or "化工" in name_lower:
             return "基础化工"
-        if "医药" in name_lower or "医疗" in name_lower:
+        if "医药" in name_lower or "医疗" in name_lower or "创新药" in name_lower:
             return "医药生物"
         if "证券" in name_lower or "券商" in name_lower:
             return "证券"
-        if "白酒" in name_lower or "食品" in name_lower or "饮料" in name_lower:
-            return "食品饮料"
-        
+        if "银行" in name_lower:
+            return "银行"
+        if "地产" in name_lower or "房地产" in name_lower:
+            return "房地产"
+        if "钢铁" in name_lower or "煤炭" in name_lower or "铜" in name_lower:
+            return "矿物制品"
+        if "电气" in name_lower:
+            return "电气设备"
+
         if code.endswith(".HK"):
             return "港股"
-            
+
         if "etf" in name_lower:
             return "主题ETF"
-            
+
         return "其他"
 
     def _pick_price(self, code: str, pos: dict):
@@ -438,42 +467,60 @@ class PortfolioEngine:
     # ──────────────────────────────────────
 
     def calculate_risk_metrics(self):
-        """计算 MCTR + Sharpe + Max Drawdown + Calmar"""
+        """计算 MCTR + Sharpe + Max Drawdown + Calmar
+        
+        P0 Fix: 防御重复索引 + 缺数据股票跳过 + 矩阵维度对齐
+        """
         valuation = self.get_valuation()
         if not valuation["positions"]:
             return {"status": "empty"}
 
         rets_data = {}
+        skipped = []
         for pos in valuation["positions"]:
-            p_df = self.dm.get_price_payload(pos["ts_code"])
-            if not p_df.empty:
-                rets_data[pos["ts_code"]] = p_df['close'].pct_change().dropna().tail(self.MCTR_LOOKBACK)
+            try:
+                p_df = self.dm.get_price_payload(pos["ts_code"])
+                if not p_df.empty:
+                    series = p_df['close'].pct_change().dropna().tail(self.MCTR_LOOKBACK)
+                    # 去重日期索引 (防 Tushare 偶发重复行)
+                    if series.index.duplicated().any():
+                        series = series[~series.index.duplicated(keep='last')]
+                    rets_data[pos["ts_code"]] = series
+                else:
+                    skipped.append(pos["ts_code"])
+            except Exception as e:
+                skipped.append(pos["ts_code"])
+                logger.warning("Risk: 跳过 %s 行情数据: %s", pos["ts_code"], e)
 
         if len(rets_data) < 1:
             return {"status": "insufficient_data"}
 
+        # 只用有数据的持仓, 维度严格对齐
+        available_codes = list(rets_data.keys())
+        pos_map = {p["ts_code"]: p for p in valuation["positions"]}
+        available_pos = [pos_map[c] for c in available_codes]
+
         df_rets = pd.DataFrame(rets_data)
-        # Ensure all holding codes are columns in df_rets in the same order
-        ordered_codes = [pos["ts_code"] for pos in valuation["positions"]]
-        for code in ordered_codes:
-            if code not in df_rets.columns:
-                df_rets[code] = 0.0
-        df_rets = df_rets[ordered_codes].fillna(0)
+        # 去重日期行索引
+        if df_rets.index.duplicated().any():
+            df_rets = df_rets[~df_rets.index.duplicated(keep='last')]
+        df_rets = df_rets[available_codes].fillna(0)
         cov_matrix = df_rets.cov() * 252
 
-        total_val = float(valuation["market_value"])
-        if total_val == 0:
+        avail_val = sum(float(p["market_value"]) for p in available_pos)
+        if avail_val == 0:
             return {"status": "zero_value"}
 
-        weights = np.array([float(pos["market_value"]) / total_val for pos in valuation["positions"]])
+        weights = np.array([float(p["market_value"]) / avail_val for p in available_pos])
 
         # ── 组合波动率 ──
         port_vol = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
-        if port_vol == 0:
+        if np.isnan(port_vol) or port_vol == 0:
             port_vol = 0.0001
 
         # ── MCTR ──
         marginal_risk = np.dot(cov_matrix, weights) / port_vol
+        marginal_risk = np.nan_to_num(marginal_risk, nan=0.0, posinf=0.0, neginf=0.0)
 
         # ── 组合日收益率序列 ──
         port_daily_rets = df_rets.values @ weights
@@ -491,24 +538,46 @@ class PortfolioEngine:
         # ── Calmar Ratio ──
         calmar = ann_return / abs(max_drawdown) if max_drawdown != 0 else 0.0
 
-        # ── 个股风险明细 + 行业敞口 ──
+        # ── 个股风险明细 + 行业敞口 (包含所有持仓, 缺数据的给零值) ──
         risk_details = []
         sector_weights = {}
-        for i, pos in enumerate(valuation["positions"]):
+        # 用全量持仓的总市值计算展示权重
+        total_val = float(valuation["market_value"])
+        if total_val == 0:
+            total_val = avail_val
+
+        for i_full, pos in enumerate(valuation["positions"]):
             ind = pos.get("industry", "其他")
-            w = weights[i] * 100
+            w = float(pos["market_value"]) / total_val * 100 if total_val > 0 else 0.0
             sector_weights[ind] = sector_weights.get(ind, 0.0) + w
+
+            # 找到该 code 在 available_pos 中的索引
+            idx_in_avail = None
+            for j, ap in enumerate(available_pos):
+                if ap["ts_code"] == pos["ts_code"]:
+                    idx_in_avail = j
+                    break
+
+            if idx_in_avail is not None:
+                mctr_val = marginal_risk[idx_in_avail]
+                rc_val = weights[idx_in_avail] * marginal_risk[idx_in_avail] / port_vol * 100
+            else:
+                mctr_val = 0.0
+                rc_val = 0.0
 
             risk_details.append({
                 "ts_code": pos["ts_code"],
                 "name": pos["name"],
                 "industry": ind,
                 "weight": safe_round(w, 2),
-                "mctr": safe_round(marginal_risk[i], 4),
-                "risk_contribution": safe_round(weights[i] * marginal_risk[i] / port_vol * 100, 2)
+                "mctr": safe_round(mctr_val, 4),
+                "risk_contribution": safe_round(rc_val, 2)
             })
 
         industry_exposure = [{"name": k, "value": safe_round(v, 2)} for k, v in sector_weights.items()]
+
+        if skipped:
+            logger.info("Risk: %d 只标的缺行情数据, 已跳过: %s", len(skipped), skipped)
 
         return {
             "portfolio_vol": safe_round(port_vol, 4),
@@ -517,7 +586,8 @@ class PortfolioEngine:
             "max_drawdown": safe_round(max_drawdown * 100, 2),
             "calmar_ratio": safe_round(calmar, 2),
             "details": risk_details,
-            "industry_exposure": sorted(industry_exposure, key=lambda x: x["value"], reverse=True)
+            "industry_exposure": sorted(industry_exposure, key=lambda x: x["value"], reverse=True),
+            "skipped_codes": skipped
         }
 
     # ──────────────────────────────────────
@@ -651,7 +721,10 @@ class PortfolioEngine:
 
 
     def get_nav_history(self, days: int = 120):
-        """生成组合近 N 日的模拟净值曲线 (基于持仓加权日收益)"""
+        """生成组合近 N 日的模拟净值曲线 (基于持仓加权日收益)
+        
+        P0 Fix: 权重仅基于有数据的持仓构建, 确保矩阵维度对齐
+        """
         valuation = self.get_valuation()
         if not valuation["positions"]:
             return {"status": "empty", "dates": [], "nav": [], "benchmark": []}
@@ -662,21 +735,39 @@ class PortfolioEngine:
 
         # 获取各持仓日线收益
         all_rets = {}
+        pos_map = {p["ts_code"]: p for p in valuation["positions"]}
         for pos in valuation["positions"]:
-            p_df = self.dm.get_price_payload(pos["ts_code"])
-            if not p_df.empty:
-                rets = p_df[['trade_date', 'close']].copy()
-                rets['ret'] = rets['close'].pct_change()
-                rets = rets.dropna().tail(days)
-                all_rets[pos["ts_code"]] = rets.set_index('trade_date')['ret']
+            try:
+                p_df = self.dm.get_price_payload(pos["ts_code"])
+                if not p_df.empty:
+                    rets = p_df[['trade_date', 'close']].copy()
+                    rets['ret'] = rets['close'].pct_change()
+                    rets = rets.dropna().tail(days)
+                    series = rets.set_index('trade_date')['ret']
+                    # 去重日期索引
+                    if series.index.duplicated().any():
+                        series = series[~series.index.duplicated(keep='last')]
+                    all_rets[pos["ts_code"]] = series
+            except Exception as e:
+                logger.warning("NAV: 跳过 %s: %s", pos["ts_code"], e)
 
         if not all_rets:
             return {"status": "no_data", "dates": [], "nav": [], "benchmark": []}
 
         df_rets = pd.DataFrame(all_rets).fillna(0)
-        weights = np.array([float(pos["market_value"]) / total_val for pos in valuation["positions"]])
+        # 去重日期行索引
+        if df_rets.index.duplicated().any():
+            df_rets = df_rets[~df_rets.index.duplicated(keep='last')]
 
-        port_rets = df_rets.values @ weights
+        # P0: 权重仅基于有数据的持仓, 确保矩阵维度对齐
+        available_codes = list(df_rets.columns)
+        available_pos = [pos_map[c] for c in available_codes if c in pos_map]
+        avail_val = sum(float(p["market_value"]) for p in available_pos)
+        if avail_val == 0:
+            return {"status": "zero_value", "dates": [], "nav": [], "benchmark": []}
+        weights = np.array([float(p["market_value"]) / avail_val for p in available_pos])
+
+        port_rets = df_rets[available_codes].values @ weights
         nav = np.cumprod(1 + port_rets)
 
         # 基准: 沪深300
@@ -690,7 +781,6 @@ class PortfolioEngine:
             pass
 
         dates = df_rets.index.tolist()
-        # 将日期转为字符串
         date_strs = []
         for d in dates:
             if hasattr(d, 'strftime'):
@@ -703,7 +793,9 @@ class PortfolioEngine:
             "dates": date_strs,
             "nav": [safe_round(v, 4) for v in nav.tolist()],
             "benchmark": [safe_round(v, 4) for v in bench_nav[:len(nav)]],
-            "benchmark_name": "沪深300"
+            "benchmark_name": "沪深300",
+            "available_count": len(available_codes),
+            "total_count": len(valuation["positions"])
         }
 
     # ──────────────────────────────────────

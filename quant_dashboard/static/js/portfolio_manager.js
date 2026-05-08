@@ -220,9 +220,13 @@ document.addEventListener('DOMContentLoaded', function () {
             if (result.status === 'success' && result.data.status !== 'empty') {
                 renderRiskCharts(result.data);
                 renderRiskGauges(result.data);
+                if (result.data.skipped_codes && result.data.skipped_codes.length > 0) {
+                    console.info('Risk: ' + result.data.skipped_codes.length + ' 只缺行情数据已跳过');
+                }
             }
         } catch (err) {
-            console.error("Failed to load risk metrics:", err);
+            console.error('Failed to load risk metrics:', err);
+            showToast('风控数据加载失败: ' + err.message, 'warning');
         }
     }
 
@@ -422,7 +426,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 renderNavChart(result.data);
             }
         } catch (err) {
-            console.error("Failed to load NAV:", err);
+            console.error('Failed to load NAV:', err);
+            showToast('净值曲线加载失败: ' + err.message, 'warning');
         }
     }
 
