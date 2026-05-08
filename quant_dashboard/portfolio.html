@@ -8,7 +8,7 @@
 
     <link rel="stylesheet" href="./static/css/styles.css?v=12">
     <link rel="stylesheet" href="./static/css/visual_excellence.css?v=3">
-    <link rel="stylesheet" href="./static/css/portfolio.css?v=22">
+    <link rel="stylesheet" href="./static/css/portfolio.css?v=29">
     <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
     <script>window.echarts || document.write('<script src="./static/vendor/echarts.min.js"><\/script>')</script>
@@ -177,12 +177,13 @@
                 </div>
             </div>
 
-            <!-- ═══ ZONE 6: 执行质量分析 (OMS Slippage Attribution) ═══ -->
+            <!-- ═══ ZONE 6: 执行质量分析 V2 (OMS Slippage Attribution) ═══ -->
             <div class="glass-panel pf-slippage-panel" id="pf-slippage-zone">
                 <div class="pf-panel-header">
-                    <h3>📊 执行质量分析 <span class="pf-panel-sub">OMS Slippage Attribution</span></h3>
+                    <h3>⚡ 执行质量分析 <span class="pf-panel-sub">OMS Slippage Attribution</span></h3>
                     <div class="pf-table-controls">
-                        <button class="btn btn-sync" id="slippage-bootstrap-btn" style="font-size:0.72rem;padding:4px 10px;">🔄 Bootstrap</button>
+                        <button class="slip-refresh-btn" id="slip-refresh-btn" title="刷新面板">↻</button>
+                        <button class="btn btn-sync" id="slippage-bootstrap-btn" style="font-size:0.72rem;padding:4px 10px;">📥 Bootstrap</button>
                         <span class="pf-pos-count" id="slip-order-count">0 笔订单</span>
                     </div>
                 </div>
@@ -191,8 +192,7 @@
                 <div class="slip-kpi-row" id="slip-kpi-row">
                     <div class="slip-kpi-card slip-kpi-eqs">
                         <div class="slip-kpi-label">EQS 执行质量</div>
-                        <div class="slip-kpi-value" id="slip-eqs-score">--</div>
-                        <div class="slip-kpi-grade" id="slip-eqs-grade">--</div>
+                        <div id="slip-eqs-gauge" style="width:100%;height:120px;"></div>
                     </div>
                     <div class="slip-kpi-card">
                         <div class="slip-kpi-label">30D 平均滑点</div>
@@ -211,15 +211,29 @@
                     </div>
                 </div>
 
+                <!-- Top Leakers Row (hidden by default) -->
+                <div class="slip-leakers-section" id="slip-leakers-section" style="display:none;">
+                    <h4>🔥 Top Leakers <span class="pf-chart-sub">集中度分析</span></h4>
+                    <div class="slip-leakers-bars" id="slip-leakers-bars"></div>
+                </div>
+
                 <!-- Charts Row -->
                 <div class="pf-charts-row" style="margin-top:16px;">
-                    <div class="slip-chart-box">
+                    <div class="slip-chart-box" style="position:relative;">
                         <h4>📈 滑点趋势 <span class="pf-chart-sub">Daily Slippage Trend</span></h4>
                         <div id="slip-trend-chart" style="height:280px;"></div>
+                        <div class="slip-chart-empty" id="slip-trend-empty">
+                            <div class="slip-empty-icon">📊</div>
+                            <div class="slip-empty-text">执行交易后自动积累数据</div>
+                        </div>
                     </div>
-                    <div class="slip-chart-box">
+                    <div class="slip-chart-box" style="position:relative;">
                         <h4>🔬 归因分解 <span class="pf-chart-sub">IS Attribution</span></h4>
                         <div id="slip-attr-chart" style="height:280px;"></div>
+                        <div class="slip-chart-empty" id="slip-attr-empty">
+                            <div class="slip-empty-icon">🔬</div>
+                            <div class="slip-empty-text">暂无归因数据</div>
+                        </div>
                     </div>
                 </div>
 
@@ -246,13 +260,17 @@
                                     <th>数量</th>
                                     <th>滑点(bps)</th>
                                     <th>损耗(¥)</th>
+                                    <th>来源</th>
                                     <th>状态</th>
                                 </tr>
                             </thead>
                             <tbody id="slip-orders-body">
-                                <tr><td colspan="9" class="pf-table-empty">暂无执行记录</td></tr>
+                                <tr><td colspan="10" class="pf-table-empty">暂无执行记录</td></tr>
                             </tbody>
                         </table>
+                    </div>
+                    <div class="slip-show-more-wrap" id="slip-show-more-wrap" style="display:none;text-align:center;padding:8px 0;">
+                        <button class="slip-show-more-btn" id="slip-show-more-btn">展开全部</button>
                     </div>
                 </div>
             </div>
@@ -369,6 +387,6 @@
         </div>
     </div>
 
-    <script src="./static/js/portfolio_manager.js?v=23"></script>
+    <script src="./static/js/portfolio_manager.js?v=29"></script>
 </body>
 </html>

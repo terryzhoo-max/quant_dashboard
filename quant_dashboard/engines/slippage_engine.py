@@ -141,6 +141,10 @@ class SlippageEngine:
 
         # 计算归因
         self._compute_attribution(order_id)
+
+        # P0: 触发当日汇总更新
+        self.compute_daily_summary(today)
+
         logger.info("执行记录: %s %s %s@%.3f → order=%s",
                      side, ts_code, exec_amount, exec_price, order_id)
 
@@ -244,10 +248,13 @@ class SlippageEngine:
         自适应基准: 自身近90日滑点中位数 (无历史时默认20bps)
         """
         orders = ac_db.get_execution_orders(days=days)
-        filled = [o for o in orders
-                  if o.get("status") == "filled"
-                  and o.get("total_slippage_bps") is not None
-                  and o.get("ts_code") not in ("PORTFOLIO", "IMPORT")]
+        # P0: 分离 baseline 和 live 订单
+        all_filled = [o for o in orders
+                      if o.get("status") == "filled"
+                      and o.get("total_slippage_bps") is not None
+                      and o.get("ts_code") not in ("PORTFOLIO", "IMPORT")]
+        baseline_orders = [o for o in all_filled if o.get("exec_source") == "bootstrap"]
+        filled = [o for o in all_filled if o.get("exec_source") != "bootstrap"]
 
         if not filled:
             return {
@@ -255,6 +262,7 @@ class SlippageEngine:
                 "avg_slippage_bps": 0, "benchmark_bps": 20,
                 "total_cost_cny": 0, "trend": "no_data",
                 "order_count": 0, "top_leakers": [],
+                "baseline_count": len(baseline_orders),
             }
 
         slippages = [abs(o["total_slippage_bps"]) for o in filled]
@@ -547,8 +555,21 @@ class SlippageEngine:
                 if o.get("exec_source") == "bootstrap" and o.get("total_slippage_bps") is None:
                     self._compute_attribution(o["order_id"])
 
+        # P0: 批量日汇总
+        daily_count = 0
+        if created > 0:
+            dates_set = set()
+            for o in ac_db.get_execution_orders(days=days):
+                d = o.get("order_date", "")[:10]
+                if d:
+                    dates_set.add(d)
+            for d in sorted(dates_set):
+                self.compute_daily_summary(d)
+                daily_count += 1
+            logger.info("Bootstrap 日汇总: %d 日", daily_count)
+
         logger.info("Bootstrap 完成: 回填 %d 笔历史交易", created)
-        return {"status": "ok", "created": created}
+        return {"status": "ok", "created": created, "daily_summaries": daily_count}
 
     # ═══════════════════════════════════════════════════
     #  价格辅助函数

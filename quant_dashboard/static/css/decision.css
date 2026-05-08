@@ -1392,7 +1392,7 @@
     display: grid; gap: 6px; margin-bottom: 6px;
     grid-template-columns: 60px repeat(auto-fit, minmax(60px, 1fr));
 }
-.contagion-corner { /* empty */ }
+.contagion-corner { display: block; }
 .contagion-col-label {
     text-align: center; font-size: 0.62rem; font-weight: 700;
     color: #94a3b8; padding: 4px 0; letter-spacing: 0.3px;

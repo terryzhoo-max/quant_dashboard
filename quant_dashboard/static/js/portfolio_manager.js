@@ -1055,16 +1055,19 @@ document.addEventListener('DOMContentLoaded', function () {
     loadPortfolio();
 
     // ════════════════════════════════════
-    //  ZONE 6: OMS 滑点归因面板
+    //  ZONE 6: OMS 滑点归因面板 V2
     // ════════════════════════════════════
 
-    let slipCharts = { trend: null, attr: null };
+    let slipCharts = { trend: null, attr: null, gauge: null };
+    let _slipAllOrders = [];
 
     function initSlippageCharts() {
         const trendEl = document.getElementById('slip-trend-chart');
         const attrEl = document.getElementById('slip-attr-chart');
+        const gaugeEl = document.getElementById('slip-eqs-gauge');
         if (trendEl && !slipCharts.trend) slipCharts.trend = AC.registerChart(echarts.init(trendEl));
         if (attrEl && !slipCharts.attr) slipCharts.attr = AC.registerChart(echarts.init(attrEl));
+        if (gaugeEl && !slipCharts.gauge) slipCharts.gauge = AC.registerChart(echarts.init(gaugeEl));
     }
 
     async function loadSlippagePanel() {
@@ -1075,9 +1078,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 fetch('/api/v1/slippage/history?days=30').then(r => r.json()),
                 fetch('/api/v1/slippage/attribution').then(r => r.json()),
                 fetch('/api/v1/slippage/diagnose').then(r => r.json()),
-                fetch('/api/v1/slippage/orders?days=60').then(r => r.json()),
+                fetch('/api/v1/slippage/orders?days=90').then(r => r.json()),
             ]);
-
             if (eqsRes.status === 'success') renderSlipEQS(eqsRes.data);
             if (summRes.status === 'success') renderSlipSummary(summRes.data);
             if (histRes.status === 'success') renderSlipTrend(histRes.data);
@@ -1089,209 +1091,239 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    // ── EQS Gauge ──
     function renderSlipEQS(eqs) {
-        const scoreEl = document.getElementById('slip-eqs-score');
-        const gradeEl = document.getElementById('slip-eqs-grade');
+        initSlippageCharts();
         const avgEl = document.getElementById('slip-avg-bps');
         const trendEl = document.getElementById('slip-trend-label');
+        const baselineNote = eqs.baseline_count > 0 ? ` (${eqs.baseline_count} 基线)` : '';
+        const orderTotal = (eqs.order_count || 0) + (eqs.baseline_count || 0);
+        document.getElementById('slip-order-count').textContent = `${orderTotal} 笔订单`;
 
         if (!eqs.has_data) {
-            scoreEl.textContent = '--';
-            gradeEl.textContent = '暂无数据';
-            gradeEl.style.background = 'rgba(100,116,139,0.15)';
-            gradeEl.style.color = '#64748b';
+            avgEl.innerHTML = '-- <small>bps</small>';
+            trendEl.textContent = '待实盘数据' + baselineNote;
+            trendEl.style.color = '#64748b';
+            if (slipCharts.gauge) renderEQSGauge(0, '--', false);
             return;
         }
-
-        scoreEl.textContent = eqs.score;
-        gradeEl.textContent = eqs.grade;
-
-        const gc = { 'A+': '#10b981', 'A': '#34d399', 'B': '#3b82f6', 'C': '#f59e0b', 'D': '#ef4444' };
-        gradeEl.style.background = `${gc[eqs.grade] || '#64748b'}22`;
-        gradeEl.style.color = gc[eqs.grade] || '#64748b';
-
         avgEl.innerHTML = `${eqs.avg_slippage_bps.toFixed(1)} <small>bps</small>`;
-
-        const tl = { improving: '📉 趋势改善', deteriorating: '📈 趋势恶化', stable: '➡️ 趋势稳定', no_data: '--' };
+        const tl = { improving: '📉 改善', deteriorating: '📈 恶化', stable: '➡️ 稳定', no_data: '--' };
         trendEl.textContent = tl[eqs.trend] || '--';
         trendEl.style.color = eqs.trend === 'improving' ? '#10b981' : eqs.trend === 'deteriorating' ? '#ef4444' : '#64748b';
+        if (slipCharts.gauge) renderEQSGauge(eqs.score, eqs.grade, true);
+        if (eqs.top_leakers && eqs.top_leakers.length > 0) renderTopLeakers(eqs.top_leakers);
+    }
 
-        document.getElementById('slip-order-count').textContent = `${eqs.order_count} 笔订单`;
+    function renderEQSGauge(score, grade, hasData) {
+        const color = score >= 90 ? '#10b981' : score >= 80 ? '#34d399' : score >= 65 ? '#3b82f6' : score >= 50 ? '#f59e0b' : '#ef4444';
+        slipCharts.gauge.setOption({
+            backgroundColor: 'transparent',
+            series: [{
+                type: 'gauge', startAngle: 200, endAngle: -20,
+                min: 0, max: 100, radius: '95%', center: ['50%', '60%'],
+                progress: { show: true, width: 10, itemStyle: { color: hasData ? color : '#334155' } },
+                axisLine: { lineStyle: { width: 10, color: [[1, 'rgba(255,255,255,0.04)']] } },
+                axisTick: { show: false }, splitLine: { show: false },
+                axisLabel: { show: false },
+                pointer: { show: false },
+                title: { show: true, offsetCenter: [0, '30%'], fontSize: 11, color: hasData ? color : '#475569', fontWeight: 700 },
+                detail: {
+                    offsetCenter: [0, '-10%'], fontSize: 26, fontWeight: 800,
+                    fontFamily: 'Outfit', color: hasData ? '#e2e8f0' : '#475569',
+                    formatter: hasData ? '{value}' : '--',
+                },
+                data: [{ value: hasData ? score : 0, name: hasData ? grade : '待实盘' }],
+                animationDuration: 1200, animationEasingUpdate: 'cubicOut',
+            }],
+        });
+    }
+
+    // ── Top Leakers ──
+    function renderTopLeakers(leakers) {
+        const section = document.getElementById('slip-leakers-section');
+        const container = document.getElementById('slip-leakers-bars');
+        if (!leakers || leakers.length === 0) { section.style.display = 'none'; return; }
+        section.style.display = '';
+        const maxCost = Math.max(...leakers.map(l => l.total_cost), 1);
+        container.innerHTML = leakers.map(l => {
+            const pct = Math.min(100, (l.total_cost / maxCost) * 100);
+            return '<div class="slip-leaker-item">' +
+                '<div class="slip-leaker-name">' + l.name + ' <small>' + l.ts_code + '</small></div>' +
+                '<div class="slip-leaker-bar-wrap"><div class="slip-leaker-bar" style="width:' + pct + '%"></div></div>' +
+                '<div class="slip-leaker-bps">' + l.avg_slip_bps + 'bps</div>' +
+                '<div class="slip-leaker-cost">¥' + l.total_cost.toLocaleString() + '</div>' +
+            '</div>';
+        }).join('');
     }
 
     function renderSlipSummary(stats) {
         const p30 = stats.period_30d || {};
-        document.getElementById('slip-total-cost').textContent = `¥ ${(p30.total_cost || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-        document.getElementById('slip-lifetime-cost').textContent = `历史累计 ¥ ${(stats.lifetime?.total_cost || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        document.getElementById('slip-total-cost').textContent = '¥ ' + (p30.total_cost || 0).toLocaleString(undefined, {minimumFractionDigits: 2});
+        document.getElementById('slip-lifetime-cost').textContent = '历史累计 ¥ ' + ((stats.lifetime && stats.lifetime.total_cost) || 0).toLocaleString(undefined, {minimumFractionDigits: 2});
     }
 
+    // ── Trend Chart + Empty State ──
     function renderSlipTrend(history) {
         initSlippageCharts();
-        if (!slipCharts.trend || !history || history.length === 0) return;
-
-        const dates = history.map(h => h.date.slice(5));
-        const bps = history.map(h => h.avg_slippage_bps || 0);
-        const cost = history.map(h => h.total_slippage_cny || 0);
-
+        const emptyEl = document.getElementById('slip-trend-empty');
+        if (!history || history.length === 0) {
+            if (emptyEl) emptyEl.classList.remove('hidden');
+            return;
+        }
+        if (emptyEl) emptyEl.classList.add('hidden');
+        if (!slipCharts.trend) return;
         slipCharts.trend.setOption({
             backgroundColor: 'transparent',
-            tooltip: {
-                trigger: 'axis',
-                backgroundColor: 'rgba(15,23,42,0.95)',
-                borderColor: 'rgba(255,255,255,0.08)',
-                textStyle: { color: '#f8fafc', fontSize: 12 },
-            },
-            legend: {
-                right: '5%', top: '2%',
-                textStyle: { color: '#94a3b8', fontSize: 11 },
-            },
+            tooltip: { trigger: 'axis', backgroundColor: 'rgba(15,23,42,0.95)', borderColor: 'rgba(255,255,255,0.08)', textStyle: { color: '#f8fafc', fontSize: 12 } },
+            legend: { right: '5%', top: '2%', textStyle: { color: '#94a3b8', fontSize: 11 } },
             grid: { left: '3%', right: '8%', bottom: '3%', top: '18%', containLabel: true },
-            xAxis: {
-                type: 'category', data: dates,
-                axisLabel: { color: '#64748b', fontSize: 10, fontFamily: 'Outfit' },
-                axisLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } },
-            },
-            yAxis: [{
-                type: 'value', name: 'bps',
-                axisLabel: { color: '#64748b', fontSize: 10 },
-                splitLine: { lineStyle: { color: 'rgba(255,255,255,0.03)' } },
-            }, {
-                type: 'value', name: '¥',
-                axisLabel: { color: '#64748b', fontSize: 10 },
-                splitLine: { show: false },
-            }],
+            xAxis: { type: 'category', data: history.map(function(h) { return h.date.slice(5); }), axisLabel: { color: '#64748b', fontSize: 10 }, axisLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } } },
+            yAxis: [
+                { type: 'value', name: 'bps', axisLabel: { color: '#64748b', fontSize: 10 }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.03)' } } },
+                { type: 'value', name: '¥', axisLabel: { color: '#64748b', fontSize: 10 }, splitLine: { show: false } }
+            ],
             series: [{
-                name: '滑点(bps)', type: 'line', data: bps,
-                smooth: true, showSymbol: false,
-                lineStyle: { width: 2.5, color: '#f59e0b' },
-                areaStyle: {
-                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                        { offset: 0, color: 'rgba(245,158,11,0.2)' },
-                        { offset: 1, color: 'rgba(245,158,11,0.02)' },
-                    ]),
-                },
+                name: '滑点(bps)', type: 'line', data: history.map(function(h) { return h.avg_slippage_bps || 0; }),
+                smooth: true, showSymbol: false, lineStyle: { width: 2.5, color: '#f59e0b' },
+                areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{offset: 0, color: 'rgba(245,158,11,0.2)'}, {offset: 1, color: 'rgba(245,158,11,0.02)'}]) }
             }, {
-                name: '损耗(¥)', type: 'bar', yAxisIndex: 1, data: cost,
-                itemStyle: {
-                    color: 'rgba(239,68,68,0.3)',
-                    borderRadius: [4, 4, 0, 0],
-                },
-                barMaxWidth: 16,
+                name: '损耗(¥)', type: 'bar', yAxisIndex: 1, data: history.map(function(h) { return h.total_slippage_cny || 0; }),
+                itemStyle: { color: 'rgba(239,68,68,0.3)', borderRadius: [4, 4, 0, 0] }, barMaxWidth: 16
             }],
             animationDuration: 1000,
         });
     }
 
+    // ── Attribution Pie + Empty State ──
     function renderSlipAttribution(attr) {
         initSlippageCharts();
-        if (!slipCharts.attr || !attr.has_data) return;
+        const emptyEl = document.getElementById('slip-attr-empty');
+        if (!attr.has_data) { if (emptyEl) emptyEl.classList.remove('hidden'); return; }
+        if (emptyEl) emptyEl.classList.add('hidden');
 
-        const ong = document.getElementById('slip-main-cause');
-        const detail = document.getElementById('slip-cause-detail');
+        const mc = document.getElementById('slip-main-cause');
+        const dt = document.getElementById('slip-cause-detail');
         if (attr.overnight_gap_pct > attr.intraday_drift_pct) {
-            ong.textContent = '隔夜缺口';
-            detail.textContent = `占比 ${attr.overnight_gap_pct.toFixed(0)}% · 平均 ${attr.avg_overnight_bps.toFixed(1)}bps`;
+            mc.textContent = '隔夜缺口';
+            dt.textContent = '占比 ' + attr.overnight_gap_pct.toFixed(0) + '% · ' + attr.avg_overnight_bps.toFixed(1) + 'bps';
         } else {
-            ong.textContent = '日内漂移';
-            detail.textContent = `占比 ${attr.intraday_drift_pct.toFixed(0)}% · 平均 ${attr.avg_intraday_bps.toFixed(1)}bps`;
+            mc.textContent = '日内漂移';
+            dt.textContent = '占比 ' + attr.intraday_drift_pct.toFixed(0) + '% · ' + attr.avg_intraday_bps.toFixed(1) + 'bps';
         }
-
+        if (!slipCharts.attr) return;
         slipCharts.attr.setOption({
             backgroundColor: 'transparent',
-            tooltip: {
-                trigger: 'item',
-                backgroundColor: 'rgba(15,23,42,0.95)',
-                borderColor: 'rgba(255,255,255,0.08)',
-                textStyle: { color: '#f8fafc', fontSize: 12 },
-            },
-            legend: {
-                bottom: '5%',
-                textStyle: { color: '#94a3b8', fontSize: 11 },
-            },
+            tooltip: { trigger: 'item', backgroundColor: 'rgba(15,23,42,0.95)', borderColor: 'rgba(255,255,255,0.08)', textStyle: { color: '#f8fafc', fontSize: 12 } },
+            legend: { bottom: '5%', textStyle: { color: '#94a3b8', fontSize: 11 } },
             series: [{
-                type: 'pie',
-                radius: ['45%', '75%'],
-                center: ['50%', '42%'],
-                avoidLabelOverlap: false,
+                type: 'pie', radius: ['45%', '75%'], center: ['50%', '42%'], avoidLabelOverlap: false,
                 itemStyle: { borderRadius: 8, borderColor: 'rgba(15,23,42,0.6)', borderWidth: 3 },
                 label: { show: true, formatter: '{b}\n{d}%', color: '#cbd5e1', fontSize: 12 },
                 data: [
                     { value: attr.overnight_gap_pct, name: '隔夜缺口', itemStyle: { color: '#f59e0b' } },
-                    { value: attr.intraday_drift_pct, name: '日内漂移', itemStyle: { color: '#ef4444' } },
+                    { value: attr.intraday_drift_pct, name: '日内漂移', itemStyle: { color: '#ef4444' } }
                 ],
-                animationType: 'scale',
-                animationDuration: 1200,
+                animationType: 'scale', animationDuration: 1200
             }],
         });
     }
 
     function renderSlipDiagnosis(findings) {
-        const container = document.getElementById('slip-diag-cards');
+        const c = document.getElementById('slip-diag-cards');
         if (!findings || findings.length === 0) {
-            container.innerHTML = '<div class="slip-diag-placeholder">暂无诊断结果</div>';
+            c.innerHTML = '<div class="slip-diag-placeholder">暂无诊断结果</div>';
             return;
         }
-        container.innerHTML = findings.map(f => {
-            const cls = f.severity === 'warning' ? 'diag-warning' : f.severity === 'positive' ? 'diag-positive' : 'diag-info';
-            return `<div class="slip-diag-card ${cls}">
-                <div class="slip-diag-title">${f.title}</div>
-                <div class="slip-diag-detail">${f.detail}</div>
-            </div>`;
+        var icons = { warning: '⚠️', positive: '✅', info: 'ℹ️' };
+        c.innerHTML = findings.map(function(f) {
+            var cls = f.severity === 'warning' ? 'diag-warning' : f.severity === 'positive' ? 'diag-positive' : 'diag-info';
+            return '<div class="slip-diag-card ' + cls + '">' +
+                '<div class="slip-diag-title">' + (icons[f.severity] || '') + ' ' + f.title + '</div>' +
+                '<div class="slip-diag-detail">' + f.detail + '</div></div>';
         }).join('');
     }
 
+    // ── Orders Table with source badges + pagination ──
     function renderSlipOrders(orders) {
-        const body = document.getElementById('slip-orders-body');
-        if (!orders || orders.length === 0) {
-            body.innerHTML = '<tr><td colspan="9" class="pf-table-empty">暂无执行记录 — 点击 Bootstrap 回填历史数据</td></tr>';
-            return;
-        }
-        body.innerHTML = orders.slice(0, 50).map(o => {
-            const sideClass = o.side === 'buy' ? 'slip-side-buy' : 'slip-side-sell';
-            const sideLabel = o.side === 'buy' ? '买入' : o.side === 'sell' ? '卖出' : o.side;
-            const bps = o.total_slippage_bps;
-            const bpsClass = bps > 0 ? 'slip-bps-positive' : bps < 0 ? 'slip-bps-negative' : 'slip-bps-zero';
-            const statusClass = o.status === 'filled' ? 'slip-status-filled' : 'slip-status-pending';
-            const statusLabel = o.status === 'filled' ? '已成交' : '待执行';
-            return `<tr>
-                <td class="pf-mono" style="font-size:0.82rem">${o.order_date || '--'}</td>
-                <td><span style="font-weight:600">${o.name || ''}</span> <span style="color:#475569;font-size:0.72rem">${o.ts_code}</span></td>
-                <td class="${sideClass}">${sideLabel}</td>
-                <td class="pf-mono">${o.decision_price ? '¥' + o.decision_price.toFixed(3) : '--'}</td>
-                <td class="pf-mono">${o.exec_price ? '¥' + o.exec_price.toFixed(3) : '--'}</td>
-                <td class="pf-mono">${o.exec_amount ? o.exec_amount.toLocaleString() : '--'}</td>
-                <td class="${bpsClass}">${bps != null ? bps.toFixed(1) : '--'}</td>
-                <td class="pf-mono" style="color:#f59e0b">${o.total_slippage_cny != null ? '¥' + Math.abs(o.total_slippage_cny).toFixed(2) : '--'}</td>
-                <td class="${statusClass}">${statusLabel}</td>
-            </tr>`;
-        }).join('');
+        _slipAllOrders = orders || [];
+        _renderOrderPage(false);
     }
 
-    // Bootstrap 按钮
-    const bootstrapBtn = document.getElementById('slippage-bootstrap-btn');
-    if (bootstrapBtn) {
-        bootstrapBtn.onclick = async () => {
-            bootstrapBtn.disabled = true;
-            bootstrapBtn.textContent = '⏳ 回填中...';
-            try {
-                const res = await AC.secureFetch('/api/v1/slippage/bootstrap', { method: 'POST' });
-                const result = await res.json();
-                if (result.status === 'success') {
-                    const d = result.data;
-                    showToast(`Bootstrap 完成: ${d.created || 0} 笔历史回填`, 'success');
-                    loadSlippagePanel();
-                } else {
-                    showToast(result.data?.message || result.message || 'Bootstrap 跳过', 'info');
-                }
-            } catch (err) {
-                showToast('Bootstrap 失败', 'error');
-            }
-            bootstrapBtn.disabled = false;
-            bootstrapBtn.textContent = '🔄 Bootstrap';
+    function _renderOrderPage(showAll) {
+        var body = document.getElementById('slip-orders-body');
+        var moreWrap = document.getElementById('slip-show-more-wrap');
+        var moreBtn = document.getElementById('slip-show-more-btn');
+        if (!_slipAllOrders.length) {
+            body.innerHTML = '<tr><td colspan="10" class="pf-table-empty">暂无执行记录 — 点击 Bootstrap 回填历史数据</td></tr>';
+            if (moreWrap) moreWrap.style.display = 'none';
+            return;
+        }
+        var display = showAll ? _slipAllOrders : _slipAllOrders.slice(0, 20);
+        body.innerHTML = display.map(function(o) {
+            var sl = o.side === 'buy' ? 'slip-side-buy' : 'slip-side-sell';
+            var sd = o.side === 'buy' ? '买入' : o.side === 'sell' ? '卖出' : o.side;
+            var bps = o.total_slippage_bps;
+            var bc = bps > 0 ? 'slip-bps-positive' : bps < 0 ? 'slip-bps-negative' : 'slip-bps-zero';
+            var src = o.exec_source === 'bootstrap' ? '<span class="slip-src-badge slip-src-baseline">BASELINE</span>'
+                : o.exec_source === 'broker_import' ? '<span class="slip-src-badge slip-src-import">IMPORT</span>'
+                : '<span class="slip-src-badge slip-src-live">LIVE</span>';
+            var st = o.status === 'filled' ? '<span class="slip-status-filled">已成交</span>' : '<span class="slip-status-pending">待执行</span>';
+            return '<tr>' +
+                '<td class="pf-mono" style="font-size:0.82rem">' + (o.order_date || '--') + '</td>' +
+                '<td><span style="font-weight:600">' + (o.name || '') + '</span> <span style="color:#475569;font-size:0.72rem">' + o.ts_code + '</span></td>' +
+                '<td class="' + sl + '">' + sd + '</td>' +
+                '<td class="pf-mono">' + (o.decision_price ? '¥' + o.decision_price.toFixed(3) : '--') + '</td>' +
+                '<td class="pf-mono">' + (o.exec_price ? '¥' + o.exec_price.toFixed(3) : '--') + '</td>' +
+                '<td class="pf-mono">' + (o.exec_amount ? o.exec_amount.toLocaleString() : '--') + '</td>' +
+                '<td class="' + bc + '">' + (bps != null ? bps.toFixed(1) : '--') + '</td>' +
+                '<td class="pf-mono" style="color:#f59e0b">' + (o.total_slippage_cny != null ? '¥' + Math.abs(o.total_slippage_cny).toFixed(2) : '--') + '</td>' +
+                '<td>' + src + '</td>' +
+                '<td>' + st + '</td></tr>';
+        }).join('');
+
+        if (_slipAllOrders.length > 20 && !showAll) {
+            if (moreWrap) moreWrap.style.display = '';
+            if (moreBtn) moreBtn.textContent = '展开全部 ' + _slipAllOrders.length + ' 笔';
+        } else {
+            if (moreWrap) moreWrap.style.display = 'none';
+        }
+    }
+
+    // Show more button
+    var showMoreBtn = document.getElementById('slip-show-more-btn');
+    if (showMoreBtn) showMoreBtn.onclick = function() { _renderOrderPage(true); };
+
+    // Refresh button
+    var refreshBtn = document.getElementById('slip-refresh-btn');
+    if (refreshBtn) {
+        refreshBtn.onclick = function() {
+            refreshBtn.classList.add('spinning');
+            loadSlippagePanel().finally(function() { setTimeout(function() { refreshBtn.classList.remove('spinning'); }, 500); });
         };
     }
 
-    // 延迟加载滑点面板 (不阻塞主面板渲染)
+    // Bootstrap button
+    var bootstrapBtn = document.getElementById('slippage-bootstrap-btn');
+    if (bootstrapBtn) {
+        bootstrapBtn.onclick = async function() {
+            bootstrapBtn.disabled = true;
+            bootstrapBtn.textContent = '⏳ 回填中...';
+            try {
+                var res = await AC.secureFetch('/api/v1/slippage/bootstrap', { method: 'POST' });
+                var result = await res.json();
+                if (result.status === 'success') {
+                    showToast('Bootstrap: ' + (result.data.created || 0) + ' 笔回填, ' + (result.data.daily_summaries || 0) + ' 日汇总', 'success');
+                    loadSlippagePanel();
+                } else {
+                    showToast((result.data && result.data.message) || 'Bootstrap 跳过', 'info');
+                }
+            } catch (err) { showToast('Bootstrap 失败', 'error'); }
+            bootstrapBtn.disabled = false;
+            bootstrapBtn.textContent = '📥 Bootstrap';
+        };
+    }
+
     setTimeout(loadSlippagePanel, 1500);
 });
 
