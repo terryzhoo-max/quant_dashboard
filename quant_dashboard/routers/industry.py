@@ -659,8 +659,8 @@ async def sync_industry_data():
         
         def do_sync():
             mgr = FactorDataManager()
-            # 同步 ETF 行情 (Tushare asset 'E' 代表 ETF)
-            mgr.sync_daily_prices(etf_codes, asset='E') 
+            # 同步 ETF 行情 (Tushare asset 'FD' 代表基金/ETF)
+            mgr.sync_daily_prices(etf_codes, asset='FD') 
             # 同时也同步一部分成分股行情(可选)
             engine = IndustryEngine()
             stocks = engine._get_industry_stocks()
