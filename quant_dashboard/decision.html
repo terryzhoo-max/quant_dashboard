@@ -8,7 +8,7 @@
     <title>决策中枢 · AlphaCore</title>
     <link rel="stylesheet" href="./static/css/fonts.css?v=1">
     <link rel="stylesheet" href="./static/css/styles.css?v=12">
-    <link rel="stylesheet" href="./static/css/decision.css?v=47">
+    <link rel="stylesheet" href="./static/css/decision.css?v=48">
     <link rel="stylesheet" href="./static/css/visual_excellence.css?v=3">
     <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
@@ -128,6 +128,7 @@
             <!-- Tab 切换 -->
             <div class="decision-tabs">
                 <button class="decision-tab active" data-tab="tab-overview">📊 决策概览</button>
+                <button class="decision-tab" data-tab="tab-optimizer">⚡ 组合优化</button>
                 <button class="decision-tab" data-tab="tab-timeline">📅 决策时间线</button>
                 <button class="decision-tab" data-tab="tab-risk">🛡️ 风险矩阵</button>
                 <button class="decision-tab" data-tab="tab-calendar">🗓️ 复盘日历</button>
@@ -410,6 +411,88 @@
                 </div>
             </div>
 
+            <!-- ═══ Tab: 组合优化 (V23.0 Black-Litterman) ═══ -->
+            <div class="tab-panel" id="tab-optimizer">
+                <div class="optimizer-header-card glass-decision">
+                    <div class="opt-header-row">
+                        <div>
+                            <h3>⚡ 组合权重优化器 <span class="section-subtitle">— Black-Litterman · 含交易成本</span></h3>
+                            <p class="opt-desc">基于 Ledoit-Wolf 协方差收缩 + AIAE/ERP/动量观点融合，求解风险调整后最优权重</p>
+                        </div>
+                        <div class="opt-actions">
+                            <button class="btn btn-primary btn-sm" id="btn-run-optimizer" onclick="runOptimizer()">▶ 一键优化</button>
+                            <button class="btn btn-sm" id="btn-apply-path" onclick="applyOptToPath()" style="display:none;">🗺️ 生成调仓路径</button>
+                        </div>
+                    </div>
+                    <div class="opt-meta-row" id="opt-meta-row" style="display:none;"></div>
+                </div>
+
+                <!-- 优化结果对比 -->
+                <div class="opt-comparison-row" id="opt-comparison" style="display:none;">
+                    <div class="opt-stat-card glass-decision">
+                        <div class="opt-stat-label">当前 Sharpe</div>
+                        <div class="opt-stat-value" id="opt-cur-sharpe">--</div>
+                    </div>
+                    <div class="opt-stat-card opt-stat-arrow">→</div>
+                    <div class="opt-stat-card glass-decision opt-stat-highlight">
+                        <div class="opt-stat-label">优化后 Sharpe</div>
+                        <div class="opt-stat-value" id="opt-new-sharpe">--</div>
+                    </div>
+                    <div class="opt-stat-card glass-decision">
+                        <div class="opt-stat-label">换手率</div>
+                        <div class="opt-stat-value" id="opt-turnover">--</div>
+                    </div>
+                    <div class="opt-stat-card glass-decision">
+                        <div class="opt-stat-label">交易成本</div>
+                        <div class="opt-stat-value" id="opt-cost">--</div>
+                    </div>
+                    <div class="opt-stat-card glass-decision">
+                        <div class="opt-stat-label">优化方法</div>
+                        <div class="opt-stat-value" id="opt-method">--</div>
+                    </div>
+                </div>
+
+                <!-- 图表区 -->
+                <div class="opt-charts-row" id="opt-charts-row" style="display:none;">
+                    <div class="risk-panel glass-decision">
+                        <h4>📊 权重对比 <span class="section-subtitle">当前 vs 最优</span></h4>
+                        <div id="opt-weight-chart" style="width:100%;height:380px;"></div>
+                    </div>
+                    <div class="risk-panel glass-decision">
+                        <h4>📈 有效前沿 <span class="section-subtitle">风险-收益空间</span></h4>
+                        <div id="opt-frontier-chart" style="width:100%;height:380px;"></div>
+                    </div>
+                </div>
+
+                <!-- 调仓建议表 -->
+                <div class="opt-rebalance-card glass-decision" id="opt-rebalance-card" style="display:none;">
+                    <h4>🔄 调仓建议明细</h4>
+                    <div class="opt-rebalance-table-wrap">
+                        <table class="opt-rebalance-table" id="opt-rebalance-table"></table>
+                    </div>
+                    <div class="opt-compliance" id="opt-compliance"></div>
+                    <div class="opt-warnings" id="opt-warnings"></div>
+                </div>
+
+                <!-- 优化器调仓路径 -->
+                <div class="position-path-card glass-decision" id="opt-path-card" style="display:none;">
+                    <div class="pp-header">
+                        <span class="pp-title">🗺️ 优化→调仓执行路径</span>
+                        <span class="pp-gap-badge" id="opt-path-gap">--</span>
+                    </div>
+                    <div class="pp-body" id="opt-path-body"></div>
+                </div>
+
+                <!-- 空状态 -->
+                <div class="opt-empty" id="opt-empty">
+                    <div class="empty-state">
+                        <div class="icon">⚡</div>
+                        <p>点击「一键优化」开始 Black-Litterman 组合权重优化</p>
+                        <p style="font-size:0.78rem;color:#64748b;">需要至少 2 只持仓 · 基于 120 日数据 · 含合规校验</p>
+                    </div>
+                </div>
+            </div>
+
             <!-- ═══ Tab 2: 决策时间线 ═══ -->
             <div class="tab-panel" id="tab-timeline">
                 <div class="timeline-chart-wrap glass-decision">
@@ -655,6 +738,7 @@
     <script src="./static/js/decision/perf_matrix.js?v=46"></script>
     <script src="./static/js/decision/swing_guard.js?v=46"></script>
     <script src="./static/js/decision/risk_alerts.js?v=46"></script>
+    <script src="./static/js/decision/optimizer.js?v=2"></script>
     <script src="./static/js/decision.js?v=47"></script>
 </body>
 </html>

@@ -1538,7 +1538,8 @@ _POSITION_RULES = {
 }
 
 
-def generate_position_path(snapshot: dict = None, jcs_data: dict = None) -> dict:
+def generate_position_path(snapshot: dict = None, jcs_data: dict = None,
+                           target_weights: dict = None) -> dict:
     """
     根据当前持仓 + 决策中枢输出, 生成 3 步仓位调整路径。
 
@@ -1642,33 +1643,38 @@ def generate_position_path(snapshot: dict = None, jcs_data: dict = None) -> dict
     for p in positions:
         w = p.get("weight", 0)
         pnl_pct = p.get("pnl_pct", 0)
-        # 优先级分数: 超配扣分 + 大盈大亏扣分 → 高优先调整
-        score = 0
-        reasons = []
+        code = p.get("ts_code", "--")
 
-        # 超配 (超过单票上限)
-        if w > MAX_SINGLE:
-            score += (w - MAX_SINGLE) * 2
-            reasons.append(f"超配>{MAX_SINGLE}%上限")
-        # 接近上限
-        elif w > MAX_SINGLE * 0.75:
-            score += (w - MAX_SINGLE * 0.75)
-            reasons.append(f"接近{MAX_SINGLE}%上限")
+        # V23.0: 优化器驱动模式 — 按偏离目标权重的绝对值排序
+        if target_weights and code in target_weights:
+            tw = target_weights[code]
+            deviation = abs(w - tw)
+            score = deviation * 3  # 偏离越大优先级越高
+            reasons = [f"优化器目标 {tw:.1f}% (偏离 {w - tw:+.1f}%)"]
+        else:
+            # 原始启发式打分
+            score = 0
+            reasons = []
 
-        # 大幅浮盈 → 止盈候选
-        if pnl_pct > PROFIT_TAKE:
-            score += pnl_pct * 0.5
-            reasons.append(f"浮盈+{pnl_pct:.0f}%建议止盈")
-        # 大幅浮亏 → 止损候选 (仅在 JCS 低或 VIX 高时)
-        elif pnl_pct < LOSS_CUT:
-            if jcs_level == "low" or vix_val > 25:
-                score += abs(pnl_pct) * 0.8
-                reasons.append(f"浮亏{pnl_pct:.0f}% · JCS低/VIX高建议止损")
-            else:
-                reasons.append(f"浮亏{pnl_pct:.0f}% · 信号尚可暂持")
+            if w > MAX_SINGLE:
+                score += (w - MAX_SINGLE) * 2
+                reasons.append(f"超配>{MAX_SINGLE}%上限")
+            elif w > MAX_SINGLE * 0.75:
+                score += (w - MAX_SINGLE * 0.75)
+                reasons.append(f"接近{MAX_SINGLE}%上限")
+
+            if pnl_pct > PROFIT_TAKE:
+                score += pnl_pct * 0.5
+                reasons.append(f"浮盈+{pnl_pct:.0f}%建议止盈")
+            elif pnl_pct < LOSS_CUT:
+                if jcs_level == "low" or vix_val > 25:
+                    score += abs(pnl_pct) * 0.8
+                    reasons.append(f"浮亏{pnl_pct:.0f}% · JCS低/VIX高建议止损")
+                else:
+                    reasons.append(f"浮亏{pnl_pct:.0f}% · 信号尚可暂持")
 
         scored.append({
-            "code": p.get("ts_code", "--"),
+            "code": code,
             "name": p.get("name", "Unknown"),
             "industry": p.get("industry", "其他"),
             "weight": w,
@@ -1676,6 +1682,7 @@ def generate_position_path(snapshot: dict = None, jcs_data: dict = None) -> dict
             "market_value": p.get("market_value", 0),
             "priority_score": round(score, 1),
             "reasons": reasons,
+            "target_weight": target_weights.get(code) if target_weights else None,
         })
 
     # 按优先级降序 (高分先调)

@@ -610,3 +610,136 @@ async def get_param_sensitivity():
         "perturbation_pct": int(perturbation * 100),
         "results": results,
     }
+
+
+# ═══════════════════════════════════════════════════════════
+#  V23.0: 组合权重优化 (Black-Litterman / MVO)
+# ═══════════════════════════════════════════════════════════
+
+class OptimizeCustomRequest(BaseModel):
+    risk_aversion: float = 2.5
+    cost_rate: float = 0.003
+    max_turnover: float = 0.25
+
+
+@router.get("/optimize")
+async def get_optimal_weights():
+    """一键组合优化 — BL > MVO > 等权 降级链"""
+    from services.cache_service import stale_while_revalidate
+    from engines.optimizer_engine import full_optimize
+    return stale_while_revalidate(
+        "swr_optimizer", lambda: full_optimize(),
+        fresh_ttl=600, stale_ttl=3600
+    )
+
+
+@router.get("/efficient-frontier")
+async def get_efficient_frontier(points: int = Query(15, ge=5, le=30)):
+    """有效前沿曲线 (含当前组合定位)"""
+    from engines.optimizer_engine import (
+        estimate_covariance, compute_efficient_frontier, _portfolio_stats
+    )
+    import pandas as pd
+    import numpy as np
+
+    try:
+        from portfolio_engine import get_portfolio_engine
+        pe = get_portfolio_engine()
+        val = pe.get_valuation()
+    except Exception as e:
+        return {"status": "error", "error": f"持仓读取失败: {e}"}
+
+    positions = val.get("positions", [])
+    if len(positions) < 2:
+        return {"status": "insufficient", "error": "至少需要 2 只持仓"}
+
+    total_asset = val.get("total_asset", 0)
+    if total_asset <= 0:
+        return {"status": "error", "error": "总资产为零"}
+
+    codes = [p["ts_code"] for p in positions]
+    w_current = np.array([p.get("market_value", 0) / total_asset for p in positions])
+
+    rets_data = {}
+    for p in positions:
+        try:
+            p_df = pe.dm.get_price_payload(p["ts_code"])
+            if p_df is not None and not p_df.empty:
+                rets_data[p["ts_code"]] = p_df['close'].pct_change().dropna().tail(120)
+        except Exception:
+            pass
+
+    if len(rets_data) < 2:
+        return {"status": "insufficient_data"}
+
+    df_rets = pd.DataFrame(rets_data)
+    for code in codes:
+        if code not in df_rets.columns:
+            df_rets[code] = 0.0
+    df_rets = df_rets[codes].fillna(0)
+
+    cov_matrix, _ = estimate_covariance(df_rets)
+    mu = (df_rets.mean() * 252).values
+    cov_np = cov_matrix.values
+
+    try:
+        from config import POSITION_CONFIG as PC
+        single_limit = PC["single_limit"] / 100.0
+        total_cap = PC["total_cap"] / 100.0
+    except ImportError:
+        single_limit, total_cap = 0.20, 0.95
+
+    frontier = compute_efficient_frontier(mu, cov_np, single_limit, total_cap, points)
+    cur_ret, cur_vol, cur_sharpe = _portfolio_stats(w_current, mu, cov_np)
+
+    return {
+        "status": "success",
+        "frontier": frontier,
+        "current": {
+            "return": round(cur_ret * 100, 2),
+            "volatility": round(cur_vol * 100, 2),
+            "sharpe": round(cur_sharpe, 2),
+        },
+    }
+
+
+@router.post("/optimize-custom")
+async def optimize_custom(req: OptimizeCustomRequest):
+    """自定义参数优化"""
+    from engines.optimizer_engine import full_optimize
+    return full_optimize(
+        risk_aversion=req.risk_aversion,
+        cost_rate=req.cost_rate,
+        max_turnover=req.max_turnover,
+    )
+
+
+@router.get("/optimize-path")
+async def get_optimized_path():
+    """优化权重 → 调仓路径 管道"""
+    from engines.optimizer_engine import full_optimize
+    from dashboard_modules.decision_engine import generate_position_path, _build_snapshot_from_cache, compute_jcs
+
+    opt = full_optimize()
+    if opt.get("status") != "success":
+        return {"status": "error", "error": opt.get("error", "优化失败"), "optimize_result": opt}
+
+    # 构建 target_weights 映射: code → 目标权重%
+    target_weights = {}
+    for item in opt.get("rebalance", []):
+        target_weights[item["code"]] = item["optimal_weight"]
+
+    snapshot = _build_snapshot_from_cache()
+    jcs = compute_jcs(snapshot)
+    path = generate_position_path(snapshot, jcs, target_weights=target_weights)
+
+    return {
+        "status": "success",
+        "optimization": {
+            "method": opt.get("method"),
+            "current_sharpe": opt["current"]["sharpe"],
+            "optimal_sharpe": opt["optimal"]["sharpe"],
+            "turnover": opt.get("turnover"),
+        },
+        "path": path,
+    }

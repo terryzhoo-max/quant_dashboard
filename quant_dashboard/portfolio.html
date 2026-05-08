@@ -174,11 +174,91 @@
                     <h3>📜 交易记录 <span class="pf-panel-sub">Trade History Console</span></h3>
                 </div>
                 <div class="pf-history-list" id="trade-history-list">
-                    <div class="pf-history-empty">暂无交易记录</div>
+                </div>
+            </div>
+
+            <!-- ═══ ZONE 6: 执行质量分析 (OMS Slippage Attribution) ═══ -->
+            <div class="glass-panel pf-slippage-panel" id="pf-slippage-zone">
+                <div class="pf-panel-header">
+                    <h3>📊 执行质量分析 <span class="pf-panel-sub">OMS Slippage Attribution</span></h3>
+                    <div class="pf-table-controls">
+                        <button class="btn btn-sync" id="slippage-bootstrap-btn" style="font-size:0.72rem;padding:4px 10px;">🔄 Bootstrap</button>
+                        <span class="pf-pos-count" id="slip-order-count">0 笔订单</span>
+                    </div>
+                </div>
+
+                <!-- KPI Cards Row -->
+                <div class="slip-kpi-row" id="slip-kpi-row">
+                    <div class="slip-kpi-card slip-kpi-eqs">
+                        <div class="slip-kpi-label">EQS 执行质量</div>
+                        <div class="slip-kpi-value" id="slip-eqs-score">--</div>
+                        <div class="slip-kpi-grade" id="slip-eqs-grade">--</div>
+                    </div>
+                    <div class="slip-kpi-card">
+                        <div class="slip-kpi-label">30D 平均滑点</div>
+                        <div class="slip-kpi-value" id="slip-avg-bps">-- <small>bps</small></div>
+                        <div class="slip-kpi-sub" id="slip-trend-label">--</div>
+                    </div>
+                    <div class="slip-kpi-card">
+                        <div class="slip-kpi-label">累计执行损耗</div>
+                        <div class="slip-kpi-value slip-kpi-cost" id="slip-total-cost">¥ --</div>
+                        <div class="slip-kpi-sub" id="slip-lifetime-cost">历史累计 ¥ --</div>
+                    </div>
+                    <div class="slip-kpi-card">
+                        <div class="slip-kpi-label">归因主因</div>
+                        <div class="slip-kpi-value" id="slip-main-cause">--</div>
+                        <div class="slip-kpi-sub" id="slip-cause-detail">--</div>
+                    </div>
+                </div>
+
+                <!-- Charts Row -->
+                <div class="pf-charts-row" style="margin-top:16px;">
+                    <div class="slip-chart-box">
+                        <h4>📈 滑点趋势 <span class="pf-chart-sub">Daily Slippage Trend</span></h4>
+                        <div id="slip-trend-chart" style="height:280px;"></div>
+                    </div>
+                    <div class="slip-chart-box">
+                        <h4>🔬 归因分解 <span class="pf-chart-sub">IS Attribution</span></h4>
+                        <div id="slip-attr-chart" style="height:280px;"></div>
+                    </div>
+                </div>
+
+                <!-- Diagnosis Cards -->
+                <div class="slip-diag-section" id="slip-diag-section">
+                    <h4>⚠️ 智能诊断 <span class="pf-chart-sub">Execution Diagnostics</span></h4>
+                    <div class="slip-diag-cards" id="slip-diag-cards">
+                        <div class="slip-diag-placeholder">数据加载中...</div>
+                    </div>
+                </div>
+
+                <!-- Order Table -->
+                <div class="slip-orders-section" style="margin-top:16px;">
+                    <h4>📋 执行指令明细 <span class="pf-chart-sub">Execution Orders</span></h4>
+                    <div class="pf-table-wrap">
+                        <table class="pf-table" id="slip-orders-table">
+                            <thead>
+                                <tr>
+                                    <th>日期</th>
+                                    <th>标的</th>
+                                    <th>方向</th>
+                                    <th>决策价</th>
+                                    <th>成交价</th>
+                                    <th>数量</th>
+                                    <th>滑点(bps)</th>
+                                    <th>损耗(¥)</th>
+                                    <th>状态</th>
+                                </tr>
+                            </thead>
+                            <tbody id="slip-orders-body">
+                                <tr><td colspan="9" class="pf-table-empty">暂无执行记录</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
     </main>
+
 
     <!-- ═══ Toast 通知容器 ═══ -->
     <div class="pf-toast-container" id="toast-container"></div>

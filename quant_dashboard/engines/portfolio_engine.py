@@ -202,6 +202,14 @@ class PortfolioEngine:
         self._save_portfolio()
 
         self._record_trade("buy", ts_code, name, amount, price, True, "买入成功")
+        # V26.0: 滑点归因追踪
+        try:
+            from engines.slippage_engine import get_slippage_engine
+            get_slippage_engine().record_execution_from_trade(
+                ts_code=ts_code, side="buy",
+                exec_price=price, exec_amount=amount, name=name)
+        except Exception:
+            pass  # 滑点追踪失败不阻塞交易
         return True, "买入成功"
 
     def reduce_position(self, ts_code: str, amount: int, price: float):
@@ -230,6 +238,14 @@ class PortfolioEngine:
         self._save_portfolio()
 
         self._record_trade("sell", ts_code, name, amount, price, True, "卖出成功")
+        # V26.0: 滑点归因追踪
+        try:
+            from engines.slippage_engine import get_slippage_engine
+            get_slippage_engine().record_execution_from_trade(
+                ts_code=ts_code, side="sell",
+                exec_price=price, exec_amount=amount, name=name)
+        except Exception:
+            pass
         return True, "卖出成功"
 
     # ──────────────────────────────────────
@@ -1103,6 +1119,13 @@ class PortfolioEngine:
             success=True,
             msg=f"从券商TXT文件覆盖导入 {len(new_positions)} 只持仓，可用资金 ¥{result['cash']:,.2f}"
         )
+
+        # V26.0: 通知滑点引擎记录导入事件
+        try:
+            from engines.slippage_engine import get_slippage_engine
+            get_slippage_engine().auto_match_from_import(result)
+        except Exception:
+            pass
 
         result["success"] = True
         result["imported"] = len(new_positions)

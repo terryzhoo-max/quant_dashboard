@@ -1269,3 +1269,200 @@
     color: #f87171 !important;
 }
 
+/* ═══════════════════════════════════
+   ZONE 6: 执行质量分析 (OMS Slippage)
+   ═══════════════════════════════════ */
+
+.pf-slippage-panel {
+    border-radius: 18px !important;
+    padding: 28px 32px !important;
+    border-top: 3px solid rgba(245, 158, 11, 0.3) !important;
+}
+
+/* KPI Row */
+.slip-kpi-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-top: 8px;
+}
+
+.slip-kpi-card {
+    padding: 20px 22px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    backdrop-filter: blur(10px);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    text-align: center;
+}
+
+.slip-kpi-card:hover {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(245, 158, 11, 0.2);
+    box-shadow: 0 0 24px rgba(245, 158, 11, 0.08);
+    transform: translateY(-2px);
+}
+
+.slip-kpi-eqs {
+    border-color: rgba(99, 102, 241, 0.15);
+    background: linear-gradient(145deg, rgba(99, 102, 241, 0.06), rgba(0, 0, 0, 0.3));
+}
+
+.slip-kpi-label {
+    font-size: 0.7rem;
+    color: #64748b;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 8px;
+}
+
+.slip-kpi-value {
+    font-size: 1.5rem;
+    font-weight: 800;
+    font-family: 'Outfit', sans-serif;
+    color: #e2e8f0;
+    line-height: 1.2;
+}
+
+.slip-kpi-value small {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: #64748b;
+}
+
+.slip-kpi-cost {
+    color: #f59e0b !important;
+}
+
+.slip-kpi-grade {
+    font-size: 0.8rem;
+    font-weight: 700;
+    margin-top: 4px;
+    padding: 2px 10px;
+    border-radius: 6px;
+    display: inline-block;
+}
+
+.slip-kpi-sub {
+    font-size: 0.72rem;
+    color: #475569;
+    margin-top: 4px;
+}
+
+/* Chart Boxes */
+.slip-chart-box {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    padding: 20px 22px;
+}
+
+.slip-chart-box h4 {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: #e2e8f0;
+    margin: 0 0 12px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.slip-chart-box h4::before {
+    content: '';
+    display: inline-block;
+    width: 3px;
+    height: 14px;
+    background: linear-gradient(180deg, #f59e0b, #ef4444);
+    border-radius: 3px;
+}
+
+/* Diagnosis */
+.slip-diag-section {
+    margin-top: 16px;
+}
+
+.slip-diag-section h4 {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: #e2e8f0;
+    margin: 0 0 12px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.slip-diag-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 10px;
+}
+
+.slip-diag-card {
+    padding: 14px 18px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(6px);
+    transition: all 0.25s;
+}
+
+.slip-diag-card:hover {
+    transform: translateY(-1px);
+}
+
+.slip-diag-card.diag-warning {
+    background: rgba(245, 158, 11, 0.06);
+    border-color: rgba(245, 158, 11, 0.2);
+}
+
+.slip-diag-card.diag-positive {
+    background: rgba(16, 185, 129, 0.06);
+    border-color: rgba(16, 185, 129, 0.2);
+}
+
+.slip-diag-card.diag-info {
+    background: rgba(59, 130, 246, 0.06);
+    border-color: rgba(59, 130, 246, 0.2);
+}
+
+.slip-diag-title {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #e2e8f0;
+    margin-bottom: 4px;
+}
+
+.slip-diag-detail {
+    font-size: 0.78rem;
+    color: #64748b;
+    line-height: 1.4;
+}
+
+.slip-diag-placeholder {
+    text-align: center;
+    color: #475569;
+    padding: 20px;
+    font-size: 0.85rem;
+}
+
+/* Slippage BPS colors in table */
+.slip-bps-positive { color: #ef4444; font-weight: 700; }
+.slip-bps-negative { color: #10b981; font-weight: 700; }
+.slip-bps-zero { color: #64748b; }
+.slip-status-filled { color: #10b981; }
+.slip-status-pending { color: #f59e0b; }
+.slip-side-buy { color: #10b981; font-weight: 600; }
+.slip-side-sell { color: #ef4444; font-weight: 600; }
+
+@media (max-width: 1200px) {
+    .slip-kpi-row {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .slip-kpi-row {
+        grid-template-columns: 1fr;
+    }
+}
