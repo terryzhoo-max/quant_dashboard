@@ -742,35 +742,53 @@ document.addEventListener('DOMContentLoaded', function() {
         } catch (err) { console.error('Rotation load error:', err); }
     }
 
-    // === 同步数据 ===
+    // === 同步数据 (V6.1: 简化认证流, 增强反馈) ===
     async function syncData() {
         if (!confirm(`确定要同步全量产业情报？\n将触发 ${SECTORS.length} 个核心 ETF 数据深度抓取，约需 15-30 秒。`)) return;
 
         overlay.style.display = 'flex';
+        syncBtn.disabled = true;
+        syncBtn.textContent = '⏳ 同步中...';
         try {
-            const res = await AC.secureFetch('/api/v1/sync/industry', { method: 'POST' });
+            // V6.1: 直接 fetch，从 localStorage 读取 API Key（如有）
+            const headers = {};
+            let apiKey = localStorage.getItem('alphacore_api_key');
+            if (!apiKey) {
+                apiKey = prompt("🔐 首次同步需要输入系统 API Key：\n（输入后会自动保存，后续无需重复输入）");
+                if (!apiKey) {
+                    alert("操作已取消：未提供 API Key。");
+                    return;
+                }
+                localStorage.setItem('alphacore_api_key', apiKey);
+            }
+            headers['X-API-Key'] = apiKey;
+
+            const res = await fetch('/api/v1/sync/industry', {
+                method: 'POST',
+                headers: headers
+            });
+
+            if (res.status === 401 || res.status === 403) {
+                localStorage.removeItem('alphacore_api_key');
+                alert("🔒 API Key 无效，已清除缓存。请重新点击同步并输入正确的 Key。");
+                return;
+            }
 
             const result = await res.json();
             if (result.status === 'success') {
-                alert("同步成功！最新数据已就绪。");
+                alert(`✅ 同步成功！最新数据截至: ${result.last_date || '—'}`);
             } else {
-                alert("同步完成，请刷新查看。");
+                alert("⚠️ 同步完成但返回异常，请刷新页面查看。");
             }
             await loadRotationMatrix();
             loadIndustryDetail(currentCode);
         } catch (err) {
-            if (err.isCancelled) {
-                // 用户主动取消了 API Key 输入，不弹额外错误
-                console.log("同步已取消 (用户未输入API Key)");
-            } else if (err.status === 401 || err.status === 403) {
-                // API Key 无效，secureFetch 已弹窗提示，再次点击会重新要求输入
-                console.log("API Key 无效，请重试");
-            } else {
-                console.error("同步异常", err);
-                alert("网络或系统错误，同步异常：" + (err.message || err));
-            }
+            console.error("同步异常", err);
+            alert("❌ 同步失败: " + (err.message || err));
         } finally {
             overlay.style.display = 'none';
+            syncBtn.disabled = false;
+            syncBtn.textContent = '⚡ 同步情报';
         }
     }
 
