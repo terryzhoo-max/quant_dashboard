@@ -130,6 +130,8 @@ function _updateGuardrailBars(data) {
 
 async function initDecisionHub() {
     _riskMatrixCache = null;  // V20.0: 刷新时清除缓存
+    window._riskMatrixCacheTs = 0; // V25.1: 对齐 TTL 缓存时间戳
+    if (typeof resetRiskTabGuards === 'function') resetRiskTabGuards(); // V25.1: 重置 Risk Tab guards
     initTabs();
     initSOPToggle();  // V19.3: SOP 折叠事件委托
 

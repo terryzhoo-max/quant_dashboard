@@ -544,10 +544,13 @@
                     </div>
                 </div>
 
-                <!-- V19.1: 风险管理 SOP 参考卡片 -->
-                <div class="risk-sop-card glass-decision">
-                    <h3 class="risk-sop-title">🛡️ 风险管理规则 <span class="section-subtitle">Risk Governance SOP</span></h3>
-                    <div class="risk-sop-grid">
+                <!-- V25.1: 风险管理 SOP 参考卡片 (默认折叠) -->
+                <div class="risk-sop-card glass-decision collapsed" id="risk-sop-panel">
+                    <h3 class="risk-sop-title" onclick="document.getElementById('risk-sop-panel').classList.toggle('collapsed')" style="cursor:pointer;">
+                        🛡️ 风险管理规则 <span class="section-subtitle">Risk Governance SOP</span>
+                        <span class="sop-toggle-icon">▸</span>
+                    </h3>
+                    <div class="risk-sop-grid sop-collapsible-body">
                         <div class="risk-sop-section">
                             <div class="risk-sop-section-title">📊 绩效健康基准</div>
                             <ul class="risk-sop-rules">

@@ -259,12 +259,16 @@ function renderTimelineList(data) {
 //  Phase 2: 风险关联矩阵 (Tab 3)
 // ═══════════════════════════════════════════════════
 
-let riskLoaded = false;
+/** V25.1: 时间戳 guard (5分钟内不重复加载, 超时后允许刷新) */
+let _riskLoadedAt = 0;
+const _RISK_GUARD_TTL = 300000; // 5 min
 
 async function loadRiskMatrix() {
-    if (riskLoaded) return;
+    if (_riskLoadedAt && (Date.now() - _riskLoadedAt) < _RISK_GUARD_TTL) return;
     try {
-        // V20.0: 复用缓存层, 消灭与 loadRiskGuardrail 的重复请求
+        // V25.1: 强制清除前端缓存以获取最新 SWR 数据
+        window._riskMatrixCache = null;
+        window._riskMatrixCacheTs = 0;
         const [riskData, accResp] = await Promise.all([
             _fetchRiskMatrix(),
             AC.secureFetch(`${API_BASE}/accuracy`),
@@ -277,14 +281,18 @@ async function loadRiskMatrix() {
             renderTailRisk(riskData.tail_risk);
         }
         if (accData.status === 'success') renderAccuracy(accData);
-        // V18.0 Phase L: 绩效分析 (独立请求, 不阻塞主流程)
         loadPerformanceAnalytics();
-        // V21.1: 持仓相关性 + MCTR (独立请求, 不阻塞)
         loadCorrelationMatrix();
-        // V22.0: 策略漂移监控
         loadDriftStatus();
-        riskLoaded = true;
+        _riskLoadedAt = Date.now();
     } catch (e) { console.error('Risk matrix load error:', e); }
+}
+
+/** V25.1: 供刷新按钮调用 — 重置所有 Risk Tab guard */
+function resetRiskTabGuards() {
+    _riskLoadedAt = 0;
+    _corrLoadedAt = 0;
+    perfLoaded = false;
 }
 
 async function loadDriftStatus() {
@@ -342,7 +350,15 @@ function renderOverlapMatrix(data) {
     const el = document.getElementById('overlap-matrix');
     if (!el) return;
     const names = data.strategy_names;
-    if (names.length === 0) { el.innerHTML = '<div style="text-align:center;padding:20px;color:#64748b;">暂无策略数据</div>'; return; }
+    // V25.1: 空态引导 UI
+    if (names.length === 0) {
+        el.innerHTML = `<div style="text-align:center;padding:32px 20px;">
+            <div style="font-size:2rem;margin-bottom:8px;">📭</div>
+            <div style="color:#94a3b8;font-size:0.82rem;margin-bottom:6px;">暂无策略信号数据</div>
+            <div style="color:#64748b;font-size:0.7rem;line-height:1.6;">策略引擎尚未生成买入信号。<br>请前往「策略中心」运行至少一个策略后刷新。</div>
+        </div>`;
+        return;
+    }
     const labels = { mr: 'MR趋势', div: 'DIV红利', mom: 'MOM动量' };
     let html = '<table class="overlap-table"><tr><th></th>';
     names.forEach(n => html += `<th>${labels[n] || n}</th>`);
@@ -374,7 +390,7 @@ function renderSectorConcentration(sectors, hhi, totalSignals, dataSource) {
         el.innerHTML = '<div style="text-align:center;padding:20px;color:#64748b;">暂无板块数据</div>';
         return;
     }
-    const SECTOR_LIMIT = 40; // config.py sector_limit
+    const SECTOR_LIMIT = 40;
     const colors = ['#a78bfa', '#34d399', '#fbbf24', '#38bdf8', '#fb923c', '#e879f9', '#94a3b8', '#6ee7b7'];
     const hhiLevel = (hhi || 0) > 2500 ? 'danger' : ((hhi || 0) > 1500 ? 'warn' : 'ok');
     const hhiLabel = hhiLevel === 'danger' ? '⚠️ 高集中' : (hhiLevel === 'warn' ? '🟡 中等' : '🟢 分散');
@@ -390,20 +406,39 @@ function renderSectorConcentration(sectors, hhi, totalSignals, dataSource) {
             <span class="sc-badge sc-badge-count">${totalSignals || '--'} ${countLabel}</span>
             <span class="sc-badge sc-badge-limit">红线: ${SECTOR_LIMIT}%</span>
         </div>
-        ${sectors.map((s, i) => {
-            const over = s.pct > SECTOR_LIMIT;
-            const barColor = over ? '#f87171' : colors[i % colors.length];
-            // 持仓模式: 来源已在顶部标明, 不重复; 信号模式: 显示策略来源
-            const srcHtml = (!isPortfolio && s.sources) ? s.sources.map(src => `<span class="sc-src-pill">${src}</span>`).join('') : '';
-            return `<div class="sector-bar-row ${over ? 'sc-over' : ''}">
-                <span class="sector-bar-name">${s.sector}</span>
-                <div class="sector-bar-bg">
-                    <div class="sector-bar-fill" style="width:${s.pct}%;background:${barColor}"></div>
-                    <div class="sc-redline" style="left:${SECTOR_LIMIT}%"></div>
-                </div>
-                <span class="sector-bar-pct ${over ? 'sc-pct-over' : ''}">${s.pct}%${over ? ' ⚠️' : ''}</span>
-            </div>${srcHtml ? `<div class="sc-src-row">${srcHtml}</div>` : ''}`;
-        }).join('')}`;
+        <div class="sc-dual-view">
+            <div id="sc-pie-chart" style="width:180px;height:180px;flex-shrink:0;"></div>
+            <div class="sc-bars-col">
+                ${sectors.map((s, i) => {
+                    const over = s.pct > SECTOR_LIMIT;
+                    const barColor = over ? '#f87171' : colors[i % colors.length];
+                    const srcHtml = (!isPortfolio && s.sources) ? s.sources.map(src => `<span class="sc-src-pill">${src}</span>`).join('') : '';
+                    return `<div class="sector-bar-row ${over ? 'sc-over' : ''}">
+                        <span class="sector-bar-name">${s.sector}</span>
+                        <div class="sector-bar-bg">
+                            <div class="sector-bar-fill" style="width:${s.pct}%;background:${barColor}"></div>
+                            <div class="sc-redline" style="left:${SECTOR_LIMIT}%"></div>
+                        </div>
+                        <span class="sector-bar-pct ${over ? 'sc-pct-over' : ''}">${s.pct}%${over ? ' ⚠️' : ''}</span>
+                    </div>${srcHtml ? `<div class="sc-src-row">${srcHtml}</div>` : ''}`;
+                }).join('')}
+            </div>
+        </div>`;
+    // V25.1: ECharts 环形饼图
+    setTimeout(() => {
+        const chart = _getChart('sc-pie-chart');
+        if (!chart) return;
+        chart.setOption({
+            tooltip: { formatter: p => `${p.name}<br/><b>${p.value}%</b>` },
+            series: [{
+                type: 'pie', radius: ['45%', '72%'], center: ['50%', '50%'],
+                data: sectors.map((s, i) => ({ name: s.sector, value: s.pct, itemStyle: { color: s.pct > SECTOR_LIMIT ? '#f87171' : colors[i % colors.length] } })),
+                label: { show: false },
+                emphasis: { label: { show: true, fontSize: 11, color: '#e2e8f0' }, itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.3)' } },
+                itemStyle: { borderColor: '#1e2235', borderWidth: 2, borderRadius: 4 },
+            }]
+        });
+    }, 60);
 }
 
 function renderTailRisk(tail) {
@@ -416,51 +451,50 @@ function renderTailRisk(tail) {
     const lvlColor = tail.level === 'high' ? '#f87171' : (tail.level === 'medium' ? '#fbbf24' : '#34d399');
     el.innerHTML = `
         <div class="tail-risk-wrap">
-            <div class="tail-gauge-container"><canvas id="tail-gauge-canvas"></canvas>
-                <div class="tail-gauge-value ${tail.level}">${tail.score.toFixed(1)}</div>
-            </div>
+            <div id="tail-gauge-chart" style="width:100%;height:180px;"></div>
             <div class="tail-risk-label" style="color:${lvlColor}">${tail.label}</div>
             <div class="tail-risk-bars">
                 ${Object.entries(comps).map(([k, v]) => `<div class="tail-bar-row"><span class="tail-bar-name">${cLabels[k]}<span class="tail-bar-weight">${cWeights[k]}</span></span><div class="tail-bar-bg"><div class="tail-bar-fill" style="width:${v}%;background:${cColors[k]}"></div></div><span class="tail-bar-val">${v.toFixed(0)}</span></div>`).join('')}
             </div>
         </div>`;
-    // B1: 半圆 Gauge Canvas
-    setTimeout(() => drawTailGauge(tail.score), 50);
+    // V25.1: ECharts Gauge 替换 Canvas (自动 resize + tooltip)
+    setTimeout(() => _drawTailGaugeECharts(tail.score, tail.level), 60);
 }
-function drawTailGauge(score) {
-    const canvas = document.getElementById('tail-gauge-canvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const dpr = window.devicePixelRatio || 1;
-    const w = 240, h = 130;
-    canvas.width = w * dpr; canvas.height = h * dpr;
-    canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
-    ctx.setTransform(1, 0, 0, 1, 0, 0);  // V19.3: DPR 重置
-    ctx.scale(dpr, dpr);
-    const cx = w/2, cy = h - 10, r = 90, lw = 14;
-    const pct = Math.min(score / 100, 1);
-    // 背景弧
-    ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 0);
-    ctx.strokeStyle = 'rgba(148,163,184,0.08)'; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.stroke();
-    // 渐变弧 (绿→黄→红)
-    const grad = ctx.createLinearGradient(cx - r, cy, cx + r, cy);
-    grad.addColorStop(0, '#34d399'); grad.addColorStop(0.5, '#fbbf24'); grad.addColorStop(1, '#f87171');
-    const endAngle = Math.PI + pct * Math.PI;
-    let cur = 0; const dur = 700; const st = performance.now();
-    function anim(now) {
-        const p = Math.min((now - st) / dur, 1);
-        const e = 1 - Math.pow(1-p, 3); cur = pct * e;
-        ctx.clearRect(0, 0, w, h);
-        ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 0);
-        ctx.strokeStyle = 'rgba(148,163,184,0.08)'; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.stroke();
-        ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, Math.PI + cur * Math.PI);
-        ctx.strokeStyle = grad; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.stroke();
-        // 发光
-        ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, Math.PI + cur * Math.PI);
-        ctx.strokeStyle = grad; ctx.lineWidth = lw + 6; ctx.globalAlpha = 0.12; ctx.stroke(); ctx.globalAlpha = 1;
-        if (p < 1) requestAnimationFrame(anim);
-    }
-    requestAnimationFrame(anim);
+
+function _drawTailGaugeECharts(score, level) {
+    const chart = _getChart('tail-gauge-chart');
+    if (!chart) return;
+    const gaugeColor = score >= 70 ? '#f87171' : (score >= 40 ? '#fbbf24' : '#34d399');
+    chart.setOption({
+        series: [{
+            type: 'gauge', startAngle: 180, endAngle: 0,
+            min: 0, max: 100, splitNumber: 5,
+            radius: '95%', center: ['50%', '80%'],
+            axisLine: {
+                lineStyle: {
+                    width: 16, color: [
+                        [0.3, '#34d399'], [0.6, '#fbbf24'], [1, '#f87171']
+                    ]
+                }
+            },
+            axisTick: { length: 4, lineStyle: { color: 'rgba(148,163,184,0.2)', width: 1 } },
+            splitLine: { length: 10, lineStyle: { color: 'rgba(148,163,184,0.15)', width: 1 } },
+            axisLabel: { distance: 18, color: '#64748b', fontSize: 10 },
+            pointer: {
+                length: '65%', width: 5, offsetCenter: [0, 0],
+                itemStyle: { color: gaugeColor, shadowColor: gaugeColor, shadowBlur: 8 }
+            },
+            anchor: { show: true, size: 10, itemStyle: { color: gaugeColor, borderWidth: 2, borderColor: '#1e2235' } },
+            detail: {
+                valueAnimation: true, fontSize: 28, fontWeight: 700,
+                color: gaugeColor, offsetCenter: [0, '-15%'],
+                formatter: v => v.toFixed(1)
+            },
+            title: { show: false },
+            data: [{ value: score }],
+            animationDuration: 800, animationEasingUpdate: 'cubicOut',
+        }]
+    });
 }
 
 function renderAccuracy(data) {

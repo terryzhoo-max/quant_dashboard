@@ -88,10 +88,15 @@ async def get_compliance_check():
 
 @router.get("/accuracy")
 async def get_accuracy():
-    """信号准确率统计"""
-    from services import db as ac_db
-    stats = ac_db.get_accuracy_stats()
-    return {"status": "success", **stats}
+    """信号准确率统计 — V25.1: SWR 缓存 (10min/1h), 每日仅更新一次"""
+    from services.cache_service import stale_while_revalidate
+
+    def _compute():
+        from services import db as ac_db
+        stats = ac_db.get_accuracy_stats()
+        return {"status": "success", **stats}
+
+    return stale_while_revalidate("swr_accuracy", _compute, fresh_ttl=600, stale_ttl=3600)
 
 
 @router.get("/calendar")

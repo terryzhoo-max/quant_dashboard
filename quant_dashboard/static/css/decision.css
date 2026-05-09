@@ -1192,6 +1192,28 @@
    Phase 2: 风险关联矩阵 (赛博升维)
    ═══════════════════════════════════════════════════ */
 
+/* V25.1: SOP 折叠面板 */
+.risk-sop-card.collapsed .sop-collapsible-body {
+    display: none;
+}
+.risk-sop-card.collapsed .risk-sop-title {
+    margin-bottom: 0;
+}
+.sop-toggle-icon {
+    float: right; font-size: 0.7rem; color: #64748b;
+    transition: transform 0.3s;
+}
+.risk-sop-card:not(.collapsed) .sop-toggle-icon {
+    transform: rotate(90deg);
+}
+
+/* V25.1: 板块集中度 — 饼图 + 进度条双视图 */
+.sc-dual-view {
+    display: flex; align-items: flex-start; gap: 16px;
+    margin-top: 8px;
+}
+.sc-bars-col { flex: 1; min-width: 0; }
+
 /* V20.0: 风控总览行 (尾部风险 + 绩效指标并排) */
 .risk-overview-row {
     display: grid; grid-template-columns: 300px 1fr; gap: 20px;
@@ -2350,6 +2372,7 @@
     .sim-arrow { transform: rotate(90deg); }
     .risk-grid { grid-template-columns: 1fr; }
     .risk-overview-row { grid-template-columns: 1fr; }
+    .sc-dual-view { flex-direction: column; }
     .action-footer { flex-direction: column; }
     .global-temp-grid { grid-template-columns: repeat(2, 1fr); }
 }

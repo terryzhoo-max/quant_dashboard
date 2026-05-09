@@ -113,10 +113,11 @@ function downloadReport() {
 //  V21.1: 持仓相关性热力图 + MCTR 风险贡献
 // ═══════════════════════════════════════════════════
 
-let _corrLoaded = false;
+/** V25.1: 时间戳 guard (5分钟 TTL, 与 riskLoaded 对齐) */
+let _corrLoadedAt = 0;
 
 async function loadCorrelationMatrix() {
-    if (_corrLoaded) return;
+    if (_corrLoadedAt && (Date.now() - _corrLoadedAt) < 300000) return;
     try {
         const resp = await fetch(`${API_BASE}/correlation-matrix`);
         const data = await resp.json();
@@ -124,7 +125,7 @@ async function loadCorrelationMatrix() {
             renderCorrHeatmap(data);
             renderMCTRBar(data);
             renderHighCorrPairs(data.high_corr_pairs || []);
-            _corrLoaded = true;
+            _corrLoadedAt = Date.now();
         } else {
             const msg = data.message || '持仓不足';
             _showCorrEmpty('corr-heatmap-chart', msg);
