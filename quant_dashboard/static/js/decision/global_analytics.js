@@ -252,11 +252,15 @@ async function loadRiskGuardrail() {
     }
 }
 
-/** V20.0: risk-matrix 缓存层 — 保留供其他模块使用 */
+/** V25.0: risk-matrix 缓存层 — 5分钟 TTL 对齐后端 SWR fresh_ttl */
 async function _fetchRiskMatrix() {
-    if (window._riskMatrixCache) return window._riskMatrixCache;
+    const now = Date.now();
+    if (window._riskMatrixCache && window._riskMatrixCacheTs && (now - window._riskMatrixCacheTs) < 300000) {
+        return window._riskMatrixCache;
+    }
     const resp = await AC.secureFetch(`${API_BASE}/risk-matrix`);
     window._riskMatrixCache = await resp.json();
+    window._riskMatrixCacheTs = now;
     return window._riskMatrixCache;
 }
 

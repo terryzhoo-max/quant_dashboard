@@ -13,6 +13,7 @@ import json
 import os
 import logging
 import threading
+import time as _time
 import redis
 from datetime import datetime
 
@@ -37,7 +38,7 @@ class CacheService:
 
     def _init(self):
         """初始化: 尝试连接 Redis，失败则降级为内存模式"""
-        self._memory_cache = {}
+        self._memory_cache = {}      # key → (value, expire_at|None)
         self._memory_lock = threading.Lock()
         self.use_redis = False
 
@@ -56,6 +57,22 @@ class CacheService:
         except Exception as e:
             _logger.info(f"Redis 连接失败 ({e}) · 降为内存缓存模式")
 
+    def _mem_get(self, key, default=None):
+        """内存缓存读取 (带 TTL 惰性淘汰), 调用方须已持有 _memory_lock"""
+        entry = self._memory_cache.get(key)
+        if entry is None:
+            return default
+        value, expire_at = entry
+        if expire_at is not None and _time.time() > expire_at:
+            del self._memory_cache[key]
+            return default
+        return value
+
+    def _mem_set(self, key, value, ttl_seconds=None):
+        """内存缓存写入, 调用方须已持有 _memory_lock"""
+        expire_at = (_time.time() + ttl_seconds) if ttl_seconds else None
+        self._memory_cache[key] = (value, expire_at)
+
     def get_json(self, key: str, default=None):
         """获取 JSON 反序列化后的缓存值"""
         if self.use_redis:
@@ -68,10 +85,10 @@ class CacheService:
                 _logger.error(f"Redis GET 失败: {e}")
                 # Redis 异常时 fallback 到内存
                 with self._memory_lock:
-                    return self._memory_cache.get(key, default)
+                    return self._mem_get(key, default)
 
         with self._memory_lock:
-            return self._memory_cache.get(key, default)
+            return self._mem_get(key, default)
 
     def set_json(self, key: str, value, ttl_seconds: int = None):
         """写入序列化 JSON 缓存，可选 TTL"""
@@ -87,10 +104,10 @@ class CacheService:
                 _logger.error(f"Redis SET 失败: {e}")
                 # Redis 异常时 fallback 到内存
                 with self._memory_lock:
-                    self._memory_cache[key] = value
+                    self._mem_set(key, value, ttl_seconds)
 
         with self._memory_lock:
-            self._memory_cache[key] = value
+            self._mem_set(key, value, ttl_seconds)
         return True
 
     def delete(self, key: str):
@@ -108,6 +125,18 @@ class CacheService:
             self._memory_cache.pop(key, None)
         return True
 
+    def stats(self) -> dict:
+        """V25.0: 缓存统计信息 (运维可观测性)"""
+        with self._memory_lock:
+            now = _time.time()
+            total = len(self._memory_cache)
+            expired = sum(1 for _, (_, exp) in self._memory_cache.items() if exp and now > exp)
+        return {
+            "backend": "redis" if self.use_redis else "memory",
+            "total_keys": total,
+            "expired_pending": expired,
+        }
+
 
 # 模块级单例 — main.py 中 `from services.cache_service import cache_manager`
 cache_manager = CacheService()
@@ -117,7 +146,7 @@ cache_manager = CacheService()
 #  V2.0: Stale-While-Revalidate 通用中间件
 # ═══════════════════════════════════════════════════
 
-import time as _time
+
 
 # 防止并发重复刷新的标志位
 _swr_refreshing = set()

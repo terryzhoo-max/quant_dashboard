@@ -62,20 +62,28 @@ async def get_history(days: int = Query(default=30, ge=1, le=365)):
 
 @router.get("/risk-matrix")
 async def get_risk_matrix():
-    """风险关联矩阵 (策略重叠 + 板块集中度 + 尾部风险)"""
-    from dashboard_modules.decision_engine import compute_risk_matrix
-    return {"status": "success", **compute_risk_matrix()}
+    """风险关联矩阵 (策略重叠 + 板块集中度 + 尾部风险) — V25.0: SWR 缓存 (5min/1h)"""
+    from services.cache_service import stale_while_revalidate
+
+    def _compute():
+        from dashboard_modules.decision_engine import compute_risk_matrix
+        return {"status": "success", **compute_risk_matrix()}
+
+    return stale_while_revalidate("swr_risk_matrix", _compute, fresh_ttl=300, stale_ttl=3600)
 
 
 @router.get("/compliance-check")
 async def get_compliance_check():
-    """V24.0: 预交易合规检查 — 6条规则实时扫描"""
-    from dashboard_modules.decision_engine import _build_snapshot_from_cache
-    from engines.compliance_engine import run_compliance_check
+    """V24.0: 预交易合规检查 — V25.0: SWR 短缓存 (60s/5min)"""
+    from services.cache_service import stale_while_revalidate
 
-    snapshot = _build_snapshot_from_cache()
-    result = run_compliance_check(snapshot)
-    return result
+    def _compute():
+        from dashboard_modules.decision_engine import _build_snapshot_from_cache
+        from engines.compliance_engine import run_compliance_check
+        snapshot = _build_snapshot_from_cache()
+        return run_compliance_check(snapshot)
+
+    return stale_while_revalidate("swr_compliance", _compute, fresh_ttl=60, stale_ttl=300)
 
 
 @router.get("/accuracy")
@@ -110,62 +118,16 @@ async def get_performance():
 
 @router.get("/swing-guard")
 async def get_swing_guard():
-    """全球宽基波段守卫 (7大ETF) — V2: Stale-While-Revalidate 三级缓存"""
-    from services.cache_service import cache_manager
-    import time
-    import threading
-    
-    cache_key = "swing_guard_signals"
-    cached = cache_manager.get_json(cache_key)
-    
-    if cached and "timestamp" in cached:
-        age = time.time() - cached["timestamp"]
-        
-        # Tier 1: Fresh (< 1h) — 直接返回
-        if age < 3600:
-            return {"status": "success", "data": cached["data"],
-                    "cached": True, "age_seconds": int(age)}
-        
-        # Tier 2: Stale (1-6h) — 返回旧数据 + 后台静默刷新
-        if age < 21600:
-            threading.Thread(target=_refresh_swing_guard_bg, daemon=True).start()
-            return {"status": "success", "data": cached["data"],
-                    "cached": True, "stale": True, "age_seconds": int(age)}
-    
-    # Tier 3: Hard miss — 必须阻塞等待
-    return _refresh_swing_guard_sync()
+    """全球宽基波段守卫 (7大ETF) — V25.0: 统一 SWR 标准缓存 (1h/6h)"""
+    from services.cache_service import stale_while_revalidate
 
-
-def _refresh_swing_guard_bg():
-    """后台静默刷新 (Stale-While-Revalidate 的 revalidate 部分)"""
-    import time
-    from services.cache_service import cache_manager
-    try:
+    def _compute():
         from swing_decision import SwingDecisionOrchestrator
         orchestrator = SwingDecisionOrchestrator()
         signals = orchestrator.generate_all_signals()
-        payload = {"timestamp": time.time(), "data": signals}
-        cache_manager.set_json("swing_guard_signals", payload)
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
+        return {"status": "success", "data": signals}
 
-
-def _refresh_swing_guard_sync():
-    """同步刷新 (Hard miss 时阻塞)"""
-    import time
-    from services.cache_service import cache_manager
-    try:
-        from swing_decision import SwingDecisionOrchestrator
-        orchestrator = SwingDecisionOrchestrator()
-        signals = orchestrator.generate_all_signals()
-        payload = {"timestamp": time.time(), "data": signals}
-        cache_manager.set_json("swing_guard_signals", payload)
-        return {"status": "success", "data": signals, "cached": False}
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return {"status": "error", "error": f"波段守卫引擎异常: {str(e)}"}
+    return stale_while_revalidate("swr_swing_guard", _compute, fresh_ttl=3600, stale_ttl=21600)
 
 
 # ── V22.0: 仓位调整路径 ──
@@ -388,10 +350,15 @@ async def get_daily_report(date: str = Query(default=None, description="日期 Y
 
 @router.get("/correlation-matrix")
 async def get_correlation_matrix():
-    """持仓间皮尔逊相关性热力图 + MCTR 风险贡献"""
-    from portfolio_engine import get_portfolio_engine
-    engine = get_portfolio_engine()
-    return engine.get_correlation_data()
+    """持仓间皮尔逊相关性热力图 + MCTR 风险贡献 — V25.0: SWR 缓存 (30min/2h)"""
+    from services.cache_service import stale_while_revalidate
+
+    def _compute():
+        from portfolio_engine import get_portfolio_engine
+        engine = get_portfolio_engine()
+        return engine.get_correlation_data()
+
+    return stale_while_revalidate("swr_corr_matrix", _compute, fresh_ttl=1800, stale_ttl=7200)
 
 
 # ═══════════════════════════════════════════════════
@@ -494,9 +461,14 @@ async def get_recent_events(limit: int = Query(default=10, ge=1, le=50)):
 
 @router.get("/drift-status")
 async def get_drift_status():
-    """策略漂移状态检查 (准确率/环境/JCS/矛盾 四维)"""
-    from engines.drift_monitor import get_drift_status
-    return {"status": "success", **get_drift_status()}
+    """策略漂移状态检查 (准确率/环境/JCS/矛盾 四维) — V25.0: SWR 缓存 (60s/5min)"""
+    from services.cache_service import stale_while_revalidate
+
+    def _compute():
+        from engines.drift_monitor import get_drift_status as _get_drift
+        return {"status": "success", **_get_drift()}
+
+    return stale_while_revalidate("swr_drift_status", _compute, fresh_ttl=60, stale_ttl=300)
 
 
 # ── V22.0: 参数敏感度分析 (CI/CD 质量门前置) ──

@@ -25,11 +25,14 @@ async def get_portfolio_valuation():
 
 @router.get("/portfolio/risk")
 async def get_portfolio_risk():
-    try:
+    """V25.0: SWR 缓存 (5min/30min), 交易后自动失效"""
+    from services.cache_service import stale_while_revalidate
+
+    def _compute():
         engine = get_portfolio_engine()
         return R.ok(engine.calculate_risk_metrics())
-    except Exception as e:
-        return R.error(str(e), "ERR_RISK")
+
+    return stale_while_revalidate("swr_portfolio_risk", _compute, fresh_ttl=300, stale_ttl=1800)
 
 @router.get("/portfolio/history")
 async def get_portfolio_history():
@@ -75,6 +78,10 @@ async def execute_trade(req: TradeRequest):
             success, msg = engine.reduce_position(req.ts_code.strip(), req.amount, req.price)
 
         if success:
+            # V25.0: 交易成功后，失效持仓相关 SWR 缓存
+            from services.cache_service import swr_clear
+            for key in ("swr_portfolio_risk", "swr_corr_matrix", "swr_compliance"):
+                swr_clear(key)
             return R.ok(message=msg)
         else:
             return R.error(msg, "ERR_TRADE_REJECTED")

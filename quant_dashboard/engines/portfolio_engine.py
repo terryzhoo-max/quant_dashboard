@@ -626,7 +626,11 @@ class PortfolioEngine:
             try:
                 p_df = self.dm.get_price_payload(pos["ts_code"])
                 if not p_df.empty:
-                    rets_data[pos["ts_code"]] = p_df['close'].pct_change().dropna().tail(self.MCTR_LOOKBACK)
+                    s = p_df['close'].pct_change().dropna().tail(self.MCTR_LOOKBACK)
+                    # V25.0: 去重日期索引 (防 Tushare 偶发重复行, 与 calculate_risk_metrics 对齐)
+                    if s.index.duplicated().any():
+                        s = s[~s.index.duplicated(keep='last')]
+                    rets_data[pos["ts_code"]] = s
             except Exception:
                 pass
 
@@ -637,6 +641,9 @@ class PortfolioEngine:
         ordered_codes = [p["ts_code"] for p in positions]
         ordered_names = [p["name"] for p in positions]
         df_rets = pd.DataFrame(rets_data)
+        # V25.0: DataFrame 级别去重 (多 Series 对齐后仍可能产生重复行索引)
+        if df_rets.index.duplicated().any():
+            df_rets = df_rets[~df_rets.index.duplicated(keep='last')]
         for code in ordered_codes:
             if code not in df_rets.columns:
                 df_rets[code] = 0.0

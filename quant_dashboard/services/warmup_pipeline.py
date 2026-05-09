@@ -192,12 +192,13 @@ def warmup_hk_aiae_cache():
 
 
 def warmup_swing_guard():
-    """预热波段守卫: 并行拉取7大ETF + 缓存信号 (V2.0)"""
+    """预热波段守卫: 并行拉取7大ETF + 缓存信号 (V25.0: 对齐 SWR 标准缓存键)"""
     from swing_decision import SwingDecisionOrchestrator
     orchestrator = SwingDecisionOrchestrator()
     signals = orchestrator.generate_all_signals()
-    payload = {"timestamp": time.time(), "data": signals}
-    cache_manager.set_json("swing_guard_signals", payload)
+    # V25.0: 使用 SWR 标准 payload 格式 {timestamp, data}
+    payload = {"timestamp": time.time(), "data": {"status": "success", "data": signals}}
+    cache_manager.set_json("swr_swing_guard", payload)
     logger.info(f"Swing Guard 预热完成 · {len(signals)} 只ETF")
 
 
