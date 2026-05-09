@@ -136,7 +136,7 @@ async function initDecisionHub() {
     try {
         // V19.3: 异步独立请求 + 超时降级
         _fetchWithDegradation('swing-guard-grid', fetchSwingGuard, '波段守卫');
-        _fetchWithDegradation('risk-guardrail', loadRiskGuardrail, '风控护栏');
+        _fetchWithDegradation('compliance-engine-panel', loadRiskGuardrail, '合规引擎');
 
         // V20.0: Hub 主 API 超时保护 (15s)
         const _hubCtrl = new AbortController();

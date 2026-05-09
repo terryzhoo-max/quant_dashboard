@@ -466,13 +466,16 @@ def full_optimize(risk_aversion: float = 2.5,
         single_limit = 0.20
         total_cap_pct = 0.95
 
-    # AIAE regime 动态压仓
+    # AIAE regime 动态仓位上限 — 所有 Regime 均生效
+    # V24.0: 修复仅 R4+ 压仓的逻辑漏洞, 现在 R1-R5 统一取 min(config, AIAE cap)
     try:
         from services.cache_service import cache_manager
         aiae_ctx = cache_manager.get_json("aiae_ctx")
-        if aiae_ctx and aiae_ctx.get("regime", 3) >= 4:
-            regime_cap = aiae_ctx.get("cap", 55) / 100.0
+        if aiae_ctx and aiae_ctx.get("cap") is not None:
+            regime_cap = aiae_ctx["cap"] / 100.0
             total_cap_pct = min(total_cap_pct, regime_cap)
+            logger.info("AIAE 仓位约束: Regime=%s cap=%.0f%% → total_cap=%.0f%%",
+                        aiae_ctx.get("regime"), aiae_ctx["cap"], total_cap_pct * 100)
     except Exception:
         pass
 

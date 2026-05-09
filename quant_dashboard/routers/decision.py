@@ -67,6 +67,17 @@ async def get_risk_matrix():
     return {"status": "success", **compute_risk_matrix()}
 
 
+@router.get("/compliance-check")
+async def get_compliance_check():
+    """V24.0: 预交易合规检查 — 6条规则实时扫描"""
+    from dashboard_modules.decision_engine import _build_snapshot_from_cache
+    from engines.compliance_engine import run_compliance_check
+
+    snapshot = _build_snapshot_from_cache()
+    result = run_compliance_check(snapshot)
+    return result
+
+
 @router.get("/accuracy")
 async def get_accuracy():
     """信号准确率统计"""
@@ -474,15 +485,9 @@ async def get_recent_events(limit: int = Query(default=10, ge=1, le=50)):
     return {"status": "success", "count": len(events), "events": events}
 
 
-# ── V22.0: 预交易合规检查 ──
 
-@router.get("/compliance-check")
-async def get_compliance_check():
-    """执行全部合规规则检查 (基于当前持仓 + 快照)"""
-    from dashboard_modules.decision_engine import _build_snapshot_from_cache
-    from engines.compliance_engine import run_compliance_check
-    snapshot = _build_snapshot_from_cache()
-    return {"status": "success", **run_compliance_check(snapshot)}
+# ── V22.0: 预交易合规检查 — 已迁移至 L70 (V24.0 统一版) ──
+
 
 
 # ── V22.0: 策略漂移监控 ──
@@ -624,13 +629,11 @@ class OptimizeCustomRequest(BaseModel):
 
 @router.get("/optimize")
 async def get_optimal_weights():
-    """一键组合优化 — BL > MVO > 等权 降级链"""
-    from services.cache_service import stale_while_revalidate
+    """一键组合优化 — BL > MVO > 等权 降级链
+    V24.0: 去除 SWR 缓存, 每次点击实时计算 (确保使用最新 AIAE 仓位约束)
+    """
     from engines.optimizer_engine import full_optimize
-    return stale_while_revalidate(
-        "swr_optimizer", lambda: full_optimize(),
-        fresh_ttl=600, stale_ttl=3600
-    )
+    return full_optimize()
 
 
 @router.get("/efficient-frontier")
@@ -657,6 +660,20 @@ async def get_efficient_frontier(points: int = Query(15, ge=5, le=30)):
     if total_asset <= 0:
         return {"status": "error", "error": "总资产为零"}
 
+    # V24.0: 持仓去重 (多策略同一标的合并)
+    seen = {}
+    dedup_positions = []
+    for i, p in enumerate(positions):
+        code = p["ts_code"]
+        if code in seen:
+            dedup_positions[seen[code]]["market_value"] = (
+                dedup_positions[seen[code]].get("market_value", 0) + p.get("market_value", 0)
+            )
+        else:
+            seen[code] = len(dedup_positions)
+            dedup_positions.append({**p})
+    positions = dedup_positions
+
     codes = [p["ts_code"] for p in positions]
     w_current = np.array([p.get("market_value", 0) / total_asset for p in positions])
 
@@ -665,7 +682,11 @@ async def get_efficient_frontier(points: int = Query(15, ge=5, le=30)):
         try:
             p_df = pe.dm.get_price_payload(p["ts_code"])
             if p_df is not None and not p_df.empty:
-                rets_data[p["ts_code"]] = p_df['close'].pct_change().dropna().tail(120)
+                s = p_df['close'].pct_change().dropna().tail(120)
+                # V24.0: 日期索引去重
+                if s.index.duplicated().any():
+                    s = s[~s.index.duplicated(keep='last')]
+                rets_data[p["ts_code"]] = s
         except Exception:
             pass
 

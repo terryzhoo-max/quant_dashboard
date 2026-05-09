@@ -1,0 +1,53 @@
+{
+  "status": "passed",
+  "passed_count": 6,
+  "failed_count": 0,
+  "warn_count": 0,
+  "checks": [
+    {
+      "rule_id": "single_stock_cap",
+      "rule_name": "单票仓位上限",
+      "severity": "hard_block",
+      "passed": true,
+      "detail": "所有标的仓位 ≤ 20%"
+    },
+    {
+      "rule_id": "sector_concentration",
+      "rule_name": "板块集中度",
+      "severity": "soft_warn",
+      "passed": true,
+      "detail": "板块分散度正常"
+    },
+    {
+      "rule_id": "aiae_overheat",
+      "rule_name": "AIAE 过热限制",
+      "severity": "hard_block",
+      "passed": true,
+      "detail": "AIAE R3, 无建仓限制"
+    },
+    {
+      "rule_id": "jcs_threshold",
+      "rule_name": "JCS 置信度门槛",
+      "severity": "hard_block",
+      "passed": true,
+      "detail": "JCS 50, 置信度满足操作要求"
+    },
+    {
+      "rule_id": "vix_emergency",
+      "rule_name": "VIX 紧急刹车",
+      "severity": "hard_block",
+      "passed": true,
+      "detail": "VIX 20, 无紧急限制"
+    },
+    {
+      "rule_id": "min_holdings",
+      "rule_name": "最低分散持仓",
+      "severity": "info",
+      "passed": true,
+      "detail": "18 只持仓, 分散化满足要求"
+    }
+  ],
+  "blocks": [],
+  "warnings": [],
+  "summary": "🟢 全部 6 条合规规则审查通过"
+}

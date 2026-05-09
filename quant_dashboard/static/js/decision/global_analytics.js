@@ -235,74 +235,67 @@ function renderGlobalTemperature(gt) {
 }
 
 // ═══════════════════════════════════════════════════
-//  V19.0: 风控护栏指示条 (Risk Guardrail Brief)
+//  V24.0: 预交易合规检查引擎 (Pre-Trade Compliance Engine)
 // ═══════════════════════════════════════════════════
 
 async function loadRiskGuardrail() {
     try {
-        const data = await _fetchRiskMatrix();
-        if (data.status !== 'success') return;
-        renderTailRiskBrief(data);
+        const resp = await AC.secureFetch(`${API_BASE}/compliance-check`);
+        const data = await resp.json();
+        if (data.status) {
+            renderComplianceEngine(data);
+        }
     } catch (e) {
-        console.warn('Risk guardrail load error:', e);
+        console.warn('Compliance engine load error:', e);
+        const listEl = document.getElementById('ce-rule-list');
+        if (listEl) listEl.innerHTML = `<div class="loading-spinner">❌ 合规检查引擎异常: ${e.message}</div>`;
     }
 }
 
-/** V20.0: risk-matrix 缓存层 — 消灭 Tab1 + Tab3 重复请求 */
+/** V20.0: risk-matrix 缓存层 — 保留供其他模块使用 */
 async function _fetchRiskMatrix() {
-    if (_riskMatrixCache) return _riskMatrixCache;
+    if (window._riskMatrixCache) return window._riskMatrixCache;
     const resp = await AC.secureFetch(`${API_BASE}/risk-matrix`);
-    _riskMatrixCache = await resp.json();
-    return _riskMatrixCache;
+    window._riskMatrixCache = await resp.json();
+    return window._riskMatrixCache;
 }
 
-function renderTailRiskBrief(data) {
-    const statusEl = document.getElementById('rg-status');
-    const riskConc = document.getElementById('rg-risk-conc');
-    const riskAiae = document.getElementById('rg-risk-aiae');
-    const riskVix = document.getElementById('rg-risk-vix');
-    const overlapEl = document.getElementById('rg-overlap');
-    if (!statusEl) return;
+function renderComplianceEngine(data) {
+    const statusEl = document.getElementById('ce-overall-status');
+    const listEl = document.getElementById('ce-rule-list');
+    if (!statusEl || !listEl) return;
 
-    // Tail risk score → overall status
-    const tail = data.tail_risk || {};
-    const score = tail.score || 0;
-    const level = score >= 60 ? 'danger' : (score >= 30 ? 'warn' : 'ok');
-    const levelLabel = score >= 60 ? '⚠️ 风险偏高' : (score >= 30 ? '🟡 正常' : '✅ 安全');
-    statusEl.textContent = levelLabel;
-    statusEl.className = 'rg-status ' + level;
+    // 1. 总体状态更新
+    statusEl.textContent = data.summary || '状态未知';
+    statusEl.className = 'ce-status ' + (data.status || 'warning');
 
-    // V19.3: 集中度风险分 (匹配实际数据语义)
-    if (riskConc) {
-        const concVal = tail.components?.concentration || 0;
-        riskConc.textContent = concVal.toFixed(0);
-        riskConc.className = 'rg-kpi-value ' + (concVal >= 50 ? 'danger' : (concVal >= 30 ? 'warn' : 'ok'));
+    // 2. 规则列表渲染
+    const checks = data.checks || [];
+    if (checks.length === 0) {
+        listEl.innerHTML = '<div class="loading-spinner">⚠️ 未获取到合规规则</div>';
+        return;
     }
 
-    // AIAE 热度分
-    if (riskAiae) {
-        const aiaeVal = tail.components?.aiae || 0;
-        riskAiae.textContent = aiaeVal.toFixed(0);
-        riskAiae.className = 'rg-kpi-value ' + (aiaeVal >= 50 ? 'danger' : (aiaeVal >= 30 ? 'warn' : 'ok'));
-    }
+    const rowStatus = (c) => {
+        if (!c.passed && c.severity === 'hard_block') return 'block';
+        if (!c.passed && c.severity === 'soft_warn') return 'warn';
+        return 'pass';
+    };
 
-    // VIX 恐慌分
-    if (riskVix) {
-        const vixComp = tail.components?.vix || 0;
-        riskVix.textContent = vixComp.toFixed(0);
-        riskVix.className = 'rg-kpi-value ' + (vixComp >= 50 ? 'danger' : (vixComp >= 30 ? 'warn' : 'ok'));
-    }
-
-    // Strategy overlap
-    if (overlapEl) {
-        const codes = data.multi_strategy_codes || [];
-        const overlapCount = codes.length;
-        overlapEl.textContent = overlapCount + '只';
-        overlapEl.className = 'rg-kpi-value ' + (overlapCount >= 8 ? 'danger' : (overlapCount >= 4 ? 'warn' : 'ok'));
-    }
-
-    // V24.0: 进度条渲染
-    if (typeof _updateGuardrailBars === 'function') _updateGuardrailBars(data);
+    listEl.innerHTML = checks.map(c => {
+        const status = rowStatus(c);
+        const icon = status === 'block' ? '🛑' : (status === 'warn' ? '⚠️' : '🟢');
+        
+        return `<div class="ce-rule-row ${status}">
+            <div class="ce-rule-indicator"></div>
+            <div class="ce-rule-name-col">
+                <span class="ce-rule-name">${c.rule_name}</span>
+                <span class="ce-rule-badge ce-badge-${c.severity}">${c.severity.replace('_', ' ')}</span>
+            </div>
+            <div class="ce-rule-detail">${c.detail}</div>
+            <div class="ce-rule-icon">${icon}</div>
+        </div>`;
+    }).join('');
 }
 // V19.3: SOP 折叠事件委托 (替代 inline onclick)
 function initSOPToggle() {

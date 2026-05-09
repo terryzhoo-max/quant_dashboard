@@ -2532,83 +2532,137 @@
 }
 
 /* ═══════════════════════════════════════════════════
-   V19.0: 风控护栏指示条 (Risk Guardrail Strip)
+   V24.0: 预交易合规引擎 (Pre-Trade Compliance Engine)
    ═══════════════════════════════════════════════════ */
 
-.risk-guardrail {
-    margin-bottom: 24px; padding: 14px 20px;
-}
-.rg-header {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 12px;
-}
-.rg-title {
-    font-size: 0.88rem; font-weight: 700; color: #e2e8f0;
-    letter-spacing: 0.3px;
-}
-.rg-status {
-    font-size: 0.7rem; font-weight: 600; padding: 3px 10px;
-    border-radius: 8px; letter-spacing: 0.5px;
-    background: rgba(148,163,184,0.08); color: #94a3b8;
-    border: 1px solid rgba(148,163,184,0.1);
-    transition: all 0.4s ease;
-}
-.rg-status.ok {
-    color: #6ee7b7; background: rgba(16,185,129,0.08);
-    border-color: rgba(16,185,129,0.2);
-    box-shadow: 0 0 8px rgba(16,185,129,0.1);
-}
-.rg-status.warn {
-    color: #fcd34d; background: rgba(245,158,11,0.08);
-    border-color: rgba(245,158,11,0.2);
-    box-shadow: 0 0 8px rgba(245,158,11,0.1);
-}
-.rg-status.danger {
-    color: #fca5a5; background: rgba(239,68,68,0.08);
-    border-color: rgba(239,68,68,0.2);
-    box-shadow: 0 0 8px rgba(239,68,68,0.15);
-    animation: rgDangerPulse 2s ease-in-out infinite;
-}
-@keyframes rgDangerPulse {
-    0%, 100% { box-shadow: 0 0 6px rgba(239,68,68,0.1); }
-    50% { box-shadow: 0 0 16px rgba(239,68,68,0.3); }
+.compliance-engine {
+    margin-bottom: 24px; padding: 16px 20px;
+    display: flex; flex-direction: column; gap: 14px;
 }
 
-.rg-grid {
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+.ce-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
 }
-.rg-kpi {
-    text-align: center; padding: 12px 8px; border-radius: 10px;
-    background: rgba(15, 23, 42, 0.5);
+.ce-header-left {
+    display: flex; align-items: baseline; gap: 10px;
+}
+.ce-title {
+    font-size: 0.95rem; font-weight: 700; color: #f8fafc;
+    letter-spacing: 0.3px;
+}
+.ce-subtitle {
+    font-size: 0.72rem; color: #64748b; font-weight: 500;
+}
+
+/* 总体状态徽章 */
+.ce-status {
+    font-size: 0.72rem; font-weight: 700; padding: 4px 12px;
+    border-radius: 12px; letter-spacing: 0.5px;
+    background: rgba(148,163,184,0.08); color: #94a3b8;
+    border: 1px solid rgba(148,163,184,0.15);
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.ce-status.passed {
+    color: #34d399; background: rgba(16,185,129,0.1);
+    border-color: rgba(16,185,129,0.3);
+    box-shadow: 0 0 12px rgba(16,185,129,0.15);
+}
+.ce-status.warning {
+    color: #fbbf24; background: rgba(245,158,11,0.1);
+    border-color: rgba(245,158,11,0.3);
+    box-shadow: 0 0 12px rgba(245,158,11,0.15);
+}
+.ce-status.blocked {
+    color: #fca5a5; background: rgba(239,68,68,0.1);
+    border-color: rgba(239,68,68,0.3);
+    box-shadow: 0 0 16px rgba(239,68,68,0.25);
+    animation: ceDangerPulse 2s infinite alternate;
+}
+
+@keyframes ceDangerPulse {
+    from { box-shadow: 0 0 8px rgba(239,68,68,0.2); }
+    to { box-shadow: 0 0 24px rgba(239,68,68,0.5); }
+}
+
+/* 规则列表 */
+.ce-rule-list {
+    display: flex; flex-direction: column; gap: 8px;
+}
+
+/* 单条规则行 */
+.ce-rule-row {
+    display: flex; align-items: center;
+    background: rgba(15, 23, 42, 0.4);
     border: 1px solid rgba(255,255,255,0.04);
+    border-radius: 8px;
+    padding: 10px 14px;
+    position: relative;
+    overflow: hidden;
     transition: all 0.3s ease;
 }
-.rg-kpi:hover {
-    border-color: rgba(255,255,255,0.1);
-    background: rgba(15, 23, 42, 0.7);
+.ce-rule-row:hover {
+    background: rgba(15, 23, 42, 0.6);
+    border-color: rgba(255,255,255,0.08);
 }
-.rg-kpi-label {
-    font-size: 0.68rem; color: #94a3b8; margin-bottom: 6px;
-    font-weight: 600; letter-spacing: 0.3px;
+
+/* 左侧状态指示灯带 */
+.ce-rule-indicator {
+    position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+    background: #475569; transition: background 0.3s ease;
 }
-.rg-kpi-value {
-    font-size: 1.1rem; font-weight: 800; color: #e2e8f0;
-    font-variant-numeric: tabular-nums;
-    transition: color 0.4s ease, text-shadow 0.4s ease;
+.ce-rule-row.pass .ce-rule-indicator { background: #10b981; }
+.ce-rule-row.warn .ce-rule-indicator { background: #f59e0b; }
+.ce-rule-row.block .ce-rule-indicator { background: #ef4444; }
+
+/* 深度机构红 (内敛描边 + 内发光) */
+.ce-rule-row.block {
+    background: rgba(239,68,68,0.05);
+    border-color: rgba(239,68,68,0.4);
+    box-shadow: inset 2px 0 12px rgba(239,68,68,0.08);
 }
-.rg-kpi-value.ok { color: #6ee7b7; text-shadow: 0 0 8px rgba(16,185,129,0.3); }
-.rg-kpi-value.warn { color: #fcd34d; text-shadow: 0 0 8px rgba(245,158,11,0.3); }
-.rg-kpi-value.danger {
-    color: #fca5a5; text-shadow: 0 0 10px rgba(239,68,68,0.4);
-    animation: rgValPulse 1.5s ease-in-out infinite;
+
+/* 规则名称与等级 */
+.ce-rule-name-col {
+    display: flex; flex-direction: column; gap: 4px;
+    width: 220px; flex-shrink: 0;
+    padding-left: 8px;
 }
-@keyframes rgValPulse {
-    0%, 100% { text-shadow: 0 0 8px rgba(239,68,68,0.3); }
-    50% { text-shadow: 0 0 18px rgba(239,68,68,0.6); }
+.ce-rule-name {
+    font-size: 0.78rem; font-weight: 700; color: #e2e8f0;
+}
+.ce-rule-badge {
+    font-size: 0.6rem; font-weight: 800; letter-spacing: 0.5px;
+    display: inline-block; padding: 2px 6px; border-radius: 4px;
+    width: fit-content; text-transform: uppercase;
+}
+.ce-badge-hard_block { background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); }
+.ce-badge-soft_warn { background: rgba(245,158,11,0.15); color: #fcd34d; border: 1px solid rgba(245,158,11,0.3); }
+.ce-badge-info { background: rgba(56,189,248,0.15); color: #7dd3fc; border: 1px solid rgba(56,189,248,0.3); }
+
+/* 详情描述 */
+.ce-rule-detail {
+    flex: 1; font-size: 0.72rem; color: #94a3b8;
+    line-height: 1.4; padding: 0 16px;
+    border-left: 1px solid rgba(255,255,255,0.06);
+}
+.ce-rule-row.block .ce-rule-detail {
+    color: #fca5a5; font-weight: 500;
+}
+.ce-rule-row.warn .ce-rule-detail {
+    color: #fcd34d;
+}
+
+/* 右侧 Icon */
+.ce-rule-icon {
+    font-size: 1.1rem; flex-shrink: 0; opacity: 0.8;
 }
 
 @media (max-width: 768px) {
-    .rg-grid { grid-template-columns: repeat(2, 1fr); }
+    .ce-rule-row { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .ce-rule-name-col { width: 100%; }
+    .ce-rule-detail { border-left: none; padding: 0 8px; margin-top: 4px; }
 }
 
 /* ═══════════════════════════════════════════════════

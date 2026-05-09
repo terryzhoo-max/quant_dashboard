@@ -8,7 +8,7 @@
     <title>决策中枢 · AlphaCore</title>
     <link rel="stylesheet" href="./static/css/fonts.css?v=1">
     <link rel="stylesheet" href="./static/css/styles.css?v=12">
-    <link rel="stylesheet" href="./static/css/decision.css?v=49">
+    <link rel="stylesheet" href="./static/css/decision.css?v=50">
     <link rel="stylesheet" href="./static/css/visual_excellence.css?v=3">
     <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
@@ -317,34 +317,17 @@
                 </div>
 
 
-
-                <!-- V19.3: 风控护栏 (系统级安全阀，优先于个股级波段守卫) -->
-                <div class="risk-guardrail glass-decision" id="risk-guardrail">
-                    <div class="rg-header">
-                        <span class="rg-title">🛡️ 风控护栏</span>
-                        <span class="rg-status" id="rg-status">加载中</span>
+                <!-- V24.0: 预交易合规引擎 (Pre-Trade Compliance Engine) -->
+                <div class="compliance-engine glass-decision" id="compliance-engine-panel">
+                    <div class="ce-header">
+                        <div class="ce-header-left">
+                            <span class="ce-title">🛡️ 预交易合规审查</span>
+                            <span class="ce-subtitle">— 执行前强制检测</span>
+                        </div>
+                        <span class="ce-status" id="ce-overall-status">加载中...</span>
                     </div>
-                    <div class="rg-grid">
-                        <div class="rg-kpi">
-                            <div class="rg-kpi-label">集中度风险</div>
-                            <div class="rg-kpi-value" id="rg-risk-conc">--</div>
-                            <div class="rg-kpi-bar"><div class="rg-kpi-bar-fill" id="rg-bar-conc"></div><div class="rg-kpi-bar-mark" style="left:30%" title="关注线"></div><div class="rg-kpi-bar-mark rg-mark-danger" style="left:50%" title="危险线"></div></div>
-                        </div>
-                        <div class="rg-kpi">
-                            <div class="rg-kpi-label">AIAE 热度</div>
-                            <div class="rg-kpi-value" id="rg-risk-aiae">--</div>
-                            <div class="rg-kpi-bar"><div class="rg-kpi-bar-fill" id="rg-bar-aiae"></div><div class="rg-kpi-bar-mark" style="left:30%" title="关注线"></div><div class="rg-kpi-bar-mark rg-mark-danger" style="left:50%" title="危险线"></div></div>
-                        </div>
-                        <div class="rg-kpi">
-                            <div class="rg-kpi-label">VIX 恐慌</div>
-                            <div class="rg-kpi-value" id="rg-risk-vix">--</div>
-                            <div class="rg-kpi-bar"><div class="rg-kpi-bar-fill" id="rg-bar-vix"></div><div class="rg-kpi-bar-mark" style="left:30%" title="关注线"></div><div class="rg-kpi-bar-mark rg-mark-danger" style="left:50%" title="危险线"></div></div>
-                        </div>
-                        <div class="rg-kpi">
-                            <div class="rg-kpi-label">策略重叠度</div>
-                            <div class="rg-kpi-value" id="rg-overlap">--</div>
-                            <div class="rg-kpi-bar"><div class="rg-kpi-bar-fill" id="rg-bar-overlap"></div><div class="rg-kpi-bar-mark" style="left:33%" title="4只"></div><div class="rg-kpi-bar-mark rg-mark-danger" style="left:67%" title="8只"></div></div>
-                        </div>
+                    <div class="ce-rule-list" id="ce-rule-list">
+                        <div class="loading-spinner">⏳ 执行合规规则引擎扫描...</div>
                     </div>
                 </div>
 
@@ -752,14 +735,14 @@
     </div>
 
     <!-- V21.2: 模块化 JS 架构 (_infra → 6 模块 → 主入口) -->
-    <script src="./static/js/decision/_infra.js?v=46"></script>
-    <script src="./static/js/decision/hub_core.js?v=48"></script>
-    <script src="./static/js/decision/simulation.js?v=47"></script>
-    <script src="./static/js/decision/global_analytics.js?v=47"></script>
-    <script src="./static/js/decision/perf_matrix.js?v=46"></script>
-    <script src="./static/js/decision/swing_guard.js?v=46"></script>
-    <script src="./static/js/decision/risk_alerts.js?v=46"></script>
-    <script src="./static/js/decision/optimizer.js?v=2"></script>
-    <script src="./static/js/decision.js?v=48"></script>
+    <script src="./static/js/decision/_infra.js?v=50"></script>
+    <script src="./static/js/decision/hub_core.js?v=50"></script>
+    <script src="./static/js/decision/simulation.js?v=50"></script>
+    <script src="./static/js/decision/global_analytics.js?v=50"></script>
+    <script src="./static/js/decision/perf_matrix.js?v=50"></script>
+    <script src="./static/js/decision/swing_guard.js?v=50"></script>
+    <script src="./static/js/decision/risk_alerts.js?v=50"></script>
+    <script src="./static/js/decision/optimizer.js?v=50"></script>
+    <script src="./static/js/decision.js?v=50"></script>
 </body>
 </html>
