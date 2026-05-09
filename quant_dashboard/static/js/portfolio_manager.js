@@ -21,7 +21,6 @@ document.addEventListener('DOMContentLoaded', function () {
     const tradeEst = document.getElementById('trade-est');
 
     let charts = { sector: null, mctr: null, nav: null, sparkline: null };
-    let gauges = { sharpe: null, maxdd: null, vol: null };
 
     const COLOR_PALETTE = [
         '#6366f1', '#3b82f6', '#10b981', '#f59e0b',
@@ -73,17 +72,11 @@ document.addEventListener('DOMContentLoaded', function () {
         const mctrEl = document.getElementById('mctr-chart');
         const navEl = document.getElementById('nav-chart');
         const sparkEl = document.getElementById('pf-sparkline');
-        const gSharpe = document.getElementById('gauge-sharpe');
-        const gMaxdd = document.getElementById('gauge-maxdd');
-        const gVol = document.getElementById('gauge-vol');
 
         if (sectorEl && !charts.sector) charts.sector = AC.registerChart(echarts.init(sectorEl));
         if (mctrEl && !charts.mctr) charts.mctr = AC.registerChart(echarts.init(mctrEl));
         if (navEl && !charts.nav) charts.nav = AC.registerChart(echarts.init(navEl));
         if (sparkEl && !charts.sparkline) charts.sparkline = AC.registerChart(echarts.init(sparkEl));
-        if (gSharpe && !gauges.sharpe) gauges.sharpe = AC.registerChart(echarts.init(gSharpe));
-        if (gMaxdd && !gauges.maxdd) gauges.maxdd = AC.registerChart(echarts.init(gMaxdd));
-        if (gVol && !gauges.vol) gauges.vol = AC.registerChart(echarts.init(gVol));
     }
 
     // ════════════════════════════════════
@@ -219,7 +212,6 @@ document.addEventListener('DOMContentLoaded', function () {
             const result = await res.json();
             if (result.status === 'success' && result.data.status !== 'empty') {
                 renderRiskCharts(result.data);
-                renderRiskGauges(result.data);
                 if (result.data.skipped_codes && result.data.skipped_codes.length > 0) {
                     console.info('Risk: ' + result.data.skipped_codes.length + ' 只缺行情数据已跳过');
                 }
@@ -344,75 +336,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // ════════════════════════════════════
-    //  风险 Gauge 仪表盘
-    // ════════════════════════════════════
 
-    function renderRiskGauges(risk) {
-        initCharts();
-
-        function makeGauge(chart, name, value, min, max, colors, suffix) {
-            chart.setOption({
-                backgroundColor: 'transparent',
-                series: [{
-                    type: 'gauge',
-                    center: ['50%', '65%'],
-                    radius: '90%',
-                    min: min, max: max,
-                    startAngle: 200, endAngle: -20,
-                    splitNumber: 4,
-                    axisLine: {
-                        lineStyle: {
-                            width: 12,
-                            color: colors
-                        }
-                    },
-                    axisTick: { show: false },
-                    splitLine: { show: false },
-                    axisLabel: { show: false },
-                    pointer: {
-                        width: 4, length: '60%',
-                        itemStyle: { color: '#e2e8f0' }
-                    },
-                    anchor: {
-                        show: true, size: 8,
-                        itemStyle: { borderWidth: 2, borderColor: '#e2e8f0' }
-                    },
-                    title: {
-                        offsetCenter: [0, '90%'],
-                        fontSize: 11,
-                        color: '#94a3b8',
-                        fontWeight: 600
-                    },
-                    detail: {
-                        offsetCenter: [0, '55%'],
-                        fontSize: 18,
-                        fontWeight: 700,
-                        fontFamily: 'Outfit',
-                        color: '#fff',
-                        formatter: '{value}' + suffix
-                    },
-                    data: [{ value: value, name: name }],
-                    animationDuration: 1500,
-                    animationEasing: 'bounceOut'
-                }]
-            });
-        }
-
-        // Sharpe Gauge: green=good
-        makeGauge(gauges.sharpe, 'SHARPE', risk.sharpe_ratio || 0, -1, 3,
-            [[0.33, '#ef4444'], [0.5, '#f59e0b'], [1, '#10b981']], '');
-
-        // Max DD Gauge: red=bad (invert display)
-        const ddAbs = Math.abs(risk.max_drawdown || 0);
-        makeGauge(gauges.maxdd, 'MAX DD', ddAbs, 0, 30,
-            [[0.33, '#10b981'], [0.66, '#f59e0b'], [1, '#ef4444']], '%');
-
-        // Vol Gauge
-        const volPct = (risk.portfolio_vol || 0) * 100;
-        makeGauge(gauges.vol, 'VOL', parseFloat(volPct.toFixed(1)), 0, 50,
-            [[0.4, '#10b981'], [0.7, '#f59e0b'], [1, '#ef4444']], '%');
-    }
 
     // ════════════════════════════════════
     //  净值曲线
@@ -467,7 +391,23 @@ document.addEventListener('DOMContentLoaded', function () {
                 trigger: 'axis',
                 backgroundColor: 'rgba(15, 23, 42, 0.95)',
                 borderColor: 'rgba(255,255,255,0.08)',
-                textStyle: { color: '#f8fafc', fontSize: 12 }
+                textStyle: { color: '#f8fafc', fontSize: 12 },
+                formatter: function(params) {
+                    let html = `<strong>${params[0].axisValue}</strong>`;
+                    let navVal = null, benchVal = null;
+                    params.forEach(p => {
+                        const marker = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};margin-right:4px;"></span>`;
+                        html += `<br>${marker}${p.seriesName}: ${p.value.toFixed(4)}`;
+                        if (p.seriesName === '组合净值') navVal = p.value;
+                        else benchVal = p.value;
+                    });
+                    if (navVal !== null && benchVal !== null) {
+                        const alpha = ((navVal - benchVal) * 100).toFixed(2);
+                        const alphaColor = alpha >= 0 ? '#10b981' : '#ef4444';
+                        html += `<br><span style="color:${alphaColor};font-weight:700;">Alpha: ${alpha >= 0 ? '+' : ''}${alpha}%</span>`;
+                    }
+                    return html;
+                }
             },
             legend: {
                 right: '5%', top: '2%',
@@ -999,6 +939,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 );
                 // 刷新全部数据
                 loadPortfolio();
+                // 同步后延时重载风控/净值 (行情补齐后图表可能更完整)
+                setTimeout(() => { loadRisk(); loadNavCurve(); }, 2500);
             } else {
                 showToast('同步失败: ' + (result.message || '未知错误'), 'error');
             }
@@ -1058,6 +1000,19 @@ document.addEventListener('DOMContentLoaded', function () {
     // ════════════════════════════════════
 
     loadPortfolio();
+
+    // 交易记录折叠/展开
+    const historyToggle = document.getElementById('history-toggle');
+    const historyList = document.getElementById('trade-history-list');
+    const historyArrow = document.getElementById('history-arrow');
+    if (historyToggle) {
+        historyToggle.addEventListener('click', () => {
+            const isHidden = historyList.style.display === 'none';
+            historyList.style.display = isHidden ? 'block' : 'none';
+            historyArrow.textContent = isHidden ? '▼' : '▶';
+            historyArrow.classList.toggle('pf-arrow-open', isHidden);
+        });
+    }
 
     // ════════════════════════════════════
     //  ZONE 6: OMS 滑点归因面板 V2

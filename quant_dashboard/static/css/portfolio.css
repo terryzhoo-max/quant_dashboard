@@ -1573,3 +1573,27 @@
 .slip-diag-title { font-size: 0.8rem; font-weight: 700; color: #e2e8f0; margin-bottom: 4px; }
 .slip-diag-detail { font-size: 0.72rem; color: #94a3b8; line-height: 1.5; }
 
+/* ====== 可折叠面板 (交易记录) ====== */
+.pf-collapsible-header {
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s ease;
+}
+.pf-collapsible-header:hover {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 12px;
+}
+.pf-collapse-arrow {
+    font-size: 0.8rem;
+    color: #64748b;
+    transition: transform 0.3s ease, color 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+}
+.pf-collapse-arrow.pf-arrow-open {
+    transform: rotate(0deg);
+    color: #6366f1;
+}
+.pf-collapsible-body {
+    overflow: hidden;
+}

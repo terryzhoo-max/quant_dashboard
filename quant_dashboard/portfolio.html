@@ -8,7 +8,7 @@
 
     <link rel="stylesheet" href="./static/css/styles.css?v=12">
     <link rel="stylesheet" href="./static/css/visual_excellence.css?v=3">
-    <link rel="stylesheet" href="./static/css/portfolio.css?v=29">
+    <link rel="stylesheet" href="./static/css/portfolio.css?v=30">
     <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
     <script>window.echarts || document.write('<script src="./static/vendor/echarts.min.js"><\/script>')</script>
@@ -152,32 +152,15 @@
                 </div>
             </div>
 
-            <!-- ═══ ZONE 4: 净值走势 + 风险仪表盘 ═══ -->
+            <!-- ═══ ZONE 4: 净值走势 (全宽, 移除冗余仪表盘) ═══ -->
             <div class="pf-charts-row">
-                <div class="glass-panel pf-chart-box pf-chart-wide">
-                    <h4>📈 净值走势 <span class="pf-chart-sub">NAV Curve vs 沪深300</span></h4>
-                    <div id="nav-chart" style="height: 340px;"></div>
-                </div>
-                <div class="glass-panel pf-chart-box pf-chart-narrow">
-                    <h4>🎯 风控仪表 <span class="pf-chart-sub">Risk Gauges</span></h4>
-                    <div class="pf-gauge-grid">
-                        <div id="gauge-sharpe" style="height: 150px;"></div>
-                        <div id="gauge-maxdd" style="height: 150px;"></div>
-                        <div id="gauge-vol" style="height: 150px;"></div>
-                    </div>
+                <div class="glass-panel pf-chart-box" style="flex:1;">
+                    <h4>📈 净值走势 <span class="pf-chart-sub">NAV Curve vs 沪深300 · Alpha</span></h4>
+                    <div id="nav-chart" style="height: 360px;"></div>
                 </div>
             </div>
 
-            <!-- ═══ ZONE 5: 交易记录 ═══ -->
-            <div class="glass-panel pf-history-panel">
-                <div class="pf-panel-header">
-                    <h3>📜 交易记录 <span class="pf-panel-sub">Trade History Console</span></h3>
-                </div>
-                <div class="pf-history-list" id="trade-history-list">
-                </div>
-            </div>
-
-            <!-- ═══ ZONE 6: 执行质量分析 V2 (OMS Slippage Attribution) ═══ -->
+            <!-- ═══ ZONE 5: 执行质量分析 V2 (提升位置, 更易触达) ═══ -->
             <div class="glass-panel pf-slippage-panel" id="pf-slippage-zone">
                 <div class="pf-panel-header">
                     <h3>⚡ 执行质量分析 <span class="pf-panel-sub">OMS Slippage Attribution</span></h3>
@@ -272,6 +255,16 @@
                     <div class="slip-show-more-wrap" id="slip-show-more-wrap" style="display:none;text-align:center;padding:8px 0;">
                         <button class="slip-show-more-btn" id="slip-show-more-btn">展开全部</button>
                     </div>
+                </div>
+            </div>
+
+            <!-- ═══ ZONE 6: 交易记录 (默认折叠, 低频使用) ═══ -->
+            <div class="glass-panel pf-history-panel">
+                <div class="pf-panel-header pf-collapsible-header" id="history-toggle">
+                    <h3>📜 交易记录 <span class="pf-panel-sub">Trade History Console</span></h3>
+                    <span class="pf-collapse-arrow" id="history-arrow">▶</span>
+                </div>
+                <div class="pf-history-list pf-collapsible-body" id="trade-history-list" style="display:none;">
                 </div>
             </div>
         </div>
@@ -387,6 +380,6 @@
         </div>
     </div>
 
-    <script src="./static/js/portfolio_manager.js?v=30"></script>
+    <script src="./static/js/portfolio_manager.js?v=31"></script>
 </body>
 </html>

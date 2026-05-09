@@ -404,6 +404,23 @@ def full_optimize(risk_aversion: float = 2.5,
     if total_asset <= 0:
         return {"status": "error", "error": "总资产为零"}
 
+    codes_raw = [p["ts_code"] for p in positions]
+    names_raw = [p["name"] for p in positions]
+
+    # V24.0: 去重 — 多策略持有同一标的时, 合并权重 (防止 pandas reindex 报 duplicate labels)
+    seen = {}
+    dedup_positions = []
+    for i, code in enumerate(codes_raw):
+        if code in seen:
+            # 合并市值到已有条目
+            dedup_positions[seen[code]]["market_value"] = (
+                dedup_positions[seen[code]].get("market_value", 0) + positions[i].get("market_value", 0)
+            )
+        else:
+            seen[code] = len(dedup_positions)
+            dedup_positions.append({**positions[i]})  # shallow copy
+
+    positions = dedup_positions
     codes = [p["ts_code"] for p in positions]
     names = [p["name"] for p in positions]
     n = len(codes)
@@ -416,7 +433,11 @@ def full_optimize(risk_aversion: float = 2.5,
         try:
             p_df = pe.dm.get_price_payload(p["ts_code"])
             if p_df is not None and not p_df.empty:
-                rets_data[p["ts_code"]] = p_df['close'].pct_change().dropna().tail(120)
+                s = p_df['close'].pct_change().dropna().tail(120)
+                # V24.0: 去重日期索引 (数据源可能含重复交易日)
+                if s.index.duplicated().any():
+                    s = s[~s.index.duplicated(keep='last')]
+                rets_data[p["ts_code"]] = s
         except Exception:
             pass
 

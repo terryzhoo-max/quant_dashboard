@@ -300,6 +300,9 @@ function renderTailRiskBrief(data) {
         overlapEl.textContent = overlapCount + '只';
         overlapEl.className = 'rg-kpi-value ' + (overlapCount >= 8 ? 'danger' : (overlapCount >= 4 ? 'warn' : 'ok'));
     }
+
+    // V24.0: 进度条渲染
+    if (typeof _updateGuardrailBars === 'function') _updateGuardrailBars(data);
 }
 // V19.3: SOP 折叠事件委托 (替代 inline onclick)
 function initSOPToggle() {

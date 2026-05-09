@@ -27,6 +27,9 @@ function initTabs() {
             const target = document.getElementById(tab.dataset.tab);
             if (target) target.classList.add('active');
 
+            // V24.0: Tab 切换后瞬间回顶 (不用 smooth，Tab 切换应零延迟)
+            window.scrollTo(0, 0);
+
             // 切到对应 tab 时懒加载数据
             if (tab.dataset.tab === 'tab-timeline') loadTimeline();
             if (tab.dataset.tab === 'tab-risk') loadRiskMatrix();
@@ -49,6 +52,76 @@ function _fetchWithDegradation(containerId, fetchFn, label) {
         }
     }, 8000);
     fetchFn().finally(() => clearTimeout(timer));
+}
+
+// ═══════════════════════════════════════════════════
+//  V24.0: 可折叠面板通用切换 + LazyInit
+// ═══════════════════════════════════════════════════
+
+let _cachedGlobalTemp = null;   // 全球温度 LazyInit 缓存
+let _globalTempRendered = false; // Gauge 是否已渲染
+
+function toggleDHPanel(panelId) {
+    const panel = document.getElementById(panelId);
+    if (!panel) return;
+    const isCollapsed = panel.classList.contains('collapsed');
+    panel.classList.toggle('collapsed');
+
+    // LazyInit: 全球温度面板展开时初始化 ECharts Gauge
+    if (panelId === 'global-temp-panel' && isCollapsed && _cachedGlobalTemp && !_globalTempRendered) {
+        requestAnimationFrame(() => {
+            renderGlobalTemperature(_cachedGlobalTemp);
+            _globalTempRendered = true;
+        });
+    }
+}
+
+// ═══════════════════════════════════════════════════
+//  V24.0: 全球温度摘要行 (折叠态显示)
+// ═══════════════════════════════════════════════════
+
+function _updateGlobalTempSummary(gt) {
+    const el = document.getElementById('global-temp-summary');
+    if (!el || !gt || !gt.markets) return;
+    const names = {cn: 'A股', us: '美股', hk: '港股', jp: '日股'};
+    const parts = gt.markets
+        .filter(m => m.status !== 'loading')
+        .slice(0, 4)
+        .map(m => `${names[m.key] || m.name} R${m.regime}${m.regime_cn || ''}`);
+    el.textContent = parts.join(' · ') || '加载中...';
+}
+
+// ═══════════════════════════════════════════════════
+//  V24.0: 风控护栏进度条渲染
+// ═══════════════════════════════════════════════════
+
+function _updateGuardrailBars(data) {
+    const tail = data.tail_risk || {};
+    const comps = tail.components || {};
+    const codes = data.multi_strategy_codes || [];
+
+    const bars = [
+        { id: 'rg-bar-conc', val: comps.concentration || 0, max: 100 },
+        { id: 'rg-bar-aiae', val: comps.aiae || 0, max: 100 },
+        { id: 'rg-bar-vix',  val: comps.vix || 0, max: 100 },
+        { id: 'rg-bar-overlap', val: codes.length, max: 12 },
+    ];
+
+    bars.forEach(b => {
+        const el = document.getElementById(b.id);
+        if (!el) return;
+        const pct = Math.min(100, (b.val / b.max) * 100);
+        const color = b.val >= 50 ? '#ef4444' : (b.val >= 30 ? '#f97316' : '#10b981');
+        el.style.width = pct + '%';
+        el.style.background = color;
+    });
+    // 重叠度使用不同阈值
+    const overlapBar = document.getElementById('rg-bar-overlap');
+    if (overlapBar) {
+        const v = codes.length;
+        const color = v >= 8 ? '#ef4444' : (v >= 4 ? '#f97316' : '#10b981');
+        overlapBar.style.background = color;
+    }
 }
 
 // ═══════════════════════════════════════════════════
@@ -121,8 +194,18 @@ async function initDecisionHub() {
             // V22.0: 动态市场事件
             if (data.market_events && data.market_events.length > 0) renderMarketEvents(data.market_events);
 
-            // ⑧ 全球市场温度仪表板
-            if (data.global_temperature) renderGlobalTemperature(data.global_temperature);
+            // ⑧ 全球市场温度 — 缓存数据 + 摘要行 (LazyInit: 折叠态不渲染 Gauge)
+            if (data.global_temperature) {
+                _cachedGlobalTemp = data.global_temperature;
+                _globalTempRendered = false;
+                _updateGlobalTempSummary(data.global_temperature);
+                // 如果面板已展开则立即渲染
+                const gtPanel = document.getElementById('global-temp-panel');
+                if (gtPanel && !gtPanel.classList.contains('collapsed')) {
+                    renderGlobalTemperature(data.global_temperature);
+                    _globalTempRendered = true;
+                }
+            }
 
             // V22.0: 跨市场风险传染热度图 (独立异步, 不阻塞主流程)
             fetchContagionMatrix();

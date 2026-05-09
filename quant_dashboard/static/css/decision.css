@@ -3699,3 +3699,91 @@
     animation: shimmer 1.8s infinite;
 }
 
+/* ═══════════════════════════════════════════════════
+   V24.0: 可折叠面板 (决策参考手册 / 全球温度 / 模拟器)
+   ═══════════════════════════════════════════════════ */
+.dh-collapsible {
+    border-radius: 14px;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+.dh-collapsible-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s ease;
+}
+.dh-collapsible-header:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+.dh-collapsible-title {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #e2e8f0;
+    white-space: nowrap;
+}
+.dh-collapsible-summary {
+    flex: 1;
+    font-size: 0.74rem;
+    color: #64748b;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.dh-collapsible-arrow {
+    font-size: 0.7rem;
+    color: #475569;
+    transition: transform 0.3s ease, color 0.2s ease;
+    flex-shrink: 0;
+}
+.dh-collapsible:not(.collapsed) .dh-collapsible-arrow {
+    transform: rotate(90deg);
+    color: #6366f1;
+}
+.dh-collapsible-body {
+    overflow: hidden;
+    transition: max-height 0.4s ease, opacity 0.3s ease;
+    max-height: 2000px;
+    opacity: 1;
+}
+.dh-collapsible.collapsed .dh-collapsible-body {
+    max-height: 0;
+    opacity: 0;
+    padding: 0;
+}
+.dh-collapsible:not(.collapsed) .dh-collapsible-summary {
+    display: none;
+}
+
+/* ═══════════════════════════════════════════════════
+   V24.0: 风控护栏进度条 + 阈值标线
+   ═══════════════════════════════════════════════════ */
+.rg-kpi-bar {
+    position: relative;
+    height: 4px;
+    background: rgba(148, 163, 184, 0.08);
+    border-radius: 2px;
+    margin-top: 8px;
+    overflow: visible;
+}
+.rg-kpi-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    width: 0;
+    transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1), background 0.4s ease;
+}
+.rg-kpi-bar-mark {
+    position: absolute;
+    top: -2px;
+    width: 1px;
+    height: 8px;
+    background: rgba(245, 158, 11, 0.5);
+    border-radius: 1px;
+}
+.rg-kpi-bar-mark.rg-mark-danger {
+    background: rgba(239, 68, 68, 0.5);
+}
+
