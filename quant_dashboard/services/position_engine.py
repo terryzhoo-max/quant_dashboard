@@ -64,12 +64,31 @@ def get_vix_analysis(vix_val: float):
 #  仓位路径预测
 # ═══════════════════════════════════════════════════
 
-def get_position_path(current_pos: float, vix_analysis: dict) -> list[float]:
+def get_position_path(current_pos: float, vix_analysis: dict,
+                      aiae_ctx: dict = None) -> list[float]:
     """
-    AlphaCore V4.5: 5-Day Position Pathing Engine
+    AlphaCore V4.6: 5-Day Position Pathing Engine
     外推未来 5 个交易日的阶梯式仓位建议路径
+
+    P0-4 Fix: 增加 AIAE cap 上界约束
+    当 AIAE=R5 (cap=15%) 但 VIX=18 (平静) 时,
+    不再建议向上调仓 — 路径被 AIAE cap 钳位。
     """
     v_val = vix_analysis.get('vix_val', 20)
+
+    # P0-4: 获取 AIAE 仓位上限 (如果可用)
+    aiae_cap = 100  # 默认不限制
+    if aiae_ctx and aiae_ctx.get("cap") is not None:
+        aiae_cap = aiae_ctx["cap"]
+    elif aiae_ctx is None:
+        # 尝试从缓存读取 (兼容旧调用方式)
+        try:
+            from services.cache_service import cache_manager
+            _ctx = cache_manager.get_json("aiae_ctx")
+            if _ctx and _ctx.get("cap") is not None:
+                aiae_cap = _ctx["cap"]
+        except Exception:
+            pass
 
     path = []
     # 模拟路径：基于 VIX 向常态(20)回归的假设进行预测
@@ -82,7 +101,10 @@ def get_position_path(current_pos: float, vix_analysis: dict) -> list[float]:
         vix_gap = v_val - projected_vix
         step_pos = current_pos * (1 + vix_gap * 0.02)
 
-        # 边界约束 (10% - 100%)
+        # P0-4: 双重约束 — VIX 路径 ∩ AIAE cap 上界
+        step_pos = min(step_pos, aiae_cap)
+
+        # 边界约束 (10% - max(aiae_cap, 10)%)
         path.append(round(max(10, min(100, step_pos)), 1))
     return path
 

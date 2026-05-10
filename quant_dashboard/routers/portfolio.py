@@ -153,3 +153,40 @@ async def sync_portfolio_prices():
     except Exception as e:
         logger.error(f"[Portfolio Sync] Error: {traceback.format_exc()}")
         return R.error(str(e), "ERR_SYNC")
+
+
+@router.get("/portfolio/brinson")
+async def get_brinson_attribution(days: int = 20):
+    """V24.0: Brinson-Fachler 收益归因 (配置效应 / 选股效应 / 交互效应)"""
+    from services.cache_service import stale_while_revalidate
+
+    # 参数校验
+    days = max(5, min(120, days))
+
+    def _compute():
+        from engines.brinson_engine import compute_brinson_attribution
+        result = compute_brinson_attribution(lookback=days)
+        return R.ok(result) if result.get("status") == "success" else R.error(
+            result.get("error", "归因计算失败"), "ERR_BRINSON", data=result)
+
+    return stale_while_revalidate(
+        f"swr_brinson_{days}", _compute, fresh_ttl=3600, stale_ttl=14400)
+
+
+@router.get("/portfolio/factor-attribution")
+async def get_factor_attribution(days: int = 60):
+    """V24.0: 多因子风险归因 (Market/SMB/HML/Momentum/Volatility/Quality)"""
+    from services.cache_service import stale_while_revalidate
+
+    days = max(20, min(252, days))
+
+    def _compute():
+        from engines.factor_attribution_engine import compute_factor_attribution
+        result = compute_factor_attribution(lookback=days)
+        return R.ok(result) if result.get("status") == "success" else R.error(
+            result.get("error", "因子归因失败"), "ERR_FACTOR_ATTR", data=result)
+
+    return stale_while_revalidate(
+        f"swr_factor_attr_{days}", _compute, fresh_ttl=7200, stale_ttl=28800)
+
+

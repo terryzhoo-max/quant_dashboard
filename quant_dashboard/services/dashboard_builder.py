@@ -81,6 +81,10 @@ def _hot_data_reactor_tick():
                 hot_data = cache_manager.get_json("dashboard_data")
                 _hot_aiae_ctx = cache_manager.get_json("aiae_ctx")
 
+            if not hot_data or not isinstance(hot_data, dict):
+                logger.debug("Reactor tick 跳过: dashboard_data 缓存为空")
+                return
+
             mc = hot_data.get("data", {}).get("macro_cards", {})
             if "vix" in mc:
                 mc["vix"]["value"] = round(hot_vix, 2)

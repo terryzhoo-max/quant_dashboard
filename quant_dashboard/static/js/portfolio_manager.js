@@ -1318,3 +1318,462 @@ document.addEventListener('DOMContentLoaded', function () {
     setTimeout(loadSlippagePanel, 1500);
 });
 
+
+// ════════════════════════════════════════════════
+//  V24.0: Brinson-Fachler 收益归因面板
+// ════════════════════════════════════════════════
+
+(function () {
+    let brinsonWaterfall = null;
+    let brinsonSector = null;
+
+    function fmtPct(v) {
+        if (v == null || isNaN(v)) return '--';
+        const sign = v >= 0 ? '+' : '';
+        return sign + v.toFixed(2) + '%';
+    }
+    function pctColor(v) { return v > 0 ? '#10b981' : v < 0 ? '#ef4444' : '#94a3b8'; }
+
+    async function loadBrinson() {
+        const period = document.getElementById('brinson-period')?.value || 20;
+        try {
+            const res = await fetch(`/api/v1/portfolio/brinson?days=${period}`);
+            const result = await res.json();
+            if (result.status === 'success' && result.data?.status === 'success') {
+                renderBrinson(result.data);
+            } else {
+                console.warn('Brinson:', result.data?.error || result.message);
+            }
+        } catch (err) {
+            console.error('Brinson load error:', err);
+        }
+    }
+
+    function renderBrinson(d) {
+        // KPI
+        const portEl = document.getElementById('brinson-port-ret');
+        const benchEl = document.getElementById('brinson-bench-ret');
+        const alphaEl = document.getElementById('brinson-alpha');
+        const allocEl = document.getElementById('brinson-alloc');
+        const selectEl = document.getElementById('brinson-select');
+        const interEl = document.getElementById('brinson-interact');
+        const periodLabel = document.getElementById('brinson-period-label');
+        const alphaLabel = document.getElementById('brinson-alpha-label');
+
+        if (portEl) { portEl.textContent = fmtPct(d.portfolio_return); portEl.style.color = pctColor(d.portfolio_return); }
+        if (benchEl) { benchEl.textContent = fmtPct(d.benchmark_return); }
+        if (alphaEl) { alphaEl.textContent = fmtPct(d.excess_return); alphaEl.style.color = pctColor(d.excess_return); }
+        if (allocEl) { allocEl.textContent = fmtPct(d.effects.allocation); allocEl.style.color = pctColor(d.effects.allocation); }
+        if (selectEl) { selectEl.textContent = fmtPct(d.effects.selection); selectEl.style.color = pctColor(d.effects.selection); }
+        if (interEl) { interEl.textContent = fmtPct(d.effects.interaction); interEl.style.color = pctColor(d.effects.interaction); }
+        if (periodLabel) { periodLabel.textContent = `近${d.period_days}日`; }
+        if (alphaLabel) {
+            const desc = d.excess_return >= 0 ? '跑赢基准' : '跑输基准';
+            alphaLabel.textContent = desc;
+            alphaLabel.style.color = pctColor(d.excess_return);
+        }
+
+        renderWaterfall(d);
+        renderSectorChart(d);
+        renderSectorTable(d);
+    }
+
+    function renderWaterfall(d) {
+        const el = document.getElementById('brinson-waterfall-chart');
+        if (!el) return;
+        if (!brinsonWaterfall) brinsonWaterfall = AC.registerChart(echarts.init(el));
+
+        const e = d.effects;
+        const cats = ['基准收益', '配置效应', '选股效应', '交互效应', '组合收益'];
+        const benchVal = d.benchmark_return;
+
+        // 瀑布图: 用堆叠 bar 模拟
+        const transparent = [0, benchVal, benchVal + e.allocation, benchVal + e.allocation + e.selection, 0];
+        const values = [benchVal, e.allocation, e.selection, e.interaction, d.portfolio_return];
+
+        brinsonWaterfall.setOption({
+            backgroundColor: 'transparent',
+            tooltip: {
+                trigger: 'axis', axisPointer: { type: 'shadow' },
+                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                borderColor: 'rgba(255,255,255,0.08)',
+                textStyle: { color: '#f8fafc', fontSize: 12 },
+                formatter: p => `<strong>${p[0].axisValue}</strong><br/>贡献: ${p[1]?.value >= 0 ? '+' : ''}${(p[1]?.value || 0).toFixed(3)}%`
+            },
+            grid: { left: '3%', right: '5%', bottom: '5%', top: '8%', containLabel: true },
+            xAxis: {
+                type: 'category', data: cats,
+                axisLabel: { color: '#cbd5e1', fontSize: 12 },
+                axisLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } }
+            },
+            yAxis: {
+                type: 'value',
+                axisLabel: { color: '#64748b', fontSize: 11, fontFamily: 'Outfit', formatter: v => v.toFixed(1) + '%' },
+                splitLine: { lineStyle: { color: 'rgba(255,255,255,0.03)' } }
+            },
+            series: [
+                {
+                    name: 'base', type: 'bar', stack: 'w', data: transparent.map(v => Math.max(0, v)),
+                    itemStyle: { color: 'transparent' }, emphasis: { itemStyle: { color: 'transparent' } }
+                },
+                {
+                    name: '贡献', type: 'bar', stack: 'w', data: values,
+                    itemStyle: {
+                        color: p => {
+                            if (p.dataIndex === 0 || p.dataIndex === 4) return 'rgba(99,102,241,0.8)';
+                            return p.value >= 0 ? 'rgba(16,185,129,0.8)' : 'rgba(239,68,68,0.8)';
+                        },
+                        borderRadius: [4, 4, 0, 0]
+                    },
+                    barMaxWidth: 48,
+                    label: {
+                        show: true, position: 'top',
+                        formatter: p => (p.value >= 0 ? '+' : '') + p.value.toFixed(2) + '%',
+                        color: '#e2e8f0', fontSize: 11, fontFamily: 'Outfit'
+                    }
+                }
+            ],
+            animationDuration: 1000, animationEasing: 'cubicOut'
+        });
+    }
+
+    function renderSectorChart(d) {
+        const el = document.getElementById('brinson-sector-chart');
+        if (!el) return;
+        if (!brinsonSector) brinsonSector = AC.registerChart(echarts.init(el));
+
+        // Top 10 sectors by absolute total_effect
+        const sectors = d.sector_detail.slice(0, 10).reverse();
+
+        brinsonSector.setOption({
+            backgroundColor: 'transparent',
+            tooltip: {
+                trigger: 'axis', axisPointer: { type: 'shadow' },
+                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                borderColor: 'rgba(255,255,255,0.08)',
+                textStyle: { color: '#f8fafc', fontSize: 12 },
+                formatter: p => {
+                    const s = sectors[p[0].dataIndex];
+                    return `<strong>${s.sector}</strong><br/>
+                        组合权重: ${s.portfolio_weight}%<br/>
+                        基准权重: ${s.benchmark_weight}%<br/>
+                        超配: ${s.weight_diff > 0 ? '+' : ''}${s.weight_diff}pp<br/>
+                        总效应: ${s.total_effect > 0 ? '+' : ''}${s.total_effect}%`;
+                }
+            },
+            grid: { left: '3%', right: '8%', bottom: '5%', top: '5%', containLabel: true },
+            xAxis: {
+                type: 'value',
+                axisLabel: { color: '#64748b', fontFamily: 'Outfit', fontSize: 11, formatter: v => v.toFixed(2) + '%' },
+                splitLine: { lineStyle: { color: 'rgba(255,255,255,0.03)' } }
+            },
+            yAxis: {
+                type: 'category', data: sectors.map(s => s.sector),
+                axisLabel: { color: '#cbd5e1', fontWeight: 500, fontSize: 12 },
+                axisLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } }
+            },
+            series: [{
+                name: '总效应', type: 'bar',
+                data: sectors.map(s => s.total_effect),
+                itemStyle: {
+                    color: p => p.value >= 0 ? 'rgba(16,185,129,0.8)' : 'rgba(239,68,68,0.75)',
+                    borderRadius: [0, 6, 6, 0]
+                },
+                barMaxWidth: 18,
+                label: {
+                    show: true, position: 'right',
+                    formatter: p => (p.value >= 0 ? '+' : '') + p.value.toFixed(3) + '%',
+                    color: '#94a3b8', fontSize: 10, fontFamily: 'Outfit'
+                }
+            }],
+            animationDuration: 1000, animationEasing: 'cubicOut'
+        });
+    }
+
+    function renderSectorTable(d) {
+        const body = document.getElementById('brinson-sector-body');
+        if (!body) return;
+
+        if (!d.sector_detail || d.sector_detail.length === 0) {
+            body.innerHTML = '<tr><td colspan="8" class="pf-table-empty">无板块归因数据</td></tr>';
+            return;
+        }
+
+        body.innerHTML = d.sector_detail.map(s => {
+            const wdClass = s.weight_diff > 0 ? 'pf-up' : s.weight_diff < 0 ? 'pf-danger' : '';
+            const teClass = s.total_effect > 0 ? 'pf-up' : s.total_effect < 0 ? 'pf-danger' : '';
+            return `<tr>
+                <td><strong>${s.sector}</strong></td>
+                <td class="pf-mono">${s.portfolio_weight.toFixed(1)}%</td>
+                <td class="pf-mono pf-dim">${s.benchmark_weight.toFixed(1)}%</td>
+                <td class="pf-mono ${wdClass}">${s.weight_diff > 0 ? '+' : ''}${s.weight_diff.toFixed(1)}pp</td>
+                <td class="pf-mono" style="color:${pctColor(s.portfolio_return)}">${fmtPct(s.portfolio_return)}</td>
+                <td class="pf-mono" style="color:${pctColor(s.allocation_effect)}">${s.allocation_effect.toFixed(3)}%</td>
+                <td class="pf-mono" style="color:${pctColor(s.selection_effect)}">${s.selection_effect.toFixed(3)}%</td>
+                <td class="pf-mono ${teClass}" style="font-weight:600">${s.total_effect > 0 ? '+' : ''}${s.total_effect.toFixed(3)}%</td>
+            </tr>`;
+        }).join('');
+    }
+
+    // Bind events
+    const refreshBtn = document.getElementById('brinson-refresh-btn');
+    if (refreshBtn) {
+        refreshBtn.onclick = () => {
+            refreshBtn.classList.add('spinning');
+            loadBrinson().finally(() => setTimeout(() => refreshBtn.classList.remove('spinning'), 500));
+        };
+    }
+
+    const periodSelect = document.getElementById('brinson-period');
+    if (periodSelect) {
+        periodSelect.onchange = () => loadBrinson();
+    }
+
+    // Auto-load after portfolio data
+    setTimeout(loadBrinson, 2500);
+
+    // Resize
+    window.addEventListener('resize', () => {
+        if (brinsonWaterfall) brinsonWaterfall.resize();
+        if (brinsonSector) brinsonSector.resize();
+    });
+})();
+
+
+// ════════════════════════════════════════════════
+//  V24.0: 多因子风险归因面板
+// ════════════════════════════════════════════════
+
+(function () {
+    let factorRadar = null;
+    let factorContrib = null;
+
+    function fmtPct(v) {
+        if (v == null || isNaN(v)) return '--';
+        return (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+    }
+    function pctColor(v) { return v > 0 ? '#10b981' : v < 0 ? '#ef4444' : '#94a3b8'; }
+
+    // Heatmap color: 0 → blue, 0.5 → neutral, 1 → green
+    function heatColor(v) {
+        if (v > 0.7) return 'rgba(16,185,129,0.25)';
+        if (v > 0.5) return 'rgba(16,185,129,0.1)';
+        if (v < 0.3) return 'rgba(239,68,68,0.2)';
+        if (v < 0.5) return 'rgba(239,68,68,0.08)';
+        return 'transparent';
+    }
+    function scoreLabel(v) {
+        if (v >= 0.8) return '极高';
+        if (v >= 0.6) return '偏高';
+        if (v >= 0.4) return '中性';
+        if (v >= 0.2) return '偏低';
+        return '极低';
+    }
+
+    async function loadFactorAttr() {
+        const period = document.getElementById('factor-period')?.value || 60;
+        try {
+            const res = await fetch(`/api/v1/portfolio/factor-attribution?days=${period}`);
+            const result = await res.json();
+            if (result.status === 'success' && result.data?.status === 'success') {
+                renderFactorAttr(result.data);
+            } else {
+                console.warn('FactorAttr:', result.data?.error || result.message);
+            }
+        } catch (err) {
+            console.error('FactorAttr load error:', err);
+        }
+    }
+
+    function renderFactorAttr(d) {
+        // KPI
+        const r2El = document.getElementById('factor-r2');
+        const r2Label = document.getElementById('factor-r2-label');
+        const alphaEl = document.getElementById('factor-alpha');
+        const alphaLabel = document.getElementById('factor-alpha-label');
+        const sysEl = document.getElementById('factor-systematic');
+        const betaEl = document.getElementById('factor-beta');
+
+        if (r2El) {
+            r2El.textContent = d.regression.r_squared_pct + '%';
+            r2El.style.color = d.regression.r_squared > 0.6 ? '#10b981' : d.regression.r_squared > 0.3 ? '#f59e0b' : '#ef4444';
+        }
+        if (r2Label) {
+            const q = d.regression.r_squared > 0.7 ? '高解释力' : d.regression.r_squared > 0.4 ? '中等解释力' : '低解释力';
+            r2Label.textContent = q + ' · ' + d.lookback_days + '日窗口';
+        }
+        if (alphaEl) {
+            alphaEl.textContent = fmtPct(d.regression.alpha_annual);
+            alphaEl.style.color = pctColor(d.regression.alpha_annual);
+        }
+        if (alphaLabel) {
+            alphaLabel.textContent = `日均 ${d.regression.alpha_daily} bps`;
+        }
+        if (sysEl) {
+            sysEl.textContent = d.portfolio_decomposition.systematic_pct + '%';
+            sysEl.style.color = d.portfolio_decomposition.systematic_pct > 70 ? '#ef4444' : '#10b981';
+        }
+        if (betaEl) {
+            const mktFactor = d.factors.find(f => f.name === 'market');
+            if (mktFactor) {
+                betaEl.textContent = mktFactor.beta.toFixed(3);
+                betaEl.style.color = mktFactor.beta > 1.1 ? '#ef4444' : mktFactor.beta < 0.8 ? '#3b82f6' : '#6366f1';
+            }
+        }
+
+        renderRadar(d);
+        renderContrib(d);
+        renderStockTable(d);
+    }
+
+    function renderRadar(d) {
+        const el = document.getElementById('factor-radar-chart');
+        if (!el) return;
+        if (!factorRadar) factorRadar = AC.registerChart(echarts.init(el));
+
+        const factors = d.factors;
+        const indicators = factors.map(f => ({
+            name: f.icon + ' ' + f.cn,
+            max: Math.max(2, ...factors.map(ff => Math.abs(ff.beta) * 1.5)),
+        }));
+        const values = factors.map(f => Math.abs(f.beta));
+
+        factorRadar.setOption({
+            backgroundColor: 'transparent',
+            tooltip: {
+                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                borderColor: 'rgba(255,255,255,0.08)',
+                textStyle: { color: '#f8fafc', fontSize: 12 },
+            },
+            radar: {
+                indicator: indicators,
+                shape: 'polygon',
+                radius: '65%',
+                axisName: { color: '#cbd5e1', fontSize: 12 },
+                axisLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } },
+                splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } },
+                splitArea: { areaStyle: { color: ['rgba(99,102,241,0.02)', 'rgba(99,102,241,0.05)'] } },
+            },
+            series: [{
+                type: 'radar',
+                data: [{
+                    value: values,
+                    name: 'Factor Beta',
+                    areaStyle: { color: 'rgba(99,102,241,0.2)' },
+                    lineStyle: { color: '#6366f1', width: 2 },
+                    itemStyle: { color: '#6366f1' },
+                    symbol: 'circle', symbolSize: 6,
+                }],
+                tooltip: {
+                    formatter: p => {
+                        let html = '<strong>因子载荷 (|β|)</strong>';
+                        factors.forEach((f, i) => {
+                            html += `<br/>${f.icon} ${f.cn}: ${f.beta.toFixed(4)} (${f.exposure_level === 'high' ? '⚠️高暴露' : f.exposure_level === 'low' ? '✅低暴露' : '中性'})`;
+                        });
+                        return html;
+                    }
+                }
+            }],
+            animationDuration: 1200, animationEasing: 'elasticOut'
+        });
+    }
+
+    function renderContrib(d) {
+        const el = document.getElementById('factor-contrib-chart');
+        if (!el) return;
+        if (!factorContrib) factorContrib = AC.registerChart(echarts.init(el));
+
+        const factors = [...d.factors].reverse();
+
+        factorContrib.setOption({
+            backgroundColor: 'transparent',
+            tooltip: {
+                trigger: 'axis', axisPointer: { type: 'shadow' },
+                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                borderColor: 'rgba(255,255,255,0.08)',
+                textStyle: { color: '#f8fafc', fontSize: 12 },
+                formatter: p => {
+                    const f = factors[p[0].dataIndex];
+                    return `<strong>${f.icon} ${f.cn}</strong><br/>
+                        Beta: ${f.beta.toFixed(4)}<br/>
+                        因子年化收益: ${f.factor_return}%<br/>
+                        期间贡献: ${f.contribution > 0 ? '+' : ''}${f.contribution}%<br/>
+                        暴露等级: ${f.exposure_level === 'high' ? '⚠️高' : f.exposure_level === 'low' ? '✅低' : '中性'}`;
+                }
+            },
+            grid: { left: '3%', right: '10%', bottom: '5%', top: '5%', containLabel: true },
+            xAxis: {
+                type: 'value',
+                axisLabel: { color: '#64748b', fontFamily: 'Outfit', fontSize: 11, formatter: v => v.toFixed(2) + '%' },
+                splitLine: { lineStyle: { color: 'rgba(255,255,255,0.03)' } }
+            },
+            yAxis: {
+                type: 'category', data: factors.map(f => f.icon + ' ' + f.cn),
+                axisLabel: { color: '#cbd5e1', fontWeight: 500, fontSize: 12 },
+                axisLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } }
+            },
+            series: [{
+                name: '贡献', type: 'bar',
+                data: factors.map(f => f.contribution),
+                itemStyle: {
+                    color: p => {
+                        const f = factors[p.dataIndex];
+                        return f.color || (p.value >= 0 ? 'rgba(16,185,129,0.8)' : 'rgba(239,68,68,0.75)');
+                    },
+                    borderRadius: [0, 6, 6, 0]
+                },
+                barMaxWidth: 22,
+                label: {
+                    show: true, position: 'right',
+                    formatter: p => (p.value >= 0 ? '+' : '') + p.value.toFixed(3) + '%',
+                    color: '#94a3b8', fontSize: 10, fontFamily: 'Outfit'
+                }
+            }],
+            animationDuration: 1000, animationEasing: 'cubicOut'
+        });
+    }
+
+    function renderStockTable(d) {
+        const body = document.getElementById('factor-stock-body');
+        if (!body) return;
+
+        if (!d.stock_exposures || d.stock_exposures.length === 0) {
+            body.innerHTML = '<tr><td colspan="6" class="pf-table-empty">无个股因子数据</td></tr>';
+            return;
+        }
+
+        body.innerHTML = d.stock_exposures.map(s => {
+            return `<tr>
+                <td><strong>${s.name}</strong> <span class="pf-dim" style="font-size:0.72rem">${s.ts_code}</span></td>
+                <td class="pf-mono">${s.weight.toFixed(1)}%</td>
+                <td><span class="pf-sector-tag">${s.industry}</span></td>
+                <td class="pf-mono" style="background:${heatColor(s.momentum)}">${scoreLabel(s.momentum)} <small style="opacity:0.6">${(s.momentum * 100).toFixed(0)}%</small></td>
+                <td class="pf-mono" style="background:${heatColor(1 - s.volatility)}">${scoreLabel(1 - s.volatility)} <small style="opacity:0.6">${(s.volatility * 100).toFixed(0)}%</small></td>
+                <td class="pf-mono" style="background:${heatColor(s.quality)}">${scoreLabel(s.quality)} <small style="opacity:0.6">${(s.quality * 100).toFixed(0)}%</small></td>
+            </tr>`;
+        }).join('');
+    }
+
+    // Bind events
+    const refreshBtn = document.getElementById('factor-refresh-btn');
+    if (refreshBtn) {
+        refreshBtn.onclick = () => {
+            refreshBtn.classList.add('spinning');
+            loadFactorAttr().finally(() => setTimeout(() => refreshBtn.classList.remove('spinning'), 500));
+        };
+    }
+
+    const periodSelect = document.getElementById('factor-period');
+    if (periodSelect) {
+        periodSelect.onchange = () => loadFactorAttr();
+    }
+
+    // Auto-load after Brinson
+    setTimeout(loadFactorAttr, 3500);
+
+    // Resize
+    window.addEventListener('resize', () => {
+        if (factorRadar) factorRadar.resize();
+        if (factorContrib) factorContrib.resize();
+    });
+})();

@@ -26,17 +26,38 @@ DB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(DB_DIR, "alphacore.db")
 
 _local = threading.local()
+_all_conns = []  # P0-1: 全局追踪所有线程本地连接, 用于 shutdown 时安全关闭
+_conn_lock = threading.Lock()
 
 
 def _get_conn() -> sqlite3.Connection:
     """线程本地连接 (每线程独立, 避免 SQLite 跨线程锁)"""
     if not hasattr(_local, "conn") or _local.conn is None:
         os.makedirs(DB_DIR, exist_ok=True)
-        _local.conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-        _local.conn.row_factory = sqlite3.Row
-        _local.conn.execute("PRAGMA journal_mode=WAL")
-        _local.conn.execute("PRAGMA busy_timeout=5000")
+        conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        _local.conn = conn
+        with _conn_lock:
+            _all_conns.append(conn)
     return _local.conn
+
+
+def _close_all_conns():
+    """P0-1: atexit 钩子 — 安全关闭所有 SQLite 连接, 防止 WAL/SHM 泄漏"""
+    with _conn_lock:
+        for c in _all_conns:
+            try:
+                c.close()
+            except Exception:
+                pass
+        _all_conns.clear()
+    logger.info("SQLite 所有连接已安全关闭")
+
+
+import atexit
+atexit.register(_close_all_conns)
 
 
 def init_db():

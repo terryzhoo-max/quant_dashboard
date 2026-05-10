@@ -105,6 +105,7 @@ class CacheService:
                 # Redis 异常时 fallback 到内存
                 with self._memory_lock:
                     self._mem_set(key, value, ttl_seconds)
+                return True  # P0-2 Fix: 防止继续执行到下方的重复内存写入
 
         with self._memory_lock:
             self._mem_set(key, value, ttl_seconds)
@@ -148,9 +149,10 @@ cache_manager = CacheService()
 
 
 
-# 防止并发重复刷新的标志位
-_swr_refreshing = set()
+# 防止并发重复刷新的标志位 (P1-3: 改为 dict 存时间戳, 防僵死线程)
+_swr_refreshing: dict[str, float] = {}  # key → start_time
 _swr_refresh_lock = threading.Lock()
+_SWR_REFRESH_TIMEOUT = 300  # 5 分钟超时自动清除
 
 
 def stale_while_revalidate(cache_key: str, compute_fn, fresh_ttl=3600, stale_ttl=21600):
@@ -193,11 +195,16 @@ def stale_while_revalidate(cache_key: str, compute_fn, fresh_ttl=3600, stale_ttl
 
 
 def _trigger_bg_refresh(cache_key: str, compute_fn):
-    """后台静默刷新 (带防雷锁)"""
+    """后台静默刷新 (带防雷锁 + P1-3 超时保护)"""
+    now = _time.time()
     with _swr_refresh_lock:
         if cache_key in _swr_refreshing:
-            return  # 已有刷新线程在跑
-        _swr_refreshing.add(cache_key)
+            started = _swr_refreshing[cache_key]
+            if now - started < _SWR_REFRESH_TIMEOUT:
+                return  # 已有刷新线程在跑且未超时
+            # 超时: 清除僵死标记, 允许重新刷新
+            _logger.warning("SWR 刷新超时清除: %s (已挂 %.0fs)", cache_key, now - started)
+        _swr_refreshing[cache_key] = now
     
     def _do_refresh():
         try:
@@ -209,7 +216,7 @@ def _trigger_bg_refresh(cache_key: str, compute_fn):
             _logger.warning(f"SWR 后台刷新失败 {cache_key}: {e}")
         finally:
             with _swr_refresh_lock:
-                _swr_refreshing.discard(cache_key)
+                _swr_refreshing.pop(cache_key, None)
     
     threading.Thread(target=_do_refresh, daemon=True).start()
 

@@ -85,6 +85,54 @@ def _check_aiae_overheat(snapshot, positions, ctx):
     return True, f"AIAE R{regime}, 无建仓限制"
 
 
+def _check_position_vs_cap(snapshot, positions, ctx):
+    """P0-3: 当前实际仓位 是否已超过 AIAE regime 上限 (硬阻断)
+    
+    解决的问题: AIAE 从 R3 跳到 R4 时, 如果操作方向是 hold,
+    旧规则不会提示“当前 80% 仓位已超过 R4 上限 40%”。
+    """
+    # 从 AIAE 缓存获取当前 regime cap
+    regime_cap = None
+    try:
+        from services.cache_service import cache_manager
+        aiae_ctx = cache_manager.get_json("aiae_ctx")
+        if aiae_ctx and aiae_ctx.get("cap") is not None:
+            regime_cap = aiae_ctx["cap"]
+    except Exception:
+        pass
+    
+    if regime_cap is None:
+        return True, "无 AIAE cap 数据, 跳过仓位上限检查"
+    
+    # 获取当前实际仓位
+    current_pos = snapshot.get("suggested_position")
+    # 尝试从 portfolio engine 获取真实仓位
+    actual_pos = None
+    try:
+        from portfolio_engine import get_portfolio_engine
+        pe = get_portfolio_engine()
+        val = pe.get_valuation()
+        total = val.get("total_asset", 0)
+        mv = val.get("market_value", 0)
+        if total > 0:
+            actual_pos = round(mv / total * 100, 1)
+    except Exception:
+        pass
+    
+    pos_to_check = actual_pos if actual_pos is not None else current_pos
+    if pos_to_check is None:
+        return True, "无仓位数据, 跳过检查"
+    
+    overshoot = pos_to_check - regime_cap
+    if overshoot > 10:
+        return False, (f"当前仓位 {pos_to_check:.0f}% 超过 AIAE cap {regime_cap:.0f}% 达 {overshoot:.0f}pp. "
+                       f"必须立即减仓至 {regime_cap:.0f}% 以下.")
+    elif overshoot > 0:
+        return True, (f"当前仓位 {pos_to_check:.0f}% 略超 AIAE cap {regime_cap:.0f}% "
+                      f"({overshoot:.0f}pp). 建议逐步减仓.")
+    return True, f"仓位 {pos_to_check:.0f}% 在 AIAE cap {regime_cap:.0f}% 以内"
+
+
 def _check_jcs_threshold(snapshot, positions, ctx):
     """JCS < 40 时禁止加仓 (硬阻断)"""
     jcs_level = (ctx or {}).get("jcs_level", "medium")
@@ -127,6 +175,8 @@ COMPLIANCE_RULES = [
                    "任何单一板块仓位不得超过 40%", _check_sector_concentration),
     ComplianceRule("aiae_overheat", "AIAE 过热限制", "hard_block",
                    "AIAE ≥ R4 时禁止新建仓位", _check_aiae_overheat),
+    ComplianceRule("position_vs_cap", "仓位超限检查", "hard_block",
+                   "当前实际仓位不得超过 AIAE regime 上限 10pp", _check_position_vs_cap),
     ComplianceRule("jcs_threshold", "JCS 置信度门槛", "hard_block",
                    "JCS < 40 时禁止加仓操作", _check_jcs_threshold),
     ComplianceRule("vix_emergency", "VIX 紧急刹车", "hard_block",
@@ -188,7 +238,7 @@ def run_compliance_check(snapshot: dict, positions: list = None,
             r["rule_name"] for r in soft_warns[:3])
     else:
         status = "passed"
-        summary = "🟢 全部 6 条合规规则审查通过"
+        summary = "🟢 全部 7 条合规规则审查通过"
 
     return {
         "status": status,

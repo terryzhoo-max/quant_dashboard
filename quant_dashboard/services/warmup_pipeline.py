@@ -22,16 +22,17 @@ logger = get_logger("warmup")
 #  基础工具
 # ═══════════════════════════════════════════════════
 
-def with_retry(func, name, max_retries=3, delay=60):
-    """柔性重试机制: 避免 Tushare 等接口拥堵导致的单点故障 (V2: delay 60s 防阻塞)"""
+def with_retry(func, name, max_retries=3, delay=5):
+    """柔性重试机制: P1-1 指数退避 (5s/15s/45s), 防阻塞线程池"""
     for i in range(max_retries):
         try:
             func()
             return True
         except Exception as e:
+            backoff = delay * (3 ** i)  # 指数退避: 5 → 15 → 45
             if i < max_retries - 1:
-                logger.warning(f"{name} 失败: {e}。等待 {delay}s 重试 ({i+1}/{max_retries})")
-                time.sleep(delay)
+                logger.warning(f"{name} 失败: {e}。等待 {backoff}s 重试 ({i+1}/{max_retries})")
+                time.sleep(backoff)
             else:
                 logger.error(f"{name} 最终失败，已达最大重试次数")
                 return False

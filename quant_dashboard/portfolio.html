@@ -160,7 +160,162 @@
                 </div>
             </div>
 
-            <!-- ═══ ZONE 5: 执行质量分析 V2 (提升位置, 更易触达) ═══ -->
+            <!-- ═══ ZONE 4.5: Brinson 收益归因 ═══ -->
+            <div class="glass-panel pf-brinson-panel" id="pf-brinson-zone">
+                <div class="pf-panel-header">
+                    <h3>🧬 收益归因分析 <span class="pf-panel-sub">Brinson-Fachler Attribution</span></h3>
+                    <div class="pf-table-controls" style="display:flex;gap:8px;align-items:center;">
+                        <select id="brinson-period" class="pf-input" style="width:110px;padding:4px 8px;font-size:0.75rem;">
+                            <option value="5">5日</option>
+                            <option value="10">10日</option>
+                            <option value="20" selected>20日</option>
+                            <option value="60">60日</option>
+                        </select>
+                        <button class="slip-refresh-btn" id="brinson-refresh-btn" title="刷新归因">↻</button>
+                    </div>
+                </div>
+
+                <!-- KPI Row -->
+                <div class="slip-kpi-row" id="brinson-kpi-row">
+                    <div class="slip-kpi-card">
+                        <div class="slip-kpi-label">组合收益 Portfolio</div>
+                        <div class="slip-kpi-value" id="brinson-port-ret">--</div>
+                        <div class="slip-kpi-sub" id="brinson-period-label">近20日</div>
+                    </div>
+                    <div class="slip-kpi-card">
+                        <div class="slip-kpi-label">基准收益 Benchmark</div>
+                        <div class="slip-kpi-value" id="brinson-bench-ret" style="color:#94a3b8">--</div>
+                        <div class="slip-kpi-sub">沪深300</div>
+                    </div>
+                    <div class="slip-kpi-card" style="border-left:2px solid rgba(99,102,241,0.3);">
+                        <div class="slip-kpi-label">超额收益 Alpha</div>
+                        <div class="slip-kpi-value" id="brinson-alpha" style="font-size:1.6rem;">--</div>
+                        <div class="slip-kpi-sub" id="brinson-alpha-label">--</div>
+                    </div>
+                    <div class="slip-kpi-card">
+                        <div class="slip-kpi-label">配置效应 Allocation</div>
+                        <div class="slip-kpi-value" id="brinson-alloc">--</div>
+                    </div>
+                    <div class="slip-kpi-card">
+                        <div class="slip-kpi-label">选股效应 Selection</div>
+                        <div class="slip-kpi-value" id="brinson-select">--</div>
+                    </div>
+                    <div class="slip-kpi-card">
+                        <div class="slip-kpi-label">交互效应 Interaction</div>
+                        <div class="slip-kpi-value" id="brinson-interact">--</div>
+                    </div>
+                </div>
+
+                <!-- Waterfall Chart -->
+                <div class="pf-charts-row" style="margin-top:16px;">
+                    <div class="slip-chart-box" style="position:relative;flex:1;">
+                        <h4>📊 效应瀑布图 <span class="pf-chart-sub">Attribution Waterfall</span></h4>
+                        <div id="brinson-waterfall-chart" style="height:320px;"></div>
+                    </div>
+                    <div class="slip-chart-box" style="position:relative;flex:1;">
+                        <h4>🏭 板块归因明细 <span class="pf-chart-sub">Sector Attribution Detail</span></h4>
+                        <div id="brinson-sector-chart" style="height:320px;"></div>
+                    </div>
+                </div>
+
+                <!-- Sector Detail Table -->
+                <div class="slip-orders-section" style="margin-top:16px;">
+                    <h4>📋 板块归因明细 <span class="pf-chart-sub">Sector Decomposition</span></h4>
+                    <div class="pf-table-wrap">
+                        <table class="pf-table" id="brinson-sector-table">
+                            <thead>
+                                <tr>
+                                    <th>板块</th>
+                                    <th>组合权重</th>
+                                    <th>基准权重</th>
+                                    <th>超配</th>
+                                    <th>组合收益</th>
+                                    <th>配置效应</th>
+                                    <th>选股效应</th>
+                                    <th>总效应</th>
+                                </tr>
+                            </thead>
+                            <tbody id="brinson-sector-body">
+                                <tr><td colspan="8" class="pf-table-empty">点击 ↻ 加载归因数据</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ ZONE 4.6: 多因子风险归因 ═══ -->
+            <div class="glass-panel pf-brinson-panel" id="pf-factor-zone">
+                <div class="pf-panel-header">
+                    <h3>🔬 多因子风险归因 <span class="pf-panel-sub">Factor Risk Attribution</span></h3>
+                    <div class="pf-table-controls" style="display:flex;gap:8px;align-items:center;">
+                        <select id="factor-period" class="pf-input" style="width:110px;padding:4px 8px;font-size:0.75rem;">
+                            <option value="30">30日</option>
+                            <option value="60" selected>60日</option>
+                            <option value="120">120日</option>
+                        </select>
+                        <button class="slip-refresh-btn" id="factor-refresh-btn" title="刷新归因">↻</button>
+                    </div>
+                </div>
+
+                <!-- Regression KPI -->
+                <div class="slip-kpi-row" id="factor-kpi-row">
+                    <div class="slip-kpi-card" style="border-left:2px solid rgba(99,102,241,0.3);">
+                        <div class="slip-kpi-label">模型解释力 R²</div>
+                        <div class="slip-kpi-value" id="factor-r2" style="font-size:1.6rem;">--</div>
+                        <div class="slip-kpi-sub" id="factor-r2-label">因子模型覆盖度</div>
+                    </div>
+                    <div class="slip-kpi-card">
+                        <div class="slip-kpi-label">选股 Alpha</div>
+                        <div class="slip-kpi-value" id="factor-alpha">--</div>
+                        <div class="slip-kpi-sub" id="factor-alpha-label">年化超额</div>
+                    </div>
+                    <div class="slip-kpi-card">
+                        <div class="slip-kpi-label">系统性风险</div>
+                        <div class="slip-kpi-value" id="factor-systematic">--</div>
+                        <div class="slip-kpi-sub">vs 特质风险</div>
+                    </div>
+                    <div class="slip-kpi-card">
+                        <div class="slip-kpi-label">市场 Beta</div>
+                        <div class="slip-kpi-value" id="factor-beta" style="color:#6366f1">--</div>
+                        <div class="slip-kpi-sub">系统性暴露</div>
+                    </div>
+                </div>
+
+                <!-- Charts -->
+                <div class="pf-charts-row" style="margin-top:16px;">
+                    <div class="slip-chart-box" style="position:relative;flex:1;">
+                        <h4>📊 因子载荷 <span class="pf-chart-sub">Factor Beta Exposures</span></h4>
+                        <div id="factor-radar-chart" style="height:340px;"></div>
+                    </div>
+                    <div class="slip-chart-box" style="position:relative;flex:1;">
+                        <h4>📈 因子贡献 <span class="pf-chart-sub">Factor Return Contribution</span></h4>
+                        <div id="factor-contrib-chart" style="height:340px;"></div>
+                    </div>
+                </div>
+
+                <!-- Stock Factor Heatmap Table -->
+                <div class="slip-orders-section" style="margin-top:16px;">
+                    <h4>🏷️ 个股因子暴露 <span class="pf-chart-sub">Stock Factor Scores</span></h4>
+                    <div class="pf-table-wrap">
+                        <table class="pf-table" id="factor-stock-table">
+                            <thead>
+                                <tr>
+                                    <th>标的</th>
+                                    <th>权重</th>
+                                    <th>行业</th>
+                                    <th>动量</th>
+                                    <th>波动率</th>
+                                    <th>质量</th>
+                                </tr>
+                            </thead>
+                            <tbody id="factor-stock-body">
+                                <tr><td colspan="6" class="pf-table-empty">点击 ↻ 加载因子数据</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
             <div class="glass-panel pf-slippage-panel" id="pf-slippage-zone">
                 <div class="pf-panel-header">
                     <h3>⚡ 执行质量分析 <span class="pf-panel-sub">OMS Slippage Attribution</span></h3>

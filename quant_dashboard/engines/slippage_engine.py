@@ -257,12 +257,31 @@ class SlippageEngine:
         filled = [o for o in all_filled if o.get("exec_source") != "bootstrap"]
 
         if not filled:
+            # P2-2: 有 baseline 数据时展示回填 EQS, 而非空白
+            if baseline_orders:
+                bl_slips = [abs(o["total_slippage_bps"]) for o in baseline_orders]
+                bl_avg = statistics.mean(bl_slips)
+                bl_eqs = max(0, min(100, round(100 - bl_avg / 20.0 * 50)))
+                bl_grade = "A+" if bl_eqs >= 90 else ("A" if bl_eqs >= 80 else (
+                    "B" if bl_eqs >= 65 else ("C" if bl_eqs >= 50 else "D")))
+                return {
+                    "score": bl_eqs, "grade": f"{bl_grade}*",
+                    "has_data": True, "is_baseline": True,
+                    "avg_slippage_bps": _safe_round(bl_avg),
+                    "benchmark_bps": 20,
+                    "total_cost_cny": _safe_round(sum(abs(o.get("total_slippage_cny", 0)) for o in baseline_orders)),
+                    "trend": "baseline",
+                    "order_count": len(baseline_orders),
+                    "top_leakers": [],
+                    "baseline_count": len(baseline_orders),
+                    "note": "基于历史回填数据, 实盘交易后将自动切换",
+                }
             return {
                 "score": 0, "grade": "--", "has_data": False,
                 "avg_slippage_bps": 0, "benchmark_bps": 20,
                 "total_cost_cny": 0, "trend": "no_data",
                 "order_count": 0, "top_leakers": [],
-                "baseline_count": len(baseline_orders),
+                "baseline_count": 0,
             }
 
         slippages = [abs(o["total_slippage_bps"]) for o in filled]

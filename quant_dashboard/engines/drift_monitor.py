@@ -159,11 +159,13 @@ def check_jcs_trend() -> dict:
     if len(jcs_values) < 10:
         return {"status": "insufficient_data", "label": "JCS 数据不足"}
 
-    # 简单线性趋势: 比较前 10 天均值 vs 后 10 天均值
+    # P2-3: 用中位数替代均值, 增强噪声鲁棒性 (单日异常不会触发 critical)
     n = len(jcs_values)
-    first_half = sum(jcs_values[:n // 2]) / (n // 2)
-    second_half = sum(jcs_values[n // 2:]) / (n - n // 2)
-    trend = round(second_half - first_half, 1)
+    first_half = sorted(jcs_values[:n // 2])
+    second_half = sorted(jcs_values[n // 2:])
+    median_first = first_half[len(first_half) // 2]
+    median_second = second_half[len(second_half) // 2]
+    trend = round(median_second - median_first, 1)
     current = jcs_values[-1]
 
     if trend < -10:

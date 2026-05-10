@@ -110,17 +110,23 @@ def scan_and_alert() -> list:
         if not rule["check"](snapshot):
             continue
 
-        # Cooldown 检查
+        # Cooldown 检查 (P2-1: 健壮时间解析, 兼容 ±时区/微秒/纯日期)
         last_time_str = ac_db.get_last_alert_time(rule["id"])
         if last_time_str:
             try:
-                last_time = datetime.fromisoformat(last_time_str)
+                # 尝试标准 ISO 解析, 失败时截断时区后缀重试
+                try:
+                    last_time = datetime.fromisoformat(last_time_str)
+                except ValueError:
+                    # 兼容 Python <3.11: 截断 +08:00 等时区后缀
+                    clean = last_time_str[:19]  # 取 YYYY-MM-DDTHH:MM:SS
+                    last_time = datetime.fromisoformat(clean)
                 cooldown = timedelta(hours=rule["cooldown_hours"])
                 if datetime.now() - last_time < cooldown:
                     logger.debug("预警抑制 [%s]: cooldown %dh 内已触发", rule["id"], rule["cooldown_hours"])
                     continue
-            except ValueError:
-                pass  # 时间解析失败, 不抑制
+            except (ValueError, TypeError):
+                pass  # 时间解析彻底失败, 不抑制 (保守策略: 宁可多报不漏报)
 
         # 触发! 生成预警内容
         value = snapshot.get(rule["value_key"], 0) or 0
