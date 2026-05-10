@@ -1,0 +1,24 @@
+{
+    "enable_ai_narrative": true,
+    "provider": "deepseek",
+    "gemini": {
+        "api_key": "AIzaSyCzw4SU35sF2KXas-EmZcXZa0JbKnPnoFI",
+        "model": "gemini-2.0-flash"
+    },
+    "deepseek": {
+        "api_key": "sk-640dc7d90a994787ae575425e5ea9173",
+        "model": "deepseek-chat",
+        "base_url": "https://api.deepseek.com"
+    },
+    "claude": {
+        "api_key": "",
+        "model": "claude-sonnet-4-20250514"
+    },
+    "openai": {
+        "api_key": "",
+        "model": "gpt-4o-mini"
+    },
+    "timeout_seconds": 30,
+    "max_tokens": 1024,
+    "fallback_on_error": true
+}

@@ -47,6 +47,7 @@ from services.warmup_pipeline import (
     daily_warmup_callback, morning_warmup_callback, fred_daily_callback,
     us_aiae_warmup_callback, jp_aiae_warmup_callback, aaii_crawl_callback,
     swing_guard_warmup_callback, daily_report_callback, alert_scan_callback,
+    event_monitor_callback,
 )
 from aiae_engine import get_aiae_engine
 
@@ -142,6 +143,8 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(daily_report_callback, CronTrigger(day_of_week='mon-fri', hour=16, minute=35), id="daily_report")
     # 10. V21.2: 信号预警扫描 (每10分钟, 盘中监控 JCS/VIX)
     scheduler.add_job(alert_scan_callback, IntervalTrigger(minutes=10), id="alert_scan")
+    # 11. V22.2: 事件驱动监控 (每5分钟, 盘中检测 VIX/AIAE/MR 跳变)
+    scheduler.add_job(event_monitor_callback, IntervalTrigger(minutes=5), id="event_monitor")
 
     scheduler.start()
     app.state.scheduler = scheduler

@@ -2425,6 +2425,30 @@ _EVENT_LOG_PATH = "data_lake/market_events.json"
 _SNAPSHOT_PATH = "data_lake/event_last_snapshot.json"
 _MAX_EVENTS = 50
 
+# V22.2: 事件冷却期 (小时) — 同类事件在 N 小时内不重复触发
+_EVENT_COOLDOWNS = {
+    "vix_spike": 4,
+    "aiae_regime_change": 8,
+    "mr_regime_change": 8,
+    "erp_extreme": 12,
+}
+
+
+def _check_event_cooldown(event_type: str, events_log: list) -> bool:
+    """检查事件是否在冷却期内。返回 True = 冷却中, 应跳过。"""
+    from datetime import timedelta
+    cooldown_hours = _EVENT_COOLDOWNS.get(event_type, 6)
+    for evt in reversed(events_log):
+        if evt.get("type") == event_type:
+            try:
+                last_time = _dt.fromisoformat(evt["detected_at"])
+                if _dt.now() - last_time < timedelta(hours=cooldown_hours):
+                    return True
+            except (ValueError, KeyError):
+                pass
+            break  # 只看最近一条同类事件
+    return False
+
 
 def _load_last_snapshot() -> dict:
     """加载上一次保存的快照"""
@@ -2494,6 +2518,9 @@ def detect_market_events(current_snapshot: dict) -> list:
         _save_last_snapshot(current_snapshot)
         return []
 
+    # V22.2: 加载历史日志用于 Cooldown 检查
+    existing_log = _load_event_log()
+
     events = []
     now_ts = _dt.now().isoformat()
     curr_vix = current_snapshot.get("vix_val") or 20
@@ -2509,63 +2536,87 @@ def detect_market_events(current_snapshot: dict) -> list:
     vix_delta = curr_vix - prev_vix
     vix_delta_pct = (curr_vix - prev_vix) / max(prev_vix, 1) * 100
     if abs(vix_delta) > 5 or abs(vix_delta_pct) > 25:
-        severity = "extreme" if abs(vix_delta) > 10 else ("high" if abs(vix_delta) > 7 else "medium")
-        direction = "飙升" if vix_delta > 0 else "骤降"
-        events.append({
-            "type": "vix_spike",
-            "severity": severity,
-            "icon": "🌪️",
-            "title": f"VIX {direction}",
-            "detail": f"VIX {prev_vix:.1f} → {curr_vix:.1f} (Δ{vix_delta:+.1f}, {vix_delta_pct:+.0f}%)",
-            "detected_at": now_ts,
-            "auto_scenario": "vix_explosion" if vix_delta > 0 else None,
-        })
+        if not _check_event_cooldown("vix_spike", existing_log):
+            severity = "extreme" if abs(vix_delta) > 10 else ("high" if abs(vix_delta) > 7 else "medium")
+            direction = "飙升" if vix_delta > 0 else "骤降"
+            events.append({
+                "type": "vix_spike",
+                "severity": severity,
+                "icon": "🌪️",
+                "title": f"VIX {direction}",
+                "detail": f"VIX {prev_vix:.1f} → {curr_vix:.1f} (Δ{vix_delta:+.1f}, {vix_delta_pct:+.0f}%)",
+                "detected_at": now_ts,
+                "auto_scenario": "vix_explosion" if vix_delta > 0 else None,
+            })
+        else:
+            logger.debug("事件冷却中 [vix_spike]: %dh 内已触发", _EVENT_COOLDOWNS.get('vix_spike', 4))
 
     # ── 2. AIAE regime 变化 ──
     if curr_aiae_r != prev_aiae_r:
-        direction = "升温" if curr_aiae_r > prev_aiae_r else "降温"
-        severity = "high" if abs(curr_aiae_r - prev_aiae_r) >= 2 else "medium"
-        events.append({
-            "type": "aiae_regime_change",
-            "severity": severity,
-            "icon": "🌡️",
-            "title": f"AIAE Regime {direction}",
-            "detail": f"R{prev_aiae_r}({_REGIME_CN_MAP.get(prev_aiae_r, '?')}) → R{curr_aiae_r}({_REGIME_CN_MAP.get(curr_aiae_r, '?')})",
-            "detected_at": now_ts,
-            "auto_scenario": "aiae_overheat_v" if curr_aiae_r >= 4 else None,
-        })
+        if not _check_event_cooldown("aiae_regime_change", existing_log):
+            direction = "升温" if curr_aiae_r > prev_aiae_r else "降温"
+            severity = "high" if abs(curr_aiae_r - prev_aiae_r) >= 2 else "medium"
+            events.append({
+                "type": "aiae_regime_change",
+                "severity": severity,
+                "icon": "🌡️",
+                "title": f"AIAE Regime {direction}",
+                "detail": f"R{prev_aiae_r}({_REGIME_CN_MAP.get(prev_aiae_r, '?')}) → R{curr_aiae_r}({_REGIME_CN_MAP.get(curr_aiae_r, '?')})",
+                "detected_at": now_ts,
+                "auto_scenario": "aiae_overheat_v" if curr_aiae_r >= 4 else None,
+            })
+        else:
+            logger.debug("事件冷却中 [aiae_regime_change]: %dh 内已触发", _EVENT_COOLDOWNS.get('aiae_regime_change', 8))
 
     # ── 3. MR regime 变化 ──
     if curr_mr != prev_mr:
-        severity = "high" if curr_mr in ("BEAR", "CRASH") else "medium"
-        events.append({
-            "type": "mr_regime_change",
-            "severity": severity,
-            "icon": "📉",
-            "title": f"MR 技术面切换",
-            "detail": f"{prev_mr} → {curr_mr}",
-            "detected_at": now_ts,
-            "auto_scenario": None,
-        })
+        if not _check_event_cooldown("mr_regime_change", existing_log):
+            severity = "high" if curr_mr in ("BEAR", "CRASH") else "medium"
+            events.append({
+                "type": "mr_regime_change",
+                "severity": severity,
+                "icon": "📉",
+                "title": f"MR 技术面切换",
+                "detail": f"{prev_mr} → {curr_mr}",
+                "detected_at": now_ts,
+                "auto_scenario": None,
+            })
+        else:
+            logger.debug("事件冷却中 [mr_regime_change]: %dh 内已触发", _EVENT_COOLDOWNS.get('mr_regime_change', 8))
 
     # ── 4. ERP 极端 ──
     if (curr_erp > 6.5 and prev_erp <= 6.5) or (curr_erp < 3.0 and prev_erp >= 3.0):
-        direction = "极度低估" if curr_erp > 6.5 else "极度高估"
-        events.append({
-            "type": "erp_extreme",
-            "severity": "high",
-            "icon": "📊",
-            "title": f"ERP {direction}",
-            "detail": f"ERP {prev_erp:.2f}% → {curr_erp:.2f}%",
-            "detected_at": now_ts,
-            "auto_scenario": "erp_extreme_bull" if curr_erp > 6.5 else None,
-        })
+        if not _check_event_cooldown("erp_extreme", existing_log):
+            direction = "极度低估" if curr_erp > 6.5 else "极度高估"
+            events.append({
+                "type": "erp_extreme",
+                "severity": "high",
+                "icon": "📊",
+                "title": f"ERP {direction}",
+                "detail": f"ERP {prev_erp:.2f}% → {curr_erp:.2f}%",
+                "detected_at": now_ts,
+                "auto_scenario": "erp_extreme_bull" if curr_erp > 6.5 else None,
+            })
+        else:
+            logger.debug("事件冷却中 [erp_extreme]: %dh 内已触发", _EVENT_COOLDOWNS.get('erp_extreme', 12))
 
     # ── 保存快照 ──
     _save_last_snapshot(current_snapshot)
 
     if not events:
         return []
+
+    # ── V22.2: JCS delta 补全 (所有事件均记录 JCS 变化) ──
+    try:
+        jcs_before = compute_jcs(prev).get("score")
+        jcs_after = compute_jcs(current_snapshot).get("score")
+    except Exception:
+        jcs_before, jcs_after = None, None
+
+    for evt in events:
+        evt["jcs_before"] = jcs_before
+        evt["jcs_after"] = jcs_after
+        evt["jcs_delta"] = round(jcs_after - jcs_before, 1) if jcs_before is not None and jcs_after is not None else None
 
     # ── 对每个事件自动运行冲击传播 ──
     for evt in events:
@@ -2583,9 +2634,26 @@ def detect_market_events(current_snapshot: dict) -> list:
                 logger.debug("事件自动冲击传播失败 (%s): %s", evt["type"], e)
 
     # ── 持久化 ──
-    existing = _load_event_log()
-    existing.extend(events)
-    _save_event_log(existing)
+    existing_log.extend(events)
+    _save_event_log(existing_log)
+
+    # ── V22.2: 高严重度事件自动推送 (Server酱/邮件) ──
+    import threading as _threading
+    push_events = [e for e in events if e["severity"] in ("extreme", "high")]
+    if push_events:
+        def _push():
+            try:
+                from services.alert_monitor import _push_all_channels
+                alerts = [{
+                    "icon": e["icon"],
+                    "title": e["title"],
+                    "detail": e["detail"] + (f" | JCS {e['jcs_before']:.0f}→{e['jcs_after']:.0f}" if e.get("jcs_before") is not None else ""),
+                    "severity": e["severity"],
+                } for e in push_events]
+                _push_all_channels(alerts)
+            except Exception as ex:
+                logger.debug("事件推送异常: %s", ex)
+        _threading.Thread(target=_push, daemon=True).start()
 
     return events
 

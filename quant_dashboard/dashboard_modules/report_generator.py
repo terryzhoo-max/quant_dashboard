@@ -252,11 +252,12 @@ def _build_markdown(date, weekday, snapshot, jcs, conflicts,
     lines.append(f"**今日决策**: {decision_text}")
     lines.append("")
 
-    # V22.0: AI 叙事分析 (基于引擎读数的自然语言总结)
-    lines.append("### 🧠 市场叙事")
+    # V22.2: AI 叙事分析 (LLM 增强 + 确定性保底)
+    narrative_result = _build_narrative(snapshot, jcs, conflicts, tail_risk, prev, global_temp)
+    source_label = narrative_result.get("source", "规则引擎")
+    lines.append(f"### 🧠 市场叙事 `{source_label}`")
     lines.append("")
-    commentary = _build_narrative(snapshot, jcs, conflicts, tail_risk, prev)
-    for para in commentary:
+    for para in narrative_result.get("paragraphs", []):
         lines.append(para)
         lines.append("")
     lines.append("")
@@ -455,16 +456,39 @@ def auto_generate_report():
 
 
 # ═══════════════════════════════════════════════════════════
-#  V22.0: 市场叙事生成器 (确定性引擎, 零外部 API 依赖)
-#  将引擎读数翻译为 2-3 段自然语言专业分析。
+#  V22.2: 混合叙事引擎 (LLM 增强 + 确定性保底)
+#  优先尝试 LLM 生成专业叙事, 失败/禁用时回退确定性模板。
 # ═══════════════════════════════════════════════════════════
 
 def _build_narrative(snapshot: dict, jcs: dict, conflicts: dict,
-                     tail_risk: dict, prev: dict) -> list:
+                     tail_risk: dict, prev: dict,
+                     global_temp: dict = None) -> dict:
     """
-    基于引擎状态生成市场叙事段落。
+    混合叙事入口。返回 {"source": "AI增强"|"规则引擎", "paragraphs": [str]}
+    """
+    # 1. 尝试 LLM 增强
+    if _is_ai_enabled():
+        try:
+            ai_paras = _generate_ai_narrative(
+                snapshot, jcs, conflicts, tail_risk, prev, global_temp
+            )
+            if ai_paras and len(ai_paras) >= 2:
+                return {"source": "AI 增强", "paragraphs": ai_paras}
+        except Exception as e:
+            logger.warning("AI 叙事失败, 回退确定性模板: %s", e)
 
-    返回: 2-3 段中文自然语言文本。
+    # 2. 确定性保底
+    paras = _build_deterministic_narrative(
+        snapshot, jcs, conflicts, tail_risk, prev
+    )
+    return {"source": "规则引擎", "paragraphs": paras}
+
+
+def _build_deterministic_narrative(snapshot: dict, jcs: dict, conflicts: dict,
+                                    tail_risk: dict, prev: dict) -> list:
+    """
+    V22.0 确定性叙事引擎 (原 _build_narrative)。
+    基于 if/else 模板, 零外部依赖, 作为 LLM 失败时的保底。
     """
     paragraphs = []
 
@@ -576,3 +600,249 @@ def _build_narrative(snapshot: dict, jcs: dict, conflicts: dict,
     paragraphs.append(p3)
 
     return paragraphs
+
+
+# ═══════════════════════════════════════════════════════════
+#  V22.2: LLM 叙事增强层
+#  Gemini / Claude / GPT 多后端支持, urllib 零依赖调用。
+# ═══════════════════════════════════════════════════════════
+
+import os as _rg_os
+import json as _rg_json
+
+_AI_CONFIG_PATH = _rg_os.path.join(
+    _rg_os.path.dirname(_rg_os.path.dirname(_rg_os.path.abspath(__file__))),
+    "config", "ai_config.json"
+)
+
+
+def _load_ai_config() -> dict:
+    """加载 AI 配置 (带缓存)"""
+    try:
+        with open(_AI_CONFIG_PATH, "r", encoding="utf-8") as f:
+            return _rg_json.load(f)
+    except Exception:
+        return {"enable_ai_narrative": False}
+
+
+def _is_ai_enabled() -> bool:
+    """检查 AI 叙事是否启用且有有效 Key"""
+    cfg = _load_ai_config()
+    if not cfg.get("enable_ai_narrative", False):
+        return False
+    provider = cfg.get("provider", "gemini")
+    key = cfg.get(provider, {}).get("api_key", "")
+    return bool(key and len(key) > 10)
+
+
+def _build_ai_prompt(snapshot: dict, jcs: dict, conflicts: dict,
+                     tail_risk: dict, prev: dict,
+                     global_temp: dict = None) -> str:
+    """将引擎读数组装为结构化 Prompt"""
+    jcs_score = jcs.get("score", 50)
+    jcs_level = jcs.get("level", "medium")
+    directions = jcs.get("directions", {})
+    regime = snapshot.get("aiae_regime", 3)
+    aiae_v1 = snapshot.get("aiae_v1", 22)
+    erp_val = snapshot.get("erp_val", 4.5)
+    vix_val = snapshot.get("vix_val", 20)
+    mr_regime = snapshot.get("mr_regime", "RANGE")
+    position = snapshot.get("suggested_position", 55)
+    conflict_count = conflicts.get("conflict_count", 0)
+    tail_score = tail_risk.get("score", 0)
+
+    regime_cn = _REGIME_CN.get(regime, "中性均衡")
+    mr_cn = {"BULL": "上行趋势", "BEAR": "下行趋势",
+             "CRASH": "崩盘", "RANGE": "区间震荡"}.get(mr_regime, mr_regime)
+
+    bull = sum(1 for d in directions.values() if d == 1)
+    bear = sum(1 for d in directions.values() if d == -1)
+
+    ctx = f"""JCS联合置信度: {jcs_score:.0f}分 ({jcs_level})
+AIAE配置热度: {aiae_v1:.1f}%, Regime {regime} ({regime_cn})
+建议仓位: {position:.0f}%
+ERP股债性价比: {erp_val:.2f}%
+VIX恐慌指数: {vix_val:.1f}
+MR技术面: {mr_regime} ({mr_cn})
+引擎方向: {bull}/4看多, {bear}/4看空
+矛盾信号: {conflict_count}个
+尾部风险: {tail_score:.0f}分"""
+
+    # 昨日对比
+    delta_ctx = "无昨日数据"
+    if prev:
+        p_jcs = prev.get("jcs_score")
+        p_pos = prev.get("suggested_position")
+        p_regime = prev.get("aiae_regime")
+        delta_parts = []
+        if p_jcs is not None:
+            delta_parts.append(f"JCS: {p_jcs:.0f}→{jcs_score:.0f}")
+        if p_pos is not None:
+            delta_parts.append(f"仓位: {p_pos:.0f}%→{position:.0f}%")
+        if p_regime is not None:
+            delta_parts.append(f"Regime: R{p_regime}→R{regime}")
+        delta_ctx = ", ".join(delta_parts) if delta_parts else "无显著变化"
+
+    # 近期事件
+    events_ctx = "近期无重大市场事件"
+    try:
+        from dashboard_modules.decision_engine import get_recent_events
+        events = get_recent_events(5)
+        if events:
+            events_ctx = "\n".join([
+                f"- [{e.get('severity', '')}] {e.get('title', '')}: "
+                f"{e.get('detail', '')}"
+                for e in events
+            ])
+    except Exception:
+        pass
+
+    # 全球温度
+    global_ctx = "全球数据不可用"
+    if global_temp:
+        markets = global_temp.get("markets", [])
+        if markets:
+            parts = []
+            for m in markets:
+                if m.get("status") in ("ready", "fallback"):
+                    parts.append(
+                        f"{m.get('name', '')}: AIAE={m.get('aiae_v1', '?')}% "
+                        f"Regime={m.get('regime_cn', '?')}"
+                    )
+            global_ctx = "; ".join(parts) if parts else "全球数据加载中"
+
+    prompt = f"""你是 AlphaCore 量化投委会的首席策略师。请根据以下引擎数据，撰写 2-3 段专业的市场分析叙事，供投委会决策简报使用。
+
+要求:
+1. 语言专业但不生硬，如同基金经理对投委会的口头汇报
+2. 必须引用具体数据 (JCS、AIAE、VIX 等数值)
+3. 如果存在引擎矛盾，必须解释矛盾的含义和应对建议
+4. 如果有近期市场事件，需整合到分析中
+5. 最后一段必须给出明确的操作建议
+6. 总字数控制在 300-500 字
+7. 每段之间用空行分隔，不要加标题或序号
+
+===== 今日引擎读数 =====
+{ctx}
+
+===== 昨日对比 =====
+{delta_ctx}
+
+===== 近期市场事件 =====
+{events_ctx}
+
+===== 全球市场温度 =====
+{global_ctx}"""
+
+    return prompt
+
+
+def _call_gemini(prompt: str, cfg: dict) -> str:
+    """调用 Gemini API (标准库 urllib, 零依赖)"""
+    import urllib.request
+
+    gemini_cfg = cfg.get("gemini", {})
+    api_key = gemini_cfg.get("api_key", "")
+    model = gemini_cfg.get("model", "gemini-2.0-flash")
+    timeout = cfg.get("timeout_seconds", 20)
+    max_tokens = cfg.get("max_tokens", 1024)
+
+    url = (f"https://generativelanguage.googleapis.com/v1beta/"
+           f"models/{model}:generateContent?key={api_key}")
+
+    payload = _rg_json.dumps({
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "maxOutputTokens": max_tokens,
+            "temperature": 0.7,
+        }
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        url, data=payload, method="POST",
+        headers={"Content-Type": "application/json"}
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        result = _rg_json.loads(resp.read().decode("utf-8"))
+
+    # 解析 Gemini 响应
+    candidates = result.get("candidates", [])
+    if not candidates:
+        raise ValueError("Gemini 返回空 candidates")
+    parts = candidates[0].get("content", {}).get("parts", [])
+    if not parts:
+        raise ValueError("Gemini 返回空 parts")
+    return parts[0].get("text", "")
+
+
+def _call_openai_compatible(prompt: str, cfg: dict, provider: str) -> str:
+    """调用 OpenAI 兼容 API (DeepSeek / OpenAI / 其他兼容端点)"""
+    import urllib.request
+
+    provider_cfg = cfg.get(provider, {})
+    api_key = provider_cfg.get("api_key", "")
+    model = provider_cfg.get("model", "deepseek-chat")
+    base_url = provider_cfg.get("base_url", "https://api.deepseek.com")
+    timeout = cfg.get("timeout_seconds", 30)
+    max_tokens = cfg.get("max_tokens", 1024)
+
+    url = f"{base_url.rstrip('/')}/v1/chat/completions"
+
+    payload = _rg_json.dumps({
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "你是一位专业的量化投资策略分析师。"},
+            {"role": "user", "content": prompt},
+        ],
+        "max_tokens": max_tokens,
+        "temperature": 0.7,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        url, data=payload, method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        }
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        result = _rg_json.loads(resp.read().decode("utf-8"))
+
+    choices = result.get("choices", [])
+    if not choices:
+        raise ValueError(f"{provider} 返回空 choices")
+    return choices[0].get("message", {}).get("content", "")
+
+
+def _generate_ai_narrative(snapshot: dict, jcs: dict, conflicts: dict,
+                           tail_risk: dict, prev: dict,
+                           global_temp: dict = None) -> list:
+    """编排: Prompt构建 → LLM调用 → 段落解析"""
+    cfg = _load_ai_config()
+    provider = cfg.get("provider", "gemini")
+
+    prompt = _build_ai_prompt(
+        snapshot, jcs, conflicts, tail_risk, prev, global_temp
+    )
+
+    # 调用 LLM
+    if provider == "gemini":
+        raw_text = _call_gemini(prompt, cfg)
+    elif provider in ("deepseek", "openai"):
+        raw_text = _call_openai_compatible(prompt, cfg, provider)
+    else:
+        raise ValueError(f"不支持的 LLM 后端: {provider}")
+
+    if not raw_text or len(raw_text) < 50:
+        logger.warning("AI 叙事返回文本过短 (%d 字符), 放弃", len(raw_text or ""))
+        return []
+
+    # 解析段落 (按空行分段)
+    paragraphs = [p.strip() for p in raw_text.split("\n\n") if p.strip()]
+    if not paragraphs:
+        paragraphs = [p.strip() for p in raw_text.split("\n") if p.strip()]
+
+    logger.info("AI 叙事生成成功 (%s): %d 段, %d 字符",
+                provider, len(paragraphs), len(raw_text))
+    return paragraphs
+

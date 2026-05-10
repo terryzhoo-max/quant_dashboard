@@ -396,3 +396,29 @@ def _run_alert_scan(source: str):
 def alert_scan_callback():
     """盘中定时预警扫描 (每 10 分钟, 由 APScheduler 调用)"""
     _run_alert_scan("interval_scan")
+
+
+def event_monitor_callback():
+    """V22.2: 独立事件监控 — 每 5 分钟主动检测 VIX/AIAE/MR 跳变
+
+    区别于 alert_scan (监控绝对阈值: VIX>30, JCS<25),
+    event_monitor 监控变化量 (VIX Δ>25%, AIAE 跳档, MR 反转),
+    并自动触发冲击传播评估 + 多通道推送。
+    """
+    try:
+        from dashboard_modules.decision_engine import (
+            _build_snapshot_from_cache, detect_market_events
+        )
+        snapshot = _build_snapshot_from_cache()
+        if not snapshot:
+            return
+        events = detect_market_events(snapshot)
+        if events:
+            sched_logger.info(
+                "⚡ 事件监控触发 %d 条: %s",
+                len(events),
+                [e["title"] for e in events],
+            )
+    except Exception as e:
+        sched_logger.debug("事件监控异常 (非致命): %s", e)
+
