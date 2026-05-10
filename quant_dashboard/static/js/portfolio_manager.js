@@ -8,7 +8,21 @@
  * - 净值走势对比图
  * - 交易记录面板
  * - 交易预估实时计算
+ * - V26.0: 跨页持仓变更广播 (BroadcastChannel)
  */
+
+// V26.0: 跨 Tab 持仓变更通知 (decision hub 自动刷新调仓路径)
+function _broadcastPortfolioChange(action, detail) {
+    const msg = { type: 'portfolio_updated', action, ts: Date.now(), ...detail };
+    try {
+        const bc = new BroadcastChannel('alphacore_portfolio');
+        bc.postMessage(msg);
+        bc.close();
+    } catch(e) {
+        // 降级: localStorage storage 事件 (跨 Tab 同样可触发)
+        localStorage.setItem('_ac_portfolio_ts', Date.now().toString());
+    }
+}
 
 document.addEventListener('DOMContentLoaded', function () {
     const tradeModal = document.getElementById('trade-modal');
@@ -563,6 +577,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 tradeModal.style.display = 'none';
                 showToast(`${action === 'buy' ? '买入' : '卖出'} ${payload.name || payload.ts_code} 成功`, 'success');
                 loadPortfolio();
+                _broadcastPortfolioChange('trade', { code: payload.ts_code, side: action });
             } else {
                 showToast('交易失败: ' + result.message, 'error');
             }
@@ -814,6 +829,21 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 // 刷新全部数据
                 loadPortfolio();
+                _broadcastPortfolioChange('import', { count: result.data.imported });
+
+                // V26.0: 异步获取调仓路径摘要 (不阻塞导入流程)
+                fetch('/api/v1/decision/position-path')
+                    .then(r => r.json())
+                    .then(pp => {
+                        if (pp.status === 'success' && Math.abs(pp.gap) > 3) {
+                            const dir = pp.direction === 'decrease' ? '↓减仓' : '↑加仓';
+                            showToast(
+                                `🗺️ 调仓路径已更新: ${pp.current_cap}% → ${pp.target_cap}% (${dir}${Math.abs(pp.gap)}%)`,
+                                'info', 6000
+                            );
+                        }
+                    })
+                    .catch(() => {});
             } else {
                 const errMsg = result.data?.errors?.join('; ') || result.message || '未知错误';
                 showToast('导入失败: ' + errMsg, 'error');
@@ -894,6 +924,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 resetModal.style.display = 'none';
                 showToast(`✅ 组合已清零: 共清除 ${result.data.cleared_positions} 只持仓`, 'success', 4000);
                 loadPortfolio();
+                _broadcastPortfolioChange('reset', { cleared: result.data.cleared_positions });
             } else {
                 showToast('清零失败: ' + (result.message || '未知错误'), 'error');
             }

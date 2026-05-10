@@ -14,7 +14,7 @@ AlphaCore V17.1 · 决策智能中枢 (Decision Intelligence Hub)
 import copy
 import math
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from services.logger import get_logger
 
@@ -1465,21 +1465,61 @@ def _get_index_close(trade_date: str, index_code: str = "000300.SH") -> Optional
     return None
 
 
-def backfill_signal_accuracy():
+def _get_t5_trade_date(base_date: str) -> Optional[str]:
+    """V25.2 A-3: 获取精确 T+5 交易日 (Tushare trade_cal, 降级为 T+7 自然日)"""
+    try:
+        import tushare as ts
+        pro = ts.pro_api()
+        dt_str = base_date.replace("-", "")
+        # 查询 base_date 后 10 个交易日的日历
+        df = pro.trade_cal(
+            exchange='SSE', start_date=dt_str,
+            end_date=(datetime.strptime(dt_str, "%Y%m%d") + timedelta(days=15)).strftime("%Y%m%d"),
+            fields='cal_date,is_open'
+        )
+        if df is not None and not df.empty:
+            open_days = df[df['is_open'] == 1].sort_values('cal_date')
+            # 跳过 T 日本身, 取第 5 个交易日
+            future = open_days[open_days['cal_date'] > dt_str]
+            if len(future) >= 5:
+                t5 = future.iloc[4]['cal_date']  # 0-indexed, 第5个
+                return f"{t5[:4]}-{t5[4:6]}-{t5[6:]}"
+    except Exception as e:
+        logger.debug("trade_cal 查询失败 (%s), 降级为 T+7: %s", base_date, e)
+    # 降级: T+7 自然日
+    dt = datetime.strptime(base_date, "%Y-%m-%d")
+    return (dt + timedelta(days=7)).strftime("%Y-%m-%d")
+
+
+def backfill_signal_accuracy(force_recalc: bool = False):
     """
-    V17.0: 使用沪深300真实收盘价计算 T+5 收益率, 替代旧版 ERP 代理.
+    V25.2: 使用沪深300真实收盘价计算 T+5 收益率.
     
-    逻辑:
-      1. 查找 5-30 天前 market_return_5d 为空的决策记录
-      2. 对每条记录, 获取 T 日和 T+5 日的沪深300收盘价
-      3. 计算真实 5 日收益率 = (close_T5 - close_T) / close_T
-      4. 回填到 decision_log
+    Args:
+        force_recalc: True 时强制重算已有 signal_correct 的记录 (A-7 一次性修复)
     """
     from services import db as ac_db
-    from datetime import timedelta
 
     today = datetime.now()
     conn = ac_db._get_conn()
+    
+    if force_recalc:
+        # A-7: 重算所有已回填但使用旧逻辑的记录
+        rows = conn.execute(
+            "SELECT date, market_return_5d FROM decision_log "
+            "WHERE market_return_5d IS NOT NULL "
+            "ORDER BY date DESC LIMIT 30"
+        ).fetchall()
+        recalc_count = 0
+        for row in rows:
+            log_date, ret = row[0], row[1]
+            if ret is not None:
+                ac_db.backfill_accuracy(log_date, ret)
+                recalc_count += 1
+        if recalc_count > 0:
+            logger.info("准确率重算完成 (force_recalc): %d 条", recalc_count)
+    
+    # 常规回填: 查找未回填的记录
     rows = conn.execute(
         "SELECT date FROM decision_log WHERE market_return_5d IS NULL "
         "AND date <= ? ORDER BY date DESC LIMIT 15",
@@ -1499,20 +1539,20 @@ def backfill_signal_accuracy():
                 logger.debug("准确率回填跳过 %s: T日收盘价不可用", log_date)
                 continue
 
-            # 获取 T+5 交易日收盘价
-            dt = datetime.strptime(log_date, "%Y-%m-%d")
-            # T+5 交易日 ≈ T+7 自然日 (跳过周末)
-            t5_date = (dt + timedelta(days=7)).strftime("%Y-%m-%d")
+            # V25.2: 使用 trade_cal 获取精确 T+5 交易日
+            t5_date = _get_t5_trade_date(log_date)
+            if t5_date is None:
+                continue
             close_t5 = _get_index_close(t5_date)
             if close_t5 is None:
-                logger.debug("准确率回填跳过 %s: T+5日收盘价不可用", log_date)
+                logger.debug("准确率回填跳过 %s: T+5日(%s)收盘价不可用", log_date, t5_date)
                 continue
 
             market_return = round((close_t5 - close_t) / close_t, 4)
             ac_db.backfill_accuracy(log_date, market_return)
             filled_count += 1
-            logger.info("准确率回填: %s -> return_5d=%.4f (%.2f->%.2f)",
-                        log_date, market_return, close_t, close_t5)
+            logger.info("准确率回填: %s -> return_5d=%.4f (%.2f->%.2f, T+5=%s)",
+                        log_date, market_return, close_t, close_t5, t5_date)
         except Exception as e:
             logger.warning("准确率回填异常 %s: %s", log_date, e)
             continue

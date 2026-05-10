@@ -1,0 +1,26 @@
+{
+  "version_id": "v20260421_v3_baseline",
+  "timestamp": "2026-04-21T00:00:00",
+  "description": "AIAE V3.0 生产基线 · Sigmoid归一化 · 五档分界线重标定",
+  "aiae_weights": {"total_mv": 0.55, "fund_position": 0.20, "margin_heat": 0.25},
+  "regime_thresholds": [12.5, 17, 23, 30],
+  "jcs_weights": {"aiae": 0.35, "erp": 0.25, "vix": 0.20, "mr": 0.20},
+  "position_matrix": {
+    "erp_gt6":  [95, 85, 65, 40, 15],
+    "erp_4_6":  [90, 80, 60, 35, 10],
+    "erp_2_4":  [85, 70, 50, 25,  5],
+    "erp_lt2":  [75, 55, 35, 15,  0]
+  },
+  "sub_strategy_alloc": {
+    "1": {"mr": 40, "div": 20, "mom": 25, "erp": 15},
+    "2": {"mr": 35, "div": 25, "mom": 25, "erp": 15},
+    "3": {"mr": 25, "div": 30, "mom": 25, "erp": 20},
+    "4": {"mr": 10, "div": 50, "mom": 15, "erp": 25},
+    "5": {"mr":  0, "div": 80, "mom":  0, "erp": 20}
+  },
+  "sigmoid_params": {
+    "fund_center": 80.0, "fund_k": 0.15,
+    "margin_center": 2.2, "margin_k": 2.5
+  },
+  "aiae_version": "3.0"
+}

@@ -532,19 +532,25 @@ def migrate_decision_log_v2():
 
 
 def backfill_accuracy(date: str, market_return_5d: float):
-    """回填 T+5 市场收益率并判断信号正确性"""
+    """V25.2: 回填 T+5 市场收益率并判断信号正确性
+    
+    判定基准 (与前端说明一致):
+      JCS >= 50 + 市场上涨 → ✅ 正确
+      JCS <  50 + 市场下跌 → ✅ 正确
+      反向 → ❌ 错误
+    """
     conn = _get_conn()
-    row = conn.execute("SELECT suggested_position FROM decision_log WHERE date = ?", (date,)).fetchone()
+    row = conn.execute(
+        "SELECT jcs_score FROM decision_log WHERE date = ?", (date,)
+    ).fetchone()
     if not row:
         return
-    pos = row[0] or 55
-    # 信号正确: 建议多(pos>=55) 且 市场涨 / 建议空(pos<45) 且 市场跌 / 中性不判断
-    if pos >= 55:
+    jcs = row[0] if row[0] is not None else 50
+    # 信号正确: JCS 方向 与 市场方向 一致
+    if jcs >= 50:
         correct = 1 if market_return_5d > 0 else 0
-    elif pos < 45:
-        correct = 1 if market_return_5d < 0 else 0
     else:
-        correct = -1  # 中性区不计入
+        correct = 1 if market_return_5d < 0 else 0
     conn.execute(
         "UPDATE decision_log SET market_return_5d = ?, signal_correct = ? WHERE date = ?",
         (round(market_return_5d, 4), correct, date),
@@ -553,7 +559,7 @@ def backfill_accuracy(date: str, market_return_5d: float):
 
 
 def get_accuracy_stats() -> Dict:
-    """计算信号准确率统计"""
+    """V25.2: 计算信号准确率统计 (含趋势历史 + 连胜/连败)"""
     conn = _get_conn()
     rows = conn.execute(
         "SELECT signal_correct, COUNT(*) as cnt FROM decision_log "
@@ -575,14 +581,39 @@ def get_accuracy_stats() -> Dict:
     recent_correct = sum(1 for r in recent if r[0] == 1)
     recent_total = len(recent)
     recent_accuracy = round(recent_correct / recent_total * 100, 1) if recent_total > 0 else None
+    # V25.2: 连胜/连败计算
+    streak, streak_type = 0, "none"
+    if recent:
+        first_val = recent[0][0]
+        streak_type = "win" if first_val == 1 else "lose"
+        for r in recent:
+            if r[0] == first_val:
+                streak += 1
+            else:
+                break
+    # V25.2: 每日准确率历史 (供趋势图)
+    history = conn.execute(
+        "SELECT date, jcs_score, signal_correct, market_return_5d FROM decision_log "
+        "WHERE signal_correct IS NOT NULL AND signal_correct >= 0 "
+        "ORDER BY date ASC LIMIT 60"
+    ).fetchall()
+    history_list = [
+        {"date": r[0], "jcs": r[1], "correct": r[2], "ret5d": r[3]}
+        for r in history
+    ]
     return {
         "total_decisions": total,
         "correct_decisions": correct,
         "accuracy_pct": accuracy,
         "recent_10_accuracy": recent_accuracy,
         "recent_10_total": recent_total,
-        "has_data": total >= 5,
+        "has_data": total >= 1,
+        "maturity": "mature" if total >= 15 else ("growing" if total >= 5 else "initial"),
+        "current_streak": streak,
+        "streak_type": streak_type,
+        "history": history_list,
     }
+
 
 
 def get_calendar_data(year: int = None, month: int = None) -> List[Dict]:

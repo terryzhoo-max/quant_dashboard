@@ -1,0 +1,23 @@
+{
+  "version_id": "v20260101_v2_legacy",
+  "timestamp": "2026-01-01T00:00:00",
+  "description": "AIAE V2.0 旧版参数 (V3优化前基准 · 线性归一化)",
+  "aiae_weights": {"total_mv": 0.50, "fund_position": 0.30, "margin_heat": 0.20},
+  "regime_thresholds": [12, 16, 24, 32],
+  "jcs_weights": {"aiae": 0.45, "erp": 0.25, "vix": 0.15, "mr": 0.15},
+  "position_matrix": {
+    "erp_gt6":  [95, 85, 65, 40, 20],
+    "erp_4_6":  [90, 80, 60, 35, 15],
+    "erp_2_4":  [85, 70, 50, 25, 10],
+    "erp_lt2":  [75, 55, 35, 15,  5]
+  },
+  "sub_strategy_alloc": {
+    "1": {"mr": 40, "div": 20, "mom": 25, "erp": 15},
+    "2": {"mr": 35, "div": 25, "mom": 25, "erp": 15},
+    "3": {"mr": 30, "div": 25, "mom": 25, "erp": 20},
+    "4": {"mr": 15, "div": 45, "mom": 15, "erp": 25},
+    "5": {"mr":  5, "div": 70, "mom":  5, "erp": 20}
+  },
+  "sigmoid_params": null,
+  "aiae_version": "2.0"
+}

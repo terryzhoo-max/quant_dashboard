@@ -177,25 +177,38 @@ async def list_param_versions():
 
 @router.post("/param-snapshot")
 async def save_param_snapshot():
-    """保存当前参数为版本快照"""
+    """保存当前参数为版本快照 — V22.1: 增存仓位矩阵+子策略配额+Sigmoid参数"""
     import os, json
     from datetime import datetime
 
     versions_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "param_versions")
     os.makedirs(versions_dir, exist_ok=True)
 
-    # 收集当前参数
+    # 收集当前参数 (信号层 + 执行层)
     try:
         import aiae_params as AP
         aiae_weights = {
-            "total_mv": AP.W_TOTAL_MV if hasattr(AP, 'W_TOTAL_MV') else 0.55,
+            "total_mv": AP.W_AIAE_SIMPLE if hasattr(AP, 'W_AIAE_SIMPLE') else 0.55,
             "fund_position": AP.W_FUND_POS if hasattr(AP, 'W_FUND_POS') else 0.20,
             "margin_heat": AP.W_MARGIN_HEAT if hasattr(AP, 'W_MARGIN_HEAT') else 0.25,
         }
-        regime_thresholds = AP.REGIME_BOUNDARIES if hasattr(AP, 'REGIME_BOUNDARIES') else [12.5, 17, 23, 30]
+        regime_thresholds = AP.REGIME_THRESHOLDS if hasattr(AP, 'REGIME_THRESHOLDS') else [12.5, 17, 23, 30]
+        position_matrix = AP.POSITION_MATRIX if hasattr(AP, 'POSITION_MATRIX') else None
+        sub_strategy_alloc = AP.SUB_STRATEGY_ALLOC if hasattr(AP, 'SUB_STRATEGY_ALLOC') else None
+        sigmoid_params = {
+            "fund_center": getattr(AP, 'FUND_SIGMOID_CENTER', 80.0),
+            "fund_k": getattr(AP, 'FUND_SIGMOID_K', 0.15),
+            "margin_center": getattr(AP, 'MARGIN_SIGMOID_CENTER', 2.2),
+            "margin_k": getattr(AP, 'MARGIN_SIGMOID_K', 2.5),
+        }
+        aiae_version = getattr(AP, 'VERSION', 'unknown')
     except ImportError:
         aiae_weights = {"total_mv": 0.55, "fund_position": 0.20, "margin_heat": 0.25}
         regime_thresholds = [12.5, 17, 23, 30]
+        position_matrix = None
+        sub_strategy_alloc = None
+        sigmoid_params = None
+        aiae_version = 'unknown'
 
     from dashboard_modules.decision_engine import _JCS_WEIGHTS
     jcs_weights = dict(_JCS_WEIGHTS)
@@ -208,6 +221,10 @@ async def save_param_snapshot():
         "aiae_weights": aiae_weights,
         "regime_thresholds": regime_thresholds,
         "jcs_weights": jcs_weights,
+        "position_matrix": position_matrix,
+        "sub_strategy_alloc": {str(k): v for k, v in sub_strategy_alloc.items()} if sub_strategy_alloc else None,
+        "sigmoid_params": sigmoid_params,
+        "aiae_version": aiae_version,
     }
     filepath = os.path.join(versions_dir, f"{version_id}.json")
     with open(filepath, 'w', encoding='utf-8') as f:
@@ -253,7 +270,7 @@ async def compare_params(v1: str = Query(...), v2: str = Query(...)):
     # ── 用版本 B 的参数计算 ──
     jcs_b = _recompute_with_overrides(snapshot, ver_b)
 
-    # ── 差异分析 ──
+    # ── 差异分析 (V22.1: 信号层 + 执行层) ──
     diff_items = []
     jcs_diff = round(jcs_b["score"] - jcs_a["score"], 1)
     if abs(jcs_diff) > 0.5:
@@ -265,10 +282,42 @@ async def compare_params(v1: str = Query(...), v2: str = Query(...)):
     if level_a != level_b:
         diff_items.append(f"置信度级别: {level_a} → {level_b}")
 
+    # JCS 权重差异
+    jcs_w_a = ver_a.get("jcs_weights", {})
+    jcs_w_b = ver_b.get("jcs_weights", {})
+    for k in set(list(jcs_w_a.keys()) + list(jcs_w_b.keys())):
+        wa = jcs_w_a.get(k, 0)
+        wb = jcs_w_b.get(k, 0)
+        if abs(wb - wa) > 0.005:
+            diff_items.append(f"JCS权重/{k.upper()}: {wa:.0%} → {wb:.0%}")
+
+    # V22.1: 仓位矩阵差异
+    matrix_diffs = []
+    pm_a = ver_a.get("position_matrix", {})
+    pm_b = ver_b.get("position_matrix", {})
+    if pm_a and pm_b:
+        erp_labels = {"erp_gt6": "ERP>6%", "erp_4_6": "ERP 4-6%", "erp_2_4": "ERP 2-4%", "erp_lt2": "ERP<2%"}
+        regime_labels = ["Ⅰ", "Ⅱ", "Ⅲ", "Ⅳ", "Ⅴ"]
+        for row_key in pm_a:
+            row_a = pm_a.get(row_key, [])
+            row_b = pm_b.get(row_key, [])
+            for i in range(min(len(row_a), len(row_b))):
+                if row_a[i] != row_b[i]:
+                    matrix_diffs.append({
+                        "erp": erp_labels.get(row_key, row_key),
+                        "regime": regime_labels[i] if i < len(regime_labels) else f"R{i+1}",
+                        "before": row_a[i], "after": row_b[i],
+                        "delta": row_b[i] - row_a[i],
+                    })
+        if matrix_diffs:
+            diff_items.append(f"仓位矩阵: {len(matrix_diffs)} 处变更")
+
     return {
         "status": "success",
-        "version_a": {"id": v1, "timestamp": ver_a.get("timestamp"), "description": ver_a.get("description")},
-        "version_b": {"id": v2, "timestamp": ver_b.get("timestamp"), "description": ver_b.get("description")},
+        "version_a": {"id": v1, "timestamp": ver_a.get("timestamp"), "description": ver_a.get("description"),
+                      **{k: ver_a.get(k) for k in ("aiae_weights", "jcs_weights", "regime_thresholds")}},
+        "version_b": {"id": v2, "timestamp": ver_b.get("timestamp"), "description": ver_b.get("description"),
+                      **{k: ver_b.get(k) for k in ("aiae_weights", "jcs_weights", "regime_thresholds")}},
         "current_snapshot": {
             "aiae_regime": snapshot.get("aiae_regime"),
             "aiae_v1": snapshot.get("aiae_v1"),
@@ -279,6 +328,7 @@ async def compare_params(v1: str = Query(...), v2: str = Query(...)):
         "result_a": {"jcs_score": jcs_a["score"], "jcs_level": jcs_a["level"], "jcs_label": jcs_a["label"]},
         "result_b": {"jcs_score": jcs_b["score"], "jcs_level": jcs_b["level"], "jcs_label": jcs_b["label"]},
         "diffs": diff_items,
+        "matrix_diffs": matrix_diffs,
         "recommendation": (
             f"版本 {v2} 在当前环境下 JCS={jcs_b['score']}，"
             + (f"相比 {v1}(JCS={jcs_a['score']}){'提升' if jcs_diff > 0 else '降低'}{abs(jcs_diff)}分。"
@@ -471,22 +521,25 @@ async def get_drift_status():
 
     def _compute():
         from engines.drift_monitor import get_drift_status as _get_drift
-        return {"status": "success", **_get_drift()}
+        result = _get_drift()
+        # V25.2: 避免 drift status("ok") 覆盖 API status("success")
+        result["drift_level"] = result.pop("status", "ok")
+        return {"status": "success", **result}
 
     return stale_while_revalidate("swr_drift_status", _compute, fresh_ttl=60, stale_ttl=300)
 
 
-# ── V22.0: 参数敏感度分析 (CI/CD 质量门前置) ──
+# ── V22.1: 参数敏感度分析 (线程安全版 — 零全局副作用) ──
 
 @router.get("/param-sensitivity")
 async def get_param_sensitivity():
     """
     参数敏感度分析: 对 JCS 权重 + AIAE 阈值做 ±5% 扰动,
     观察 JCS 和仓位建议的变化幅度。敏感度越高 → 策略越脆弱。
+    V22.1: 使用 _recompute_with_overrides 替代全局 mutate，并发安全。
     """
     from dashboard_modules.decision_engine import (
         _build_snapshot_from_cache, compute_jcs, _JCS_WEIGHTS,
-        _REGIME_CAP_MAP,
     )
 
     snapshot = _build_snapshot_from_cache()
@@ -496,14 +549,15 @@ async def get_param_sensitivity():
     # ── 定义可扰动参数 ──
     params_to_test = {}
 
-    # JCS 权重 (从 _JCS_WEIGHTS)
-    for k, v in _JCS_WEIGHTS.items():
+    # JCS 权重 (只读快照, 不 mutate 原始字典)
+    jcs_weights_snapshot = dict(_JCS_WEIGHTS)
+    for k, v in jcs_weights_snapshot.items():
         params_to_test[f"jcs_w_{k}"] = {"current": v, "label": f"JCS权重/{k.upper()}", "type": "jcs_weight", "key": k}
 
     # AIAE 分界线 (从 aiae_params 读取, 有 fallback)
     try:
         import aiae_params as AP
-        boundaries = AP.REGIME_BOUNDARIES if hasattr(AP, 'REGIME_BOUNDARIES') else [12.5, 17, 23, 30]
+        boundaries = AP.REGIME_THRESHOLDS if hasattr(AP, 'REGIME_THRESHOLDS') else [12.5, 17, 23, 30]
     except ImportError:
         boundaries = [12.5, 17, 23, 30]
     for i, b in enumerate(boundaries):
@@ -518,35 +572,23 @@ async def get_param_sensitivity():
         if abs(delta) < 0.1:
             delta = 0.1  # 最小扰动
 
-        # ── 正向扰动 ──
+        # ── 正向扰动 (线程安全: 纯本地计算, 零全局副作用) ──
         if pinfo["type"] == "jcs_weight":
-            modified_weights_up = dict(_JCS_WEIGHTS)
-            modified_weights_up[pinfo["key"]] = round(current_val + delta, 4)
-            total = sum(modified_weights_up.values())
-            modified_weights_up = {k: round(v / total, 4) for k, v in modified_weights_up.items()}
-
-            # 临时覆盖并重算
-            orig_weights = dict(_JCS_WEIGHTS)
-            _JCS_WEIGHTS.clear()
-            _JCS_WEIGHTS.update(modified_weights_up)
-            jcs_up = compute_jcs(snapshot)
-            _JCS_WEIGHTS.clear()
-            _JCS_WEIGHTS.update(orig_weights)
+            modified_up = dict(jcs_weights_snapshot)
+            modified_up[pinfo["key"]] = round(current_val + delta, 4)
+            total = sum(modified_up.values())
+            modified_up = {k: round(v / total, 4) for k, v in modified_up.items()}
+            jcs_up = _recompute_with_overrides(snapshot, {"jcs_weights": modified_up})
         else:
-            jcs_up = baseline_jcs  # AIAE 边界扰动不影响 JCS 权重, 仅影响 regime 判定
+            jcs_up = baseline_jcs
 
         # ── 负向扰动 ──
         if pinfo["type"] == "jcs_weight":
-            modified_weights_down = dict(_JCS_WEIGHTS)
-            modified_weights_down[pinfo["key"]] = round(max(0.01, current_val - delta), 4)
-            total = sum(modified_weights_down.values())
-            modified_weights_down = {k: round(v / total, 4) for k, v in modified_weights_down.items()}
-            orig_weights = dict(_JCS_WEIGHTS)
-            _JCS_WEIGHTS.clear()
-            _JCS_WEIGHTS.update(modified_weights_down)
-            jcs_down = compute_jcs(snapshot)
-            _JCS_WEIGHTS.clear()
-            _JCS_WEIGHTS.update(orig_weights)
+            modified_down = dict(jcs_weights_snapshot)
+            modified_down[pinfo["key"]] = round(max(0.01, current_val - delta), 4)
+            total = sum(modified_down.values())
+            modified_down = {k: round(v / total, 4) for k, v in modified_down.items()}
+            jcs_down = _recompute_with_overrides(snapshot, {"jcs_weights": modified_down})
         else:
             jcs_down = baseline_jcs
 

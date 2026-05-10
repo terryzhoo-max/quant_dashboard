@@ -616,3 +616,42 @@ function renderPositionPath(data) {
         footer.innerHTML = `<span class="pp-src">${srcLabel}</span><span class="pp-disclaimer">以上为系统生成建议，不构成投资指令</span>`;
     }
 }
+
+// ═══════════════════════════════════════════════════
+//  V26.0: 跨页持仓变更监听 — 自动刷新调仓路径
+//  当 portfolio 页发生 import/trade/reset 时,
+//  BroadcastChannel 通知决策页实时更新路径卡片。
+// ═══════════════════════════════════════════════════
+
+(function _initPortfolioChangeListener() {
+    const _actionLabels = { import: '📥 持仓导入', trade: '📊 交易执行', reset: '🗑️ 组合清零' };
+
+    function _onPortfolioChanged(action) {
+        console.info('[Decision] 检测到持仓变更 (%s), 刷新调仓路径', action);
+        // 闪烁路径卡片边框 (视觉反馈)
+        const card = document.getElementById('position-path-card');
+        if (card) {
+            card.style.transition = 'box-shadow 0.3s ease';
+            card.style.boxShadow = '0 0 12px rgba(99, 102, 241, 0.5)';
+            setTimeout(() => { card.style.boxShadow = ''; }, 2000);
+        }
+        // 重新获取路径数据
+        fetchPositionPath();
+    }
+
+    try {
+        const bc = new BroadcastChannel('alphacore_portfolio');
+        bc.onmessage = (evt) => {
+            if (evt.data?.type === 'portfolio_updated') {
+                _onPortfolioChanged(evt.data.action || 'unknown');
+            }
+        };
+    } catch(e) {
+        // 降级: localStorage storage 事件 (跨 Tab)
+        window.addEventListener('storage', (evt) => {
+            if (evt.key === '_ac_portfolio_ts') {
+                _onPortfolioChanged('storage_fallback');
+            }
+        });
+    }
+})();

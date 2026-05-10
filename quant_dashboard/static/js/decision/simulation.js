@@ -319,10 +319,12 @@ function renderDriftStatus(data) {
     const grid = document.getElementById('drift-grid');
     if (!grid) return;
 
+    // V25.2: drift_level 是漂移状态 (ok/warning/critical), status 是 API 状态
+    const level = data.drift_level || 'ok';
     if (badge) {
         const statusIcons = { ok: '🟢', warning: '🟡', critical: '🔴' };
-        badge.textContent = (statusIcons[data.status] || '') + ' ' + data.summary;
-        badge.className = 'drift-status-badge ' + data.status;
+        badge.textContent = (statusIcons[level] || '') + ' ' + (data.summary || '检测中');
+        badge.className = 'drift-status-badge ' + level;
     }
 
     const checks = data.checks || {};
@@ -501,35 +503,149 @@ function renderAccuracy(data) {
     const el = document.getElementById('accuracy-panel');
     if (!el) return;
     if (!data.has_data) {
-        el.innerHTML = `<div class="skeleton-grid">
-            <div class="skeleton-card"><div class="skeleton-bar"></div><div class="skeleton-text"></div></div>
-            <div class="skeleton-card"><div class="skeleton-bar"></div><div class="skeleton-text"></div></div>
-            <div class="skeleton-card"><div class="skeleton-bar"></div><div class="skeleton-text"></div></div>
-        </div>
-        <div style="text-align:center;padding:12px 0 0;color:#64748b;font-size:0.78rem;">📊 系统正在积累信号准确率数据 (T+5)...</div>
-        <div style="text-align:center;padding:6px 0 0;color:#475569;font-size:0.68rem;line-height:1.6;">
-            准确率 = T+5日沦深300收益率方向 vs JCS信号方向<br>
-            · JCS ≥ 50 + 市场上涨 → ✅ 正确 &nbsp;· JCS < 50 + 市场下跌 → ✅ 正确<br>
-            · 反向则记为 ❌。连续跑分 15 日后开始显示数据。
+        el.innerHTML = `<div class="acc-empty-state">
+            <div class="acc-empty-icon">📊</div>
+            <div class="acc-empty-title">信号准确率追踪 · 冷启动中</div>
+            <div class="acc-empty-desc">
+                系统尚无可评估的决策记录。<br>
+                JCS 信号将在 T+5 日后自动回填市场收益率并计算准确率。
+            </div>
         </div>`;
         return;
     }
+    // V25.2: 连胜/连败 badge
+    const streakIcon = data.streak_type === 'win' ? '🔥' : (data.streak_type === 'lose' ? '❄️' : '');
+    const streakClass = data.streak_type === 'win' ? 'acc-streak-win' : 'acc-streak-lose';
+    const streakText = data.current_streak > 0
+        ? `${streakIcon} ${data.streak_type === 'win' ? '连胜' : '连败'} ${data.current_streak}`
+        : '';
+    // V25.2: maturity badge
+    const matLabel = data.maturity === 'mature' ? '📈 成熟期'
+        : (data.maturity === 'growing' ? '🌱 成长期' : '🧪 初始期');
+    const matClass = `acc-mat-${data.maturity || 'initial'}`;
+    // 准确率颜色
+    const accPct = data.accuracy_pct || 0;
+    const accColor = accPct >= 65 ? '#34d399' : (accPct >= 50 ? '#a78bfa' : '#fbbf24');
     el.innerHTML = `
+        <div class="acc-header-bar">
+            <span class="acc-badge ${matClass}">${matLabel} · ${data.total_decisions} 次评估</span>
+            ${streakText ? `<span class="acc-badge ${streakClass}">${streakText}</span>` : ''}
+        </div>
         <div class="accuracy-grid">
             <div class="accuracy-metric">
-                <div class="accuracy-value" style="color:${(data.accuracy_pct || 0) >= 60 ? '#34d399' : '#fbbf24'}">${data.accuracy_pct != null ? data.accuracy_pct + '%' : '--'}</div>
-                <div class="accuracy-label">总体准确率 (${data.total_decisions}次)</div>
+                <div class="accuracy-value" style="color:${accColor}">${data.accuracy_pct != null ? data.accuracy_pct + '%' : '--'}</div>
+                <div class="accuracy-label">总体准确率</div>
             </div>
             <div class="accuracy-metric">
                 <div class="accuracy-value" style="color:#a78bfa">${data.recent_10_accuracy != null ? data.recent_10_accuracy + '%' : '--'}</div>
                 <div class="accuracy-label">近10次准确率</div>
             </div>
             <div class="accuracy-metric">
-                <div class="accuracy-value">${data.correct_decisions}</div>
-                <div class="accuracy-label">正确决策次数</div>
+                <div class="accuracy-value" style="color:#38bdf8">${data.correct_decisions}<span style="font-size:0.9rem;color:#64748b">/${data.total_decisions}</span></div>
+                <div class="accuracy-label">正确/总计</div>
             </div>
         </div>
+        ${(data.history && data.history.length >= 3) ? '<div id="acc-trend-chart" style="width:100%;height:160px;margin-top:12px;"></div>' : ''}
+        <div class="acc-history-dots">${_renderAccDots(data.history)}</div>
     `;
+    // V25.2: ECharts 趋势图
+    if (data.history && data.history.length >= 3) {
+        setTimeout(() => _drawAccTrendChart(data.history), 80);
+    }
+}
+
+function _renderAccDots(history) {
+    if (!history || history.length === 0) return '';
+    return '<div class="acc-dots-row">' + history.map(h => {
+        const icon = h.correct === 1 ? '✅' : '❌';
+        const ret = h.ret5d != null ? (h.ret5d * 100).toFixed(2) + '%' : '--';
+        return `<span class="acc-dot ${h.correct === 1 ? 'acc-dot-ok' : 'acc-dot-fail'}"
+                      title="${h.date} | JCS:${h.jcs || '--'} | Ret5d:${ret} | ${h.correct === 1 ? '正确' : '错误'}">${icon}</span>`;
+    }).join('') + '</div>';
+}
+
+function _drawAccTrendChart(history) {
+    const chart = _getChart('acc-trend-chart');
+    if (!chart) return;
+    const dates = history.map(h => h.date ? h.date.slice(5) : '');
+    // 滚动准确率 (累积)
+    let cumCorrect = 0;
+    const rollingAcc = history.map((h, i) => {
+        cumCorrect += (h.correct === 1 ? 1 : 0);
+        return Math.round(cumCorrect / (i + 1) * 100);
+    });
+    // T+5 收益率
+    const returns = history.map(h => h.ret5d != null ? +(h.ret5d * 100).toFixed(2) : null);
+    chart.setOption({
+        grid: { top: 30, right: 50, bottom: 24, left: 45 },
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(15,23,42,0.9)',
+            borderColor: 'rgba(255,255,255,0.08)',
+            textStyle: { color: '#e2e8f0', fontSize: 12 },
+            formatter: params => {
+                let s = `<b>${params[0].axisValue}</b><br/>`;
+                params.forEach(p => {
+                    s += `${p.marker} ${p.seriesName}: <b>${p.value != null ? p.value + (p.seriesIndex === 0 ? '%' : '%') : '--'}</b><br/>`;
+                });
+                return s;
+            }
+        },
+        legend: {
+            data: ['累积准确率', 'T+5收益'],
+            textStyle: { color: '#94a3b8', fontSize: 10 },
+            top: 0, right: 0
+        },
+        xAxis: {
+            type: 'category', data: dates, boundaryGap: false,
+            axisLine: { lineStyle: { color: 'rgba(148,163,184,0.1)' } },
+            axisLabel: { color: '#64748b', fontSize: 9 }
+        },
+        yAxis: [
+            {
+                type: 'value', name: '准确率%', position: 'left',
+                splitLine: { lineStyle: { color: 'rgba(148,163,184,0.06)' } },
+                axisLabel: { color: '#64748b', fontSize: 9 },
+                nameTextStyle: { color: '#64748b', fontSize: 9 }
+            },
+            {
+                type: 'value', name: '收益%', position: 'right',
+                splitLine: { show: false },
+                axisLabel: { color: '#64748b', fontSize: 9 },
+                nameTextStyle: { color: '#64748b', fontSize: 9 }
+            }
+        ],
+        series: [
+            {
+                name: '累积准确率', type: 'line', data: rollingAcc, yAxisIndex: 0,
+                smooth: true, symbol: 'circle', symbolSize: 4,
+                lineStyle: { width: 2, color: '#34d399' },
+                itemStyle: { color: '#34d399' },
+                areaStyle: {
+                    color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                        colorStops: [
+                            { offset: 0, color: 'rgba(52,211,153,0.25)' },
+                            { offset: 1, color: 'rgba(52,211,153,0.02)' }
+                        ]
+                    }
+                },
+                markLine: {
+                    silent: true, symbol: 'none',
+                    data: [{ yAxis: 50, lineStyle: { color: '#fbbf24', type: 'dashed', width: 1 } }],
+                    label: { show: true, formatter: '50%', color: '#fbbf24', fontSize: 9 }
+                }
+            },
+            {
+                name: 'T+5收益', type: 'bar', data: returns, yAxisIndex: 1,
+                barWidth: 6, barGap: '-100%',
+                itemStyle: {
+                    color: (params) => (params.value || 0) >= 0 ? 'rgba(52,211,153,0.5)' : 'rgba(248,113,113,0.5)',
+                    borderRadius: [2, 2, 0, 0]
+                }
+            }
+        ],
+        animationDuration: 600
+    });
 }
 
 // ═══════════════════════════════════════════════════

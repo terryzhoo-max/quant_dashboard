@@ -1836,6 +1836,43 @@
 }
 .accuracy-label { font-size: 0.75rem; color: #94a3b8; margin-top: 4px; font-weight: 600; }
 
+/* V25.2: 准确率追踪 — 渐进式展示 */
+.acc-empty-state {
+    text-align: center; padding: 28px 16px;
+    color: #64748b;
+}
+.acc-empty-icon { font-size: 2.2rem; margin-bottom: 8px; }
+.acc-empty-title { font-size: 0.88rem; font-weight: 700; color: #94a3b8; margin-bottom: 6px; }
+.acc-empty-desc { font-size: 0.72rem; line-height: 1.7; color: #475569; }
+
+.acc-header-bar {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 12px; flex-wrap: wrap;
+}
+.acc-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: 600;
+    border: 1px solid rgba(255,255,255,0.06);
+}
+.acc-mat-initial { background: rgba(251,191,36,0.12); color: #fbbf24; }
+.acc-mat-growing { background: rgba(52,211,153,0.12); color: #34d399; }
+.acc-mat-mature  { background: rgba(167,139,250,0.12); color: #a78bfa; }
+.acc-streak-win  { background: rgba(251,146,60,0.15); color: #fb923c; }
+.acc-streak-lose { background: rgba(148,163,184,0.12); color: #94a3b8; }
+
+/* 历史结果时间轴 */
+.acc-history-dots { margin-top: 10px; }
+.acc-dots-row {
+    display: flex; gap: 3px; flex-wrap: wrap;
+    padding: 6px 0;
+}
+.acc-dot {
+    font-size: 0.72rem; cursor: default;
+    transition: transform 0.15s;
+}
+.acc-dot:hover { transform: scale(1.3); }
+
+
 /* ═══════════════════════════════════════════════════
    V18.0 L: 绩效分析卡片 (赛博升维)
    ═══════════════════════════════════════════════════ */

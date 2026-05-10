@@ -14,6 +14,23 @@ router = APIRouter(prefix="/api/v1", tags=["portfolio"])
 logger = logging.getLogger("alphacore.portfolio")
 executor = ThreadPoolExecutor(max_workers=4)
 
+# V26.0: 统一持仓变更后缓存失效 (import / trade / reset 共用)
+_PORTFOLIO_SWR_KEYS = ("swr_portfolio_risk", "swr_corr_matrix", "swr_compliance")
+# Import/Reset 是全量覆盖操作, 额外清决策层缓存
+_DECISION_SWR_KEYS = ("swr_decision_hub", "swr_risk_matrix", "swr_drift_status")
+
+
+def _invalidate_portfolio_caches(full: bool = False):
+    """清除持仓相关 SWR 缓存。full=True 时额外清决策中枢缓存。"""
+    from services.cache_service import swr_clear
+    for key in _PORTFOLIO_SWR_KEYS:
+        swr_clear(key)
+    if full:
+        for key in _DECISION_SWR_KEYS:
+            swr_clear(key)
+        logger.info("[Cache] 全量持仓变更: 已失效 %d 个 SWR 缓存",
+                    len(_PORTFOLIO_SWR_KEYS) + len(_DECISION_SWR_KEYS))
+
 
 @router.get("/portfolio/valuation")
 async def get_portfolio_valuation():
@@ -78,10 +95,8 @@ async def execute_trade(req: TradeRequest):
             success, msg = engine.reduce_position(req.ts_code.strip(), req.amount, req.price)
 
         if success:
-            # V25.0: 交易成功后，失效持仓相关 SWR 缓存
-            from services.cache_service import swr_clear
-            for key in ("swr_portfolio_risk", "swr_corr_matrix", "swr_compliance"):
-                swr_clear(key)
+            # V26.0: 交易成功后，失效持仓相关 SWR 缓存
+            _invalidate_portfolio_caches(full=False)
             return R.ok(message=msg)
         else:
             return R.error(msg, "ERR_TRADE_REJECTED")
@@ -106,6 +121,8 @@ async def import_portfolio(file: UploadFile = File(...)):
         engine = get_portfolio_engine()
         result = engine.import_from_txt(text)
         if result["success"]:
+            # V26.0: 全量导入后失效所有持仓+决策缓存 (影响面远大于单笔交易)
+            _invalidate_portfolio_caches(full=True)
             return R.ok(result)
         else:
             return R.error("导入解析失败", "ERR_IMPORT", data=result)
@@ -119,6 +136,8 @@ async def reset_portfolio():
     try:
         engine = get_portfolio_engine()
         result = engine.reset_portfolio()
+        # V26.0: 清零后失效所有缓存
+        _invalidate_portfolio_caches(full=True)
         return R.ok(result)
     except Exception as e:
         return R.error(str(e), "ERR_RESET")

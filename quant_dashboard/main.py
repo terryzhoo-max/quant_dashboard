@@ -105,6 +105,14 @@ async def lifespan(app: FastAPI):
                 _startup_pool.submit(_safe_warmup, fn, name)
             except RuntimeError:
                 break  # Pool 已 shutdown, 放弃后续任务
+        # V25.2 A-4: 启动时触发准确率回填 (force_recalc 修正旧逻辑记录)
+        try:
+            from dashboard_modules.decision_engine import backfill_signal_accuracy
+            _startup_pool.submit(_safe_warmup,
+                                 lambda: backfill_signal_accuracy(force_recalc=True),
+                                 "AccuracyBackfill")
+        except RuntimeError:
+            pass
     threading.Thread(target=_phase2, daemon=True).start()
 
     # ── Init APScheduler ──

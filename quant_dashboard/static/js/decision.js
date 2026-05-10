@@ -214,6 +214,11 @@ async function initDecisionHub() {
 
             // ⑨ 情景模拟器
             renderScenarioCards(data.scenarios);
+
+            // V25.2: ⑩ 信号准确率 (独立异步, 不阻塞主流程)
+            AC.secureFetch(`${API_BASE}/accuracy`).then(r => r.json()).then(acc => {
+                if (acc.status === 'success') renderAccuracy(acc);
+            }).catch(e => console.warn('Accuracy load:', e));
         } else {
             document.getElementById('jcs-value').textContent = '--';
         }
@@ -301,14 +306,23 @@ function _populateVersionSelects() {
     const selA = document.getElementById('pc-version-a');
     const selB = document.getElementById('pc-version-b');
     const btn = document.getElementById('btn-compare-run');
+    const result = document.getElementById('pc-result');
     if (!selA || !selB) return;
 
-    const options = _paramVersions.map(v =>
-        `<option value="${v.version_id}">${v.version_id} — ${v.description || v.timestamp}</option>`
-    ).join('');
+    // P5: 优先显示描述 + AIAE版本标记
+    const options = _paramVersions.map(v => {
+        const label = v.description || v.version_id;
+        const ts = v.timestamp ? v.timestamp.split('T')[0] : '';
+        return `<option value="${v.version_id}">${label}${ts ? ' (' + ts + ')' : ''}</option>`;
+    }).join('');
 
     selA.innerHTML = '<option value="">-- 选择版本 --</option>' + options;
     selB.innerHTML = '<option value="">-- 选择版本 --</option>' + options;
+
+    // P6: 空版本引导态
+    if (_paramVersions.length === 0 && result) {
+        result.innerHTML = '<div style="text-align:center;padding:24px;color:#64748b;font-size:0.78rem;">📸 尚无参数快照。点击「保存快照」记录当前参数配置，<br>即可开始版本对比与敏感度分析。</div>';
+    }
 
     // Auto-enable compare button when both selected
     const checkReady = () => {
@@ -396,6 +410,7 @@ async function runParamCompare() {
                 <span style="font-weight:700;color:${diffColor};font-size:1.1rem;">${diffSign}${jcsDiff.toFixed(1)}</span>
                 ${data.diffs && data.diffs.length > 0 ? data.diffs.map(d => `<span class="pc-diff-item"> · ${d}</span>`).join('') : ''}
             </div>
+            ${_renderMatrixDiffs(data.matrix_diffs)}
             <div class="pc-recommendation">💡 ${data.recommendation || ''}</div>
             <div class="pc-snapshot-note">📊 基于当前市场环境快照: AIAE R${data.current_snapshot?.aiae_regime || '?'} · ERP ${data.current_snapshot?.erp_score || '?'} · VIX ${data.current_snapshot?.vix_val || '?'}</div>
             `;
@@ -409,10 +424,57 @@ async function runParamCompare() {
 
 function _renderParamPreview(ver) {
     if (!ver) return '';
-    const w = ver.aiae_weights || ver.jcs_weights || {};
-    return Object.entries(w).slice(0, 3).map(([k, v]) =>
-        `<span class="pc-param-chip">${k}: ${typeof v === 'number' ? v.toFixed(2) : v}</span>`
-    ).join('');
+    const chips = [];
+    // JCS 权重
+    const jw = ver.jcs_weights;
+    if (jw) {
+        Object.entries(jw).forEach(([k, v]) =>
+            chips.push(`<span class="pc-param-chip">JCS/${k}: ${typeof v === 'number' ? (v * 100).toFixed(0) + '%' : v}</span>`));
+    }
+    // AIAE 权重
+    const aw = ver.aiae_weights;
+    if (aw) {
+        Object.entries(aw).forEach(([k, v]) =>
+            chips.push(`<span class="pc-param-chip">AIAE/${k}: ${typeof v === 'number' ? v.toFixed(2) : v}</span>`));
+    }
+    // 分界线
+    const rt = ver.regime_thresholds;
+    if (rt && Array.isArray(rt)) {
+        chips.push(`<span class="pc-param-chip">分界: [${rt.join(', ')}]</span>`);
+    }
+    return chips.join('');
+}
+
+// P4: 仓位矩阵差异渲染
+function _renderMatrixDiffs(diffs) {
+    if (!diffs || diffs.length === 0) return '';
+    const rows = diffs.map(d => {
+        const color = d.delta < 0 ? '#f87171' : '#34d399';
+        const sign = d.delta > 0 ? '+' : '';
+        return `<tr style="font-size:0.62rem;color:#cbd5e1;">
+            <td style="padding:3px 6px;">${d.erp}</td>
+            <td style="padding:3px 6px;text-align:center;">${d.regime}</td>
+            <td style="padding:3px 6px;text-align:right;">${d.before}%</td>
+            <td style="padding:3px 6px;text-align:center;">→</td>
+            <td style="padding:3px 6px;text-align:right;">${d.after}%</td>
+            <td style="padding:3px 6px;text-align:right;font-weight:700;color:${color};">${sign}${d.delta}%</td>
+        </tr>`;
+    }).join('');
+    return `
+    <div style="margin:8px 0;padding:8px 10px;border-radius:8px;background:rgba(15,23,42,0.5);border:1px solid rgba(255,255,255,0.05);">
+        <div style="font-size:0.6rem;color:#64748b;margin-bottom:4px;font-weight:600;">📋 仓位矩阵变更明细</div>
+        <table style="width:100%;border-collapse:collapse;">
+            <thead><tr style="font-size:0.55rem;color:#475569;">
+                <th style="text-align:left;padding:2px 6px;">ERP</th>
+                <th style="text-align:center;padding:2px 6px;">档位</th>
+                <th style="text-align:right;padding:2px 6px;">旧值</th>
+                <th></th>
+                <th style="text-align:right;padding:2px 6px;">新值</th>
+                <th style="text-align:right;padding:2px 6px;">变化</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+        </table>
+    </div>`;
 }
 
 // ═══════════════════════════════════════════════════
