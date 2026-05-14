@@ -2,20 +2,27 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="description" content="AlphaCore 决策中枢 · 信号矛盾检测 · 联合置信度引擎 · 情景模拟器 · 决策日志">
-    <meta name="theme-color" content="#07090e">
+    <meta name="theme-color" content="#3b82f6">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
     <title>决策中枢 · AlphaCore</title>
     <link rel="stylesheet" href="./static/css/fonts.css?v=1">
     <link rel="stylesheet" href="./static/css/styles.css?v=12">
     <link rel="stylesheet" href="./static/css/decision.css?v=50">
     <link rel="stylesheet" href="./static/css/visual_excellence.css?v=3">
+    <link rel="stylesheet" href="./static/css/mobile.css?v=1">
     <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
     <script>window.echarts || document.write('<script src="./static/vendor/echarts.min.js"><\/script>')</script>
     <script src="./static/js/alphacore_utils.js?v=2"></script>
 </head>
 <body>
+    <!-- PWA 离线指示 -->
+    <div class="offline-banner" id="offline-banner">📡 离线模式 · 显示缓存数据</div>
     <!-- 左侧导航栏 (复用系统导航结构) -->
     <aside class="sidebar">
         <div class="logo">
@@ -375,6 +382,24 @@
                                 <div class="loading-spinner">⏳ 分析跨市场相关性...</div>
                             </div>
                             <div class="contagion-note" id="contagion-note"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- P2-C: NLP 情报中心 -->
+                <div class="dh-collapsible glass-decision collapsed" id="intelligence-panel">
+                    <div class="dh-collapsible-header" onclick="toggleDHPanel('intelligence-panel')">
+                        <span class="dh-collapsible-title">📡 NLP 情报中心</span>
+                        <span class="dh-collapsible-summary" id="intel-summary">Gemini 结构化新闻提取 · 自动匹配情景模板</span>
+                        <span class="dh-collapsible-arrow">▶</span>
+                    </div>
+                    <div class="dh-collapsible-body">
+                        <div class="intel-header">
+                            <span class="intel-scan-time" id="intel-scan-time">--</span>
+                            <button class="btn btn-intel-scan" id="btn-intel-scan" onclick="triggerIntelScan()">🔍 手动扫描</button>
+                        </div>
+                        <div class="intel-events-list" id="intel-events-list">
+                            <div class="intel-empty">暂无情报 · 等待定时扫描或点击手动扫描</div>
                         </div>
                     </div>
                 </div>
@@ -747,5 +772,15 @@
     <script src="./static/js/decision/risk_alerts.js?v=50"></script>
     <script src="./static/js/decision/optimizer.js?v=50"></script>
     <script src="./static/js/decision.js?v=50"></script>
+    <script>
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js', { scope: '/' })
+            .then(r => console.log('[PWA] SW registered:', r.scope))
+            .catch(e => console.warn('[PWA] SW failed:', e));
+    }
+    window.addEventListener('online', () => document.getElementById('offline-banner')?.classList.remove('show'));
+    window.addEventListener('offline', () => document.getElementById('offline-banner')?.classList.add('show'));
+    if (!navigator.onLine) document.getElementById('offline-banner')?.classList.add('show');
+    </script>
 </body>
 </html>

@@ -215,6 +215,9 @@ async function initDecisionHub() {
             // ⑨ 情景模拟器
             renderScenarioCards(data.scenarios);
 
+            // ⑪ P2-C: NLP 情报中心 (独立异步)
+            loadIntelligence();
+
             // V25.2: ⑩ 信号准确率 (独立异步, 不阻塞主流程)
             AC.secureFetch(`${API_BASE}/accuracy`).then(r => r.json()).then(acc => {
                 if (acc.status === 'success') renderAccuracy(acc);
@@ -787,4 +790,103 @@ function renderSensitivity(data) {
         }).join('')}
     </div>
     <div class="ps-footnote">🔬 ±${data.perturbation_pct}% 参数扰动下 JCS 变动幅度 · 敏感度越高 → 策略越脆弱</div>`;
+}
+
+// ═══════════════════════════════════════════════════
+//  P2-C: NLP 情报中心
+// ═══════════════════════════════════════════════════
+
+async function loadIntelligence() {
+    try {
+        const resp = await fetch(`${API_BASE.replace('/decision', '/intelligence')}/latest`);
+        const data = await resp.json();
+        if (data.status === 'success' && data.data) {
+            renderIntelEvents(data.data);
+        }
+    } catch (e) {
+        console.warn('Intelligence load:', e);
+    }
+}
+
+async function triggerIntelScan() {
+    const btn = document.getElementById('btn-intel-scan');
+    if (!btn) return;
+    btn.disabled = true;
+    btn.textContent = '⏳ 扫描中...';
+
+    try {
+        const headers = { 'Content-Type': 'application/json' };
+        const apiKey = localStorage.getItem('alphacore_api_key');
+        if (apiKey) headers['X-API-Key'] = apiKey;
+
+        const resp = await fetch(`${API_BASE.replace('/decision', '/intelligence')}/scan`, {
+            method: 'POST', headers
+        });
+        const data = await resp.json();
+
+        if (data.status === 'success' && data.data) {
+            renderIntelEvents(data.data);
+            btn.textContent = `✅ ${data.data.events_count || 0} 条事件`;
+        } else {
+            btn.textContent = '⚠️ ' + (data.message || '扫描失败');
+        }
+    } catch (e) {
+        btn.textContent = '❌ 网络异常';
+    } finally {
+        setTimeout(() => {
+            btn.disabled = false;
+            btn.textContent = '🔍 手动扫描';
+        }, 3000);
+    }
+}
+
+function renderIntelEvents(intel) {
+    const list = document.getElementById('intel-events-list');
+    const timeEl = document.getElementById('intel-scan-time');
+    const summary = document.getElementById('intel-summary');
+    if (!list) return;
+
+    if (timeEl && intel.scan_time) {
+        const t = intel.scan_time.replace('T', ' ').slice(0, 16);
+        timeEl.textContent = `最近扫描: ${t}`;
+    }
+
+    const events = intel.events || [];
+    if (events.length === 0) {
+        list.innerHTML = '<div class="intel-empty">暂无情报 · 等待定时扫描或点击手动扫描</div>';
+        return;
+    }
+
+    // 更新折叠态摘要
+    if (summary) {
+        summary.textContent = `${events.length} 条情报 · 最高影响 ${Math.max(...events.map(e => e.impact_score || 0)).toFixed(0)}/10`;
+    }
+
+    const catIcons = { macro: '🌐', industry: '🏭', stock: '📈', risk: '🚨' };
+    const catLabels = { macro: '宏观', industry: '行业', stock: '个股', risk: '风险' };
+
+    list.innerHTML = events.slice(0, 8).map(e => {
+        const impact = e.impact_score || 0;
+        const impactColor = impact >= 7 ? '#ef4444' : (impact >= 4 ? '#f97316' : '#64748b');
+        const scenarioTag = e.scenario_id
+            ? `<span class="intel-scenario-tag">🔮 ${e.scenario_id}</span>`
+            : '';
+        const assets = Array.isArray(e.affected_assets) && e.affected_assets.length
+            ? `<span class="intel-assets">${e.affected_assets.slice(0, 3).join(' · ')}</span>`
+            : '';
+
+        return `
+        <div class="intel-event-card">
+            <div class="intel-event-header">
+                <span class="intel-cat-icon">${catIcons[e.category] || '📋'}</span>
+                <span class="intel-event-title">${e.title}</span>
+                <span class="intel-cat-badge">${catLabels[e.category] || e.category}</span>
+                <span class="intel-impact-badge" style="color:${impactColor};border-color:${impactColor}40">${impact.toFixed(0)}/10</span>
+            </div>
+            <div class="intel-event-body">
+                <span class="intel-summary-text">${e.summary || ''}</span>
+                ${scenarioTag}${assets}
+            </div>
+        </div>`;
+    }).join('');
 }

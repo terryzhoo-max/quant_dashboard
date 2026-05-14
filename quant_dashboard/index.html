@@ -1,24 +1,30 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="description" content="AlphaCore 投研量化终端 · 五策略共振引擎 · AIAE宏观温度 · ERP估值矩阵 · 实时行业轮动追踪">
-    <meta name="theme-color" content="#07090e">
+    <meta name="theme-color" content="#3b82f6">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
     <title>AlphaCore 投研量化终端</title>
     <!-- 引入外部样式 -->
     <link rel="stylesheet" href="./static/css/fonts.css?v=1">
     <link rel="stylesheet" href="./static/css/styles.css?v=12">
     <link rel="stylesheet" href="./static/css/visual_excellence.css?v=3">
+    <link rel="stylesheet" href="./static/css/mobile.css?v=1">
     <!-- 引入高级无衬线字体 Inter -->
     <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Chart.js 移除 (极简主义与性能优化) -->
     <!-- ECharts 可视化引擎 -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
     <script>window.echarts || document.write('<script src="./static/vendor/echarts.min.js"><\/script>')</script>
     <script src="./static/js/alphacore_utils.js?v=2"></script>
 </head>
 <body>
+    <!-- PWA 离线指示 -->
+    <div class="offline-banner" id="offline-banner">📡 离线模式 · 显示缓存数据</div>
     <!-- 左侧导航栏 -->
     <aside class="sidebar">
         <div class="logo">
@@ -600,5 +606,16 @@
     </main>
 
     <script src="./static/js/script.js?v=11"></script>
+    <script>
+    // PWA: Service Worker 注册 + 离线检测
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js', { scope: '/' })
+            .then(r => console.log('[PWA] SW registered:', r.scope))
+            .catch(e => console.warn('[PWA] SW failed:', e));
+    }
+    window.addEventListener('online', () => document.getElementById('offline-banner')?.classList.remove('show'));
+    window.addEventListener('offline', () => document.getElementById('offline-banner')?.classList.add('show'));
+    if (!navigator.onLine) document.getElementById('offline-banner')?.classList.add('show');
+    </script>
 </body>
 </html>

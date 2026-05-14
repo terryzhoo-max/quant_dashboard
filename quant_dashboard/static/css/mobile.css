@@ -1,0 +1,247 @@
+/* ═══════════════════════════════════════════════════════════════
+   AlphaCore · 移动端响应式覆盖 V1.0 (P1-4 PWA)
+   ═══════════════════════════════════════════════════════════════
+   断点策略:
+     ≤ 768px:  手机竖屏 (核心)
+     ≤ 1024px: 平板/手机横屏
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ===== §1 离线模式指示条 ===== */
+.offline-banner {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 9999;
+    padding: 6px 16px;
+    background: linear-gradient(90deg, #f59e0b, #d97706);
+    color: #0f1219;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-align: center;
+    letter-spacing: 0.5px;
+}
+.offline-banner.show { display: block; }
+
+/* ===== §2 平板断点 (≤1024px) ===== */
+@media (max-width: 1024px) {
+    /* 侧边栏默认收缩 */
+    .sidebar {
+        width: 60px !important;
+        overflow: hidden;
+    }
+    .sidebar .nav-item span:not(.icon),
+    .sidebar .nav-group-title,
+    .sidebar .user-profile,
+    .sidebar .sidebar-toggle .toggle-text,
+    .sidebar .badge-beta,
+    .sidebar .badge-version,
+    .sidebar .nav-arrow,
+    .sidebar .nav-sub-group,
+    .sidebar .nav-parent span:not(.icon),
+    .sidebar h1 {
+        display: none !important;
+    }
+    .sidebar .logo { justify-content: center; padding: 12px 0; }
+    .sidebar .nav-item { justify-content: center; padding: 10px 0; }
+    .sidebar .icon { margin: 0; }
+
+    .dashboard { margin-left: 60px !important; }
+
+    /* Decision Hub 三列坍缩为二列 */
+    .aiae-hub-grid { grid-template-columns: 1fr !important; }
+    .jcs-section { flex-direction: column !important; }
+    .risk-grid { grid-template-columns: 1fr !important; }
+    .risk-overview-row { flex-direction: column !important; }
+}
+
+/* ===== §3 手机核心断点 (≤768px) ===== */
+@media (max-width: 768px) {
+    /* ── 侧边栏: 完全隐藏, 底部 Tab Bar 替代 ── */
+    .sidebar { display: none !important; }
+    .dashboard { margin-left: 0 !important; width: 100% !important; }
+
+    /* ── 顶栏: 简化 ── */
+    .topbar {
+        padding: 8px 12px !important;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+    .topbar .search-bar { display: none !important; }
+    .topbar .actions { width: 100%; justify-content: flex-end; gap: 6px; }
+    .topbar .btn { padding: 6px 10px !important; font-size: 0.7rem !important; }
+
+    /* ── 内容区: 全宽, 减少内边距 ── */
+    .content, .decision-content {
+        padding: 8px !important;
+    }
+
+    /* ── Decision Hub ── */
+    .decision-header h2 { font-size: 1.1rem !important; }
+    .decision-tabs {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        flex-wrap: nowrap !important;
+        gap: 4px !important;
+        padding-bottom: 4px;
+    }
+    .decision-tab {
+        white-space: nowrap;
+        font-size: 0.72rem !important;
+        padding: 6px 10px !important;
+        flex-shrink: 0;
+    }
+
+    /* JCS + 信号面板: 竖排 */
+    .jcs-section {
+        flex-direction: column !important;
+        gap: 12px !important;
+    }
+    .jcs-gauge-wrap, .decision-panel {
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+    .jcs-ring canvas { max-width: 160px; max-height: 160px; }
+
+    /* AIAE Hub: 单列 */
+    .aiae-hub-grid { grid-template-columns: 1fr !important; gap: 10px !important; }
+    .aiae-hub-gauge-col { min-height: auto !important; }
+
+    /* 全球温度: 横向滚动 */
+    .global-temp-grid {
+        display: flex !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+        gap: 8px !important;
+        padding-bottom: 6px;
+    }
+    .global-temp-grid > * {
+        min-width: 160px;
+        flex-shrink: 0;
+    }
+
+    /* 波段守卫: 横向滚动 */
+    .swing-guard-grid {
+        display: flex !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+        gap: 8px !important;
+        padding-bottom: 6px;
+    }
+    .swing-guard-grid > * {
+        min-width: 200px;
+        flex-shrink: 0;
+    }
+
+    /* SOP 四列 → 单列 */
+    .sop-grid-4 { grid-template-columns: 1fr !important; }
+
+    /* 风险矩阵 */
+    .risk-overview-row { flex-direction: column !important; gap: 12px !important; }
+    .risk-grid { grid-template-columns: 1fr !important; }
+    .perf-charts-grid { grid-template-columns: 1fr !important; }
+
+    /* 基准 Tab 横向滚动 */
+    .bench-tabs {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        flex-wrap: nowrap !important;
+    }
+    .bench-tab {
+        white-space: nowrap;
+        flex-shrink: 0;
+        font-size: 0.68rem !important;
+        padding: 4px 8px !important;
+    }
+
+    /* 优化器 */
+    .opt-comparison-row {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 6px !important;
+    }
+    .opt-charts-row { grid-template-columns: 1fr !important; }
+    .opt-stat-arrow { display: none !important; }
+
+    /* ── Index 量化总览 ── */
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 8px !important;
+    }
+    .hub-container-v6 {
+        grid-template-columns: 1fr !important;
+    }
+    .strategy-cards-grid {
+        grid-template-columns: 1fr !important;
+        gap: 8px !important;
+    }
+    .lists-grid { grid-template-columns: 1fr !important; }
+
+    /* ── Backtest 回测终端 ── */
+    .bt-terminal { padding: 8px !important; }
+    .bt-config-strip { flex-direction: column; gap: 8px; }
+    .bt-grade-row { flex-direction: column !important; }
+    .bt-grade-panel { width: 100% !important; min-width: 0 !important; }
+    .bt-metrics-grid { grid-template-columns: repeat(2, 1fr) !important; }
+    .bt-bottom-row { grid-template-columns: 1fr !important; }
+    .bt-drawer {
+        width: 100vw !important;
+        right: -100vw !important;
+    }
+    .bt-drawer.open { right: 0 !important; }
+
+    /* Playground KPI 条 */
+    .pg-kpi-strip { flex-wrap: wrap; }
+    .pg-kpi { min-width: 60px; }
+
+    /* ── Portfolio 组合管理 ── */
+    .pf-grid { grid-template-columns: 1fr !important; }
+
+    /* ── ECharts 图表自适应高度 ── */
+    .bt-chart-panel { min-height: 280px !important; }
+    [id$="-chart"], .hub-aiae-gauge { min-height: 200px; }
+
+    /* ── 触摸友好: 所有可点击元素最小 44px ── */
+    button, .btn, .nav-item, .decision-tab, .preset-btn, .bench-tab,
+    .bt-run-btn, .bt-drawer-toggle, .sg-refresh-btn {
+        min-height: 44px;
+        cursor: pointer;
+    }
+
+    /* ── 文字缩放 ── */
+    .stat-value { font-size: 1.3rem !important; }
+    .mc-value { font-size: 1rem !important; }
+    .bt-grade-badge { font-size: 1.8rem !important; }
+
+    /* ── 仓位路径: 表格卡片化 ── */
+    .pp-body table { font-size: 0.72rem !important; }
+    .pp-body td, .pp-body th { padding: 6px 4px !important; }
+
+    /* ── 日报 Modal 全屏 ── */
+    .report-modal, .param-compare-modal {
+        width: 95vw !important;
+        max-width: none !important;
+        max-height: 90vh !important;
+    }
+
+    /* ── 底部安全区 (iPhone X+) ── */
+    body { padding-bottom: env(safe-area-inset-bottom); }
+}
+
+/* ===== §4 超小屏 (≤480px) ===== */
+@media (max-width: 480px) {
+    .stats-grid { grid-template-columns: 1fr !important; }
+    .bt-metrics-grid { grid-template-columns: 1fr !important; }
+    .opt-comparison-row { grid-template-columns: 1fr !important; }
+    .regime-banner { flex-direction: column !important; gap: 6px !important; text-align: center; }
+    .quick-action-strip { flex-direction: column !important; gap: 6px !important; }
+}
+
+/* ===== §5 PWA Standalone 模式特殊处理 ===== */
+@media (display-mode: standalone) {
+    /* 去除不需要的浏览器 UI 残留 */
+    .topbar .search-bar { display: none; }
+
+    /* 顶部安全区 (刘海屏) */
+    .topbar {
+        padding-top: max(8px, env(safe-area-inset-top)) !important;
+    }
+}

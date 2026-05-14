@@ -145,6 +145,23 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(alert_scan_callback, IntervalTrigger(minutes=10), id="alert_scan")
     # 11. V22.2: 事件驱动监控 (每5分钟, 盘中检测 VIX/AIAE/MR 跳变)
     scheduler.add_job(event_monitor_callback, IntervalTrigger(minutes=5), id="event_monitor")
+    # 12. P1-3: 策略 CI/CD 月度自动优化 (每月1日 02:00, 非交易时段)
+    def _ci_monthly_callback():
+        try:
+            from services.strategy_pipeline import run_full_ci
+            run_full_ci()
+        except Exception as e:
+            _logger.error("策略 CI/CD 月度任务异常: %s", e)
+    scheduler.add_job(_ci_monthly_callback, CronTrigger(day=1, hour=2, minute=0), id="strategy_ci_monthly")
+    # 13. P2-C: NLP 情报扫描 (每日 09:35 + 15:15, 盘前+盘中各一次)
+    def _nlp_scan_callback():
+        try:
+            from engines.news_intelligence import scan_news
+            scan_news()
+        except Exception as e:
+            _logger.error("NLP 情报扫描异常: %s", e)
+    scheduler.add_job(_nlp_scan_callback, CronTrigger(day_of_week='mon-fri', hour=9, minute=35), id="nlp_scan_am")
+    scheduler.add_job(_nlp_scan_callback, CronTrigger(day_of_week='mon-fri', hour=15, minute=15), id="nlp_scan_pm")
 
     scheduler.start()
     app.state.scheduler = scheduler
@@ -271,6 +288,25 @@ async def health_check():
 
 
 # ═══════════════════════════════════════════════════════════════════
+#  PWA 路由 (manifest + Service Worker)
+# ═══════════════════════════════════════════════════════════════════
+
+@app.get("/manifest.json")
+async def serve_manifest():
+    """PWA Manifest: 允许 '添加到主屏幕'"""
+    return FileResponse("manifest.json", media_type="application/manifest+json")
+
+@app.get("/sw.js")
+async def serve_sw():
+    """Service Worker: 必须从根路径提供, scope 才能覆盖全站"""
+    return FileResponse(
+        "static/js/sw.js",
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"},
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════
 #  Dashboard 数据 API (只读, 从缓存返回)
 # ═══════════════════════════════════════════════════════════════════
 
@@ -301,7 +337,7 @@ async def get_dashboard_data():
 #  Router 模块注册 (Batch 7: 策略路由独立)
 # ═══════════════════════════════════════════════════════════════════
 
-from routers import portfolio, audit, aiae, market, industry, strategy, decision, slippage
+from routers import portfolio, audit, aiae, market, industry, strategy, decision, slippage, ci, intelligence
 app.include_router(portfolio.router)
 app.include_router(audit.router)
 app.include_router(aiae.router)
@@ -310,6 +346,8 @@ app.include_router(industry.router)
 app.include_router(strategy.router)
 app.include_router(decision.router)
 app.include_router(slippage.router)
+app.include_router(ci.router)
+app.include_router(intelligence.router)
 
 
 

@@ -156,6 +156,28 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>`;
         }
 
+        // Playground Section
+        html += `<div class="drawer-section" id="playground-section">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <h3>🎮 Playground 实时预览</h3>
+                <label class="pg-toggle" title="开启后拖动参数即时回测">
+                    <input type="checkbox" id="playground-toggle">
+                    <span class="pg-toggle-slider"></span>
+                </label>
+            </div>
+            <div id="playground-preview" style="display:none;">
+                <div class="pg-kpi-strip">
+                    <div class="pg-kpi"><span class="pg-kpi-label">收益</span><span class="pg-kpi-value" id="pg-return">--</span></div>
+                    <div class="pg-kpi"><span class="pg-kpi-label">夏普</span><span class="pg-kpi-value" id="pg-sharpe">--</span></div>
+                    <div class="pg-kpi"><span class="pg-kpi-label">回撤</span><span class="pg-kpi-value" id="pg-mdd">--</span></div>
+                    <div class="pg-kpi"><span class="pg-kpi-label">胜率</span><span class="pg-kpi-value" id="pg-winrate">--</span></div>
+                    <div class="pg-kpi"><span class="pg-kpi-label">评级</span><span class="pg-kpi-value" id="pg-grade">--</span></div>
+                </div>
+                <div id="pg-mini-chart" style="height:160px;margin-top:8px;"></div>
+                <div class="pg-status" id="pg-status">拖动参数滑块即时回测</div>
+            </div>
+        </div>`;
+
         // Parameter sliders
         html += config.params.map(p => `
             <div class="param-row">
@@ -196,6 +218,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         // Clear preset highlight on manual change
         document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+        // Playground: trigger live preview
+        if (_playgroundActive) _debouncedPreview();
     };
 
     function resetToDefaults() {
@@ -983,6 +1007,141 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // ════════════════════════════════════════════════
+    //  V24.0: Playground 实时预览引擎
+    // ════════════════════════════════════════════════
+
+    let _playgroundActive = false;
+    let _pgChart = null;
+    let _pgTimer = null;
+    let _pgRunId = 0;
+
+    // Event delegation: works across dynamic re-renders of strategy params
+    document.getElementById('strategy-params-panel')?.addEventListener('change', (e) => {
+        if (e.target && e.target.id === 'playground-toggle') {
+            _playgroundActive = e.target.checked;
+            const preview = document.getElementById('playground-preview');
+            if (preview) preview.style.display = _playgroundActive ? 'block' : 'none';
+            if (_playgroundActive) {
+                if (!_pgChart) {
+                    const el = document.getElementById('pg-mini-chart');
+                    if (el) _pgChart = echarts.init(el);
+                } else {
+                    // Re-init chart if DOM was re-rendered
+                    const el = document.getElementById('pg-mini-chart');
+                    if (el && !el.querySelector('canvas')) _pgChart = echarts.init(el);
+                }
+                _runPlaygroundPreview();
+            }
+        }
+    });
+
+    function _debouncedPreview() {
+        clearTimeout(_pgTimer);
+        _pgTimer = setTimeout(_runPlaygroundPreview, 400);
+    }
+
+    async function _runPlaygroundPreview() {
+        const runId = ++_pgRunId;
+        const statusEl = document.getElementById('pg-status');
+        if (statusEl) { statusEl.textContent = '⏳ 回测中...'; statusEl.style.color = '#f59e0b'; }
+
+        const payload = {
+            strategy: strategySelect.value,
+            ts_code: document.getElementById('ts-code').value.split(',')[0].trim(),
+            start_date: document.getElementById('start-date').value.replace(/-/g, ''),
+            end_date: document.getElementById('end-date').value.replace(/-/g, ''),
+            initial_cash: parseFloat(document.getElementById('initial-cash').value),
+            order_pct: parseFloat(document.getElementById('order-pct').value),
+            adj: document.getElementById('adj-select').value,
+            benchmark_code: document.getElementById('benchmark-select').value,
+            params: collectParams()
+        };
+
+        try {
+            const res = await AC.secureFetch('/api/v1/backtest', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const result = await res.json();
+
+            // Stale check: skip if a newer run was triggered
+            if (runId !== _pgRunId) return;
+
+            if (result.status === 'success') {
+                _renderPlaygroundResult(result.data);
+                if (statusEl) { statusEl.textContent = '✅ 预览就绪'; statusEl.style.color = '#10b981'; }
+            } else {
+                if (statusEl) { statusEl.textContent = '⚠️ ' + (result.message || '回测失败'); statusEl.style.color = '#ef4444'; }
+            }
+        } catch (err) {
+            if (runId === _pgRunId && statusEl) {
+                statusEl.textContent = '❌ 连接失败'; statusEl.style.color = '#ef4444';
+            }
+        }
+    }
+
+    function _renderPlaygroundResult(data) {
+        if (!data || !data.metrics) return;
+        const m = data.metrics;
+        const g = data.grade || {};
+        const rt = data.round_trips || {};
+
+        // KPI strip
+        const setKpi = (id, val, color) => {
+            const el = document.getElementById(id);
+            if (el) { el.textContent = val; el.style.color = color || '#e2e8f0'; }
+        };
+
+        const retPct = (m.total_return * 100).toFixed(1) + '%';
+        setKpi('pg-return', (m.total_return >= 0 ? '+' : '') + retPct, m.total_return >= 0 ? '#10b981' : '#ef4444');
+        setKpi('pg-sharpe', m.sharpe_ratio.toFixed(2), m.sharpe_ratio >= 1 ? '#10b981' : m.sharpe_ratio >= 0 ? '#f59e0b' : '#ef4444');
+        setKpi('pg-mdd', (m.max_drawdown * 100).toFixed(1) + '%', '#ef4444');
+        setKpi('pg-winrate', (rt.win_rate || 0) + '%', (rt.win_rate || 0) >= 50 ? '#10b981' : '#ef4444');
+        setKpi('pg-grade', g.grade || '--', g.grade === 'S' || g.grade === 'A' ? '#10b981' : g.grade === 'B' ? '#3b82f6' : '#f59e0b');
+
+        // Mini chart
+        if (_pgChart && data.equity_curve && data.dates) {
+            const base = data.equity_curve[0] || 1;
+            const stratData = data.equity_curve.map(v => +((v / base - 1) * 100).toFixed(2));
+            let benchData = null;
+            if (data.bench_curve) {
+                const bBase = data.bench_curve[0] || 1;
+                benchData = data.bench_curve.map(v => +((v / bBase - 1) * 100).toFixed(2));
+            }
+
+            const series = [{
+                name: '策略', type: 'line', data: stratData, smooth: true, showSymbol: false,
+                lineStyle: { width: 2, color: '#3b82f6' },
+                areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                    colorStops: [{ offset: 0, color: 'rgba(59,130,246,0.2)' }, { offset: 1, color: 'rgba(59,130,246,0)' }] }}
+            }];
+
+            if (benchData) {
+                series.push({
+                    name: '基准', type: 'line', data: benchData, smooth: true, showSymbol: false,
+                    lineStyle: { width: 1, color: '#64748b', type: 'dashed' }
+                });
+            }
+
+            _pgChart.setOption({
+                backgroundColor: 'transparent',
+                tooltip: { trigger: 'axis', backgroundColor: 'rgba(15,18,25,0.9)',
+                    textStyle: { color: '#f1f5f9', fontSize: 10 },
+                    formatter: p => p.map(pp => `${pp.seriesName}: ${pp.value}%`).join('<br/>') },
+                grid: { top: 8, bottom: 5, left: 35, right: 8 },
+                xAxis: { type: 'category', data: data.dates, show: false },
+                yAxis: { type: 'value', scale: true,
+                    axisLabel: { formatter: '{value}%', color: '#475569', fontSize: 9 },
+                    splitLine: { lineStyle: { color: 'rgba(255,255,255,0.03)' } } },
+                series: series,
+                animation: true, animationDuration: 300
+            }, true);
+            _pgChart.resize();
+        }
+    }
+
     // === V5.0: CSV Export for Trade Log ===
     const exportBtn = document.getElementById('export-trades-btn');
     if (exportBtn) {
@@ -1008,3 +1167,180 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
 });
+
+// ═══════════════════════════════════════════════════════════
+//  P1-3: CI/CD 策略管道前端逻辑
+// ═══════════════════════════════════════════════════════════
+
+function toggleCIPanel() {
+    const panel = document.getElementById('ci-panel');
+    const btn = document.getElementById('ci-toggle-btn');
+    if (!panel || !btn) return;
+    const visible = panel.style.display !== 'none';
+    panel.style.display = visible ? 'none' : 'block';
+    btn.classList.toggle('active', !visible);
+    if (!visible) loadCIHistory();
+}
+
+async function loadCIHistory() {
+    try {
+        const resp = await fetch('/api/v1/ci/history?limit=20');
+        const json = await resp.json();
+        if (json.status !== 'success') return;
+        const runs = json.data || [];
+        renderCIResults(runs);
+    } catch (e) {
+        console.warn('[CI] History load failed:', e);
+    }
+}
+
+function renderCIResults(runs) {
+    const latestEl = document.getElementById('ci-latest');
+    const historyEl = document.getElementById('ci-history');
+    if (!latestEl || !historyEl) return;
+
+    if (!runs || runs.length === 0) {
+        latestEl.innerHTML = '<div class="ci-empty">暂无 CI 记录 · 点击「运行 CI」开始首次策略参数优化</div>';
+        historyEl.innerHTML = '';
+        return;
+    }
+
+    // 渲染最近几条详细卡片
+    const recentCards = runs.slice(0, 3).map(r => renderCICard(r)).join('');
+    latestEl.innerHTML = recentCards;
+
+    // 渲染历史简表
+    if (runs.length > 3) {
+        const histRows = runs.slice(3).map(r => {
+            const badge = _ciBadgeClass(r.status);
+            const sharpe = _ciGetSharpe(r.new_metrics);
+            const time = (r.created_at || '').slice(0, 16).replace('T', ' ');
+            return `<div class="ci-history-row">
+                <span class="ci-hist-time">${time}</span>
+                <span class="ci-hist-strat">${r.strategy.toUpperCase()}</span>
+                <span class="ci-hist-regime">${r.regime || '—'}</span>
+                <span class="ci-result-badge ${badge}">${r.status}</span>
+                <span class="ci-hist-sharpe">Sharpe: ${sharpe}</span>
+                ${r.status === 'REVIEW' ? `<button class="ci-accept-btn" onclick="acceptCIRun('${r.run_id}')">✓ 批准</button>` : ''}
+            </div>`;
+        }).join('');
+        historyEl.innerHTML = `<div class="ci-history-title">历史记录</div>${histRows}`;
+    } else {
+        historyEl.innerHTML = '';
+    }
+}
+
+function renderCICard(r) {
+    const badge = _ciBadgeClass(r.status);
+    const stratLabel = { mr: '📐 均值回归', erp: '🌐 ERP择时' }[r.strategy] || r.strategy;
+    const regimeTag = r.regime ? ` [${r.regime}]` : '';
+
+    // Quality Gate
+    const gates = (r.quality_gate || []).map(g => {
+        const cls = g.passed ? 'ci-gate-pass' : 'ci-gate-fail';
+        const icon = g.passed ? '✅' : '❌';
+        return `<div class="ci-gate-item ${cls}">
+            <span class="ci-gate-icon">${icon}</span>
+            <span class="ci-gate-rule">${g.rule}</span>
+            <span class="ci-gate-val">${g.actual}</span>
+        </div>`;
+    }).join('');
+
+    // A/B Comparison
+    const abMetrics = _ciRenderAB(r.old_metrics, r.new_metrics);
+
+    return `<div class="ci-result-card">
+        <div class="ci-result-header">
+            <span class="ci-result-strategy">${stratLabel}${regimeTag}</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <span class="ci-result-badge ${badge}">${r.status}</span>
+                ${r.status === 'REVIEW' ? `<button class="ci-accept-btn" onclick="acceptCIRun('${r.run_id}')">✓ 批准</button>` : ''}
+            </div>
+        </div>
+        <div class="ci-gate-grid">${gates}</div>
+        <div class="ci-ab-row">${abMetrics}</div>
+        ${r.diff_summary ? `<div class="ci-diff">${_escHtml(r.diff_summary)}</div>` : ''}
+    </div>`;
+}
+
+function _ciBadgeClass(status) {
+    const map = { ACCEPT: 'ci-badge-accept', REJECT: 'ci-badge-reject', REVIEW: 'ci-badge-review', ERROR: 'ci-badge-error' };
+    return map[status] || 'ci-badge-error';
+}
+
+function _ciGetSharpe(metrics) {
+    if (!metrics) return '—';
+    const v = metrics.sharpe || metrics.sharpe_ratio || 0;
+    return typeof v === 'number' ? v.toFixed(3) : '—';
+}
+
+function _ciRenderAB(oldM, newM) {
+    if (!oldM || !newM) return '';
+    const keys = [
+        { key: 'sharpe', alt: 'sharpe_ratio', label: 'Sharpe', fmt: 3 },
+        { key: 'max_dd', alt: 'max_drawdown', label: 'MaxDD%', fmt: 1 },
+        { key: 'alpha', label: 'Alpha%', fmt: 2 },
+        { key: 'calmar', alt: 'calmar_ratio', label: 'Calmar', fmt: 3 },
+    ];
+    return keys.map(k => {
+        const oldV = oldM[k.key] ?? oldM[k.alt] ?? null;
+        const newV = newM[k.key] ?? newM[k.alt] ?? null;
+        if (oldV == null && newV == null) return '';
+        const oldStr = oldV != null ? Number(oldV).toFixed(k.fmt) : '—';
+        const newStr = newV != null ? Number(newV).toFixed(k.fmt) : '—';
+        const improved = newV != null && oldV != null && (k.key === 'max_dd' ? newV > oldV : newV > oldV);
+        const cls = improved ? 'ci-ab-improved' : (newV < oldV ? 'ci-ab-degraded' : '');
+        return `<div class="ci-ab-metric">
+            <span class="ci-ab-label">${k.label}</span>
+            <span class="ci-ab-old">${oldStr}</span>
+            <span class="ci-ab-arrow">→</span>
+            <span class="ci-ab-new ${cls}">${newStr}</span>
+        </div>`;
+    }).join('');
+}
+
+function _escHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+async function triggerCI() {
+    const strategy = document.getElementById('ci-strategy-select')?.value || 'all';
+    const btn = document.getElementById('ci-run-btn');
+    const statusBar = document.getElementById('ci-status-bar');
+    const statusText = document.getElementById('ci-status-text');
+
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ 运行中...'; }
+    if (statusBar) statusBar.style.display = 'flex';
+    if (statusText) statusText.textContent = `${strategy === 'all' ? '全策略' : strategy.toUpperCase()} CI 管道运行中... (预计 5-30 分钟)`;
+
+    try {
+        const resp = await fetch('/api/v1/ci/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ strategy }),
+        });
+        const json = await resp.json();
+
+        if (statusText) statusText.textContent = json.status === 'success' ? '✅ CI 完成' : '❌ CI 失败';
+        setTimeout(() => { if (statusBar) statusBar.style.display = 'none'; }, 5000);
+        loadCIHistory();
+    } catch (e) {
+        if (statusText) statusText.textContent = '❌ CI 请求失败: ' + e.message;
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '▶ 运行 CI'; }
+    }
+}
+
+async function acceptCIRun(runId) {
+    try {
+        const resp = await fetch(`/api/v1/ci/accept/${runId}`, { method: 'POST' });
+        const json = await resp.json();
+        if (json.status === 'success') {
+            loadCIHistory();
+        } else {
+            alert(json.detail || '批准失败');
+        }
+    } catch (e) {
+        alert('请求失败: ' + e.message);
+    }
+}

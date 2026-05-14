@@ -1,4 +1,4 @@
-﻿        /* ═══════════════════════════════════════════════════════════════
+        /* ═══════════════════════════════════════════════════════════════
            AlphaCore Backtest Terminal V5.0 — Premium Design System
            Sections: Tokens → Layout → Config → Drawer → Grade →
                      Metrics → Charts → Bottom → Heatmap → PK →
@@ -771,3 +771,310 @@
         .bt-export-btn:hover {
             background: rgba(59,130,246,0.2);
         }
+
+        /* ===== §19 V24.0 Playground Live Preview ===== */
+        .pg-toggle {
+            position: relative;
+            width: 40px;
+            height: 20px;
+            display: inline-block;
+            cursor: pointer;
+        }
+        .pg-toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .pg-toggle-slider {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255,255,255,0.08);
+            border-radius: 20px;
+            transition: all 0.3s ease;
+        }
+        .pg-toggle-slider::before {
+            content: '';
+            position: absolute;
+            width: 16px; height: 16px;
+            left: 2px; bottom: 2px;
+            background: #94a3b8;
+            border-radius: 50%;
+            transition: all 0.3s ease;
+        }
+        .pg-toggle input:checked + .pg-toggle-slider {
+            background: rgba(59,130,246,0.35);
+            box-shadow: 0 0 8px rgba(59,130,246,0.3);
+        }
+        .pg-toggle input:checked + .pg-toggle-slider::before {
+            transform: translateX(20px);
+            background: var(--bt-blue);
+        }
+
+        .pg-kpi-strip {
+            display: flex;
+            gap: 6px;
+            margin-top: 12px;
+        }
+        .pg-kpi {
+            flex: 1;
+            padding: 8px 6px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 8px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+        .pg-kpi:hover {
+            border-color: rgba(59,130,246,0.2);
+        }
+        .pg-kpi-label {
+            display: block;
+            font-size: 0.6rem;
+            color: var(--text-muted);
+            margin-bottom: 3px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .pg-kpi-value {
+            display: block;
+            font-size: 0.9rem;
+            font-weight: 700;
+            font-family: 'Outfit', sans-serif;
+            color: #e2e8f0;
+        }
+
+        .pg-status {
+            text-align: center;
+            font-size: 0.68rem;
+            color: var(--text-muted);
+            margin-top: 8px;
+            padding: 4px;
+            border-radius: 4px;
+            transition: color 0.3s ease;
+        }
+
+        #playground-preview {
+            animation: bt-stagger-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+/* ═══════════════════════════════════════════════════════════
+   §20 — CI/CD 策略管道面板 (P1-3)
+   ═══════════════════════════════════════════════════════════ */
+
+.ci-toggle-bar {
+    display: flex;
+    justify-content: flex-end;
+    margin: 8px 0;
+}
+.ci-toggle-btn {
+    background: rgba(139, 92, 246, 0.1);
+    border: 1px solid rgba(139, 92, 246, 0.25);
+    color: #a78bfa;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.ci-toggle-btn:hover { background: rgba(139, 92, 246, 0.2); }
+.ci-toggle-btn.active {
+    background: rgba(139, 92, 246, 0.25);
+    border-color: #a78bfa;
+    box-shadow: 0 0 12px rgba(139, 92, 246, 0.2);
+}
+
+.bt-ci-panel {
+    margin-bottom: 16px;
+    padding: 16px;
+    border: 1px solid rgba(139, 92, 246, 0.15);
+    animation: bt-stagger-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.ci-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+.ci-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #e2e8f0;
+}
+.ci-subtitle {
+    font-size: 0.72rem;
+    color: #64748b;
+    margin-left: 6px;
+}
+.ci-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.ci-select {
+    background: rgba(30, 41, 59, 0.8);
+    border: 1px solid rgba(100, 116, 139, 0.3);
+    color: #e2e8f0;
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 0.72rem;
+}
+.ci-run-btn {
+    font-size: 0.72rem !important;
+    padding: 5px 12px !important;
+    background: linear-gradient(135deg, #8b5cf6, #6d28d9) !important;
+}
+.ci-refresh-btn {
+    font-size: 0.72rem !important;
+    padding: 5px 10px !important;
+}
+
+/* CI Status Bar */
+.ci-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    border-radius: 6px;
+    margin-bottom: 12px;
+    font-size: 0.78rem;
+}
+.ci-status-icon { animation: ci-pulse 1.2s infinite; }
+@keyframes ci-pulse { 50% { opacity: 0.4; } }
+.ci-status-text { color: #93c5fd; }
+
+/* Empty state */
+.ci-empty {
+    text-align: center;
+    padding: 24px;
+    color: #64748b;
+    font-size: 0.8rem;
+}
+
+/* CI Latest Result */
+.ci-latest { margin-bottom: 12px; }
+.ci-result-card {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(100, 116, 139, 0.15);
+    border-radius: 8px;
+    padding: 14px;
+    margin-bottom: 8px;
+}
+.ci-result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+.ci-result-strategy {
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: #e2e8f0;
+}
+.ci-result-badge {
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+.ci-badge-accept { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+.ci-badge-reject { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+.ci-badge-review { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+.ci-badge-error  { background: rgba(100, 116, 139, 0.15); color: #94a3b8; border: 1px solid rgba(100, 116, 139, 0.3); }
+
+/* Quality Gate */
+.ci-gate-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 6px;
+    margin-bottom: 10px;
+}
+.ci-gate-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    background: rgba(30, 41, 59, 0.5);
+}
+.ci-gate-pass { border-left: 2px solid #34d399; }
+.ci-gate-fail { border-left: 2px solid #f87171; }
+.ci-gate-icon { font-size: 0.78rem; }
+.ci-gate-rule { color: #94a3b8; flex: 1; }
+.ci-gate-val { color: #e2e8f0; font-weight: 600; }
+
+/* A/B Comparison */
+.ci-ab-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.ci-ab-metric {
+    flex: 1;
+    min-width: 100px;
+    padding: 6px 8px;
+    background: rgba(30, 41, 59, 0.4);
+    border-radius: 4px;
+    font-size: 0.7rem;
+}
+.ci-ab-label { color: #64748b; display: block; margin-bottom: 2px; }
+.ci-ab-old { color: #94a3b8; }
+.ci-ab-new { color: #e2e8f0; font-weight: 600; }
+.ci-ab-arrow { color: #64748b; margin: 0 2px; }
+.ci-ab-improved { color: #34d399; }
+.ci-ab-degraded { color: #f87171; }
+
+/* Diff summary */
+.ci-diff {
+    margin-top: 8px;
+    padding: 8px;
+    background: rgba(30, 41, 59, 0.4);
+    border-radius: 4px;
+    font-size: 0.68rem;
+    color: #94a3b8;
+    white-space: pre-wrap;
+    font-family: 'JetBrains Mono', monospace;
+    max-height: 120px;
+    overflow-y: auto;
+}
+
+/* History */
+.ci-history-title {
+    font-size: 0.78rem;
+    color: #64748b;
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+.ci-history-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(100, 116, 139, 0.1);
+    font-size: 0.72rem;
+}
+.ci-history-row:last-child { border-bottom: none; }
+.ci-hist-time { color: #64748b; min-width: 100px; }
+.ci-hist-strat { color: #e2e8f0; font-weight: 600; min-width: 60px; }
+.ci-hist-regime { color: #a78bfa; min-width: 50px; }
+.ci-hist-sharpe { color: #93c5fd; }
+
+/* Accept button for REVIEW */
+.ci-accept-btn {
+    padding: 2px 8px;
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    color: #34d399;
+    border-radius: 4px;
+    font-size: 0.65rem;
+    cursor: pointer;
+    font-weight: 600;
+}
+.ci-accept-btn:hover { background: rgba(16, 185, 129, 0.3); }

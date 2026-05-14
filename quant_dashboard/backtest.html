@@ -1,13 +1,18 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>AlphaCore | 回测研究终端 V5.0</title>
-    <meta name="description" content="AlphaCore V5.0 量化回测终端 — 策略中心对齐、Regime预设、Radar评级、Alpha/IR、蒙特卡洛置信区间、Premium视觉升级">    <link rel="stylesheet" href="./static/css/fonts.css?v=1">
-
+    <meta name="description" content="AlphaCore V5.0 量化回测终端 — 策略中心对齐、Regime预设、Radar评级、Alpha/IR、蒙特卡洛置信区间、Premium视觉升级">
+    <meta name="theme-color" content="#3b82f6">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+    <link rel="stylesheet" href="./static/css/fonts.css?v=1">
     <link rel="stylesheet" href="./static/css/styles.css?v=12">
     <link rel="stylesheet" href="./static/css/visual_excellence.css?v=3">
+    <link rel="stylesheet" href="./static/css/mobile.css?v=1">
     <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
     <script>window.echarts || document.write('<script src="./static/vendor/echarts.min.js"><\/script>')</script>
@@ -125,6 +130,40 @@
             <!-- Error Container -->
             <div class="bt-error" id="error-container">
                 ⚠️ <span id="error-message"></span>
+            </div>
+
+            <!-- P1-3: CI/CD 策略管道面板 -->
+            <div class="bt-ci-panel glass-panel" id="ci-panel" style="display:none;">
+                <div class="ci-header">
+                    <div class="ci-header-left">
+                        <span class="ci-title">🔄 策略 CI/CD 管道</span>
+                        <span class="ci-subtitle">— 自动化参数优化 + 质量门检查</span>
+                    </div>
+                    <div class="ci-header-right">
+                        <select id="ci-strategy-select" class="ci-select">
+                            <option value="all">全部策略</option>
+                            <option value="mr">📐 均值回归</option>
+                            <option value="erp">🌐 ERP择时</option>
+                        </select>
+                        <button class="bt-run-btn ci-run-btn" id="ci-run-btn" onclick="triggerCI()">▶ 运行 CI</button>
+                        <button class="bt-drawer-toggle ci-refresh-btn" onclick="loadCIHistory()">↻ 刷新</button>
+                    </div>
+                </div>
+                <div class="ci-status-bar" id="ci-status-bar" style="display:none;">
+                    <span class="ci-status-icon" id="ci-status-icon">⏳</span>
+                    <span class="ci-status-text" id="ci-status-text">CI 运行中...</span>
+                </div>
+                <!-- 最近一次 CI 结果 -->
+                <div class="ci-latest" id="ci-latest">
+                    <div class="ci-empty">暂无 CI 记录 · 点击「运行 CI」开始首次策略参数优化</div>
+                </div>
+                <!-- 历史记录列表 -->
+                <div class="ci-history" id="ci-history"></div>
+            </div>
+
+            <!-- CI/CD 开关按钮 (嵌入 config strip 后方) -->
+            <div class="ci-toggle-bar">
+                <button class="ci-toggle-btn" id="ci-toggle-btn" onclick="toggleCIPanel()">🔄 CI/CD 管道</button>
             </div>
 
             <!-- Empty State (before first run) -->
@@ -325,6 +364,13 @@
         </div>
     </div>
 
-    <script src="./static/js/backtest.js?v=50"></script>
+    <script src="./static/js/backtest.js?v=52"></script>
+    <script>
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js', { scope: '/' })
+            .then(r => console.log('[PWA] SW registered:', r.scope))
+            .catch(e => console.warn('[PWA] SW failed:', e));
+    }
+    </script>
 </body>
 </html>

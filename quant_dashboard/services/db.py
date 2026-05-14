@@ -222,6 +222,41 @@ def init_db():
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
         CREATE INDEX IF NOT EXISTS idx_slippage_date ON slippage_daily(date);
+
+        -- P1-3: 策略 CI/CD 管道运行记录
+        CREATE TABLE IF NOT EXISTS ci_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id TEXT UNIQUE NOT NULL,
+            strategy TEXT NOT NULL,
+            regime TEXT,
+            status TEXT NOT NULL,
+            old_params TEXT,
+            new_params TEXT,
+            old_metrics TEXT,
+            new_metrics TEXT,
+            quality_gate TEXT,
+            diff_summary TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_ci_strategy ON ci_runs(strategy);
+        CREATE INDEX IF NOT EXISTS idx_ci_status ON ci_runs(status);
+
+        -- P2-C: NLP 情报层事件表
+        CREATE TABLE IF NOT EXISTS news_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_id TEXT UNIQUE NOT NULL,
+            title TEXT NOT NULL,
+            category TEXT NOT NULL,
+            impact_score REAL DEFAULT 0,
+            summary TEXT,
+            affected_assets TEXT,
+            scenario_id TEXT,
+            source TEXT,
+            raw_text TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_news_category ON news_events(category);
+        CREATE INDEX IF NOT EXISTS idx_news_created ON news_events(created_at);
     """)
     conn.commit()
     logger.info("SQLite 数据库初始化完成 · %s", DB_PATH)
@@ -1049,3 +1084,126 @@ def get_execution_order_count() -> int:
     """执行指令总数"""
     conn = _get_conn()
     return conn.execute("SELECT COUNT(*) FROM execution_orders").fetchone()[0]
+
+
+# ══════════════════════════════════════════════════════════
+#  P1-3: CI/CD 管道 CRUD
+# ══════════════════════════════════════════════════════════
+
+def save_ci_run(run: dict) -> int:
+    """保存一条 CI 运行记录"""
+    conn = _get_conn()
+    cur = conn.execute(
+        """INSERT OR REPLACE INTO ci_runs
+           (run_id, strategy, regime, status, old_params, new_params,
+            old_metrics, new_metrics, quality_gate, diff_summary)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            run["run_id"], run["strategy"], run.get("regime"),
+            run["status"],
+            json.dumps(run.get("old_params", {}), ensure_ascii=False),
+            json.dumps(run.get("new_params", {}), ensure_ascii=False),
+            json.dumps(run.get("old_metrics", {}), ensure_ascii=False),
+            json.dumps(run.get("new_metrics", {}), ensure_ascii=False),
+            json.dumps(run.get("quality_gate", []), ensure_ascii=False),
+            run.get("diff_summary", ""),
+        )
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_ci_history(strategy: Optional[str] = None, limit: int = 20) -> List[Dict]:
+    """查询 CI 运行历史"""
+    conn = _get_conn()
+    if strategy:
+        rows = conn.execute(
+            "SELECT * FROM ci_runs WHERE strategy = ? ORDER BY created_at DESC LIMIT ?",
+            (strategy, limit)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM ci_runs ORDER BY created_at DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+
+    results = []
+    for r in rows:
+        d = dict(r)
+        for k in ("old_params", "new_params", "old_metrics", "new_metrics", "quality_gate"):
+            if d.get(k):
+                try:
+                    d[k] = json.loads(d[k])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+        results.append(d)
+    return results
+
+
+def get_ci_latest(strategy: str) -> Optional[Dict]:
+    """获取某策略最近一次 CI 结果"""
+    results = get_ci_history(strategy=strategy, limit=1)
+    return results[0] if results else None
+
+
+def update_ci_status(run_id: str, new_status: str) -> bool:
+    """更新 CI 运行状态 (REVIEW → ACCEPT/REJECT)"""
+    conn = _get_conn()
+    cur = conn.execute(
+        "UPDATE ci_runs SET status = ? WHERE run_id = ?",
+        (new_status, run_id)
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+# ══════════════════════════════════════════════════════════
+#  P2-C: NLP 情报层 CRUD
+# ══════════════════════════════════════════════════════════
+
+def save_news_event(event: dict) -> int:
+    """保存一条 NLP 提取的事件"""
+    conn = _get_conn()
+    cur = conn.execute(
+        """INSERT OR IGNORE INTO news_events
+           (event_id, title, category, impact_score, summary,
+            affected_assets, scenario_id, source, raw_text)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            event["event_id"], event["title"], event["category"],
+            event.get("impact_score", 0),
+            event.get("summary", ""),
+            json.dumps(event.get("affected_assets", []), ensure_ascii=False),
+            event.get("scenario_id"),
+            event.get("source", ""),
+            event.get("raw_text", ""),
+        )
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_news_events(category: Optional[str] = None, limit: int = 20) -> List[Dict]:
+    """查询事件历史"""
+    conn = _get_conn()
+    if category:
+        rows = conn.execute(
+            "SELECT * FROM news_events WHERE category = ? ORDER BY created_at DESC LIMIT ?",
+            (category, limit)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM news_events ORDER BY created_at DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+
+    results = []
+    for r in rows:
+        d = dict(r)
+        if d.get("affected_assets"):
+            try:
+                d["affected_assets"] = json.loads(d["affected_assets"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+        results.append(d)
+    return results
