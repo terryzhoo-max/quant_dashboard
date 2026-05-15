@@ -132,6 +132,13 @@ async function initDecisionHub() {
     _riskMatrixCache = null;  // V20.0: 刷新时清除缓存
     window._riskMatrixCacheTs = 0; // V25.1: 对齐 TTL 缓存时间戳
     if (typeof resetRiskTabGuards === 'function') resetRiskTabGuards(); // V25.1: 重置 Risk Tab guards
+
+    // P4: 版本号自动同步 (fire-and-forget, 不阻塞主流程)
+    fetch('/version').then(r => r.json()).then(v => {
+        const short = 'V' + v.version;
+        document.querySelectorAll('#ac-ver-nav, #ac-ver-header').forEach(el => { if (el) el.textContent = short; });
+    }).catch(() => {});
+
     initTabs();
     initSOPToggle();  // V19.3: SOP 折叠事件委托
 
@@ -217,6 +224,9 @@ async function initDecisionHub() {
 
             // ⑪ P2-C: NLP 情报中心 (独立异步)
             loadIntelligence();
+
+            // ⑫ P4: AI 叙事分析 (独立异步)
+            loadNarrative();
 
             // V25.2: ⑩ 信号准确率 (独立异步, 不阻塞主流程)
             AC.secureFetch(`${API_BASE}/accuracy`).then(r => r.json()).then(acc => {
@@ -728,10 +738,15 @@ function renderComplianceBadge(compliance) {
         badge.textContent = '--';
     }
 
-    // 如果有阻断, 灰化执行指令
-    if (status === 'blocked') {
-        const actionEl = document.getElementById('action-inline');
-        if (actionEl) actionEl.style.opacity = '0.5';
+    // 如果有阻断, 添加视觉阻断标记 (保持可读性)
+    const actionEl = document.getElementById('action-inline');
+    if (actionEl) {
+        if (status === 'blocked') {
+            actionEl.classList.add('compliance-blocked');
+        } else {
+            actionEl.classList.remove('compliance-blocked');
+            actionEl.style.opacity = '';  // 清除旧版遗留
+        }
     }
 }
 

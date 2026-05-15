@@ -428,6 +428,22 @@ async def get_daily_report(date: str = Query(default=None, description="日期 Y
     return generate_daily_report(date)
 
 
+# ── P4: LLM 叙事引擎 ──
+
+@router.get("/narrative")
+async def get_narrative():
+    """获取今日 AI 叙事分析报告 (优先缓存, 按需生成)"""
+    from services.narrative_engine import get_daily_narrative
+    return get_daily_narrative()
+
+
+@router.post("/narrative/generate")
+async def generate_narrative(force_deterministic: bool = Query(default=False)):
+    """手动触发叙事报告生成 (可选强制确定性模式)"""
+    from services.narrative_engine import generate_daily_narrative
+    return generate_daily_narrative(force_deterministic=force_deterministic)
+
+
 # ── V21.1: 持仓相关性矩阵 ──
 
 @router.get("/correlation-matrix")

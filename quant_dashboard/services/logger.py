@@ -80,8 +80,26 @@ def _setup_handler():
     return handler
 
 
+def _setup_file_handler():
+    """P4: 文件日志轮转 — 持久化日志用于事后审计"""
+    from logging.handlers import RotatingFileHandler
+    log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, "alphacore.log")
+    handler = RotatingFileHandler(
+        log_file, maxBytes=5 * 1024 * 1024,  # 5 MB
+        backupCount=5, encoding="utf-8"
+    )
+    handler.setFormatter(JsonFormatter())  # 文件永远用 JSON 格式
+    return handler
+
+
 # 全局 handler 单例
 _handler = _setup_handler()
+try:
+    _file_handler = _setup_file_handler()
+except Exception:
+    _file_handler = None  # 文件系统不可用时静默降级
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -96,6 +114,8 @@ def get_logger(name: str) -> logging.Logger:
     logger = logging.getLogger(f"ac.{name}")
     if not logger.handlers:
         logger.addHandler(_handler)
+        if _file_handler:
+            logger.addHandler(_file_handler)
         logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
         logger.propagate = False
     return logger

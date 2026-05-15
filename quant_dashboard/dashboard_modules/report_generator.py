@@ -15,6 +15,7 @@ AlphaCore V21.0 · 投委会日报生成器
 from datetime import datetime
 from typing import Optional
 from services.logger import get_logger
+from version import VERSION_STRING
 
 logger = get_logger("ac.report")
 
@@ -362,7 +363,7 @@ def _build_markdown(date, weekday, snapshot, jcs, conflicts,
 
     lines.append("## 📋 合规声明")
     lines.append("")
-    lines.append("本报告由 AlphaCore V22.0 自动生成，含市场叙事分析。基于 AIAE/ERP/VIX/MR 四引擎联合分析。")
+    lines.append(f"本报告由 {VERSION_STRING} 自动生成，含市场叙事分析。基于 AIAE/ERP/VIX/MR 四引擎联合分析。")
     lines.append("所有数据为收盘后快照，不构成投资建议。决策时请结合实际市场情况。")
     lines.append(f"数据质量: {real_sources}/{total_expected} 引擎正常 · 报告 ID: {report_id}")
     lines.append("")

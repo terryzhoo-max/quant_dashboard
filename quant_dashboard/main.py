@@ -11,6 +11,7 @@ warnings.filterwarnings("ignore", category=FutureWarning,
                         message=".*fillna with 'method' is deprecated.*")
 
 import logging
+from version import VERSION_STRING, __version__
 # 抑制 Windows ProactorEventLoop 的 ConnectionResetError 无害噪音 (WinError 10054)
 _proactor_logger = logging.getLogger("asyncio")
 class _SuppressConnectionReset(logging.Filter):
@@ -208,6 +209,13 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 #  健康检查
 # ═══════════════════════════════════════════════════════════════════
 
+@app.get("/version")
+async def get_version():
+    """P4: 版本信息端点 — 前端自动同步"""
+    from version import __version__, __codename__, VERSION_STRING
+    return {"version": __version__, "codename": __codename__, "display": VERSION_STRING}
+
+
 @app.get("/health")
 async def health_check():
     """V15.0 生产级健康检查: 引擎状态 + 数据新鲜度 + 调度器详情"""
@@ -271,7 +279,7 @@ async def health_check():
     status = "ok" if dashboard_ready else "starting"
     return {
         "status": status,
-        "version": "AlphaCore V15.1",
+        "version": VERSION_STRING,
         "uptime_sec": uptime,
         "cache_age_sec": cache_age,
         "engines": {

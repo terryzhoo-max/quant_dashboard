@@ -655,3 +655,110 @@ function renderPositionPath(data) {
         });
     }
 })();
+
+// ═══════════════════════════════════════════════════
+//  P4: AI 叙事分析面板
+// ═══════════════════════════════════════════════════
+
+async function loadNarrative() {
+    const body = document.getElementById('narrative-body');
+    if (!body) return;
+    console.info('[Narrative] 加载叙事报告...');
+
+    try {
+        const resp = await fetch(`${API_BASE}/narrative`);
+        const data = await resp.json();
+        console.info('[Narrative] API 响应:', data.status, data.provider || 'N/A');
+        if (data.status === 'success' && data.report) {
+            renderNarrative(data);
+        } else {
+            body.innerHTML = `<div style="text-align:center;padding:20px;color:#64748b;font-size:0.82rem;">
+                ${data.message || '叙事报告暂不可用'} · 点击「重新生成」手动触发
+            </div>`;
+        }
+    } catch (e) {
+        console.error('[Narrative] 加载失败:', e);
+        body.innerHTML = '<div style="text-align:center;padding:20px;color:#64748b;font-size:0.82rem;">⚠️ 网络异常</div>';
+    }
+}
+
+function renderNarrative(data) {
+    const body = document.getElementById('narrative-body');
+    const provEl = document.getElementById('narrative-provider');
+    const timeEl = document.getElementById('narrative-time');
+    const summaryEl = document.getElementById('narrative-summary');
+    if (!body) return;
+
+    // Provider badge
+    if (provEl) {
+        const provLabels = {
+            deepseek: 'DeepSeek', gemini: 'Gemini',
+            openai: 'GPT-4o', claude: 'Claude',
+            deterministic: '确定性引擎'
+        };
+        provEl.textContent = provLabels[data.provider] || data.provider;
+        provEl.className = 'narrative-provider-badge provider-' + data.provider;
+    }
+
+    // Time
+    if (timeEl && data.generated_at) {
+        const dt = new Date(data.generated_at);
+        timeEl.textContent = dt.toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit'}) + ' 生成';
+    }
+
+    // Summary
+    if (summaryEl) {
+        summaryEl.textContent = `${data.provider === 'deterministic' ? '规则引擎' : 'LLM'} · ${data.snapshot_date}`;
+    }
+
+    // Report body — parse sections by 【】markers
+    const report = data.report || '';
+    const sectionRegex = /【(.+?)】/g;
+    const parts = report.split(sectionRegex);
+
+    if (parts.length > 1) {
+        // Has section markers — render as cards
+        let html = '';
+        for (let i = 1; i < parts.length; i += 2) {
+            const title = parts[i];
+            const text = (parts[i + 1] || '').trim();
+            html += `
+            <div class="narrative-section">
+                <div class="narrative-section-title">【${title}】</div>
+                <div class="narrative-section-text">${text}</div>
+            </div>`;
+        }
+        body.innerHTML = html;
+    } else {
+        // Plain text
+        body.textContent = report;
+    }
+    console.info('[Narrative] 渲染完成 (%d 段)', Math.floor(parts.length / 2));
+}
+
+async function generateNarrative() {
+    const btn = document.getElementById('btn-narrative-gen');
+    const body = document.getElementById('narrative-body');
+    if (btn) { btn.classList.add('generating'); btn.disabled = true; btn.textContent = '⏳ 生成中...'; }
+    if (body) body.innerHTML = '<div class="loading-spinner">🤖 AI 正在分析市场数据...</div>';
+
+    try {
+        const headers = {};
+        const apiKey = localStorage.getItem('alphacore_api_key');
+        if (apiKey) headers['X-API-Key'] = apiKey;
+
+        const resp = await fetch(`${API_BASE}/narrative/generate`, { method: 'POST', headers });
+        const data = await resp.json();
+        if (data.status === 'success') {
+            renderNarrative(data);
+        } else {
+            if (body) body.innerHTML = `<div style="text-align:center;padding:20px;color:#f87171;">${data.message || '生成失败'}</div>`;
+        }
+    } catch (e) {
+        console.error('[Narrative] 生成失败:', e);
+        if (body) body.innerHTML = '<div style="text-align:center;padding:20px;color:#f87171;">⚠️ 生成失败，请重试</div>';
+    } finally {
+        if (btn) { btn.classList.remove('generating'); btn.disabled = false; btn.textContent = '🔄 重新生成'; }
+    }
+}
+

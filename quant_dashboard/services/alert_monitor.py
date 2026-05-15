@@ -60,6 +60,28 @@ ALERT_RULES = [
         "detail_tpl": "VIX={value:.1f} 触发全策略风控降权。规则: 仓位上限30%，禁止新建仓。历史5年仅8天触发此级别。",
         "cooldown_hours": 2,
     },
+    {
+        "id": "regime_shift",
+        "name": "AIAE Regime 切换",
+        "check": lambda s: s.get("_regime_shifted", False),
+        "value_key": "aiae_regime",
+        "severity": "warning",
+        "icon": "🔄",
+        "title_tpl": "Regime 切换 → R{value:.0f}",
+        "detail_tpl": "AIAE 市场温度 Regime 发生切换，当前 R{value:.0f}。建议审查仓位是否需要调整至新 Regime 对应水平。",
+        "cooldown_hours": 24,
+    },
+    {
+        "id": "tail_risk_high",
+        "name": "尾部风险过高",
+        "check": lambda s: (s.get("tail_risk_score") or 0) >= 60,
+        "value_key": "tail_risk_score",
+        "severity": "critical",
+        "icon": "🔥",
+        "title_tpl": "尾部风险 {value:.0f} (≥60 危险)",
+        "detail_tpl": "综合集中度/VIX/AIAE 信号，尾部风险评分 {value:.0f}，处于危险区间。建议：降仓至70%建议水平 + 严格止损。",
+        "cooldown_hours": 8,
+    },
 ]
 
 
@@ -103,6 +125,25 @@ def scan_and_alert() -> list:
     snapshot["jcs_score"] = jcs["score"]
     snapshot["jcs_level"] = jcs["level"]
     snapshot["pos"] = snapshot.get("suggested_position", "?")
+
+    # P4: Regime 切换检测 — 对比上一次决策记录
+    try:
+        history = ac_db.get_decision_history(2)
+        if len(history) >= 2:
+            prev_regime = history[-2].get("aiae_regime")
+            curr_regime = snapshot.get("aiae_regime")
+            if prev_regime is not None and curr_regime is not None and prev_regime != curr_regime:
+                snapshot["_regime_shifted"] = True
+    except Exception:
+        pass
+
+    # P4: 尾部风险注入
+    try:
+        from dashboard_modules.decision_engine import compute_risk_matrix
+        risk = compute_risk_matrix()
+        snapshot["tail_risk_score"] = risk.get("tail_risk", {}).get("score", 0)
+    except Exception:
+        pass
 
     # 3. 遍历规则
     triggered = []
@@ -179,6 +220,9 @@ def _push_all_channels(alerts: list):
         if "email" in channels:
             _push_email(config.get("email_smtp", {}), title, body)
 
+        if "wecom" in channels:
+            _push_wecom(config.get("wecom_webhook_url", ""), title, body)
+
 
 def _push_serverchan(sendkey: str, title: str, body: str):
     """Server酱 → 微信推送"""
@@ -237,3 +281,34 @@ def _push_email(smtp_config: dict, title: str, body: str):
         logger.info("✅ 邮件推送成功 → %s", to_addr)
     except Exception as e:
         logger.warning("邮件推送异常: %s", e)
+
+
+def _push_wecom(webhook_url: str, title: str, body: str):
+    """P4: 企业微信 Webhook 推送 (零审核, Markdown 格式)"""
+    if not webhook_url:
+        logger.warning("企业微信 Webhook URL 未配置, 跳过推送")
+        return
+    try:
+        import urllib.request
+        from version import VERSION_STRING
+        md_content = (
+            f"## {title}\n\n"
+            f"{body}\n\n"
+            f"> {VERSION_STRING} · {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        )
+        payload = json.dumps({
+            "msgtype": "markdown",
+            "markdown": {"content": md_content}
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            webhook_url, data=payload, method="POST",
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            result = json.loads(resp.read().decode())
+            if result.get("errcode") == 0:
+                logger.info("✅ 企业微信推送成功")
+            else:
+                logger.warning("企业微信推送失败: %s", result.get("errmsg", "unknown"))
+    except Exception as e:
+        logger.warning("企业微信推送异常: %s", e)
