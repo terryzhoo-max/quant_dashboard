@@ -1250,12 +1250,21 @@ def log_daily_decision():
         "suggested_position": snapshot.get("suggested_position"),
         "conflict_count": conflicts["conflict_count"],
         "degraded_modules": ",".join(snapshot.get("degraded_modules", [])) if isinstance(snapshot.get("degraded_modules"), list) else str(snapshot.get("degraded_modules", "")),
+        # V25.3: 影子模式 + 多资产信号
+        "jcs_v4_score": jcs.get("shadow", {}).get("v4_score"),
+        "jcs_v6_score": jcs.get("shadow", {}).get("v6_score"),
+        "jcs_shadow_delta": jcs.get("shadow", {}).get("delta"),
+        "gold_signal": snapshot.get("gold_signal"),
+        "bond_signal": snapshot.get("bond_signal"),
     }
 
     ac_db.upsert_decision_log(data)
     ac_db.cleanup_old_decisions(365)
-    logger.info("决策快照存档: JCS=%.1f (%s) conflicts=%d pos=%s%%",
-                jcs["score"], jcs["level"], conflicts["conflict_count"],
+
+    shadow = jcs.get("shadow", {})
+    logger.info("决策快照存档: JCS=%.1f (%s) shadow_delta=%.1f conflicts=%d pos=%s%%",
+                jcs["score"], jcs["level"], shadow.get("delta", 0),
+                conflicts["conflict_count"],
                 snapshot.get("suggested_position", "?"))
 
 

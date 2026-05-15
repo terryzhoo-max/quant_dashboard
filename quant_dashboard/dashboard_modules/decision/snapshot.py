@@ -111,4 +111,23 @@ def _build_snapshot_from_cache() -> dict:
         mr_regime = "RANGE"
     snapshot["mr_regime"] = mr_regime
 
+    # V25.3 P3-B: 黄金信号 (从 SWR 缓存读取)
+    gold_data = cache_manager.get_json("swr_gold_signal")
+    if gold_data and isinstance(gold_data, dict):
+        snapshot["gold_signal"] = gold_data.get("gold_signal", 0)
+        snapshot["gold_direction"] = gold_data.get("gold_direction", "neutral")
+    else:
+        snapshot["gold_signal"] = None
+        snapshot["gold_direction"] = None
+
+    # V25.3 P3-B: 国债信号 (从利率引擎缓存读取)
+    rates_data = cache_manager.get_json("swr_rates_strategy")
+    if rates_data and isinstance(rates_data, dict):
+        # rates engine 输出 composite_signal + allocation.bond_pct
+        snapshot["bond_signal"] = rates_data.get("composite_signal", 0)
+        snapshot["bond_direction"] = rates_data.get("bond_direction", "neutral")
+    else:
+        snapshot["bond_signal"] = None
+        snapshot["bond_direction"] = None
+
     return snapshot

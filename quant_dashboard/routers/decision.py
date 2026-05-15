@@ -20,10 +20,22 @@ class SimulateRequest(BaseModel):
 
 @router.get("/hub")
 async def get_decision_hub():
-    """决策中枢全量数据 — V22.0: 含动态事件检测"""
-    from services.cache_service import stale_while_revalidate
+    """决策中枢全量数据 — V22.0: 含动态事件检测, V25.3: 断路器保护"""
+    from services.cache_service import stale_while_revalidate, cache_manager
+    from services.circuit_breaker import decision_hub_breaker
     from dashboard_modules.decision_engine import get_hub_data_with_events
-    return stale_while_revalidate("swr_decision_hub", get_hub_data_with_events, fresh_ttl=300, stale_ttl=3600)
+
+    def _cached_fallback():
+        cached = cache_manager.get_json("swr_decision_hub")
+        if cached:
+            cached["_breaker"] = "degraded"
+            return cached
+        return {"status": "degraded", "message": "决策中枢暂时不可用, 请稍后重试"}
+
+    return decision_hub_breaker.call(
+        lambda: stale_while_revalidate("swr_decision_hub", get_hub_data_with_events, fresh_ttl=300, stale_ttl=3600),
+        fallback_fn=_cached_fallback,
+    )
 
 
 @router.get("/scenarios")
@@ -97,6 +109,21 @@ async def get_accuracy():
         return {"status": "success", **stats}
 
     return stale_while_revalidate("swr_accuracy", _compute, fresh_ttl=600, stale_ttl=3600)
+
+
+@router.get("/accuracy-dashboard")
+async def get_accuracy_dashboard(window: int = Query(default=30, ge=7, le=180)):
+    """P3-C: 准确率分析仪表板 — 多维度分组 + 影子模式对比"""
+    from services import db as ac_db
+
+    return {
+        "status": "success",
+        "overview": ac_db.get_accuracy_stats(),
+        "by_jcs_level": ac_db.get_accuracy_by_jcs_level(),
+        "by_regime": ac_db.get_accuracy_by_regime(),
+        "rolling": ac_db.get_accuracy_rolling(window),
+        "shadow": ac_db.get_shadow_comparison(),
+    }
 
 
 @router.get("/calendar")
@@ -405,15 +432,26 @@ async def get_daily_report(date: str = Query(default=None, description="日期 Y
 
 @router.get("/correlation-matrix")
 async def get_correlation_matrix():
-    """持仓间皮尔逊相关性热力图 + MCTR 风险贡献 — V25.0: SWR 缓存 (30min/2h)"""
-    from services.cache_service import stale_while_revalidate
+    """持仓间皮尔逊相关性热力图 + MCTR 风险贡献 — V25.3: 断路器保护"""
+    from services.cache_service import stale_while_revalidate, cache_manager
+    from services.circuit_breaker import correlation_breaker
 
     def _compute():
         from portfolio_engine import get_portfolio_engine
         engine = get_portfolio_engine()
         return engine.get_correlation_data()
 
-    return stale_while_revalidate("swr_corr_matrix", _compute, fresh_ttl=1800, stale_ttl=7200)
+    def _cached_fallback():
+        cached = cache_manager.get_json("swr_corr_matrix")
+        if cached:
+            cached["_breaker"] = "degraded"
+            return cached
+        return {"status": "degraded", "message": "相关性矩阵暂时不可用"}
+
+    return correlation_breaker.call(
+        lambda: stale_while_revalidate("swr_corr_matrix", _compute, fresh_ttl=1800, stale_ttl=7200),
+        fallback_fn=_cached_fallback,
+    )
 
 
 # ═══════════════════════════════════════════════════
@@ -648,11 +686,13 @@ class OptimizeCustomRequest(BaseModel):
 
 @router.get("/optimize")
 async def get_optimal_weights():
-    """一键组合优化 — BL > MVO > 等权 降级链
-    V24.0: 去除 SWR 缓存, 每次点击实时计算 (确保使用最新 AIAE 仓位约束)
-    """
+    """一键组合优化 — BL > MVO > 等权 降级链, V25.3: 断路器保护"""
+    from services.circuit_breaker import optimizer_breaker
     from engines.optimizer_engine import full_optimize
-    return full_optimize()
+    return optimizer_breaker.call(
+        full_optimize,
+        fallback={"status": "degraded", "message": "优化引擎暂时不可用, 请稍后重试"},
+    )
 
 
 @router.get("/efficient-frontier")
@@ -783,3 +823,34 @@ async def get_optimized_path():
         },
         "path": path,
     }
+
+
+# ═══════════════════════════════════════════════════
+#  V25.3: 断路器状态查询
+# ═══════════════════════════════════════════════════
+
+@router.get("/breaker-status")
+async def get_breaker_status():
+    """查询所有引擎断路器状态"""
+    from services.circuit_breaker import get_all_breaker_status
+    return {"status": "success", "breakers": get_all_breaker_status()}
+
+
+@router.post("/breaker-reset/{name}")
+async def reset_breaker(name: str):
+    """手动重置指定断路器"""
+    from services.circuit_breaker import (
+        decision_hub_breaker, correlation_breaker,
+        brinson_breaker, optimizer_breaker,
+    )
+    breaker_map = {
+        "decision_hub": decision_hub_breaker,
+        "correlation": correlation_breaker,
+        "brinson": brinson_breaker,
+        "optimizer": optimizer_breaker,
+    }
+    breaker = breaker_map.get(name)
+    if not breaker:
+        return {"status": "error", "error": f"未知断路器: {name}"}
+    breaker.reset()
+    return {"status": "success", "message": f"断路器 {name} 已重置", "new_state": breaker.get_status()}

@@ -685,6 +685,21 @@
                     </div>
                 </div>
 
+                <!-- P3-C: 准确率分析仪表板 -->
+                <div class="accuracy-dashboard-card glass-decision" id="accuracy-dashboard-card">
+                    <div class="acc-dash-header">
+                        <h3 class="risk-section-title">📊 准确率分析仪表板</h3>
+                        <div class="acc-dash-tabs">
+                            <button class="acc-tab active" onclick="switchAccTab('jcs', this)">按 JCS 级别</button>
+                            <button class="acc-tab" onclick="switchAccTab('regime', this)">按 Regime</button>
+                            <button class="acc-tab" onclick="switchAccTab('shadow', this)">V4/V6 对比</button>
+                        </div>
+                    </div>
+                    <div id="acc-dash-content">
+                        <div class="loading-spinner">✨ 加载中...</div>
+                    </div>
+                </div>
+
             </div>
 
             <!-- ═══ Tab 4: 复盘日历 ═══ -->

@@ -10,17 +10,29 @@ AlphaCore · 信号矛盾检测器 + 方向解析
 
 
 def _signal_direction(snapshot: dict) -> dict:
-    """将各引擎状态映射为方向: +1(看多), 0(中性), -1(看空)"""
+    """将各引擎状态映射为方向: +1(看多), 0(中性), -1(看空)
+    
+    V25.3: 扩展至 6 维 (原4 + gold + bond)
+    gold/bond 使用 composite signal 分值映射:
+      signal > 25 → +1, signal < -25 → -1, else → 0
+    """
     aiae_r = snapshot.get("aiae_regime") or 3        # None → 中性
     erp_s = snapshot.get("erp_score") or 50          # None → 中性
     vix_v = snapshot.get("vix_val") or 20            # None → 中性
     mr_r = snapshot.get("mr_regime") or "RANGE"      # None → 中性
+
+    # 新增: 多资产信号
+    gold_sig = snapshot.get("gold_signal")           # [-100, 100] or None
+    bond_sig = snapshot.get("bond_signal")           # [-100, 100] or None
 
     return {
         "aiae": 1 if aiae_r <= 2 else (-1 if aiae_r >= 4 else 0),
         "erp": 1 if erp_s > 55 else (-1 if erp_s < 35 else 0),  # V19.1: 拓宽 (60/40→55/35, A股ERP分布校准)
         "vix": 1 if vix_v < 16 else (-1 if vix_v > 25 else 0),  # P1: 收窄阈值 (A股实证校准)
         "mr": 1 if mr_r == "BULL" else (-1 if mr_r in ("BEAR", "CRASH") else 0),
+        # V25.3: 多资产维度 (None → 0 中性, 不影响旧逻辑)
+        "gold": (1 if gold_sig > 25 else (-1 if gold_sig < -25 else 0)) if gold_sig is not None else 0,
+        "bond": (1 if bond_sig > 25 else (-1 if bond_sig < -25 else 0)) if bond_sig is not None else 0,
     }
 
 

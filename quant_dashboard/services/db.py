@@ -509,15 +509,16 @@ def get_portfolio_snapshot_count() -> int:
 # ══════════════════════════════════════════════════════════
 
 def upsert_decision_log(data: dict):
-    """插入或更新每日决策快照 (按 date UNIQUE 键, 幂等)"""
+    """插入或更新每日决策快照 (按 date UNIQUE 键, 幂等) — V25.3: 含影子模式"""
     conn = _get_conn()
     now = datetime.now().isoformat()
     conn.execute(
         """INSERT INTO decision_log
            (date, aiae_regime, aiae_v1, erp_score, erp_val, vix_val, mr_regime,
             hub_composite, jcs_score, jcs_level, suggested_position,
-            conflict_count, degraded_modules, recorded_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            conflict_count, degraded_modules, recorded_at,
+            jcs_v4_score, jcs_v6_score, jcs_shadow_delta, gold_signal, bond_signal)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(date) DO UPDATE SET
              aiae_regime = excluded.aiae_regime,
              aiae_v1 = excluded.aiae_v1,
@@ -531,7 +532,12 @@ def upsert_decision_log(data: dict):
              suggested_position = excluded.suggested_position,
              conflict_count = excluded.conflict_count,
              degraded_modules = excluded.degraded_modules,
-             recorded_at = excluded.recorded_at""",
+             recorded_at = excluded.recorded_at,
+             jcs_v4_score = excluded.jcs_v4_score,
+             jcs_v6_score = excluded.jcs_v6_score,
+             jcs_shadow_delta = excluded.jcs_shadow_delta,
+             gold_signal = excluded.gold_signal,
+             bond_signal = excluded.bond_signal""",
         (
             data.get("date"),
             data.get("aiae_regime"),
@@ -547,6 +553,11 @@ def upsert_decision_log(data: dict):
             data.get("conflict_count", 0),
             data.get("degraded_modules", ""),
             now,
+            data.get("jcs_v4_score"),
+            data.get("jcs_v6_score"),
+            data.get("jcs_shadow_delta"),
+            data.get("gold_signal"),
+            data.get("bond_signal"),
         ),
     )
     conn.commit()
@@ -574,11 +585,21 @@ def cleanup_old_decisions(keep_days: int = 365):
 
 
 def migrate_decision_log_v2():
-    """V16.0 Phase 2: 安全添加准确率追踪字段 (幂等)"""
+    """V16.0 Phase 2 + V25.3: 安全添加准确率追踪 + 影子模式字段 (幂等)"""
     conn = _get_conn()
     existing = [row[1] for row in conn.execute("PRAGMA table_info(decision_log)").fetchall()]
     added = []
-    for col, typ in [("market_return_5d", "REAL"), ("signal_correct", "INTEGER")]:
+    new_cols = [
+        ("market_return_5d", "REAL"),
+        ("signal_correct", "INTEGER"),
+        # V25.3: 影子模式 + 多资产信号
+        ("jcs_v4_score", "REAL"),
+        ("jcs_v6_score", "REAL"),
+        ("jcs_shadow_delta", "REAL"),
+        ("gold_signal", "REAL"),
+        ("bond_signal", "REAL"),
+    ]
+    for col, typ in new_cols:
         if col not in existing:
             conn.execute(f"ALTER TABLE decision_log ADD COLUMN {col} {typ}")
             added.append(col)
@@ -670,6 +691,138 @@ def get_accuracy_stats() -> Dict:
         "history": history_list,
     }
 
+
+def get_accuracy_by_jcs_level() -> Dict:
+    """P3-C: 按 JCS 置信度级别分组的准确率"""
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT jcs_level, signal_correct, COUNT(*) as cnt "
+        "FROM decision_log "
+        "WHERE signal_correct IS NOT NULL AND signal_correct >= 0 "
+        "AND jcs_level IS NOT NULL "
+        "GROUP BY jcs_level, signal_correct"
+    ).fetchall()
+
+    levels = {}
+    for level, correct, cnt in rows:
+        if level not in levels:
+            levels[level] = {"total": 0, "correct": 0}
+        levels[level]["total"] += cnt
+        if correct == 1:
+            levels[level]["correct"] += cnt
+
+    result = {}
+    for level in ["high", "medium", "low"]:
+        data = levels.get(level, {"total": 0, "correct": 0})
+        result[level] = {
+            "total": data["total"],
+            "correct": data["correct"],
+            "accuracy": round(data["correct"] / data["total"] * 100, 1) if data["total"] > 0 else None,
+        }
+    return result
+
+
+def get_accuracy_by_regime() -> Dict:
+    """P3-C: 按 AIAE Regime 分组的准确率"""
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT aiae_regime, signal_correct, COUNT(*) as cnt "
+        "FROM decision_log "
+        "WHERE signal_correct IS NOT NULL AND signal_correct >= 0 "
+        "AND aiae_regime IS NOT NULL "
+        "GROUP BY aiae_regime, signal_correct"
+    ).fetchall()
+
+    regimes = {}
+    regime_labels = {1: "Ⅰ 极冷", 2: "Ⅱ 偏冷", 3: "Ⅲ 中性", 4: "Ⅳ 偏热", 5: "Ⅴ 极热"}
+    for regime, correct, cnt in rows:
+        if regime not in regimes:
+            regimes[regime] = {"total": 0, "correct": 0}
+        regimes[regime]["total"] += cnt
+        if correct == 1:
+            regimes[regime]["correct"] += cnt
+
+    result = {}
+    for r in range(1, 6):
+        data = regimes.get(r, {"total": 0, "correct": 0})
+        result[str(r)] = {
+            "regime": r,
+            "label": regime_labels.get(r, f"R{r}"),
+            "total": data["total"],
+            "correct": data["correct"],
+            "accuracy": round(data["correct"] / data["total"] * 100, 1) if data["total"] > 0 else None,
+        }
+    return result
+
+
+def get_accuracy_rolling(window: int = 30) -> Dict:
+    """P3-C: 滚动窗口准确率 (30/60/90日)"""
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT date, jcs_score, jcs_level, signal_correct, market_return_5d, "
+        "aiae_regime, jcs_v4_score, jcs_v6_score, jcs_shadow_delta "
+        "FROM decision_log "
+        "WHERE signal_correct IS NOT NULL AND signal_correct >= 0 "
+        "ORDER BY date DESC LIMIT ?", (window,)
+    ).fetchall()
+
+    if not rows:
+        return {"window": window, "total": 0, "accuracy": None, "data": []}
+
+    total = len(rows)
+    correct = sum(1 for r in rows if r[3] == 1)
+    accuracy = round(correct / total * 100, 1) if total > 0 else None
+
+    data = [{
+        "date": r[0], "jcs": r[1], "level": r[2], "correct": r[3],
+        "ret5d": r[4], "regime": r[5],
+        "v4_score": r[6], "v6_score": r[7], "shadow_delta": r[8],
+    } for r in rows]
+
+    return {
+        "window": window,
+        "total": total,
+        "correct": correct,
+        "accuracy": accuracy,
+        "data": data,
+    }
+
+
+def get_shadow_comparison() -> Dict:
+    """P3-C: V4 vs V6 影子模式对比分析"""
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT jcs_v4_score, jcs_v6_score, jcs_shadow_delta, signal_correct "
+        "FROM decision_log "
+        "WHERE jcs_v4_score IS NOT NULL AND jcs_v6_score IS NOT NULL "
+        "AND signal_correct IS NOT NULL AND signal_correct >= 0 "
+        "ORDER BY date DESC LIMIT 60"
+    ).fetchall()
+
+    if not rows:
+        return {"has_data": False, "total": 0}
+
+    total = len(rows)
+    # V4 准确率
+    v4_correct = sum(1 for r in rows if (r[0] >= 50 and r[3] == 1) or (r[0] < 50 and r[3] == 0))
+    # V6 准确率
+    v6_correct = sum(1 for r in rows if (r[1] >= 50 and r[3] == 1) or (r[1] < 50 and r[3] == 0))
+
+    avg_delta = round(sum(r[2] for r in rows if r[2]) / total, 2) if total > 0 else 0
+
+    return {
+        "has_data": True,
+        "total": total,
+        "v4_accuracy": round(v4_correct / total * 100, 1) if total > 0 else None,
+        "v6_accuracy": round(v6_correct / total * 100, 1) if total > 0 else None,
+        "avg_delta": avg_delta,
+        "v6_better": v6_correct > v4_correct,
+        "recommendation": (
+            "V6 表现优于 V4，建议正式切换" if v6_correct > v4_correct + 2
+            else "V4/V6 表现接近，继续观察" if abs(v6_correct - v4_correct) <= 2
+            else "V4 表现优于 V6，维持现有权重"
+        ),
+    }
 
 
 def get_calendar_data(year: int = None, month: int = None) -> List[Dict]:

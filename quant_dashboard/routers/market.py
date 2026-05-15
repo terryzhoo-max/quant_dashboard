@@ -122,6 +122,18 @@ async def get_rates_strategy():
     return stale_while_revalidate("swr_rates", _compute, fresh_ttl=3600, stale_ttl=21600)
 
 
+@router.get("/strategy/gold-signal")
+async def get_gold_signal():
+    """黄金择时信号 (实际利率 + 美元 + 通胀预期) — V25.3: SWR 缓存 (1h/6h)"""
+    from services.cache_service import stale_while_revalidate
+
+    def _compute():
+        from engines.gold_signal_engine import compute_gold_signal
+        return compute_gold_signal()
+
+    return stale_while_revalidate("swr_gold_signal", _compute, fresh_ttl=3600, stale_ttl=21600)
+
+
 @router.get("/stock/name")
 async def get_stock_name(ts_code: str):
     """查询单只标的的中文名称，支持 A 股和场内 ETF"""

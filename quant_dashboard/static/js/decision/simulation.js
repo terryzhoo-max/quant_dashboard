@@ -264,6 +264,8 @@ let _riskLoadedAt = 0;
 const _RISK_GUARD_TTL = 300000; // 5 min
 
 async function loadRiskMatrix() {
+    // P3-C: 准确率仪表板独立于 riskMatrix guard, 始终尝试加载
+    loadAccuracyDashboard();
     if (_riskLoadedAt && (Date.now() - _riskLoadedAt) < _RISK_GUARD_TTL) return;
     try {
         // V25.1: 强制清除前端缓存以获取最新 SWR 数据
@@ -285,7 +287,9 @@ async function loadRiskMatrix() {
         loadCorrelationMatrix();
         loadDriftStatus();
         _riskLoadedAt = Date.now();
-    } catch (e) { console.error('Risk matrix load error:', e); }
+    } catch (e) {
+        console.error('Risk matrix load error:', e);
+    }
 }
 
 /** V25.1: 供刷新按钮调用 — 重置所有 Risk Tab guard */
@@ -671,3 +675,104 @@ async function loadCalendar() {
     } catch (e) { console.error('Calendar load error:', e); }
 }
 
+// ═══════════════════════════════════════════════════
+//  P3-C: 准确率分析仪表板
+// ═══════════════════════════════════════════════════
+
+let _accDashData = null;
+let _accDashLoaded = false;
+
+async function loadAccuracyDashboard() {
+    if (_accDashLoaded) return;
+    const el = document.getElementById('acc-dash-content');
+    try {
+        const resp = await fetch(`${API_BASE}/accuracy-dashboard?window=60`);
+        _accDashData = await resp.json();
+        if (_accDashData.status === 'success') {
+            renderAccDashJCS(_accDashData.by_jcs_level);
+            _accDashLoaded = true;
+        } else {
+            if (el) el.innerHTML = '<div style="text-align:center;padding:16px;color:#64748b">暂无数据</div>';
+        }
+    } catch (e) {
+        console.error('Accuracy dashboard load error:', e);
+        if (el) el.innerHTML = `<div style="text-align:center;padding:16px;color:#f87171">加载异常: ${e.message}</div>`;
+    }
+}
+
+function switchAccTab(tab, btnEl) {
+    document.querySelectorAll('.acc-tab').forEach(t => t.classList.remove('active'));
+    if (btnEl) btnEl.classList.add('active');
+    if (!_accDashData) { loadAccuracyDashboard(); return; }
+    if (tab === 'jcs') renderAccDashJCS(_accDashData.by_jcs_level);
+    else if (tab === 'regime') renderAccDashRegime(_accDashData.by_regime);
+    else if (tab === 'shadow') renderAccDashShadow(_accDashData.shadow);
+}
+
+function renderAccDashJCS(data) {
+    const el = document.getElementById('acc-dash-content');
+    if (!el || !data) return;
+    const levels = [
+        { key: 'high', label: '🟢 高置信', color: '#34d399' },
+        { key: 'medium', label: '🟡 中置信', color: '#fbbf24' },
+        { key: 'low', label: '🔴 低置信', color: '#f87171' },
+    ];
+    el.innerHTML = `<div class="acc-dash-grid">${levels.map(l => {
+        const d = data[l.key] || { total: 0, correct: 0, accuracy: null };
+        const pct = d.accuracy != null ? d.accuracy : 0;
+        return `<div class="acc-dash-row">
+            <div class="acc-dash-label">${l.label}</div>
+            <div class="acc-dash-bar-bg"><div class="acc-dash-bar" style="width:${Math.max(pct, 2)}%;background:${l.color}"></div><span class="acc-dash-bar-pct">${d.accuracy != null ? d.accuracy + '%' : '--'}</span></div>
+            <div class="acc-dash-count">${d.correct}/${d.total}</div>
+        </div>`;
+    }).join('')}</div><div class="acc-dash-insight">${_getJCSInsight(data)}</div>`;
+}
+
+function _getJCSInsight(data) {
+    const h = data.high || {}, m = data.medium || {}, l = data.low || {};
+    if (!h.total && !m.total && !l.total) return '<span style="color:#64748b">暂无足够数据生成分析</span>';
+    const best = [
+        { key: '高置信', acc: h.accuracy, total: h.total },
+        { key: '中置信', acc: m.accuracy, total: m.total },
+        { key: '低置信', acc: l.accuracy, total: l.total },
+    ].filter(x => x.total >= 3).sort((a, b) => (b.acc || 0) - (a.acc || 0));
+    if (best.length === 0) return '<span style="color:#64748b">各级别样本不足，继续积累数据</span>';
+    return `💡 <strong>${best[0].key}</strong>信号准确率最高 (${best[0].acc}%), 建议在此级别下增加执行力度`;
+}
+
+function renderAccDashRegime(data) {
+    const el = document.getElementById('acc-dash-content');
+    if (!el || !data) return;
+    const regimes = ['1', '2', '3', '4', '5'];
+    const colors = { '1': '#34d399', '2': '#6ee7b7', '3': '#94a3b8', '4': '#fbbf24', '5': '#f87171' };
+    el.innerHTML = `<div class="acc-dash-grid">${regimes.map(r => {
+        const d = data[r] || { label: 'R' + r, total: 0, accuracy: null, correct: 0 };
+        const pct = d.accuracy != null ? d.accuracy : 0;
+        return `<div class="acc-dash-row">
+            <div class="acc-dash-label">${d.label}</div>
+            <div class="acc-dash-bar-bg"><div class="acc-dash-bar" style="width:${Math.max(pct, 2)}%;background:${colors[r]}"></div><span class="acc-dash-bar-pct">${d.accuracy != null ? d.accuracy + '%' : '--'}</span></div>
+            <div class="acc-dash-count">${d.correct}/${d.total}</div>
+        </div>`;
+    }).join('')}</div><div class="acc-dash-insight">💡 不同市场 Regime 下信号准确率差异揭示系统的适应性边界</div>`;
+}
+
+function renderAccDashShadow(data) {
+    const el = document.getElementById('acc-dash-content');
+    if (!el) return;
+    if (!data || !data.has_data) {
+        el.innerHTML = `<div class="acc-dash-empty"><div style="font-size:2rem;margin-bottom:8px">🔬</div><div style="color:#94a3b8">影子模式数据积累中</div><div style="color:#64748b;font-size:0.78rem;margin-top:4px">V4/V6 对比需要至少 5 个交易日的影子数据。<br>系统已启动并行计算, 数据将自动积累。</div></div>`;
+        return;
+    }
+    const betterIcon = data.v6_better ? '✅' : '⏳';
+    el.innerHTML = `
+        <div class="shadow-compare">
+            <div class="shadow-metric"><div class="shadow-value" style="color:#a78bfa">${data.v4_accuracy != null ? data.v4_accuracy + '%' : '--'}</div><div class="shadow-label">V4 (4维) 准确率</div></div>
+            <div class="shadow-vs">VS</div>
+            <div class="shadow-metric"><div class="shadow-value" style="color:#38bdf8">${data.v6_accuracy != null ? data.v6_accuracy + '%' : '--'}</div><div class="shadow-label">V6 (6维) 准确率</div></div>
+        </div>
+        <div class="shadow-details">
+            <div class="shadow-detail-row"><span>样本量</span><span>${data.total} 天</span></div>
+            <div class="shadow-detail-row"><span>平均 Delta</span><span style="color:${data.avg_delta > 0 ? '#34d399' : '#f87171'}">${data.avg_delta > 0 ? '+' : ''}${data.avg_delta}</span></div>
+            <div class="shadow-detail-row"><span>结论</span><span>${betterIcon} ${data.recommendation}</span></div>
+        </div>`;
+}

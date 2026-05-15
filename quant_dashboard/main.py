@@ -123,8 +123,13 @@ async def lifespan(app: FastAPI):
         job_defaults={'misfire_grace_time': 120, 'coalesce': True},
     )
 
-    # 1. 盘中高频热点 (每2分钟)
-    scheduler.add_job(_hot_data_reactor_tick, IntervalTrigger(seconds=120), id="hot_data")
+    # 1. 自适应盘中轮询 (V25.3: 替代固定 120s)
+    from services.realtime_poller import init_poller
+    _poller = init_poller(
+        tick_fn=_hot_data_reactor_tick,
+        emergency_fn=lambda: _logger.info("[Emergency] VIX 跳变紧急刷新触发"),
+    )
+    scheduler.add_job(_poller.tick, IntervalTrigger(seconds=30), id="adaptive_poller")
     # 2. 定时收盘预热 15:35 (周一至周五)
     scheduler.add_job(daily_warmup_callback, CronTrigger(day_of_week='mon-fri', hour=15, minute=35), id="daily_warmup")
     # 3. 早间预热 08:30 (周一至周五)
@@ -283,8 +288,29 @@ async def health_check():
         "database": db_info,
         "data_freshness": data_freshness,
         "scheduler": scheduler_info,
+        "poller": _get_poller_status(),
+        "breakers": _get_breaker_summary(),
         "timestamp": datetime.now().isoformat(),
     }
+
+
+def _get_poller_status() -> dict:
+    try:
+        from services.realtime_poller import get_poller
+        poller = get_poller()
+        return poller.get_status() if poller else {"status": "not_initialized"}
+    except Exception:
+        return {"status": "error"}
+
+
+def _get_breaker_summary() -> dict:
+    try:
+        from services.circuit_breaker import get_all_breaker_status
+        statuses = get_all_breaker_status()
+        open_count = sum(1 for s in statuses if s["state"] == "open")
+        return {"total": len(statuses), "open": open_count, "healthy": open_count == 0}
+    except Exception:
+        return {"status": "error"}
 
 
 # ═══════════════════════════════════════════════════════════════════
