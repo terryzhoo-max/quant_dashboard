@@ -955,9 +955,9 @@ class AIAEEngine:
                 mv_data = f_mv.result(timeout=30)
                 m2_data = f_m2.result(timeout=30)
                 margin_data = f_margin.result(timeout=30)
-            except RuntimeError:
-                # 解释器 shutdown 阶段, 降级为同步
-                _log("ThreadPool shutdown, 降级同步获取", "WARN")
+            except (RuntimeError, TimeoutError):
+                # P2 fix: TimeoutError 也降级为同步 (内部有磁盘缓存 → 硬编码三级 fallback)
+                _log("并行获取超时或线程池不可用, 降级同步获取", "WARN")
                 mv_data = self._fetch_total_market_cap()
                 m2_data = self._fetch_m2()
                 margin_data = self._fetch_margin_data()

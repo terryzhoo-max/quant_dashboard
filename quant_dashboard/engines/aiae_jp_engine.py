@@ -120,8 +120,12 @@ def _get_fred():
     global _fred
     if _fred is None:
         try:
+            import socket
+            _prev_timeout = socket.getdefaulttimeout()
+            socket.setdefaulttimeout(10)
             from fredapi import Fred
             _fred = Fred(api_key=FRED_API_KEY)
+            socket.setdefaulttimeout(_prev_timeout)
         except Exception as e:
             _log(f"FRED init failed: {e}", "ERROR")
     return _fred
@@ -224,7 +228,7 @@ class AIAEJPEngine:
             if fred:
                 try:
                     start_dt = datetime.now() - timedelta(days=30)
-                    @retry_with_backoff(max_retries=3, base_delay=2.0)
+                    @retry_with_backoff(max_retries=2, base_delay=1.0)
                     def _call_fred():
                         return fred.get_series("NIKKEI225", observation_start=start_dt)
                     series = _call_fred()
@@ -319,7 +323,7 @@ class AIAEJPEngine:
             if fred:
                 try:
                     start_dt = datetime.now() - timedelta(days=180)
-                    @retry_with_backoff(max_retries=3, base_delay=2.0)
+                    @retry_with_backoff(max_retries=2, base_delay=1.0)
                     def _call_fred():
                         return fred.get_series("MYAGM2JPM189N", observation_start=start_dt)
                     series = _call_fred()
@@ -713,12 +717,16 @@ class AIAEJPEngine:
     def generate_report(self) -> Dict:
         t0 = time.time()
         try:
-            with ThreadPoolExecutor(max_workers=2, thread_name_prefix='jp_aiae') as pool:
-                f_mkt = pool.submit(self._fetch_topix_market_cap)
-                f_m2 = pool.submit(self._fetch_jp_m2)
-
-            mkt_data = f_mkt.result(timeout=30)
-            m2_data = f_m2.result(timeout=30)
+            # P0 fix: 使用模块级线程池, 避免 with 块 shutdown(wait=True) 吞掉 timeout
+            try:
+                f_mkt = _bg_executor.submit(self._fetch_topix_market_cap)
+                f_m2 = _bg_executor.submit(self._fetch_jp_m2)
+                mkt_data = f_mkt.result(timeout=45)
+                m2_data = f_m2.result(timeout=45)
+            except (RuntimeError, TimeoutError):
+                _log("並行取得タイムアウト, 同期降級", "WARN")
+                mkt_data = self._fetch_topix_market_cap()
+                m2_data = self._fetch_jp_m2()
             _log(f"データ取得完了 ({time.time()-t0:.1f}s)")
 
             mktcap = mkt_data.get("market_cap_trillion_jpy", 870)

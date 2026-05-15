@@ -124,8 +124,13 @@ def _get_fred():
     global _fred
     if _fred is None:
         try:
+            import socket
+            # P1: 注入 socket 超时, 将 TCP 连接等待从 21s (Windows默认) 压缩到 10s
+            _prev_timeout = socket.getdefaulttimeout()
+            socket.setdefaulttimeout(10)
             from fredapi import Fred
             _fred = Fred(api_key=FRED_API_KEY)
+            socket.setdefaulttimeout(_prev_timeout)
         except Exception as e:
             _log(f"FRED init failed: {e}", "ERROR")
     return _fred
@@ -377,7 +382,7 @@ class AIAEUSEngine:
             if fred:
                 try:
                     start_dt = datetime.now() - timedelta(days=180)
-                    @retry_with_backoff(max_retries=3, base_delay=2.0)
+                    @retry_with_backoff(max_retries=2, base_delay=1.0)
                     def _call_fred():
                         return fred.get_series("M2SL", observation_start=start_dt)
                     series = _call_fred()
@@ -419,7 +424,7 @@ class AIAEUSEngine:
                 try:
                     # 尝试 FINRA Margin Debt 代理序列
                     start_dt = datetime.now() - timedelta(days=400)
-                    @retry_with_backoff(max_retries=3, base_delay=2.0)
+                    @retry_with_backoff(max_retries=2, base_delay=1.0)
                     def _call_fred():
                         return fred.get_series("BOGZ1FL663067003Q", observation_start=start_dt)
                     series = _call_fred()
@@ -814,14 +819,20 @@ class AIAEUSEngine:
     def generate_report(self) -> Dict:
         t0 = time.time()
         try:
-            with ThreadPoolExecutor(max_workers=3, thread_name_prefix='us_aiae') as pool:
-                f_mkt = pool.submit(self._fetch_wilshire5000_market_cap)
-                f_m2 = pool.submit(self._fetch_us_m2)
-                f_margin = pool.submit(self._fetch_us_margin_debt)
-
-            mkt_data = f_mkt.result(timeout=30)
-            m2_data = f_m2.result(timeout=30)
-            margin_data = f_margin.result(timeout=30)
+            # P0 fix: 使用模块级线程池, 避免 with 块 shutdown(wait=True) 吞掉 timeout
+            try:
+                f_mkt = _bg_executor.submit(self._fetch_wilshire5000_market_cap)
+                f_m2 = _bg_executor.submit(self._fetch_us_m2)
+                f_margin = _bg_executor.submit(self._fetch_us_margin_debt)
+                mkt_data = f_mkt.result(timeout=45)
+                m2_data = f_m2.result(timeout=45)
+                margin_data = f_margin.result(timeout=45)
+            except (RuntimeError, TimeoutError):
+                # 线程池 shutdown 或 FRED 超时 → 降级同步 (内部有磁盘缓存 fallback)
+                _log("并行获取超时或线程池不可用, 降级同步获取", "WARN")
+                mkt_data = self._fetch_wilshire5000_market_cap()
+                m2_data = self._fetch_us_m2()
+                margin_data = self._fetch_us_margin_debt()
             _log(f"数据获取完成 ({time.time()-t0:.1f}s)")
 
             mktcap = mkt_data.get("market_cap_trillion_usd", 52.0)
