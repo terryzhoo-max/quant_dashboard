@@ -288,26 +288,46 @@
                     <div class="gaiae-3way-card cn" id="gaiae-3way-card-cn">
                         <div class="gaiae-3way-flag">🇨🇳</div>
                         <div class="gaiae-3way-value" id="gaiae-3way-cn" style="color:#ef4444">--</div>
+                        <div class="gaiae-3way-temp" id="gaiae-3way-cn-temp"></div>
                         <div class="gaiae-3way-regime" id="gaiae-3way-cn-regime" style="color:#94a3b8">A股 AIAE</div>
                     </div>
                     <div class="gaiae-3way-card us" id="gaiae-3way-card-us">
                         <div class="gaiae-3way-flag">🇺🇸</div>
                         <div class="gaiae-3way-value" id="gaiae-3way-us" style="color:#3b82f6">--</div>
+                        <div class="gaiae-3way-temp" id="gaiae-3way-us-temp"></div>
                         <div class="gaiae-3way-regime" id="gaiae-3way-us-regime" style="color:#94a3b8">美股 AIAE</div>
                     </div>
                     <div class="gaiae-3way-card jp" id="gaiae-3way-card-jp">
                         <div class="gaiae-3way-flag">🇯🇵</div>
                         <div class="gaiae-3way-value" id="gaiae-3way-jp" style="color:#dc2626">--</div>
+                        <div class="gaiae-3way-temp" id="gaiae-3way-jp-temp"></div>
                         <div class="gaiae-3way-regime" id="gaiae-3way-jp-regime" style="color:#94a3b8">日股 AIAE</div>
                     </div>
                     <div class="gaiae-3way-card hk" id="gaiae-3way-card-hk">
                         <div class="gaiae-3way-flag">🇭🇰</div>
                         <div class="gaiae-3way-value" id="gaiae-3way-hk" style="color:#a855f7">--</div>
+                        <div class="gaiae-3way-temp" id="gaiae-3way-hk-temp"></div>
                         <div class="gaiae-3way-regime" id="gaiae-3way-hk-regime" style="color:#94a3b8">港股 AIAE</div>
                     </div>
                 </div>
                 <div class="gaiae-recommendation" id="gaiae-recommendation">⏳ 加载中...</div>
+                <!-- P2: 全局权益总仓位指标 -->
+                <div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(100,116,139,0.15);">
+                    <div style="font-size:0.72rem;color:#94a3b8;margin-bottom:6px;text-align:center;">📊 全球AIAE权益总仓位建议 · 绝对仓位指引</div>
+                    <div id="gaiae-global-position-bar" style="display:flex;height:28px;border-radius:8px;overflow:hidden;border:1px solid rgba(100,116,139,0.2);"></div>
+                    <div id="gaiae-global-position-text" style="text-align:center;margin-top:8px;font-size:0.78rem;color:#e2e8f0;"></div>
+                </div>
             </div>
+            <!-- P5: Ⅴ级脉动动画 -->
+            <style>
+                @keyframes gaiaeExtremePulse {
+                    0%, 100% { opacity: 1; }
+                    50% { opacity: 0.4; }
+                }
+                .gaiae-extreme {
+                    animation: gaiaeExtremePulse 2s ease-in-out infinite;
+                }
+            </style>
 
             <!-- ===== ③ 操作速查 · 合并买入/持有/卖出区 ===== -->
             <div style="font-size:0.85rem;font-weight:700;color:#c084fc;margin-bottom:10px;">⚡ 操作速查 · 当前档位指令</div>
@@ -809,6 +829,12 @@
                 <!-- 配置比例条 -->
                 <div id="global-allocation-bar" style="margin-top:12px;display:flex;height:32px;border-radius:10px;overflow:hidden;border:1px solid rgba(100,116,139,0.2);"></div>
                 <div id="global-allocation-text" style="text-align:center;margin-top:8px;font-size:0.75rem;color:#94a3b8;"></div>
+                <!-- P9: 全局权益总仓位指标 -->
+                <div style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(100,116,139,0.15);">
+                    <div style="font-size:0.72rem;color:#94a3b8;margin-bottom:6px;text-align:center;">📊 全球权益总仓位建议 · 绝对仓位指引</div>
+                    <div id="global-position-bar" style="display:flex;height:28px;border-radius:8px;overflow:hidden;border:1px solid rgba(100,116,139,0.2);"></div>
+                    <div id="global-position-text" style="text-align:center;margin-top:8px;font-size:0.78rem;color:#e2e8f0;"></div>
+                </div>
             </div>
 
             <!-- 声明 -->

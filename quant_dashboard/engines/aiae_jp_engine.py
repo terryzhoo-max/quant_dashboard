@@ -523,9 +523,14 @@ class AIAEJPEngine:
     def normalize_foreign_flow(self, net_buy_billion: float) -> float:
         """
         外資フロー正規化 → AIAE等効値
-        周次 net_buy: -5000～+5000 億円 → 6-30% AIAE等効
+
+        V1.4 優化: 区間 [-5000, +5000] → [-1500, +1500] 億円/週
+        原因: 外資年度净買越通常在 ±3~8兆円 (週次≈ ±60~150億円),
+              旧区間 ±5000 過寬, 正常波動 (-1000~+1000) 只映射到 5pp AIAE,
+              30%権重因子几乎沦为常数, 信号区分度不足.
+              新区間 ±1500 覆盖 99% 実際周次流量 + 極端情境余量.
         """
-        normalized = 6 + (net_buy_billion - (-5000)) / (5000 - (-5000)) * (30 - 6)
+        normalized = 6 + (net_buy_billion - (-1500)) / (1500 - (-1500)) * (30 - 6)
         return max(6, min(30, round(normalized, 2)))
 
     def compute_jp_aiae_v1(self, aiae_core: float, margin_heat: float, foreign_flow_norm: float) -> float:

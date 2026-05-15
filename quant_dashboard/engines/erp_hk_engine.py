@@ -34,10 +34,13 @@ import json
 from datetime import datetime, timedelta
 from typing import Optional, Dict
 
+import threading
+
 from config import FRED_API_KEY
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
 from erp_signal_enhancer import adaptive_weights, multi_timeframe_confirmation
+import erp_params
 
 # O1: 动态EPS估算配置 (替代MARKET_CONFIG中的硬编码eps_est)
 EPS_CONFIG_HK = {
@@ -138,9 +141,9 @@ ENCYCLOPEDIA_HK = {
 
 
 class HKERPTimingEngine:
-    """港股ERP择时引擎 V1.0 · 双轨模式(HSI/HSTECH)"""
+    """港股ERP择时引擎 V1.1 · 双轨模式(HSI/HSTECH) (Phase 1: P2 EMA持久化 + P3 Sigmoid动量)"""
 
-    VERSION = "1.0"
+    VERSION = "1.1"
     REGION = "HK"
 
     # 五维权重
@@ -191,6 +194,42 @@ class HKERPTimingEngine:
         self.market = market
         self.cfg = self.MARKET_CONFIG[market]
         self._southbound = self._load_southbound()
+        # P2: 从磁盘恢复 EMA 状态 (消除重启跳变)
+        ema_hist = self._load_ema_history()
+        self._prev_smooth_score = ema_hist.get("prev_smooth_score")
+
+    def _load_ema_history(self) -> dict:
+        """P2: 从 JSON 加载 EMA 状态"""
+        filepath = os.path.join(CACHE_DIR, f"erp_hk_{self.market.lower()}_daily_history.json")
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return {}
+
+    def _save_ema_history(self, composite: float):
+        """P2: 持久化 EMA 状态到 JSON (线程安全原子写入)"""
+        filepath = os.path.join(CACHE_DIR, f"erp_hk_{self.market.lower()}_daily_history.json")
+        data = {
+            "prev_smooth_score": self._prev_smooth_score,
+            "last_score": composite,
+            "last_date": str(datetime.now().date()),
+        }
+        tid = threading.get_ident()
+        tmp_path = f"{filepath}.{tid}.tmp"
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False)
+            os.replace(tmp_path, filepath)
+        except Exception as e:
+            print(f"[HK-ERP-{self.market}] 保存状态失败: {e}")
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
 
     # ========== 南向资金管理 ==========
 
@@ -459,16 +498,63 @@ class HKERPTimingEngine:
         return _hk_cached("hk_us10y", 30 * 60, _fetch)
 
     def _fetch_cn10y_history(self, years: int = 5) -> pd.DataFrame:
-        """CN 10Y 代理: FRED INTDSRCNM193N(贴现率) → CNBC实时 → 磁盘缓存 → 1.70%
-        
-        ⚠️ IRLTLT01CNM156N 已被 FRED 下线。INTDSRCNM193N 是央行贴现率，
-           不完全等于 CN10Y 但作为混合无风险利率的组成部分足够使用。
+        """CN 10Y 数据源优先级 (P1审计修正):
+        Tier 0: Tushare CN10Y (最准确, 直接获取中国10年期国债)
+        Tier 1: CNBC 实时中国10Y国债 (次优, 实时但单点)
+        Tier 2: FRED INTDSRCNM193N (央行贴现率 ≈ 2.9%, 非真实CN10Y!)
+        Tier 3: 磁盘缓存
+        Tier 4: 硬编码 1.70%
+
+        ⚠️ 审计发现: FRED INTDSRCNM193N ≈ 2.91% 而真实CN10Y ≈ 1.70%,
+           偏差 1.21% 导致 blended_rf 被高估 0.48%, HK ERP 被系统性低估。
         """
         def _fetch():
             cache_file = os.path.join(CACHE_DIR, "erp_hk_cn10y.parquet")
+
+            # Tier 0: Tushare 直接获取中国10年期国债收益率
+            try:
+                from config import TUSHARE_TOKEN
+                import tushare as _ts
+                _ts.set_token(TUSHARE_TOKEN)
+                pro = _ts.pro_api()
+                end_date = datetime.now().strftime('%Y%m%d')
+                start_date = (datetime.now() - timedelta(days=30)).strftime('%Y%m%d')
+                df_yc = pro.yc_cb(ts_code='1001.CB', curve_type='0',
+                                  start_date=start_date, end_date=end_date)
+                if df_yc is not None and not df_yc.empty:
+                    # 筛选10年期
+                    df_10y = df_yc[df_yc['curve_term'] == 10.0]
+                    if not df_10y.empty:
+                        cn10y_val = float(df_10y.iloc[0]['yield'])
+                        if 0.5 < cn10y_val < 8.0:
+                            print(f"[HK-ERP] CN10Y from Tushare: {cn10y_val:.2f}%")
+                            dates = pd.date_range(end=datetime.now(), periods=years * 252, freq="B")
+                            df = pd.DataFrame({"trade_date": dates, "cn10y": np.full(len(dates), cn10y_val)})
+                            df.to_parquet(cache_file)
+                            return df
+            except Exception as e:
+                print(f"[HK-ERP] Tushare CN10Y error: {e}")
+
+            # Tier 1: CNBC 实时中国10Y国债 (准确, 实时)
+            try:
+                import requests, re
+                url = "https://www.cnbc.com/quotes/CN10Y-CN"
+                r = requests.get(url, timeout=8, headers={'User-Agent': 'Mozilla/5.0'})
+                if r.status_code == 200:
+                    match = re.search(r'"last":"([\d.]+)"', r.text)
+                    if match:
+                        cn10y_val = float(match.group(1))
+                        if 0.5 < cn10y_val < 8.0:
+                            print(f"[HK-ERP] CN10Y from CNBC: {cn10y_val:.2f}% (Tier 1)")
+                            dates = pd.date_range(end=datetime.now(), periods=years * 252, freq="B")
+                            df = pd.DataFrame({"trade_date": dates, "cn10y": np.full(len(dates), cn10y_val)})
+                            df.to_parquet(cache_file)
+                            return df
+            except Exception as e:
+                print(f"[HK-ERP] CNBC CN10Y error: {e}")
+
+            # Tier 2: FRED INTDSRCNM193N (央行贴现率, ⚠️ 非真实CN10Y, 偏高~1.2%)
             fred = _get_hk_fred()
-            
-            # Tier 1: FRED INTDSRCNM193N (中国央行贴现率, 月频)
             if fred:
                 try:
                     start_dt = datetime.now() - timedelta(days=years * 365)
@@ -480,35 +566,19 @@ class HKERPTimingEngine:
                         })
                         df = df.dropna()
                         df = df.set_index("trade_date").resample("D").ffill().reset_index()
+                        # ⚠️ 审计修正: 贴现率 → CN10Y估算 (下调1.0%近似真实CN10Y)
+                        df["cn10y"] = (df["cn10y"] - 1.0).clip(lower=0.5)
                         df.to_parquet(cache_file)
-                        print(f"[HK-ERP] CN10Y proxy (INTDSRCNM193N): {len(df)} rows, latest={df['cn10y'].iloc[-1]:.2f}%")
+                        print(f"[HK-ERP] CN10Y proxy (INTDSRCNM193N-1.0%): {len(df)} rows, adjusted={df['cn10y'].iloc[-1]:.2f}%")
                         return df
                 except Exception as e:
                     print(f"[HK-ERP] FRED INTDSRCNM193N error: {e}")
-            
-            # Tier 2: CNBC 实时中国10Y国债
-            try:
-                import requests, re
-                url = "https://www.cnbc.com/quotes/CN10Y-CN"
-                r = requests.get(url, timeout=8, headers={'User-Agent': 'Mozilla/5.0'})
-                if r.status_code == 200:
-                    match = re.search(r'"last":"([\d.]+)"', r.text)
-                    if match:
-                        cn10y_val = float(match.group(1))
-                        if 0.5 < cn10y_val < 8.0:
-                            print(f"[HK-ERP] CN10Y from CNBC: {cn10y_val:.2f}%")
-                            dates = pd.date_range(end=datetime.now(), periods=years * 252, freq="B")
-                            df = pd.DataFrame({"trade_date": dates, "cn10y": np.full(len(dates), cn10y_val)})
-                            df.to_parquet(cache_file)
-                            return df
-            except Exception as e:
-                print(f"[HK-ERP] CNBC CN10Y error: {e}")
-            
+
             # Tier 3: 磁盘缓存 (任何年龄)
             if os.path.exists(cache_file):
                 print("[HK-ERP] CN10Y: using disk cache")
                 return pd.read_parquet(cache_file)
-            
+
             # Tier 4: 硬编码 (更新为当前市场水平)
             print("[HK-ERP] CN10Y fallback: 1.70%")
             dates = pd.date_range(end=datetime.now(), periods=years * 252, freq="B")
@@ -744,7 +814,7 @@ class HKERPTimingEngine:
 
     # ========== 买卖规则引擎 ==========
 
-    # O7: ERP动量修正
+    # O7: ERP动量修正 — P3: Sigmoid 连续映射
     def _erp_momentum_modifier(self, erp_series) -> tuple:
         if len(erp_series) < 63:
             return 0, "数据不足"
@@ -753,20 +823,26 @@ class HKERPTimingEngine:
         if abs(past) < 0.01:
             return 0, "基准值过小"
         momentum_pct = (current - past) / abs(past) * 100
-        if momentum_pct > 10:
-            return 5, f"ERP 3月动量+{momentum_pct:.0f}% → 价值回归(+5)"
-        elif momentum_pct < -10:
-            return -5, f"ERP 3月动量{momentum_pct:.0f}% → 估值恶化(-5)"
-        return 0, f"ERP 3月动量{momentum_pct:+.0f}% → 中性"
+        import math
+        scale = erp_params.O7_MOMENTUM_SCALE
+        k = erp_params.O7_MOMENTUM_K
+        x = max(-30, min(30, momentum_pct))
+        mod = scale * (2.0 / (1.0 + math.exp(-k * x)) - 1.0)
+        mod = round(mod, 1)
+        if mod > 0:
+            desc = f"ERP 3月动量+{momentum_pct:.0f}% → 价值回归({mod:+.1f})"
+        elif mod < 0:
+            desc = f"ERP 3月动量{momentum_pct:.0f}% → 估值恶化({mod:+.1f})"
+        else:
+            desc = f"ERP 3月动量{momentum_pct:+.0f}% → 中性"
+        return mod, desc
 
-    # O8: EMA平滑
-    _prev_smooth_score = None
-
+    # O8: EMA平滑 — P2: α参数中心读取, 状态持久化
     def _smooth_composite(self, raw_score: float) -> float:
         if self._prev_smooth_score is None:
             self._prev_smooth_score = raw_score
             return raw_score
-        alpha = 0.3
+        alpha = erp_params.O8_EMA_ALPHA
         smooth = alpha * raw_score + (1 - alpha) * self._prev_smooth_score
         self._prev_smooth_score = smooth
         return round(smooth, 1)
@@ -989,6 +1065,9 @@ class HKERPTimingEngine:
             trade = self._generate_trade_rules(composite, dims, snap)
             alerts = self._generate_alerts(composite, erp_val, d2_pct, sb_info, vol_info, spread_info)
             diagnosis = self._build_diagnosis(erp_val, pe_ttm, blended_rf, d2_pct, sb_info, vol_info, spread_info, trade)
+
+            # P2: 持久化 EMA 状态
+            self._save_ema_history(composite)
 
             return {
                 "status": "success", "region": "HK", "market": self.market,

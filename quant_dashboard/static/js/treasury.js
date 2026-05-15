@@ -408,6 +408,22 @@ function renderGlobalComparison(gc) {
     if (allocText && gc.allocation_text) {
         allocText.textContent = gc.allocation_text;
     }
+
+    // P9: 全局权益总仓位指标 — 解决"全减仓但配100%"的语义矛盾
+    const gpEl = document.getElementById('global-position-bar');
+    const gpText = document.getElementById('global-position-text');
+    const gp = gc.global_position;
+    if (gpEl && gp) {
+        const eqPct = gp.equity_pct || 50;
+        const cashPct = gp.cash_pct || 50;
+        gpEl.innerHTML =
+            '<div style="width:'+eqPct+'%;background:linear-gradient(135deg,'+gp.color+','+gp.color+'bb);display:flex;align-items:center;justify-content:center;font-size:0.72rem;color:white;font-weight:700;transition:width 0.6s;">📈 权益 '+eqPct+'%</div>' +
+            '<div style="width:'+cashPct+'%;background:linear-gradient(135deg,#475569,#47556988);display:flex;align-items:center;justify-content:center;font-size:0.72rem;color:#cbd5e1;font-weight:600;transition:width 0.6s;">🛡️ 现金/债券 '+cashPct+'%</div>';
+    }
+    if (gpText && gp) {
+        gpText.innerHTML = gp.emoji + ' <span style="color:'+gp.color+';font-weight:700;">'+gp.label+'</span>' +
+            ' · 加权得分 <b>'+gp.weighted_score+'</b> · 建议总权益仓位 <span style="color:'+gp.color+';font-weight:700;">'+gp.position+'</span>';
+    }
 }
 
 // ---- ERP走势图 V2.0 (含买卖区间阴影) ----
@@ -650,7 +666,8 @@ function renderRatesPanel(data) {
         ).join('');
         setT('rates-alloc-stock', '📈 股票 '+trSig.stock_pct+'%');
         setT('rates-alloc-bond', '🏦 债券 '+trSig.bond_pct+'%');
-        setT('rates-alloc-gold', '🥇 黄金 '+trSig.gold_pct+'%');
+        const goldBoost = trSig.gold_boost || 0;
+        setT('rates-alloc-gold', '🥇 黄金 '+trSig.gold_pct+'%' + (goldBoost > 0 ? ' ↑+'+goldBoost+'%' : ''));
         setT('rates-alloc-duration', '久期: '+trSig.duration);
     }
 
@@ -1404,31 +1421,100 @@ function renderGAIAE3Way(gc) {
     const $jpR = document.getElementById('gaiae-3way-jp-regime');
     const $hkR = document.getElementById('gaiae-3way-hk-regime');
 
-    if ($cn) $cn.textContent = (gc.cn_aiae||0).toFixed(1) + '%';
-    if ($us) $us.textContent = (gc.us_aiae||0).toFixed(1) + '%';
-    if ($jp) $jp.textContent = (gc.jp_aiae||0).toFixed(1) + '%';
-    if ($hk) $hk.textContent = (gc.hk_aiae||0).toFixed(1) + '%';
+    // P1: 卡片显示原始AIAE% + 归一化温度标注
+    const tempMap = {cn: gc.cn_temp, us: gc.us_temp, jp: gc.jp_temp, hk: gc.hk_temp};
+    function _setAiaeWithTemp($el, val, region) {
+        if (!$el) return;
+        const t = tempMap[region];
+        $el.innerHTML = (val||0).toFixed(1) + '%' +
+            (t != null ? '<span style="display:block;font-size:0.55rem;opacity:0.7;font-weight:400;margin-top:1px;">≈' + t.toFixed(0) + '°标准温度</span>' : '');
+    }
+    _setAiaeWithTemp($cn, gc.cn_aiae, 'cn');
+    _setAiaeWithTemp($us, gc.us_aiae, 'us');
+    _setAiaeWithTemp($jp, gc.jp_aiae, 'jp');
+    _setAiaeWithTemp($hk, gc.hk_aiae, 'hk');
     if ($cnR) { $cnR.textContent = 'A股 ' + (regimeNames[gc.cn_regime]||'Ⅲ中性'); $cnR.style.color = regimeColors[gc.cn_regime]||'#94a3b8'; }
     if ($usR) { $usR.textContent = '美股 ' + (regimeNames[gc.us_regime]||'Ⅲ中性'); $usR.style.color = regimeColors[gc.us_regime]||'#94a3b8'; }
     if ($jpR) { $jpR.textContent = '日股 ' + (regimeNames[gc.jp_regime]||'Ⅲ中性'); $jpR.style.color = regimeColors[gc.jp_regime]||'#94a3b8'; }
     if ($hkR) { $hkR.textContent = '港股 ' + (regimeNames[gc.hk_regime]||'Ⅲ中性'); $hkR.style.color = regimeColors[gc.hk_regime]||'#94a3b8'; }
 
-    // Crown animation on coldest market
+    // P0: 标准温度条 — 0-100° 统一标尺, 消除跨区域标度差异
+    function _renderTempBar(elId, temp) {
+        const el = document.getElementById(elId);
+        if (!el || temp == null) return;
+        const t = Math.max(0, Math.min(100, temp));
+        // 色温: 0°=深绿 → 50°=黄 → 100°=深红
+        const barColor = t <= 30 ? '#10b981' : t <= 50 ? '#eab308' : t <= 70 ? '#f97316' : '#ef4444';
+        el.innerHTML =
+            '<div style="display:flex;align-items:center;gap:4px;margin:3px 0;">' +
+            '<div style="flex:1;height:4px;background:rgba(30,41,59,0.8);border-radius:2px;overflow:hidden;" title="标准温度 ' + t.toFixed(0) + '°">' +
+            '<div style="width:' + t + '%;height:100%;background:' + barColor + ';border-radius:2px;transition:width 0.8s ease;"></div></div>' +
+            '<span style="font-size:0.5rem;color:' + barColor + ';font-weight:600;min-width:24px;text-align:right;">' + t.toFixed(0) + '°</span></div>';
+    }
+    _renderTempBar('gaiae-3way-cn-temp', gc.cn_temp);
+    _renderTempBar('gaiae-3way-us-temp', gc.us_temp);
+    _renderTempBar('gaiae-3way-jp-temp', gc.jp_temp);
+    _renderTempBar('gaiae-3way-hk-temp', gc.hk_temp);
+
+    // Crown + P5: Ⅴ级极端告警脉动
     const coldest = gc.coldest || '';
+    const extremeWarnings = (gc.global_position && gc.global_position.extreme_warnings) || [];
     ['cn','us','jp','hk'].forEach(r => {
         const card = document.getElementById('gaiae-3way-card-' + r);
-        if (card) {
-            card.classList.toggle('is-coldest', r === coldest);
-            // Add crown to flag
-            const flagEl = card.querySelector('.gaiae-3way-flag');
-            if (flagEl && r === coldest && !flagEl.querySelector('.gaiae-3way-crown')) {
-                flagEl.innerHTML += ' <span class="gaiae-3way-crown">👑</span>';
+        if (!card) return;
+        card.classList.toggle('is-coldest', r === coldest);
+        // P5: Ⅴ级市场添加脉动告警边框
+        const isExtreme = extremeWarnings.includes(r);
+        card.classList.toggle('gaiae-extreme', isExtreme);
+        if (isExtreme) {
+            card.style.borderColor = '#ef4444';
+            card.style.boxShadow = '0 0 12px rgba(239,68,68,0.4)';
+            // 添加极端标签（如不存在）
+            if (!card.querySelector('.gaiae-extreme-badge')) {
+                const badge = document.createElement('div');
+                badge.className = 'gaiae-extreme-badge';
+                badge.innerHTML = '⚠️ EXTREME';
+                badge.style.cssText = 'position:absolute;top:4px;left:6px;font-size:0.5rem;color:#ef4444;font-weight:800;letter-spacing:0.5px;animation:gaiaeExtremePulse 1.5s ease-in-out infinite;';
+                card.style.position = 'relative';
+                card.appendChild(badge);
             }
+        } else {
+            card.style.borderColor = '';
+            card.style.boxShadow = '';
+            const oldBadge = card.querySelector('.gaiae-extreme-badge');
+            if (oldBadge) oldBadge.remove();
+        }
+        // Crown
+        const flagEl = card.querySelector('.gaiae-3way-flag');
+        if (flagEl && r === coldest && !flagEl.querySelector('.gaiae-3way-crown')) {
+            flagEl.innerHTML += ' <span class="gaiae-3way-crown">👑</span>';
         }
     });
 
     const $rec = document.getElementById('gaiae-recommendation');
     if ($rec) $rec.textContent = '🌍 ' + (gc.recommendation || '加载中...');
+
+    // P2: 全局权益总仓位指标
+    const gp = gc.global_position;
+    const gpBar = document.getElementById('gaiae-global-position-bar');
+    const gpText = document.getElementById('gaiae-global-position-text');
+    if (gpBar && gp) {
+        const eqPct = gp.equity_pct || 50;
+        const cashPct = gp.cash_pct || 50;
+        gpBar.innerHTML =
+            '<div style="width:'+eqPct+'%;background:linear-gradient(135deg,'+gp.color+','+gp.color+'bb);display:flex;align-items:center;justify-content:center;font-size:0.72rem;color:white;font-weight:700;transition:width 0.6s;">📈 权益 '+eqPct+'%</div>' +
+            '<div style="width:'+cashPct+'%;background:linear-gradient(135deg,#475569,#47556988);display:flex;align-items:center;justify-content:center;font-size:0.72rem;color:#cbd5e1;font-weight:600;transition:width 0.6s;">🛡️ 现金/债券 '+cashPct+'%</div>';
+    }
+    if (gpText && gp) {
+        let extraWarn = '';
+        if (gp.extreme_warnings && gp.extreme_warnings.length > 0) {
+            const warnNames = {cn:'A股',us:'美股',jp:'日股',hk:'港股'};
+            extraWarn = ' · <span style="color:#ef4444;font-weight:700;">⚠️ ' +
+                gp.extreme_warnings.map(r => warnNames[r]||r).join('/') + ' Ⅴ级极端过热</span>';
+        }
+        gpText.innerHTML = gp.emoji + ' <span style="color:'+gp.color+';font-weight:700;">'+gp.label+'</span>' +
+            ' · 平均温度 <b>'+gp.avg_temp+'°</b> · 建议总权益仓位 <span style="color:'+gp.color+';font-weight:700;">'+gp.position+'</span>' + extraWarn;
+    }
 }
 
 // ③ Consolidated action zone rendering

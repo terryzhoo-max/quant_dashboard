@@ -49,15 +49,32 @@ def _get_cache_ttl() -> int:
 
 
 def _get_global_aiae_ttl() -> int:
-    """海外AIAE缓存TTL: 美股盘中30min / 盘后4h / 周末24h (UTC+8)"""
+    """海外AIAE缓存TTL: 三时区感知 (UTC+8)
+    
+    任一海外市场盘中 → 30min | 全部盘后 → 4h | 周末 → 24h
+    
+    交易时段 (北京时间):
+      🇯🇵 日股:  08:00 ~ 14:30 (含午休, 不细分)
+      🇭🇰 港股:  09:30 ~ 16:00
+      🇺🇸 美股:  21:30 ~ 04:00 (次日)
+    """
     now = datetime.now()
     if now.weekday() >= 5:
         return 86400    # 周末 24h
-    h = now.hour
-    # 美股盘中 (北京 21:30~04:00)
-    if h >= 21 or h < 4:
-        return 1800     # 30min
-    return 14400        # 4h
+    h, m = now.hour, now.minute
+    hm = h * 100 + m  # e.g. 09:30 → 930
+
+    # 日股盘中: 08:00 ~ 14:30
+    if 800 <= hm < 1430:
+        return 1800
+    # 港股盘中: 09:30 ~ 16:00
+    if 930 <= hm < 1600:
+        return 1800
+    # 美股盘中: 21:30 ~ 04:00 (次日)
+    if hm >= 2130 or hm < 400:
+        return 1800
+
+    return 14400        # 全部盘后 4h
 
 
 def _hot_data_reactor_tick():

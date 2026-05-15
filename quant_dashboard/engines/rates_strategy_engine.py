@@ -219,9 +219,9 @@ ENCYCLOPEDIA_RATES = {
 
 
 class RatesStrategyEngine:
-    """利率择时引擎 V1.5"""
+    """利率择时引擎 V1.6 (A5: EMA平滑 + 状态持久化)"""
 
-    VERSION = "1.5"
+    VERSION = "1.6"
 
     # 五维权重
     W = {
@@ -252,7 +252,56 @@ class RatesStrategyEngine:
     }
 
     def __init__(self):
-        pass
+        # A5: 从磁盘恢复 EMA 状态 (消除重启后首次请求的信号跳变)
+        import erp_params
+        history = self._load_history()
+        self._prev_smooth_score = history.get("prev_smooth_score")
+
+    # ========== A5: EMA 状态管理 ==========
+
+    def _load_history(self) -> dict:
+        """A5: 从 JSON 加载 EMA 状态"""
+        filepath = os.path.join(CACHE_DIR, "rates_strategy_daily_history.json")
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return {}
+
+    def _save_history(self, composite: float):
+        """A5: 持久化 EMA 状态到 JSON (线程安全原子写入)"""
+        filepath = os.path.join(CACHE_DIR, "rates_strategy_daily_history.json")
+        data = {
+            "prev_smooth_score": self._prev_smooth_score,
+            "last_score": composite,
+            "last_date": str(datetime.now().date()),
+        }
+        tid = threading.get_ident()
+        tmp_path = f"{filepath}.{tid}.tmp"
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False)
+            os.replace(tmp_path, filepath)
+        except Exception as e:
+            logger.warning(f"保存EMA状态失败: {e}")
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+
+    def _smooth_composite(self, raw_score: float) -> float:
+        """A5: EMA平滑 — α从参数中心读取, 防止信号在阈值边界闪烁"""
+        import erp_params
+        if self._prev_smooth_score is None:
+            self._prev_smooth_score = raw_score
+            return raw_score
+        alpha = erp_params.RATES_EMA_ALPHA
+        smooth = alpha * raw_score + (1 - alpha) * self._prev_smooth_score
+        self._prev_smooth_score = smooth
+        return round(smooth, 1)
 
     # ========== 数据获取层 ==========
 
@@ -475,15 +524,21 @@ class RatesStrategyEngine:
         # V1.5: 评分方向 = "高分=债券有吸引力"
         #   倒挂 → 预期Fed降息 → 债券牛市在即 → 高分
         #   陡峭 → 通胀升温/经济过热 → 利率上行压力 → 低分
+        # V1.7: P2 修正 — 0bps附近添加±10bps缓冲带，防止10分跳跃
         if spread_bps < -100:
             score, regime = 90, "deep_inversion"
             desc = f"10Y-2Y = {spread_bps:+.0f}bps → 深度倒挂! Fed被迫降息在即，长债锁定窗口"
         elif spread_bps < -50:
             score, regime = 75, "moderate_inversion"
             desc = f"10Y-2Y = {spread_bps:+.0f}bps → 明显倒挂，降息预期升温，债券配置价值高"
-        elif spread_bps < 0:
+        elif spread_bps < -10:
             score, regime = 60, "mild_inversion"
             desc = f"10Y-2Y = {spread_bps:+.0f}bps → 轻微倒挂，宽松信号渐现"
+        elif spread_bps < 10:
+            # ±10bps 缓冲带: 60→50 线性插值 (消除0bps边界跳变)
+            score = 55.0 - (spread_bps / 10.0) * 5.0  # -10→60, 0→55, +10→50
+            regime = "mild_inversion" if spread_bps < 0 else "flat"
+            desc = f"10Y-2Y = {spread_bps:+.0f}bps → 曲线接近平坦，信号过渡区"
         elif spread_bps < 50:
             score, regime = 50, "flat"
             desc = f"10Y-2Y = {spread_bps:+.0f}bps → 曲线平坦，中性观望"
@@ -612,8 +667,10 @@ class RatesStrategyEngine:
 
     # ========== 综合信号 ==========
 
-    def _compute_signal(self, score: float) -> dict:
-        """综合得分 → 配置信号"""
+    def _compute_signal(self, score: float, dims: dict = None) -> dict:
+        """综合得分 → 配置信号
+        V1.7 P1: 黄金从固定10%升级为因子驱动动态配置(10-20%)
+        """
         if score >= 80:
             key = "overweight_bonds"
         elif score >= 65:
@@ -628,18 +685,44 @@ class RatesStrategyEngine:
             key = "full_equity"
 
         alloc = self.ALLOCATION_MAP[key]
+        stock_pct = alloc["stock"]
+        bond_pct = alloc["bond"]
+        gold_pct = alloc["gold"]  # base = 10%
+
+        # V1.7 P1: 黄金因子驱动动态调整 (10→20%, 从股债等比扣减)
+        if dims:
+            gold_boost = 0
+            real_info = dims.get("real_yield", {}).get("real_info", {})
+            real_yield = real_info.get("current", 1.0)
+            bei = real_info.get("breakeven", 2.0)
+            # 因子1: 实际利率为负 → 黄金受益 +5%
+            if real_yield < 0:
+                gold_boost += 5
+            # 因子2: 通胀预期>2.5% → 黄金对冲 +5%
+            if bei > 2.5:
+                gold_boost += 5
+            if gold_boost > 0:
+                gold_pct = min(gold_pct + gold_boost, 20)  # 硬上限20%
+                delta = gold_pct - alloc["gold"]
+                # 从股、债等比扣减
+                stock_reduce = round(delta * stock_pct / max(stock_pct + bond_pct, 1))
+                bond_reduce = delta - stock_reduce
+                stock_pct = max(stock_pct - stock_reduce, 5)
+                bond_pct = max(bond_pct - bond_reduce, 5)
+
         return {
             "key": key,
             "label": alloc["label"],
             "emoji": alloc["emoji"],
             "color": alloc["color"],
             "level": alloc["level"],
-            "stock_pct": alloc["stock"],
-            "bond_pct": alloc["bond"],
-            "gold_pct": alloc["gold"],
+            "stock_pct": stock_pct,
+            "bond_pct": bond_pct,
+            "gold_pct": gold_pct,
+            "gold_boost": gold_pct - alloc["gold"],  # 前端可展示黄金增配原因
             "duration": alloc["duration"],
             "score": round(score, 1),
-            "position": f"股{alloc['stock']}% / 债{alloc['bond']}% / 金{alloc['gold']}%",
+            "position": f"股{stock_pct}% / 债{bond_pct}% / 金{gold_pct}%",
         }
 
     # ========== 买卖规则 ==========
@@ -650,7 +733,7 @@ class RatesStrategyEngine:
         spread_bps = dims.get("curve_shape", {}).get("curve_info", {}).get("spread_bps", 50)
         real_yield = dims.get("real_yield", {}).get("real_info", {}).get("current", 1.0)
         
-        signal = self._compute_signal(score)
+        signal = self._compute_signal(score, dims=dims)
 
         # ETF配置 (依据信号)
         if signal["key"] in ("overweight_bonds", "tilt_bonds"):
@@ -1136,8 +1219,11 @@ class RatesStrategyEngine:
             composite = sum(dims[k]["score"] * self.W[k] for k in self.W)
             composite = round(min(100, max(0, composite)), 1)
 
+            # A5: EMA平滑 (防止信号在阈值边界闪烁)
+            composite = self._smooth_composite(composite)
+
             # 信号
-            signal = self._compute_signal(composite)
+            signal = self._compute_signal(composite, dims=dims)
 
             # 快照 (新增 regime_cn 字段)
             snap = {
@@ -1170,6 +1256,9 @@ class RatesStrategyEngine:
 
             # 走势图 (传入预取数据+分位数)
             chart = self._build_chart_data(pct_stats)
+
+            # A5: 持久化 EMA 状态
+            self._save_history(composite)
 
             return {
                 "version": self.VERSION,

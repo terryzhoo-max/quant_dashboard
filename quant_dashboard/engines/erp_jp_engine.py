@@ -24,12 +24,16 @@ import os
 from datetime import datetime, timedelta
 from typing import Optional
 
+import json
+import threading
+
 # FRED API for all Japan data
 from config import FRED_API_KEY
 
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
 from erp_signal_enhancer import adaptive_weights, multi_timeframe_confirmation
+import erp_params
 
 # O1: 动态EPS估算配置 (替代硬编码¥2500)
 EPS_CONFIG_JP = {
@@ -116,9 +120,9 @@ ENCYCLOPEDIA_JP = {
 
 
 class JPERPTimingEngine:
-    """日本ERP择时引擎 V1.0"""
+    """日本ERP择時引擎 V1.1 (Phase 1: P2 EMA持久化 + P3 Sigmoid動量)"""
 
-    VERSION = "1.0"
+    VERSION = "1.1"
     REGION = "JP"
 
     W = {"erp_abs": 0.20, "erp_pct": 0.25, "yen_trend": 0.30, "volatility": 0.15, "rate_env": 0.10}
@@ -129,18 +133,52 @@ class JPERPTimingEngine:
         "hold":        {"label": "Hold",         "label_cn": "標配保有", "position": "50-70%",  "color": "#3b82f6", "emoji": "🔵",   "level": 4},
         "reduce":      {"label": "Reduce",       "label_cn": "段階縮小", "position": "30-50%",  "color": "#f59e0b", "emoji": "🟡",   "level": 3},
         "underweight": {"label": "Underweight",  "label_cn": "低配防御", "position": "10-30%",  "color": "#f97316", "emoji": "🟠",   "level": 2},
-        "cash":        {"label": "Cash",         "label_cn": "清仓観望", "position": "0-10%",   "color": "#ef4444", "emoji": "🔴",   "level": 1},
+        "cash":        {"label": "Cash",         "label_cn": "清倉観望", "position": "0-10%",   "color": "#ef4444", "emoji": "🔴",   "level": 1},
     }
 
     ETF_TARGETS = {
-        "aggressive": {"name": "TOPIX ETF",       "code": "1306.T", "desc": "日本全市场，弹性最大"},
+        "aggressive": {"name": "TOPIX ETF",       "code": "1306.T", "desc": "日本全市場，弾性最大"},
         "balanced":   {"name": "日経225 ETF",      "code": "1321.T", "desc": "蓝筹核心，攻守兼备"},
         "defensive":  {"name": "高配当50 ETF",     "code": "1577.T", "desc": "高股息防御，稳定分红"},
     }
 
     def __init__(self):
-        pass
+        # P2: 从磁盘恢复 EMA 状态
+        history = self._load_history()
+        self._prev_smooth_score = history.get("prev_smooth_score")
 
+    def _load_history(self) -> dict:
+        """P2: 从 JSON 加载 EMA 状态"""
+        filepath = os.path.join(CACHE_DIR, "erp_jp_daily_history.json")
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return {}
+
+    def _save_history(self, composite: float):
+        """P2: 持久化 EMA 状态到 JSON"""
+        filepath = os.path.join(CACHE_DIR, "erp_jp_daily_history.json")
+        data = {
+            "prev_smooth_score": self._prev_smooth_score,
+            "last_score": composite,
+            "last_date": str(datetime.now().date()),
+        }
+        tid = threading.get_ident()
+        tmp_path = f"{filepath}.{tid}.tmp"
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False)
+            os.replace(tmp_path, filepath)
+        except Exception as e:
+            print(f"[JP-ERP] 保存状态失败: {e}")
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
 
     # ========== 数据获取层 (FRED优先) ==========
 
@@ -482,29 +520,35 @@ class JPERPTimingEngine:
 
     # ========== 买卖规则引擎 ==========
 
-    # O7: ERP动量修正
+    # O7: ERP動量修正 — P3: Sigmoid 連続映射
     def _erp_momentum_modifier(self, erp_series) -> tuple:
         if len(erp_series) < 63:
-            return 0, "数据不足"
+            return 0, "データ不足"
         current = float(erp_series.iloc[-1])
         past = float(erp_series.iloc[-63])
         if abs(past) < 0.01:
-            return 0, "基准值过小"
+            return 0, "基準値過小"
         momentum_pct = (current - past) / abs(past) * 100
-        if momentum_pct > 10:
-            return 5, f"ERP 3月动量+{momentum_pct:.0f}% → 价值回归(+5)"
-        elif momentum_pct < -10:
-            return -5, f"ERP 3月动量{momentum_pct:.0f}% → 估值恶化(-5)"
-        return 0, f"ERP 3月动量{momentum_pct:+.0f}% → 中性"
+        import math
+        scale = erp_params.O7_MOMENTUM_SCALE
+        k = erp_params.O7_MOMENTUM_K
+        x = max(-30, min(30, momentum_pct))
+        mod = scale * (2.0 / (1.0 + math.exp(-k * x)) - 1.0)
+        mod = round(mod, 1)
+        if mod > 0:
+            desc = f"ERP 3月動量+{momentum_pct:.0f}% → 価値回帰({mod:+.1f})"
+        elif mod < 0:
+            desc = f"ERP 3月動量{momentum_pct:.0f}% → 估値悪化({mod:+.1f})"
+        else:
+            desc = f"ERP 3月動量{momentum_pct:+.0f}% → 中性"
+        return mod, desc
 
-    # O8: EMA平滑
-    _prev_smooth_score = None
-
+    # O8: EMA平滑 — P2: α参数中心読取, 状態持久化
     def _smooth_composite(self, raw_score: float) -> float:
         if self._prev_smooth_score is None:
             self._prev_smooth_score = raw_score
             return raw_score
-        alpha = 0.3
+        alpha = erp_params.O8_EMA_ALPHA
         smooth = alpha * raw_score + (1 - alpha) * self._prev_smooth_score
         self._prev_smooth_score = smooth
         return round(smooth, 1)
@@ -720,6 +764,9 @@ class JPERPTimingEngine:
             trade = self._generate_trade_rules(composite, dims, snap)
             alerts = self._generate_alerts(composite, erp_val, d2_pct, yen_info, vol_info, rate_info)
             diagnosis = self._build_diagnosis(erp_val, pe_ttm, yield_10y, d2_pct, yen_info, vol_info, rate_info, trade)
+
+            # P2: 持久化 EMA 状态
+            self._save_history(composite)
 
             return {
                 "status": "success", "region": "JP",

@@ -5,10 +5,10 @@ AlphaCore · 美股 AIAE 宏观仓位管控引擎 V1.0
   - 比例极高 → 市场过热，减仓
   - 比例极低 → 市场冰点，加仓
 
-三因子构成:
-  US_AIAE_Core = Wilshire5000 / (Wilshire5000 + Fed M2)  [50%]  月频
+三因子构成 (V1.1 权重):
+  US_AIAE_Core = Wilshire5000 / (Wilshire5000 + Fed M2)  [60%]  月频
   Margin Heat  = NYSE Margin Debt / Wilshire5000 MktCap   [20%]  季频
-  AAII Spread  = AAII Bull% - Bear% (散户情绪)             [30%]  周频/手动
+  AAII Spread  = AAII Bull% - Bear% (散户情绪)             [20%]  周频/手动
 
 五档状态 (美股校准, 比A股上移3-4%):
   Ⅰ <15%   → 90-95%   极度恐慌
@@ -579,14 +579,16 @@ class AIAEUSEngine:
         """
         US_AIAE_Core = MktCap / M2 比值 → 归一化到 AIAE 标度
 
-        V1.1 优化: 区间从 [0.8, 3.0] → [0.7, 2.6]
-        V1.3: 增加输入合理性校验
+        V1.4 优化: 区间从 [0.7, 2.6] → [0.7, 3.2]
+        原因: 2025-2026 美股 MktCap/M2 ratio 突破 3.0, 旧上限 2.6 导致
+              Core 长期钳制在 45% 天花板, 丧失区分 Ⅳ/Ⅴ 级的能力.
+              上限 3.2 覆盖 2000 互联网泡沫 (ratio≈3.06) + 10% 余量.
 
         历史锚点:
           ratio=0.7  (极端底部余量)      → AIAE=10%  (Ⅰ级恐慌区间)
-          ratio=2.6  (覆盖99%历史上限)  → AIAE=45%  (Ⅴ级过热区间)
+          ratio=3.2  (覆盖互联网泡沫+余量)→ AIAE=45%  (Ⅴ级过热区间)
 
-        线性映射: AIAE = 10 + (ratio - 0.7) / (2.6 - 0.7) × 35
+        线性映射: AIAE = 10 + (ratio - 0.7) / (3.2 - 0.7) × 35
         """
         if m2_trillion <= 0:
             return 25.0
@@ -603,8 +605,8 @@ class AIAEUSEngine:
             _log(f"⛔ MktCap/M2 ratio={ratio:.3f} 不合理 (MktCap=${mktcap_trillion}T, M2=${m2_trillion}T), 使用中性默认值 25%", "ERROR")
             return 25.0
 
-        # 线性归一化: [0.7, 2.6] → [10%, 45%]
-        aiae_core = 10.0 + (ratio - 0.7) / (2.6 - 0.7) * 35.0
+        # V1.4: 线性归一化: [0.7, 3.2] → [10%, 45%]
+        aiae_core = 10.0 + (ratio - 0.7) / (3.2 - 0.7) * 35.0
         return round(max(5.0, min(50.0, aiae_core)), 2)
 
     def compute_margin_heat(self, margin_trillion: float, mktcap_trillion: float) -> float:
