@@ -1785,7 +1785,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 <td class="pf-mono">${s.weight.toFixed(1)}%</td>
                 <td><span class="pf-sector-tag">${s.industry}</span></td>
                 <td class="pf-mono" style="background:${heatColor(s.momentum)}">${scoreLabel(s.momentum)} <small style="opacity:0.6">${(s.momentum * 100).toFixed(0)}%</small></td>
-                <td class="pf-mono" style="background:${heatColor(1 - s.volatility)}" title="低波偏好: 越高表示该标的波动率越低">${scoreLabel(1 - s.volatility)} <small style="opacity:0.6">${(s.volatility * 100).toFixed(0)}%</small></td>
+                <td class="pf-mono" style="background:${heatColor(1 - s.volatility)}" title="低波偏好: 越高表示该标的波动率越低">${scoreLabel(1 - s.volatility)} <small style="opacity:0.6">${((1 - s.volatility) * 100).toFixed(0)}%</small></td>
                 <td class="pf-mono" style="background:${heatColor(s.quality)}">${scoreLabel(s.quality)} <small style="opacity:0.6">${(s.quality * 100).toFixed(0)}%</small></td>
             </tr>`;
         }).join('');

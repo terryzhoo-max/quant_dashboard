@@ -164,14 +164,46 @@ def _compute_stock_factor_scores(positions: list) -> dict:
 
     # Quality: 基于行业启发式 (精确版本需拉取 ROE 数据)
     quality_map = {
-        "食品饮料": 0.85, "银行": 0.75, "贵金属": 0.6, "半导体": 0.5,
-        "电力设备": 0.55, "医药生物": 0.6, "证券": 0.45, "房地产": 0.3,
-        "红利/低波": 0.8, "宽基-沪深300": 0.65, "宽基-科创板": 0.4,
+        # 高质量 (稳定高 ROE)
+        "食品饮料": 0.85, "白酒": 0.88, "软饮料": 0.72,
+        "银行": 0.75, "保险": 0.65, "红利/低波": 0.80,
+        "贵金属": 0.60, "黄金": 0.60,
+        # 中等质量
+        "宽基-沪深300": 0.65, "宽基-中证500": 0.55, "宽基-科创板": 0.40,
+        "医药生物": 0.60, "电力设备": 0.55, "新型电力": 0.50,
+        "电气设备": 0.50, "机械设备": 0.48, "运输设备": 0.45,
+        "建筑工程": 0.45, "铁路": 0.50,
+        "半导体": 0.50, "电子": 0.48, "通信设备": 0.45,
+        # 低质量/高波动
+        "证券": 0.45, "房地产": 0.30,
+        "国防军工": 0.42, "船舶": 0.40,
+        # 港股/海外 (缺 ROE 数据, 用中等偏上)
+        "港股": 0.55, "港股-科技": 0.50,
+        # 主题 ETF (无法推断 ROE)
+        "主题ETF": 0.50,
+        # 金属/资源
+        "铜": 0.55, "铝": 0.45, "钢铁": 0.40,
+        "煤炭": 0.55, "石油化工": 0.50,
+        # 消费/服务
+        "软件服务": 0.55, "传媒": 0.40, "游戏": 0.38,
+        "食品": 0.65, "饲料": 0.55,
     }
+
+    # 模糊匹配: 行业名称可能包含关键字
+    def _fuzzy_quality(industry: str) -> float:
+        if industry in quality_map:
+            return quality_map[industry]
+        # 关键字匹配
+        for key, val in quality_map.items():
+            if key in industry or industry in key:
+                return val
+        # ETF 后缀启发式
+        if "ETF" in industry:
+            return 0.50
+        return 0.50  # 真正的未知行业
 
     for d in raw_data:
         code = d["ts_code"]
-        # 找到对应持仓获取行业
         industry = "其他"
         for pos in positions:
             if pos["ts_code"] == code:
@@ -181,7 +213,7 @@ def _compute_stock_factor_scores(positions: list) -> dict:
         scores[code] = {
             "momentum": round(mom_rank.get(code, 0.5), 3),
             "volatility": round(vol_rank.get(code, 0.5), 3),
-            "quality": round(quality_map.get(industry, 0.5), 3),
+            "quality": round(_fuzzy_quality(industry), 3),
         }
 
     return scores
