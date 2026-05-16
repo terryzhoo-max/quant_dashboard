@@ -62,7 +62,7 @@ _SCENARIO_MAP = {
     "overheat": "aiae_overheat_v",
 }
 
-# ── Gemini 结构化提取 Prompt ──
+# ── DeepSeek 结构化提取 Prompt ──
 _EXTRACTION_PROMPT = """你是一位专业的量化投资分析师。请从以下财经新闻中提取关键事件。
 
 要求:
@@ -268,15 +268,19 @@ def scan_news() -> dict:
     logger.info("═══ NLP 情报扫描完成: %d 事件 · %.1fs ═══", len(saved_events), elapsed)
 
     # 6. 写入缓存 (供 Decision Hub 读取)
-    try:
-        from services.cache_service import cache_manager
-        cache_manager.set_json("news_intelligence", {
-            "status": "success",
-            "scan_time": datetime.now().isoformat(),
-            "events": saved_events,
-        }, ttl_seconds=3600)
-    except Exception:
-        pass
+    #    保护策略: 0 事件时保留旧缓存, 避免空扫描清除有效情报
+    if saved_events:
+        try:
+            from services.cache_service import cache_manager
+            cache_manager.set_json("news_intelligence", {
+                "status": "success",
+                "scan_time": datetime.now().isoformat(),
+                "events": saved_events,
+            }, ttl_seconds=3600)
+        except Exception:
+            pass
+    else:
+        logger.info("[NLP] 0 事件, 保留旧缓存")
 
     return {
         "status": "success",

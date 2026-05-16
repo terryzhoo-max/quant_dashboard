@@ -1560,6 +1560,17 @@ function renderSystemHealth(marketData) {
     dotEl.className = `sys-health-dot ${healthClass}`;
     labelEl.textContent = healthLabel;
 
+    // V2.0: Label 颜色 + 容器背景跟随状态
+    const shLabelMap = {'health-ok': 'sh-ok', 'health-warn': 'sh-warn', 'health-error': 'sh-error'};
+    labelEl.className = `sys-health-label ${shLabelMap[healthClass] || ''}`;
+
+    const indicatorEl = el('sys-health-indicator');
+    if (indicatorEl) {
+        indicatorEl.classList.remove('shi-ok', 'shi-warn', 'shi-error');
+        const shiMap = {'health-ok': 'shi-ok', 'health-warn': 'shi-warn', 'health-error': 'shi-error'};
+        indicatorEl.classList.add(shiMap[healthClass] || '');
+    }
+
     // 弹出面板详情
     const shpFreshness = el('shp-freshness');
     const shpConfidence = el('shp-confidence');
@@ -1789,7 +1800,7 @@ async function fetchAndRenderIntelligenceFeed() {
                     <span class="intel-category ${cat.cls}">${cat.label}</span>
                     <div class="intel-impact-bar">
                         <div class="intel-impact-track"><div class="intel-impact-fill" style="width:${impactPct}%;background:${impactColor}"></div></div>
-                        <span class="intel-impact-val">${impact}</span>
+                        <span class="intel-impact-val" style="color:${impactColor}">${impact}</span>
                     </div>
                 </div>
                 <div class="intel-title">${ev.title || '--'}</div>

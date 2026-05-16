@@ -3191,98 +3191,171 @@ body.industry-scope .badge-beta {
     position: relative;
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 14px;
+    gap: 8px;
+    padding: 5px 14px 5px 10px;
     border-radius: 20px;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
     cursor: pointer;
-    transition: all 0.3s ease;
-    font-size: 0.78rem;
+    transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    font-size: 0.72rem;
     overflow: visible;
 }
 .sys-health-indicator:hover {
-    border-color: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.12);
     background: rgba(255, 255, 255, 0.06);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
 }
+
+/* ── Dot: 状态感知呼吸光效 ── */
 .sys-health-dot {
-    font-size: 0.6rem;
-    transition: color 0.4s ease;
-    color: #64748b;
+    font-size: 0.55rem;
+    transition: all 0.5s ease;
+    color: #475569;
+    line-height: 1;
 }
-.sys-health-dot.health-ok { color: #10b981; text-shadow: 0 0 6px rgba(16,185,129,0.5); }
-.sys-health-dot.health-warn { color: #f59e0b; text-shadow: 0 0 6px rgba(245,158,11,0.5); animation: health-pulse 2s ease-in-out infinite; }
-.sys-health-dot.health-error { color: #ef4444; text-shadow: 0 0 8px rgba(239,68,68,0.6); animation: health-pulse 1.5s ease-in-out infinite; }
+.sys-health-dot.health-ok {
+    color: #34d399;
+    text-shadow: 0 0 8px rgba(52,211,153,0.6);
+    animation: shDotPulseOk 3s ease-in-out infinite;
+}
+.sys-health-dot.health-warn {
+    color: #fbbf24;
+    text-shadow: 0 0 8px rgba(251,191,36,0.6);
+    animation: shDotPulseWarn 2s ease-in-out infinite;
+}
+.sys-health-dot.health-error {
+    color: #f87171;
+    text-shadow: 0 0 10px rgba(248,113,113,0.7);
+    animation: shDotPulseErr 1.2s ease-in-out infinite;
+}
+
+@keyframes shDotPulseOk {
+    0%, 100% { text-shadow: 0 0 4px rgba(52,211,153,0.3); }
+    50% { text-shadow: 0 0 10px rgba(52,211,153,0.7); }
+}
+@keyframes shDotPulseWarn {
+    0%, 100% { text-shadow: 0 0 4px rgba(251,191,36,0.3); opacity: 0.8; }
+    50% { text-shadow: 0 0 12px rgba(251,191,36,0.7); opacity: 1; }
+}
+@keyframes shDotPulseErr {
+    0%, 100% { text-shadow: 0 0 6px rgba(248,113,113,0.4); opacity: 0.7; }
+    50% { text-shadow: 0 0 14px rgba(248,113,113,0.8); opacity: 1; }
+}
+
+/* ── Label: 颜色跟随状态 ── */
 .sys-health-label {
-    color: var(--text-muted);
-    font-weight: 500;
+    color: #64748b;
+    font-weight: 600;
     white-space: nowrap;
+    letter-spacing: 0.3px;
+    transition: color 0.4s ease;
 }
+.sys-health-label.sh-ok    { color: #6ee7b7; }
+.sys-health-label.sh-warn  { color: #fcd34d; }
+.sys-health-label.sh-error { color: #fca5a5; }
+
+/* ── Indicator 容器: 状态背景 ── */
+.sys-health-indicator.shi-ok {
+    background: linear-gradient(135deg, rgba(52,211,153,0.06), rgba(16,185,129,0.03));
+    border-color: rgba(52,211,153,0.12);
+}
+.sys-health-indicator.shi-warn {
+    background: linear-gradient(135deg, rgba(251,191,36,0.08), rgba(245,158,11,0.04));
+    border-color: rgba(251,191,36,0.18);
+}
+.sys-health-indicator.shi-error {
+    background: linear-gradient(135deg, rgba(248,113,113,0.08), rgba(239,68,68,0.04));
+    border-color: rgba(248,113,113,0.2);
+}
+
 @keyframes health-pulse {
     0%, 100% { opacity: 0.7; }
     50% { opacity: 1; }
 }
 
-/* 悬浮弹出面板 */
+/* ── 弹出面板 (机构级) ── */
 .sys-health-popup {
     display: none;
     position: absolute;
-    top: calc(100% + 8px);
+    top: calc(100% + 10px);
     right: 0;
-    width: 260px;
-    background: rgba(15, 23, 42, 0.96);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 12px;
-    padding: 16px;
+    width: 280px;
+    background: rgba(10, 15, 30, 0.97);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 0;
     z-index: 200;
-    box-shadow: 0 16px 48px rgba(0,0,0,0.5);
-    animation: shp-fadein 0.2s ease-out;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.55), 0 0 1px rgba(255,255,255,0.1);
+    animation: shp-fadein 0.25s ease-out;
+    overflow: hidden;
+}
+.sys-health-popup::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, #34d399, #3b82f6, #8b5cf6);
+    opacity: 0.7;
 }
 @keyframes shp-fadein {
-    from { opacity: 0; transform: translateY(-6px); }
-    to { opacity: 1; transform: translateY(0); }
+    from { opacity: 0; transform: translateY(-8px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
 }
 .sys-health-indicator:hover .sys-health-popup {
     display: block;
 }
 .shp-title {
-    font-size: 0.82rem;
+    font-size: 0.78rem;
     font-weight: 700;
     color: #e2e8f0;
-    margin-bottom: 12px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid rgba(255,255,255,0.08);
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    letter-spacing: 0.3px;
 }
 .shp-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 4px 0;
-    font-size: 0.75rem;
+    padding: 6px 16px;
+    font-size: 0.72rem;
+    transition: background 0.2s ease;
 }
-.shp-row span { color: var(--text-muted); }
-.shp-row strong { color: #e2e8f0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.shp-row:hover {
+    background: rgba(255,255,255,0.02);
+}
+.shp-row span { color: #64748b; font-weight: 500; }
+.shp-row strong {
+    color: #e2e8f0; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    font-family: 'JetBrains Mono', 'Menlo', monospace;
+    font-size: 0.7rem;
+}
 .shp-link {
     display: block;
-    margin-top: 10px;
+    margin: 8px 12px 12px;
     text-align: center;
-    font-size: 0.72rem;
-    color: var(--accent-light);
+    font-size: 0.68rem;
+    color: #93c5fd;
     text-decoration: none;
-    padding: 6px;
-    border-radius: 6px;
-    border: 1px solid rgba(59,130,246,0.2);
-    transition: all 0.2s;
+    padding: 7px;
+    border-radius: 8px;
+    border: 1px solid rgba(59,130,246,0.15);
+    background: rgba(59,130,246,0.05);
+    transition: all 0.3s ease;
+    font-weight: 600;
+    letter-spacing: 0.3px;
 }
 .shp-link:hover {
-    background: rgba(59,130,246,0.1);
-    border-color: rgba(59,130,246,0.4);
+    background: rgba(59,130,246,0.12);
+    border-color: rgba(59,130,246,0.35);
+    box-shadow: 0 2px 12px rgba(59,130,246,0.15);
+    transform: translateY(-1px);
 }
 
 /* ═══════════════════════════════════════════════════════════
-   V8.1 模块 B: 全球权益脉搏 (Global Market Pulse) — 机构级重构
+   V9.0 模块 B: 全球权益脉搏 (Global Market Pulse) — 机构级 V2
    ═══════════════════════════════════════════════════════════ */
 .gp-section {
     padding: 20px var(--space-card);
@@ -3293,27 +3366,27 @@ body.industry-scope .badge-beta {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 16px;
+    margin-bottom: 18px;
 }
 .gp-title-group {
     display: flex;
     align-items: center;
     gap: 8px;
 }
-.gp-icon { font-size: 1.05rem; }
+.gp-icon { font-size: 1.1rem; }
 .gp-title {
-    font-size: 0.92rem;
+    font-size: 0.95rem;
     font-weight: 700;
     color: #e2e8f0;
     letter-spacing: -0.2px;
 }
 .gp-subtitle {
-    font-size: 0.62rem;
+    font-size: 0.6rem;
     font-weight: 500;
     color: var(--text-dim);
-    letter-spacing: 0.6px;
+    letter-spacing: 0.8px;
     text-transform: uppercase;
-    padding: 1px 6px;
+    padding: 2px 7px;
     border: 1px solid rgba(255,255,255,0.06);
     border-radius: 3px;
     background: rgba(255,255,255,0.02);
@@ -3326,7 +3399,7 @@ body.industry-scope .badge-beta {
 .gp-advice-pill {
     font-size: 0.68rem;
     font-weight: 700;
-    padding: 3px 10px;
+    padding: 4px 12px;
     border-radius: var(--radius-pill);
     background: rgba(59,130,246,0.12);
     color: var(--accent);
@@ -3358,32 +3431,43 @@ body.industry-scope .badge-beta {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 4px;
+    gap: 5px;
     position: relative;
     overflow: hidden;
-    transition: all 0.3s ease;
+    transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .gp-card::before {
     content: '';
     position: absolute;
     top: 0; left: 0; right: 0;
-    height: 2px;
+    height: 3px;
     background: rgba(255,255,255,0.05);
     transition: background 0.4s ease;
 }
 .gp-card:hover {
-    border-color: rgba(255,255,255,0.12);
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+    transform: translateY(-3px);
 }
-/* 多空信号顶部色带 */
-.gp-card.gp-bull::before { background: linear-gradient(90deg, #10b981, #34d399); }
-.gp-card.gp-bear::before { background: linear-gradient(90deg, #ef4444, #f87171); }
-.gp-card.gp-neutral::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
-/* 多空卡片微妙背景 */
-.gp-card.gp-bull { background: rgba(16,185,129,0.03); }
-.gp-card.gp-bear { background: rgba(239,68,68,0.03); }
-.gp-card.gp-neutral { background: rgba(245,158,11,0.025); }
+/* V9 信号感知 hover 发光 */
+.gp-card.gp-bull:hover {
+    border-color: rgba(16,185,129,0.35);
+    box-shadow: 0 6px 24px rgba(16,185,129,0.12), 0 0 0 1px rgba(16,185,129,0.1);
+}
+.gp-card.gp-bear:hover {
+    border-color: rgba(239,68,68,0.3);
+    box-shadow: 0 6px 24px rgba(239,68,68,0.1), 0 0 0 1px rgba(239,68,68,0.08);
+}
+.gp-card.gp-neutral:hover {
+    border-color: rgba(245,158,11,0.3);
+    box-shadow: 0 6px 24px rgba(245,158,11,0.1), 0 0 0 1px rgba(245,158,11,0.08);
+}
+/* 多空信号顶部色带 (V9: 3px + 微光) */
+.gp-card.gp-bull::before { background: linear-gradient(90deg, #10b981, #34d399); box-shadow: 0 1px 8px rgba(16,185,129,0.3); }
+.gp-card.gp-bear::before { background: linear-gradient(90deg, #ef4444, #f87171); box-shadow: 0 1px 8px rgba(239,68,68,0.25); }
+.gp-card.gp-neutral::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); box-shadow: 0 1px 8px rgba(245,158,11,0.2); }
+/* 多空卡片微妙背景 (V9: 稍增强对比) */
+.gp-card.gp-bull { background: rgba(16,185,129,0.04); border-color: rgba(16,185,129,0.08); }
+.gp-card.gp-bear { background: rgba(239,68,68,0.035); border-color: rgba(239,68,68,0.07); }
+.gp-card.gp-neutral { background: rgba(245,158,11,0.03); border-color: rgba(245,158,11,0.06); }
 
 /* — Skeleton — */
 .gp-card.gp-skeleton .gp-erp-val,
@@ -3406,11 +3490,11 @@ body.industry-scope .badge-beta {
 .gp-card-top {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 6px;
     width: 100%;
     margin-bottom: 2px;
 }
-.gp-flag { font-size: 1.15rem; }
+.gp-flag { font-size: 1.25rem; }
 .gp-region-name {
     font-size: 0.72rem;
     font-weight: 600;
@@ -3418,7 +3502,7 @@ body.industry-scope .badge-beta {
     letter-spacing: 0.5px;
 }
 
-/* — ERP Hero Number — */
+/* — ERP Hero Number (V9: 信号感知着色) — */
 .gp-erp-hero {
     display: flex;
     align-items: baseline;
@@ -3426,12 +3510,13 @@ body.industry-scope .badge-beta {
     margin: 2px 0 0;
 }
 .gp-erp-val {
-    font-size: 1.35rem;
+    font-size: 1.4rem;
     font-weight: 800;
-    color: #fff;
+    color: #e2e8f0;
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.5px;
     line-height: 1.1;
+    transition: color 0.4s ease;
 }
 .gp-erp-unit {
     font-size: 0.6rem;
@@ -3439,36 +3524,46 @@ body.industry-scope .badge-beta {
     color: var(--text-dim);
     margin-left: 1px;
 }
+/* V9: ERP值随多空状态着色 */
+.gp-card.gp-bull .gp-erp-val { color: #6ee7b7; }
+.gp-card.gp-bear .gp-erp-val { color: #fca5a5; }
+.gp-card.gp-neutral .gp-erp-val { color: #fcd34d; }
 
-/* — Score Ring (SVG) — */
+/* — Score Ring (SVG) V9: 增大 + Halo — */
 .gp-score-ring {
     position: relative;
-    width: 48px;
-    height: 48px;
+    width: 54px;
+    height: 54px;
     margin: 4px 0;
 }
 .gp-ring-svg {
     width: 100%;
     height: 100%;
     transform: rotate(-90deg);
+    filter: drop-shadow(0 0 3px rgba(255,255,255,0.06));
 }
 .gp-ring-bg {
     fill: none;
     stroke: rgba(255,255,255,0.06);
-    stroke-width: 3;
+    stroke-width: 2.8;
 }
 .gp-ring-fill {
     fill: none;
     stroke: var(--accent);
-    stroke-width: 3;
+    stroke-width: 3.2;
     stroke-linecap: round;
-    transition: stroke-dasharray 1s cubic-bezier(0.34, 1.56, 0.64, 1), stroke 0.4s;
+    transition: stroke-dasharray 1.2s cubic-bezier(0.34, 1.56, 0.64, 1), stroke 0.4s;
 }
+/* V9: bull 卡片环形微呼吸 */
+.gp-card.gp-bull .gp-ring-svg { filter: drop-shadow(0 0 5px rgba(16,185,129,0.25)); }
+.gp-card.gp-bear .gp-ring-svg { filter: drop-shadow(0 0 4px rgba(239,68,68,0.18)); }
+.gp-card.gp-neutral .gp-ring-svg { filter: drop-shadow(0 0 4px rgba(245,158,11,0.15)); }
+
 .gp-ring-text {
     position: absolute;
     top: 50%; left: 50%;
     transform: translate(-50%, -50%);
-    font-size: 0.7rem;
+    font-size: 0.78rem;
     font-weight: 800;
     color: #e2e8f0;
     font-variant-numeric: tabular-nums;
@@ -3477,7 +3572,7 @@ body.industry-scope .badge-beta {
 /* — PE / Yield Metrics — */
 .gp-metrics {
     display: flex;
-    gap: 12px;
+    gap: 14px;
     width: 100%;
     justify-content: center;
     margin: 2px 0 4px;
@@ -3502,17 +3597,17 @@ body.industry-scope .badge-beta {
     font-variant-numeric: tabular-nums;
 }
 
-/* — Signal Badge — */
+/* — Signal Badge (V9: 加强对比 + 圆角) — */
 .gp-signal-row {
     width: 100%;
     text-align: center;
-    margin: 2px 0;
+    margin: 3px 0;
 }
 .gp-sig-badge {
     font-size: 0.62rem;
     font-weight: 700;
-    padding: 2px 10px;
-    border-radius: 4px;
+    padding: 3px 12px;
+    border-radius: var(--radius-pill);
     display: inline-block;
     letter-spacing: 0.3px;
     background: rgba(255,255,255,0.04);
@@ -3520,17 +3615,17 @@ body.industry-scope .badge-beta {
     border: 1px solid rgba(255,255,255,0.06);
     transition: all 0.3s ease;
 }
-.gp-sig-badge.sig-bull { background: rgba(16,185,129,0.1); color: var(--success-light); border-color: rgba(16,185,129,0.2); }
-.gp-sig-badge.sig-bear { background: rgba(239,68,68,0.1); color: var(--danger-light); border-color: rgba(239,68,68,0.2); }
-.gp-sig-badge.sig-neutral { background: rgba(245,158,11,0.08); color: var(--warning-light); border-color: rgba(245,158,11,0.15); }
+.gp-sig-badge.sig-bull { background: rgba(16,185,129,0.12); color: #6ee7b7; border-color: rgba(16,185,129,0.25); }
+.gp-sig-badge.sig-bear { background: rgba(239,68,68,0.1); color: #fca5a5; border-color: rgba(239,68,68,0.2); }
+.gp-sig-badge.sig-neutral { background: rgba(245,158,11,0.1); color: #fcd34d; border-color: rgba(245,158,11,0.18); }
 
-/* — Mini Allocation Bar — */
+/* — Mini Allocation Bar (V9: 4px 高度 + 发光) — */
 .gp-alloc-row {
     display: flex;
     align-items: center;
     gap: 6px;
     width: 100%;
-    margin-top: 2px;
+    margin-top: 4px;
 }
 .gp-alloc-row .gp-alloc-label {
     font-size: 0.55rem;
@@ -3540,7 +3635,7 @@ body.industry-scope .badge-beta {
 }
 .gp-alloc-bar-mini {
     flex: 1;
-    height: 3px;
+    height: 4px;
     background: rgba(255,255,255,0.06);
     border-radius: 2px;
     overflow: hidden;
@@ -3550,25 +3645,26 @@ body.industry-scope .badge-beta {
     border-radius: 2px;
     width: 0%;
     background: var(--accent);
-    transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.3s;
+    transition: width 1s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.3s;
 }
 .gp-alloc-pct {
-    font-size: 0.6rem;
+    font-size: 0.62rem;
     font-weight: 700;
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
-    min-width: 24px;
+    min-width: 26px;
     text-align: right;
 }
 
-/* — Footer (Equity Track) — */
+/* — Footer (Equity Track) V9: 增强分隔线 — */
 .gp-footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 14px;
-    padding: 10px 4px 0;
-    border-top: 1px solid rgba(255,255,255,0.04);
+    padding: 12px 4px 0;
+    border-top: 1px solid rgba(255,255,255,0.07);
+    margin-top: 2px;
 }
 .gp-footer-left {
     display: flex;
@@ -3585,21 +3681,21 @@ body.industry-scope .badge-beta {
 }
 .gp-equity-track {
     flex: 1;
-    height: 6px;
+    height: 7px;
     background: rgba(255,255,255,0.06);
-    border-radius: 3px;
+    border-radius: 4px;
     overflow: hidden;
     position: relative;
     max-width: 240px;
 }
 .gp-equity-fill {
     height: 100%;
-    border-radius: 3px;
+    border-radius: 4px;
     background: linear-gradient(90deg, #3b82f6, #10b981);
-    transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.3s;
+    transition: width 1s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.3s;
 }
 .gp-equity-pct {
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     font-weight: 800;
     color: #e2e8f0;
     font-variant-numeric: tabular-nums;
@@ -3613,12 +3709,13 @@ body.industry-scope .badge-beta {
     font-weight: 500;
     color: var(--text-dim);
     letter-spacing: 0.2px;
+    font-variant-numeric: tabular-nums;
 }
 
 
 
 /* ═══════════════════════════════════════════════════════════
-   V8.1 模块 A: AI 情报流 (Intelligence Feed · DeepSeek)
+   V9.0 模块 A: AI 情报流 (Intelligence Feed · DeepSeek)
    ═══════════════════════════════════════════════════════════ */
 .intel-section {
     padding: 20px var(--space-card);
@@ -3629,27 +3726,27 @@ body.industry-scope .badge-beta {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 14px;
+    margin-bottom: 16px;
 }
 .intel-title-group {
     display: flex;
     align-items: center;
     gap: 8px;
 }
-.intel-icon { font-size: 1.05rem; }
+.intel-icon { font-size: 1.1rem; }
 .intel-title {
-    font-size: 0.92rem;
+    font-size: 0.95rem;
     font-weight: 700;
     color: #e2e8f0;
     letter-spacing: -0.2px;
 }
 .intel-subtitle {
-    font-size: 0.62rem;
+    font-size: 0.6rem;
     font-weight: 500;
     color: var(--text-dim);
-    letter-spacing: 0.6px;
+    letter-spacing: 0.8px;
     text-transform: uppercase;
-    padding: 1px 6px;
+    padding: 2px 7px;
     border: 1px solid rgba(255,255,255,0.06);
     border-radius: 3px;
     background: rgba(255,255,255,0.02);
@@ -3662,7 +3759,7 @@ body.industry-scope .badge-beta {
 .intel-scan-btn {
     font-size: 0.65rem;
     font-weight: 700;
-    padding: 4px 12px;
+    padding: 5px 14px;
     border-radius: var(--radius-pill);
     background: rgba(139,92,246,0.12);
     color: var(--purple-light, #c4b5fd);
@@ -3675,10 +3772,10 @@ body.industry-scope .badge-beta {
     letter-spacing: 0.3px;
 }
 .intel-scan-btn:hover {
-    background: rgba(139,92,246,0.2);
-    border-color: rgba(139,92,246,0.4);
+    background: rgba(139,92,246,0.22);
+    border-color: rgba(139,92,246,0.45);
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(139,92,246,0.15);
+    box-shadow: 0 4px 14px rgba(139,92,246,0.18);
 }
 .intel-scan-btn:active {
     transform: translateY(0);
@@ -3700,7 +3797,7 @@ body.industry-scope .badge-beta {
     font-variant-numeric: tabular-nums;
 }
 
-/* — Event Cards Container — */
+/* — Event Cards Container (V9: 边缘渐隐) — */
 .intel-cards {
     display: flex;
     gap: 10px;
@@ -3708,12 +3805,14 @@ body.industry-scope .badge-beta {
     padding-bottom: 6px;
     scrollbar-width: thin;
     scrollbar-color: rgba(255,255,255,0.08) transparent;
+    mask-image: linear-gradient(90deg, transparent 0%, black 2.5%, black 97.5%, transparent 100%);
+    -webkit-mask-image: linear-gradient(90deg, transparent 0%, black 2.5%, black 97.5%, transparent 100%);
 }
 .intel-cards::-webkit-scrollbar { height: 4px; }
 .intel-cards::-webkit-scrollbar-track { background: transparent; }
 .intel-cards::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
 
-/* — Event Card — */
+/* — Event Card (V9: 间距优化) — */
 .intel-card {
     min-width: 260px;
     max-width: 300px;
@@ -3722,13 +3821,13 @@ body.industry-scope .badge-beta {
     border-radius: var(--radius-inner);
     padding: 14px 14px 10px;
     flex-shrink: 0;
-    transition: all 0.3s ease;
+    transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
     cursor: default;
     position: relative;
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
 }
 /* 左侧分类色带 */
 .intel-card::before {
@@ -3740,22 +3839,41 @@ body.industry-scope .badge-beta {
     transition: background 0.3s;
 }
 .intel-card:hover {
-    border-color: rgba(255, 255, 255, 0.12);
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+    transform: translateY(-3px);
 }
-/* 高影响事件 */
+/* V9: 分类感知 hover 发光 */
+.intel-card.cat-macro:hover {
+    border-color: rgba(59,130,246,0.3);
+    box-shadow: 0 6px 24px rgba(59,130,246,0.1), 0 0 0 1px rgba(59,130,246,0.08);
+}
+.intel-card.cat-industry:hover {
+    border-color: rgba(139,92,246,0.3);
+    box-shadow: 0 6px 24px rgba(139,92,246,0.1), 0 0 0 1px rgba(139,92,246,0.08);
+}
+.intel-card.cat-stock:hover {
+    border-color: rgba(16,185,129,0.3);
+    box-shadow: 0 6px 24px rgba(16,185,129,0.1), 0 0 0 1px rgba(16,185,129,0.08);
+}
+.intel-card.cat-risk:hover {
+    border-color: rgba(239,68,68,0.3);
+    box-shadow: 0 6px 24px rgba(239,68,68,0.1), 0 0 0 1px rgba(239,68,68,0.08);
+}
+/* V9: 高影响事件呼吸脉冲 */
 .intel-card.intel-critical {
-    border-color: rgba(239, 68, 68, 0.25);
-    box-shadow: 0 0 12px rgba(239, 68, 68, 0.06);
+    border-color: rgba(239, 68, 68, 0.3);
+    animation: intel-critical-pulse 3s ease-in-out infinite;
 }
 .intel-card.intel-critical::before { background: linear-gradient(180deg, #ef4444, #f87171); }
+@keyframes intel-critical-pulse {
+    0%, 100% { box-shadow: 0 0 8px rgba(239, 68, 68, 0.06); }
+    50% { box-shadow: 0 0 18px rgba(239, 68, 68, 0.15); }
+}
 
-/* 分类色带颜色 */
-.intel-card.cat-macro::before { background: linear-gradient(180deg, #3b82f6, #60a5fa); }
-.intel-card.cat-industry::before { background: linear-gradient(180deg, #8b5cf6, #a78bfa); }
-.intel-card.cat-stock::before { background: linear-gradient(180deg, #10b981, #34d399); }
-.intel-card.cat-risk::before { background: linear-gradient(180deg, #ef4444, #f87171); }
+/* V9: 分类色带 + 光晕 */
+.intel-card.cat-macro::before { background: linear-gradient(180deg, #3b82f6, #60a5fa); box-shadow: 2px 0 8px rgba(59,130,246,0.3); }
+.intel-card.cat-industry::before { background: linear-gradient(180deg, #8b5cf6, #a78bfa); box-shadow: 2px 0 8px rgba(139,92,246,0.25); }
+.intel-card.cat-stock::before { background: linear-gradient(180deg, #10b981, #34d399); box-shadow: 2px 0 8px rgba(16,185,129,0.25); }
+.intel-card.cat-risk::before { background: linear-gradient(180deg, #ef4444, #f87171); box-shadow: 2px 0 8px rgba(239,68,68,0.3); }
 
 /* — Card Header — */
 .intel-card-header {
@@ -3763,28 +3881,29 @@ body.industry-scope .badge-beta {
     align-items: center;
     gap: 8px;
 }
+/* V9: 分类 badge 胶囊化 */
 .intel-category {
     font-size: 0.58rem;
     font-weight: 700;
-    padding: 2px 7px;
-    border-radius: 3px;
+    padding: 2px 8px;
+    border-radius: var(--radius-pill);
     letter-spacing: 0.4px;
 }
 .intel-category.cat-macro { background: rgba(59,130,246,0.12); color: var(--accent-light); border: 1px solid rgba(59,130,246,0.2); }
 .intel-category.cat-industry { background: rgba(139,92,246,0.1); color: var(--purple-light, #c4b5fd); border: 1px solid rgba(139,92,246,0.2); }
-.intel-category.cat-stock { background: rgba(16,185,129,0.1); color: var(--success-light); border: 1px solid rgba(16,185,129,0.2); }
-.intel-category.cat-risk { background: rgba(239,68,68,0.1); color: var(--danger-light); border: 1px solid rgba(239,68,68,0.2); }
+.intel-category.cat-stock { background: rgba(16,185,129,0.12); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.25); }
+.intel-category.cat-risk { background: rgba(239,68,68,0.1); color: #fca5a5; border: 1px solid rgba(239,68,68,0.2); }
 
-/* — Impact Score Bar — */
+/* — Impact Score Bar (V9: 增厚) — */
 .intel-impact-bar {
     margin-left: auto;
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 5px;
 }
 .intel-impact-track {
-    width: 40px;
-    height: 3px;
+    width: 48px;
+    height: 4px;
     background: rgba(255,255,255,0.06);
     border-radius: 2px;
     overflow: hidden;
@@ -3792,19 +3911,20 @@ body.industry-scope .badge-beta {
 .intel-impact-fill {
     height: 100%;
     border-radius: 2px;
-    transition: width 0.6s ease;
+    transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .intel-impact-val {
-    font-size: 0.58rem;
+    font-size: 0.6rem;
     font-weight: 800;
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
-    min-width: 12px;
+    min-width: 14px;
     text-align: right;
+    transition: color 0.3s;
 }
 
 /* — Card Content — */
-.intel-title {
+.intel-card .intel-title {
     font-size: 0.82rem;
     font-weight: 600;
     color: #e2e8f0;
@@ -3823,7 +3943,7 @@ body.industry-scope .badge-beta {
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
-/* 受影响资产 */
+/* V9: 受影响资产增强 */
 .intel-assets {
     display: flex;
     gap: 4px;
@@ -3833,12 +3953,16 @@ body.industry-scope .badge-beta {
 .intel-asset-tag {
     font-size: 0.55rem;
     font-weight: 600;
-    padding: 1px 5px;
+    padding: 2px 6px;
     border-radius: 3px;
-    background: rgba(255,255,255,0.04);
-    color: var(--text-dim);
-    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(59,130,246,0.08);
+    color: #93c5fd;
+    border: 1px solid rgba(59,130,246,0.15);
     font-variant-numeric: tabular-nums;
+    transition: background 0.2s;
+}
+.intel-asset-tag:hover {
+    background: rgba(59,130,246,0.15);
 }
 
 /* — Empty State — */

@@ -689,6 +689,15 @@ function renderNarrative(data) {
     const summaryEl = document.getElementById('narrative-summary');
     if (!body) return;
 
+    // ── V2.0: 段落语义映射 (图标 + 色温) ──
+    const _sectionMeta = {
+        '市场温度': { icon: '🌡️', color: '#3b82f6', rgb: '59,130,246' },
+        '行业轮动': { icon: '🏭', color: '#a78bfa', rgb: '167,139,250' },
+        '策略信号': { icon: '🎯', color: '#34d399', rgb: '52,211,153' },
+        '风险提示': { icon: '🛡️', color: '#f87171', rgb: '248,113,113' },
+        '操作建议': { icon: '💡', color: '#fbbf24', rgb: '251,191,36' },
+    };
+
     // Provider badge
     if (provEl) {
         const provLabels = {
@@ -706,9 +715,21 @@ function renderNarrative(data) {
         timeEl.textContent = dt.toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit'}) + ' 生成';
     }
 
-    // Summary
+    // Summary (折叠时显示)
     if (summaryEl) {
-        summaryEl.textContent = `${data.provider === 'deterministic' ? '规则引擎' : 'LLM'} · ${data.snapshot_date}`;
+        const srcLabel = data.provider === 'deterministic' ? '规则引擎' : 'DeepSeek LLM';
+        summaryEl.textContent = `${srcLabel} · ${data.snapshot_date}`;
+    }
+
+    // ── 数据高亮: 将数字+单位自动标记为金色等宽体 ──
+    function _highlightMetrics(text) {
+        // 匹配: JCS 75.7, R3, 53%, 22.3%, +0.64, -4.27%, VIX 18.5, 3.2%
+        return text
+            .replace(/(\b\d+\.?\d*\s*%)/g, '<span class="nar-metric">$1</span>')
+            .replace(/(R[1-5])/g, '<span class="nar-metric">$1</span>')
+            .replace(/(JCS\s*\d+\.?\d*)/gi, '<span class="nar-metric nar-metric-key">$1</span>')
+            .replace(/(VIX\s*\d+\.?\d*)/gi, '<span class="nar-metric nar-metric-key">$1</span>')
+            .replace(/(ERP\s*\d+\.?\d*%?)/gi, '<span class="nar-metric nar-metric-key">$1</span>');
     }
 
     // Report body — parse sections by 【】markers
@@ -717,20 +738,26 @@ function renderNarrative(data) {
     const parts = report.split(sectionRegex);
 
     if (parts.length > 1) {
-        // Has section markers — render as cards
+        // Has section markers — render as institutional cards
         let html = '';
+        let sectionIdx = 0;
         for (let i = 1; i < parts.length; i += 2) {
             const title = parts[i];
             const text = (parts[i + 1] || '').trim();
+            const meta = _sectionMeta[title] || { icon: '📋', color: '#94a3b8', rgb: '148,163,184' };
+            const highlighted = _highlightMetrics(text);
             html += `
-            <div class="narrative-section">
-                <div class="narrative-section-title">【${title}】</div>
-                <div class="narrative-section-text">${text}</div>
+            <div class="narrative-section" style="--nar-color:${meta.color};--nar-rgb:${meta.rgb}" data-section="${sectionIdx++}">
+                <div class="nar-section-header">
+                    <span class="nar-section-icon">${meta.icon}</span>
+                    <span class="nar-section-tag" style="color:${meta.color};border-color:rgba(${meta.rgb},0.3);background:rgba(${meta.rgb},0.08)">${title}</span>
+                </div>
+                <div class="nar-section-content">${highlighted}</div>
             </div>`;
         }
         body.innerHTML = html;
     } else {
-        // Plain text
+        // Plain text fallback
         body.textContent = report;
     }
     console.info('[Narrative] 渲染完成 (%d 段)', Math.floor(parts.length / 2));
