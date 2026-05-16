@@ -88,10 +88,20 @@ def warmup_dashboard_cache():
 def warmup_factor_data():
     """
     V5.0: 收盘后自动同步因子数据 (日线 + 财务指标)
+    V24.1: 追加因子代理指数同步 (Market/SMB/HML 归因引擎依赖)
     触发时机: 每日 15:35 (A股收盘后 35 分钟，给 Tushare 数据更新缓冲)
     """
     from data_manager import FactorDataManager
     dm = FactorDataManager()
+
+    # V24.1: 同步三因子归因引擎依赖的指数行情 (asset='I')
+    FACTOR_PROXY_INDICES = ["000300.SH", "000852.SH", "000015.SH", "399006.SZ"]
+    try:
+        dm.sync_daily_prices(FACTOR_PROXY_INDICES, start_date="20210101", asset='I')
+        logger.info("因子代理指数同步完成: %s", FACTOR_PROXY_INDICES)
+    except Exception as e:
+        logger.warning("因子代理指数同步失败 (非致命): %s", e)
+
     stocks = dm.get_all_stocks()
     # 默认同步 Top 30 样本池 (与因子分析默认配置一致)
     sample = stocks.head(30)['ts_code'].tolist()

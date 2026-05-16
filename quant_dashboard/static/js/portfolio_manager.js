@@ -1632,9 +1632,10 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!factorRadar) factorRadar = AC.registerChart(echarts.init(el));
 
         const factors = d.factors;
+        // 统一 max=2.0, 保证各因子轴刻度一致且低暴露因子仍可见
         const indicators = factors.map(f => ({
             name: f.icon + ' ' + f.cn,
-            max: Math.max(2, ...factors.map(ff => Math.abs(ff.beta) * 1.5)),
+            max: 2.0,
         }));
         const values = factors.map(f => Math.abs(f.beta));
 
@@ -1716,10 +1717,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 name: '贡献', type: 'bar',
                 data: factors.map(f => f.contribution),
                 itemStyle: {
-                    color: p => {
-                        const f = factors[p.dataIndex];
-                        return f.color || (p.value >= 0 ? 'rgba(16,185,129,0.8)' : 'rgba(239,68,68,0.75)');
-                    },
+                    // 方向色: 绿正红负, 不用因子品牌色 (品牌色保留给雷达图)
+                    color: p => p.value >= 0 ? 'rgba(16,185,129,0.8)' : 'rgba(239,68,68,0.75)',
                     borderRadius: [0, 6, 6, 0]
                 },
                 barMaxWidth: 22,
@@ -1748,7 +1747,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 <td class="pf-mono">${s.weight.toFixed(1)}%</td>
                 <td><span class="pf-sector-tag">${s.industry}</span></td>
                 <td class="pf-mono" style="background:${heatColor(s.momentum)}">${scoreLabel(s.momentum)} <small style="opacity:0.6">${(s.momentum * 100).toFixed(0)}%</small></td>
-                <td class="pf-mono" style="background:${heatColor(1 - s.volatility)}">${scoreLabel(1 - s.volatility)} <small style="opacity:0.6">${(s.volatility * 100).toFixed(0)}%</small></td>
+                <td class="pf-mono" style="background:${heatColor(1 - s.volatility)}" title="低波偏好: 越高表示该标的波动率越低">${scoreLabel(1 - s.volatility)} <small style="opacity:0.6">${(s.volatility * 100).toFixed(0)}%</small></td>
                 <td class="pf-mono" style="background:${heatColor(s.quality)}">${scoreLabel(s.quality)} <small style="opacity:0.6">${(s.quality * 100).toFixed(0)}%</small></td>
             </tr>`;
         }).join('');

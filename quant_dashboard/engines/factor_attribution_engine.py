@@ -1,28 +1,27 @@
 """
-AlphaCore V24.0 · 多因子风险归因引擎
+AlphaCore V24.1 · 三因子风险归因引擎
 ==========================================
-将组合风险/收益暴露分解为 6 大风格因子:
+将组合风险/收益暴露分解为 3 大风格因子 (可构建严格时间序列代理):
 
   - 市场因子 (Market/Beta):  大盘系统性风险
   - 规模因子 (Size/SMB):     小盘溢价暴露
   - 价值因子 (Value/HML):    低估值偏好
-  - 动量因子 (Momentum):     趋势追踪暴露
-  - 波动率因子 (Volatility): 高波/低波倾向
-  - 质量因子 (Quality):      盈利质量偏好
+
+辅助横截面得分 (不参与回归, 仅用于个股画像):
+  - 动量 (Momentum):   20日收益率排名百分位
+  - 波动率 (Volatility): 20日已实现波动率排名百分位
+  - 质量 (Quality):     行业启发式 ROE 档位
 
 方法论:
   1. 从持仓日收益率和因子代理指数收益率构建回归矩阵
-  2. 多元 OLS 回归得到因子 Beta (载荷)
-  3. 因子贡献 = Beta × 因子收益
+  2. 多元 OLS 回归 (Ridge λ=1e-6) 得到因子 Beta (载荷)
+  3. 因子贡献 = Beta × Σ(因子日收益) (精确累计, 非均值×天数)
   4. 残差 = Alpha (选股能力)
 
 因子代理:
   - Market: 沪深300 (000300.SH)
   - SMB:    中证1000 - 沪深300
-  - HML:    中证红利 - 中证成长
-  - Momentum: 20日动量排序分位
-  - Volatility: 20日已实现波动率
-  - Quality: ROE排序分位
+  - HML:    上证红利 - 创业板指
 
 降级: 完整回归 → 简化因子暴露 (回归数据不足时)
 """
@@ -44,7 +43,7 @@ _CACHE_TTL = 3600 * 2  # 2 小时
 FACTOR_PROXIES = {
     "market":     {"ts_code": "000300.SH", "name": "沪深300",    "api": "index"},
     "small_cap":  {"ts_code": "000852.SH", "name": "中证1000",   "api": "index"},
-    "value":      {"ts_code": "000922.SH", "name": "中证红利",   "api": "index"},
+    "value":      {"ts_code": "000015.SH", "name": "上证红利",   "api": "index"},
     "growth":     {"ts_code": "399006.SZ", "name": "创业板指",   "api": "index"},
 }
 
@@ -59,12 +58,21 @@ FACTOR_META = {
 }
 
 
+def _to_date_indexed(df: pd.DataFrame) -> pd.DataFrame:
+    """确保 DataFrame 以 trade_date 为索引, 消除整数 index 对齐错误。"""
+    if df is None or df.empty:
+        return df
+    if 'trade_date' in df.columns and not isinstance(df.index, pd.DatetimeIndex):
+        df = df.set_index('trade_date')
+    return df
+
+
 def _fetch_factor_returns(lookback: int = 120) -> dict:
     """
-    获取因子代理收益率序列。
+    获取因子代理收益率序列 (以 trade_date 为索引)。
 
     Returns: {
-        "market": pd.Series,
+        "market": pd.Series (index=DatetimeIndex),
         "smb": pd.Series (中证1000 - 沪深300),
         "hml": pd.Series (红利 - 创业板),
     }
@@ -76,7 +84,7 @@ def _fetch_factor_returns(lookback: int = 120) -> dict:
 
     # Market
     try:
-        mkt_df = dm.get_price_payload("000300.SH")
+        mkt_df = _to_date_indexed(dm.get_price_payload("000300.SH"))
         if mkt_df is not None and len(mkt_df) >= lookback:
             mkt_ret = mkt_df["close"].pct_change().dropna().tail(lookback)
             factor_rets["market"] = mkt_ret
@@ -85,10 +93,10 @@ def _fetch_factor_returns(lookback: int = 120) -> dict:
 
     # SMB = 小盘 - 大盘 (中证1000 - 沪深300)
     try:
-        small_df = dm.get_price_payload("000852.SH")
+        small_df = _to_date_indexed(dm.get_price_payload("000852.SH"))
         if small_df is not None and len(small_df) >= lookback and "market" in factor_rets:
             small_ret = small_df["close"].pct_change().dropna().tail(lookback)
-            # 对齐日期
+            # 对齐日期 (DatetimeIndex 交集)
             common = small_ret.index.intersection(factor_rets["market"].index)
             if len(common) > 30:
                 factor_rets["smb"] = small_ret.loc[common] - factor_rets["market"].loc[common]
@@ -97,8 +105,8 @@ def _fetch_factor_returns(lookback: int = 120) -> dict:
 
     # HML = 价值 - 成长 (红利 - 创业板)
     try:
-        val_df = dm.get_price_payload("000922.SH")
-        gro_df = dm.get_price_payload("399006.SZ")
+        val_df = _to_date_indexed(dm.get_price_payload("000015.SH"))
+        gro_df = _to_date_indexed(dm.get_price_payload("399006.SZ"))
         if val_df is not None and gro_df is not None:
             val_ret = val_df["close"].pct_change().dropna().tail(lookback)
             gro_ret = gro_df["close"].pct_change().dropna().tail(lookback)
@@ -179,40 +187,57 @@ def _compute_stock_factor_scores(positions: list) -> dict:
     return scores
 
 
-def _ols_regression(y: np.ndarray, X: np.ndarray) -> dict:
+def _ols_regression(y: np.ndarray, X: np.ndarray, ridge_lambda: float = 1e-6) -> dict:
     """
-    最小二乘回归 (无外部依赖)。
+    Ridge 回归 (OLS + 微正则化, 消除多重共线性不稳定)。
 
-    Returns: {"betas": array, "r_squared": float, "residuals": array}
+    Args:
+        ridge_lambda: 正则化系数 (1e-6 几乎不影响估计, 但保证数值稳定)
+
+    Returns: {"alpha": float, "betas": list, "r_squared": float, "residuals": array}
     """
     n = len(y)
     # 加常数项
     ones = np.ones((n, 1))
     X_aug = np.hstack([ones, X])
+    k = X_aug.shape[1]
 
     try:
-        # β = (X'X)^(-1) X'y
         XtX = X_aug.T @ X_aug
+
+        # 条件数检查
+        cond = np.linalg.cond(XtX)
+        if cond > 1e10:
+            logger.warning("OLS: XtX 条件数过高 (%.2e), 因子间可能存在多重共线性", cond)
+
+        # Ridge 正则化: (X'X + λI)^(-1) X'y  (不惩罚截距项)
+        reg_matrix = ridge_lambda * np.eye(k)
+        reg_matrix[0, 0] = 0  # 截距不正则化
+        XtX_reg = XtX + reg_matrix
+
         Xty = X_aug.T @ y
-        betas = np.linalg.solve(XtX, Xty)
+        betas = np.linalg.solve(XtX_reg, Xty)
 
         y_hat = X_aug @ betas
         residuals = y - y_hat
 
         ss_res = np.sum(residuals ** 2)
         ss_tot = np.sum((y - np.mean(y)) ** 2)
-        r_squared = 1 - ss_res / ss_tot if ss_tot > 0 else 0
+        r_squared = max(0.0, 1 - ss_res / ss_tot) if ss_tot > 0 else 0
 
         return {
             "alpha": float(betas[0]),
             "betas": betas[1:].tolist(),
             "r_squared": float(r_squared),
             "residuals": residuals,
+            "condition_number": float(cond),
         }
-    except np.linalg.LinAlgError:
+    except np.linalg.LinAlgError as e:
+        logger.error("OLS: 回归失败 (LinAlgError): %s", e)
         return {
             "alpha": 0, "betas": [0] * X.shape[1],
             "r_squared": 0, "residuals": np.zeros(n),
+            "condition_number": float('inf'),
         }
 
 
@@ -270,7 +295,7 @@ def compute_factor_attribution(lookback: int = 60) -> dict:
     stock_rets = {}
     for pos in positions:
         try:
-            p_df = dm.get_price_payload(pos["ts_code"])
+            p_df = _to_date_indexed(dm.get_price_payload(pos["ts_code"]))
             if p_df is not None and len(p_df) >= lookback:
                 sr = p_df["close"].pct_change().dropna().tail(lookback)
                 if sr.index.duplicated().any():
@@ -315,12 +340,13 @@ def compute_factor_attribution(lookback: int = 60) -> dict:
     # ── 4. OLS 回归 ──
     reg = _ols_regression(port_ret_aligned, X)
 
-    # ── 5. 因子贡献 ──
+    # ── 5. 因子贡献 (精确累计: β × Σ因子日收益) ──
     factors_result = []
     for i, fn in enumerate(factor_names):
         beta = reg["betas"][i]
+        factor_cumulative = float(factor_rets[fn].loc[common_idx].sum())
         factor_mean_ret = float(factor_rets[fn].loc[common_idx].mean())
-        contribution = beta * factor_mean_ret * len(common_idx)  # 期间累计
+        contribution = beta * factor_cumulative  # β × Σ(r_f) 精确累计
 
         # 暴露等级
         if fn == "market":
@@ -359,14 +385,14 @@ def compute_factor_attribution(lookback: int = 60) -> dict:
         })
     stock_exposures.sort(key=lambda x: x["weight"], reverse=True)
 
-    # ── 7. 系统性 vs 特质风险 ──
+    # ── 7. 系统性 vs 特质风险 (clamp 防溢出) ──
     systematic_var = np.var(port_ret_aligned - reg["residuals"])
     total_var = np.var(port_ret_aligned)
-    systematic_pct = systematic_var / total_var * 100 if total_var > 0 else 0
+    systematic_pct = min(100.0, max(0.0, systematic_var / total_var * 100)) if total_var > 0 else 0
 
-    # Alpha 年化
+    # Alpha 年化 (线性法, 对小日频 alpha 更稳健)
     alpha_daily = reg["alpha"]
-    alpha_annual = (1 + alpha_daily) ** 252 - 1
+    alpha_annual = alpha_daily * 252
 
     result = {
         "status": "success",

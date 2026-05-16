@@ -175,7 +175,7 @@ async def get_brinson_attribution(days: int = 20):
 
 @router.get("/portfolio/factor-attribution")
 async def get_factor_attribution(days: int = 60):
-    """V24.0: 多因子风险归因 (Market/SMB/HML/Momentum/Volatility/Quality)"""
+    """V24.1: 三因子风险归因 (Market/SMB/HML) + 个股横截面画像"""
     from services.cache_service import stale_while_revalidate
 
     days = max(20, min(252, days))
