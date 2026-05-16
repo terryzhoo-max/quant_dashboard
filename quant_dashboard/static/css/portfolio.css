@@ -848,6 +848,52 @@
 }
 
 /* ═══════════════════════════════════
+   可折叠面板系统 (V24.1)
+   ═══════════════════════════════════ */
+
+.pf-collapsible-header {
+    cursor: pointer;
+    user-select: none;
+    transition: opacity 0.2s;
+}
+
+.pf-collapsible-header:hover {
+    opacity: 0.85;
+}
+
+.pf-collapse-arrow {
+    font-size: 0.72rem;
+    color: #64748b;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: inline-block;
+}
+
+.pf-collapse-arrow.pf-arrow-open {
+    transform: rotate(90deg);
+}
+
+.pf-collapsible-body {
+    overflow: hidden;
+    transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+    max-height: 0;
+    opacity: 0;
+}
+
+.pf-collapsible-body.pf-expanded {
+    max-height: 3000px;
+    opacity: 1;
+}
+
+/* 折叠状态下面板视觉提示 */
+.pf-panel-collapsed {
+    border-color: rgba(255, 255, 255, 0.03) !important;
+}
+
+.pf-panel-collapsed .pf-panel-header {
+    margin-bottom: 0;
+}
+
+/* ═══════════════════════════════════
    导入持仓功能样式
    ═══════════════════════════════════ */
 

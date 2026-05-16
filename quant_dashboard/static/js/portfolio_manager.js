@@ -689,11 +689,15 @@ document.addEventListener('DOMContentLoaded', function () {
         let cash = 0;
         let totalAsset = 0;
 
-        // 解析第一行汇总
+        // 解析第一行汇总 (V24.1: 对齐后端, 优先提取「余额」含冻结资金)
+        let cashAvailable = 0;
         if (lines.length > 0) {
-            const cashMatch = lines[0].match(/可用[:：\s]*([0-9,.]+)/);
+            const balanceMatch = lines[0].match(/余额[:：\s]*([0-9,.]+)/);
+            const availMatch = lines[0].match(/可用[:：\s]*([0-9,.]+)/);
             const assetMatch = lines[0].match(/资产[:：\s]*([0-9,.]+)/);
-            if (cashMatch) cash = parseFloat(cashMatch[1].replace(/,/g, ''));
+            if (balanceMatch) cash = parseFloat(balanceMatch[1].replace(/,/g, ''));
+            else if (availMatch) cash = parseFloat(availMatch[1].replace(/,/g, ''));
+            if (availMatch) cashAvailable = parseFloat(availMatch[1].replace(/,/g, ''));
             if (assetMatch) totalAsset = parseFloat(assetMatch[1].replace(/,/g, ''));
         }
 
@@ -758,6 +762,9 @@ document.addEventListener('DOMContentLoaded', function () {
         importWarning.style.display = 'block';
 
         const totalMV = positions.reduce((s, p) => s + p.amount * p.price, 0);
+        const frozenNote = (cashAvailable > 0 && cash > cashAvailable)
+            ? `<span style="font-size:0.7rem;color:#94a3b8;margin-left:4px;" title="可用 ¥${cashAvailable.toLocaleString(undefined,{minimumFractionDigits:2})}，差额为逆回购/冻结资金">(可用 ¥${cashAvailable.toLocaleString(undefined,{minimumFractionDigits:0})})</span>`
+            : '';
         importSummary.innerHTML = `
             <div class="pf-import-stats">
                 <span class="pf-import-stat">
@@ -766,8 +773,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     <span class="pf-import-stat-label">只持仓</span>
                 </span>
                 <span class="pf-import-stat">
-                    <span class="pf-import-stat-label">可用资金</span>
-                    <span class="pf-import-stat-value pf-gold">¥${cash.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    <span class="pf-import-stat-label">账户余额</span>
+                    <span class="pf-import-stat-value pf-gold">¥${cash.toLocaleString(undefined, { minimumFractionDigits: 2 })}${frozenNote}</span>
                 </span>
                 <span class="pf-import-stat">
                     <span class="pf-import-stat-label">持仓市值</span>
@@ -1032,7 +1039,38 @@ document.addEventListener('DOMContentLoaded', function () {
 
     loadPortfolio();
 
-    // 交易记录折叠/展开
+    // ════════════════════════════════════
+    //  通用折叠面板系统 (V24.1)
+    // ════════════════════════════════════
+
+    document.querySelectorAll('.pf-collapsible-header[data-toggle]').forEach(header => {
+        header.addEventListener('click', (e) => {
+            // 不拦截 select/button 点击
+            if (e.target.closest('select, button')) return;
+            const bodyId = header.getAttribute('data-toggle');
+            const body = document.getElementById(bodyId);
+            const arrow = header.querySelector('.pf-collapse-arrow');
+            const panel = header.closest('.glass-panel');
+            if (!body) return;
+
+            const isExpanded = body.classList.contains('pf-expanded');
+            body.classList.toggle('pf-expanded', !isExpanded);
+            if (arrow) arrow.classList.toggle('pf-arrow-open', !isExpanded);
+            if (panel) panel.classList.toggle('pf-panel-collapsed', isExpanded);
+
+            // 展开时触发 echarts resize (图表在 display:none 时尺寸为 0)
+            if (!isExpanded) {
+                setTimeout(() => {
+                    body.querySelectorAll('[id$="-chart"]').forEach(el => {
+                        const chart = echarts.getInstanceByDom(el);
+                        if (chart) chart.resize();
+                    });
+                }, 420);
+            }
+        });
+    });
+
+    // 交易记录折叠/展开 (保留旧逻辑, 使用 display:none 而非 max-height)
     const historyToggle = document.getElementById('history-toggle');
     const historyList = document.getElementById('trade-history-list');
     const historyArrow = document.getElementById('history-arrow');

@@ -152,15 +152,8 @@
                 </div>
             </div>
 
-            <!-- ═══ ZONE 4: 净值走势 (全宽, 移除冗余仪表盘) ═══ -->
-            <div class="pf-charts-row">
-                <div class="glass-panel pf-chart-box" style="flex:1;">
-                    <h4>📈 净值走势 <span class="pf-chart-sub">NAV Curve vs 沪深300 · Alpha</span></h4>
-                    <div id="nav-chart" style="height: 360px;"></div>
-                </div>
-            </div>
+            <!-- ═══ ZONE 4: Brinson 收益归因 (核心决策模块，常驻展开) ═══ -->
 
-            <!-- ═══ ZONE 4.5: Brinson 收益归因 ═══ -->
             <div class="glass-panel pf-brinson-panel" id="pf-brinson-zone">
                 <div class="pf-panel-header">
                     <h3>🧬 收益归因分析 <span class="pf-panel-sub">Brinson-Fachler Attribution</span></h3>
@@ -243,9 +236,20 @@
                 </div>
             </div>
 
-            <!-- ═══ ZONE 4.6: 三因子风险归因 ═══ -->
-            <div class="glass-panel pf-brinson-panel" id="pf-factor-zone">
-                <div class="pf-panel-header">
+            <!-- ═══ ZONE 5: 模拟净值走势 (可折叠) ═══ -->
+            <div class="glass-panel pf-chart-box pf-panel-collapsed" style="flex:1;min-height:auto;" id="pf-nav-zone">
+                <div class="pf-panel-header pf-collapsible-header" data-toggle="nav-body">
+                    <h3>📈 模拟净值走势 <span class="pf-panel-sub">Simulated NAV (假设持仓不变) vs 沪深300</span></h3>
+                    <span class="pf-collapse-arrow">▶</span>
+                </div>
+                <div class="pf-collapsible-body" id="nav-body">
+                    <div id="nav-chart" style="height: 360px;"></div>
+                </div>
+            </div>
+
+            <!-- ═══ ZONE 6: 三因子风险归因 (可折叠) ═══ -->
+            <div class="glass-panel pf-brinson-panel pf-panel-collapsed" id="pf-factor-zone">
+                <div class="pf-panel-header pf-collapsible-header" data-toggle="factor-body">
                     <h3>🔬 三因子风险归因 <span class="pf-panel-sub">Market-SMB-HML Risk Attribution</span></h3>
                     <div class="pf-table-controls" style="display:flex;gap:8px;align-items:center;">
                         <select id="factor-period" class="pf-input" style="width:110px;padding:4px 8px;font-size:0.75rem;">
@@ -254,7 +258,9 @@
                             <option value="120">120日</option>
                         </select>
                         <button class="slip-refresh-btn" id="factor-refresh-btn" title="刷新归因">↻</button>
-                    </div>
+                        <span class="pf-collapse-arrow">▶</span>
+                </div>
+                <div class="pf-collapsible-body" id="factor-body">
                 </div>
 
                 <!-- Regression KPI -->
@@ -314,17 +320,21 @@
                         </table>
                     </div>
                 </div>
+                </div>
             </div>
 
-            <div class="glass-panel pf-slippage-panel" id="pf-slippage-zone">
-                <div class="pf-panel-header">
+            <!-- ═══ ZONE 7: 执行质量分析 (可折叠) ═══ -->
+            <div class="glass-panel pf-slippage-panel pf-panel-collapsed" id="pf-slippage-zone">
+                <div class="pf-panel-header pf-collapsible-header" data-toggle="slippage-body">
                     <h3>⚡ 执行质量分析 <span class="pf-panel-sub">OMS Slippage Attribution</span></h3>
                     <div class="pf-table-controls">
                         <button class="slip-refresh-btn" id="slip-refresh-btn" title="刷新面板">↻</button>
                         <button class="btn btn-sync" id="slippage-bootstrap-btn" style="font-size:0.72rem;padding:4px 10px;">📥 Bootstrap</button>
                         <span class="pf-pos-count" id="slip-order-count">0 笔订单</span>
                     </div>
+                    <span class="pf-collapse-arrow">▶</span>
                 </div>
+                <div class="pf-collapsible-body" id="slippage-body">
 
                 <!-- KPI Cards Row -->
                 <div class="slip-kpi-row" id="slip-kpi-row">
@@ -411,9 +421,10 @@
                         <button class="slip-show-more-btn" id="slip-show-more-btn">展开全部</button>
                     </div>
                 </div>
+                </div>
             </div>
 
-            <!-- ═══ ZONE 6: 交易记录 (默认折叠, 低频使用) ═══ -->
+            <!-- ═══ ZONE 8: 交易记录 (默认折叠, 低频使用) ═══ -->
             <div class="glass-panel pf-history-panel">
                 <div class="pf-panel-header pf-collapsible-header" id="history-toggle">
                     <h3>📜 交易记录 <span class="pf-panel-sub">Trade History Console</span></h3>

@@ -48,7 +48,7 @@ class PortfolioEngine:
     except ImportError:
         POSITION_LIMIT = 0.20
     MCTR_LOOKBACK  = 120           # 风险窗口 120 根 K 线 (约半年)
-    RISK_FREE_RATE = 0.02          # 无风险利率 (一年期国债)
+    RISK_FREE_RATE = 0.012          # 无风险利率 (2026 一年期国债收益率 ~1.2%)
 
     def __init__(self, store_path="portfolio_store.json", history_path="trade_history.json"):
         self.store_path = store_path
@@ -216,7 +216,12 @@ class PortfolioEngine:
         return True, "买入成功"
 
     def reduce_position(self, ts_code: str, amount: int, price: float):
-        """卖出/减少持仓"""
+        """卖出/减少持仓 (V24.1: 审计阻断状态允许卖出但记录 warning)"""
+        # P3: 审计阻断状态下允许卖出（防止无法止损），但记录合规日志
+        if self._is_trade_blocked():
+            _, reason = self._get_trade_block_info()
+            logger.warning("Compliance: 审计阻断状态下执行卖出 %s, 原因: %s", ts_code, reason)
+
         positions = self.holdings.get("positions", {})
         if ts_code not in positions:
             self._record_trade("sell", ts_code, ts_code, amount, price, False, "未持有该股票")
