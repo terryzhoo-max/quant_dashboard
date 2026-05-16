@@ -397,11 +397,17 @@ function renderERPHistoryChart(chart, signalData) {
     const stats = chart.stats || {};
     const hasM1 = chart.m1_yoy && chart.m1_yoy.some(v => v != null);
 
-    // V3.0: 动态标题
+    // V3.0: 动态标题 (保留 section-icon 和 subtitle-pill 结构)
     const titleEl = document.getElementById('erp-chart-title');
     if (titleEl) {
         const yrs = stats.date_range_years || '?';
-        titleEl.textContent = '\u{1F4C8} ERP \u5386\u53F2\u8D70\u52BF (\u8FD1' + yrs + '\u5E74) \u00B7 \u56DB\u6863\u533A\u95F4\u53EF\u89C6\u5316';
+        const textNodes = Array.from(titleEl.childNodes).filter(n => n.nodeType === Node.TEXT_NODE);
+        if (textNodes.length > 0) {
+            textNodes.forEach(n => n.textContent = '');
+            textNodes[0].textContent = ' ERP 估值走势 (近' + yrs + '年) ';
+        } else {
+            titleEl.textContent = '\u{1F4C8} ERP 估值走势 (近' + yrs + '年) · 四档区间可视化';
+        }
     }
 
     // V3.0: KPI 卡片

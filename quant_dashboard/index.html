@@ -12,7 +12,7 @@
     <title>AlphaCore 投研量化终端</title>
     <!-- 引入外部样式 -->
     <link rel="stylesheet" href="./static/css/fonts.css?v=1">
-    <link rel="stylesheet" href="./static/css/styles.css?v=18">
+    <link rel="stylesheet" href="./static/css/styles.css?v=19">
     <link rel="stylesheet" href="./static/css/visual_excellence.css?v=3">
     <link rel="stylesheet" href="./static/css/mobile.css?v=1">
     <!-- 引入高级无衬线字体 Inter -->
@@ -282,8 +282,9 @@
             <!-- 行业热力图：板块轮动与资金流向 -->
             <div class="heatmap-section">
                 <div class="section-header">
-                    <span class="icon">🧭</span>
-                    <h3>行业热力全景图 (Sector Rotation Heatmap)</h3>
+                    <span class="section-icon">🧭</span>
+                    <h3>行业热力全景</h3>
+                    <span class="section-subtitle-pill">Sector Rotation</span>
                 </div>
                 <div class="heatmap-grid" id="heatmap-grid">
                     <!-- 由 JS 动态渲染 -->
@@ -321,7 +322,10 @@
 
             <!-- V7.0 情绪与持仓枢纽 (Sentiment & Position Hub) -->
             <div class="sentiment-section">
-                <div class="hub-main-title">持仓研判枢纽 <span class="hub-version-pill">V7.0</span> <span class="hub-subtitle-inline">Sentiment · Position · Risk</span></div>
+            <div class="hub-main-title">
+                <span class="section-icon">🎯</span>持仓研判枢纽
+                <span class="section-subtitle-pill">Sentiment Hub V7.0</span>
+            </div>
                 <div class="sentiment-hub glass-panel" id="card-sentiment-hub">
                 <div class="hub-container-v6">
                     <!-- 左栏：AIAE 温度 (合并自独立温度计) -->
@@ -534,8 +538,9 @@
             <div class="plan-card glass-panel" id="card-tomorrow-plan">
                 <div class="plan-header">
                     <div class="header-main">
-                        <span class="icon">📊</span>
-                        <h3>明日交易计划 V2.0</h3>
+                        <span class="section-icon">📋</span>
+                        <h3>明日交易计划</h3>
+                        <span class="section-subtitle-pill">AIAE Decision V2.0</span>
                     </div>
                     <div class="regime-badge" id="tag-current-regime">同步中...</div>
                 </div>
@@ -592,7 +597,11 @@
 
             <!-- ERP 历史走势图 (近11.3年) · 四档区间可视化 -->
             <div class="glass-panel erp-chart-section" id="erp-history-section">
-                <h3 class="erp-chart-title" id="erp-chart-title">📈 ERP 历史走势 · 四档区间可视化</h3>
+                <div class="erp-chart-title" id="erp-chart-title">
+                    <span class="section-icon">📈</span>
+                    ERP 估值走势
+                    <span class="section-subtitle-pill">ERP History</span>
+                </div>
                 <div id="erp-chart-kpis" class="erp-chart-kpis" style="display:flex;gap:10px;margin-bottom:10px;"></div>
                 <div id="erp-history-chart" class="erp-chart-canvas"></div>
                 <div id="erp-chart-loading" class="erp-chart-loading">
@@ -602,6 +611,11 @@
 
             <!-- 策略状态雷达卡片区 (Option C) -->
 
+            <div class="section-title-l2" style="--section-accent: #6366f1">
+                <span class="section-icon">⚙️</span>
+                <h3>策略引擎矩阵</h3>
+                <span class="section-subtitle-pill">Strategy Matrix</span>
+            </div>
             <div class="strategy-cards-grid">
                 <!-- 均值回归 -->
                 <div class="strategy-card glass-panel" onclick="window.location.href='./strategy.html?strat=mean-reversion'">

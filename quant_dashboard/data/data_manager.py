@@ -71,10 +71,11 @@ class FactorDataManager:
                     break
             
             if all_indicators:
-                new_df = pd.concat([d for d in all_indicators if not d.empty and not d.isna().all(axis=None)])
+                valid_indicators = [d.dropna(how='all', axis=1) for d in all_indicators if not d.empty and not d.isna().all(axis=None)]
+                new_df = pd.concat(valid_indicators, ignore_index=True) if valid_indicators else pd.DataFrame()
                 if existing_df is not None:
-                    dfs = [d for d in [existing_df, new_df] if not d.empty and not d.isna().all(axis=None)]
-                    full_df = pd.concat(dfs).drop_duplicates(
+                    dfs = [d.dropna(how='all', axis=1) for d in [existing_df, new_df] if not d.empty and not d.isna().all(axis=None)]
+                    full_df = pd.concat(dfs, ignore_index=True).drop_duplicates(
                         subset=['ts_code', 'ann_date', 'end_date']
                     ).sort_values('ann_date')
                 else:
@@ -127,8 +128,8 @@ class FactorDataManager:
                 if new_df is not None and not new_df.empty:
                     new_df = new_df.sort_values("trade_date")
                     if existing_df is not None:
-                        dfs = [d for d in [existing_df, new_df] if not d.empty and not d.isna().all(axis=None)]
-                        combined_df = pd.concat(dfs).drop_duplicates(subset=['trade_date']).sort_values("trade_date")
+                        dfs = [d.dropna(how='all', axis=1) for d in [existing_df, new_df] if not d.empty and not d.isna().all(axis=None)]
+                        combined_df = pd.concat(dfs, ignore_index=True).drop_duplicates(subset=['trade_date']).sort_values("trade_date")
                     else:
                         combined_df = new_df
                     combined_df.to_parquet(file_path)
