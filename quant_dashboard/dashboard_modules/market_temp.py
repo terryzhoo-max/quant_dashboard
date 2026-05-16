@@ -227,7 +227,19 @@ def get_real_erp_data():
             elif erp_pct >= 20:   pct_label, pct_tier = "分位偏高", 2
             else:                 pct_label, pct_tier = "历史极高估", 1
 
-            blended_tier = abs_tier * 0.6 + pct_tier * 0.4
+            # --- S-2 科学修复: 百分位极端保护 ---
+            # 当百分位处于极端区 (≤10% 或 ≥90%) 时, 百分位权重提升至 0.7
+            # 原因: 百分位反映相对估值极端程度, 在极端区域比绝对值更有信号价值
+            # 例: ERP=5.08%(abs偏低估) + pct=3%(历史极高估) → 旧逻辑输出"中性", 掩盖极端信号
+            pct_extreme = erp_pct <= 10 or erp_pct >= 90
+            if pct_extreme:
+                blended_tier = abs_tier * 0.3 + pct_tier * 0.7
+            else:
+                blended_tier = abs_tier * 0.6 + pct_tier * 0.4
+
+            # 维度冲突检测: 绝对值与百分位 tier 差异 ≥2 级
+            dimension_conflict = abs(abs_tier - pct_tier) >= 2
+
             if blended_tier >= 4.2:    vlabel = "极度低估"
             elif blended_tier >= 3.4:  vlabel = "偏低估"
             elif blended_tier >= 2.6:  vlabel = "估值中性"
@@ -235,13 +247,17 @@ def get_real_erp_data():
             else:                      vlabel = "极度高估"
 
             erp_score = min(100, max(0, erp_pct))
-            print(f"[ERP Real] ERP={erp_val:.2f}% Pct={erp_pct:.1f}% AbsTier={abs_tier} PctTier={pct_tier} Blended={blended_tier:.1f} Label={vlabel} Signal={sig['label']}")
+            _blend_note = f" [PCT_EXTREME w=0.3/0.7]" if pct_extreme else ""
+            _conflict_note = f" [DIM_CONFLICT abs={abs_tier} pct={pct_tier}]" if dimension_conflict else ""
+            print(f"[ERP Real] ERP={erp_val:.2f}% Pct={erp_pct:.1f}% AbsTier={abs_tier} PctTier={pct_tier} Blended={blended_tier:.1f} Label={vlabel} Signal={sig['label']}{_blend_note}{_conflict_note}")
             return {
                 'erp_val': round(erp_val, 2), 'erp_z': round(erp_z, 2),
                 'erp_pct': round(erp_pct, 1), 'valuation_label': vlabel,
                 'abs_label': abs_label, 'pct_label': pct_label,
                 'erp_score': round(erp_score, 1), 'signal_key': sig['key'],
                 'signal_label': sig['label'], 'composite_score': sig['score'],
+                'pct_extreme': pct_extreme,
+                'dimension_conflict': dimension_conflict,
                 'status': 'success'
             }
     except Exception as e:

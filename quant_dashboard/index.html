@@ -321,14 +321,14 @@
 
             <!-- V7.0 情绪与持仓枢纽 (Sentiment & Position Hub) -->
             <div class="sentiment-section">
-                <div class="hub-main-title">AlphaCore 情绪与持仓枢纽 V7.0 (Sentiment & Position Hub)</div>
+                <div class="hub-main-title">持仓研判枢纽 <span class="hub-version-pill">V7.0</span> <span class="hub-subtitle-inline">Sentiment · Position · Risk</span></div>
                 <div class="sentiment-hub glass-panel" id="card-sentiment-hub">
                 <div class="hub-container-v6">
                     <!-- 左栏：AIAE 温度 (合并自独立温度计) -->
                     <div class="hub-col col-macro" aria-label="AIAE 宏观温度面板">
                         <div class="hub-col-header">
                             <span class="icon">🌡️</span>
-                            <h3>AIAE 温度</h3>
+                            <h3>宏观配置温度</h3>
                             <a href="./strategy.html?strat=aiae" class="hub-detail-link">详情 ▸</a>
                         </div>
                         <!-- AIAE ECharts 仪表盘 -->
@@ -411,7 +411,8 @@
                     <div class="hub-col col-position">
                         <div class="hub-col-header">
                             <span class="icon">🎯</span>
-                            <h3>仓位决策</h3>
+                            <h3>仓位研判</h3>
+                            <span class="hub-erp-warn-pill" id="hub-erp-warn-pill"></span>
                         </div>
                         <!-- 心态指引 (从左栏迁移，作为决策 context) -->
                         <div class="mindset-label" id="val-mindset">侦测中...</div>
@@ -424,7 +425,7 @@
                             </div>
                         </div>
                         <div class="confidence-row">
-                            <span class="conf-label">决策置信度</span>
+                            <span class="conf-label">数据置信度</span>
                             <div class="conf-gauge">
                                 <div class="conf-fill" id="conf-fill" style="width: 50%;"></div>
                             </div>
@@ -432,7 +433,7 @@
                         </div>
                         <div class="factors-chart" id="factors-chart">
                             <div class="factor-row">
-                                <span class="factor-name">VIX恐慌</span>
+                                <span class="factor-name">恐慌指数</span>
                                 <div class="factor-bar-bg"><div class="factor-bar" id="fbar-vix" style="width:50%"></div></div>
                                 <span class="factor-score" id="fscore-vix">--</span>
                             </div>
@@ -452,12 +453,12 @@
                                 <span class="factor-score" id="fscore-erp">--</span>
                             </div>
                             <div class="factor-row">
-                                <span class="factor-name">AIAE档位</span>
+                                <span class="factor-name">配置档位</span>
                                 <div class="factor-bar-bg"><div class="factor-bar" id="fbar-signal" style="width:50%"></div></div>
                                 <span class="factor-score" id="fscore-signal">--</span>
                             </div>
                             <div class="factor-row">
-                                <span class="factor-name">AIAE温度</span>
+                                <span class="factor-name">配置温度</span>
                                 <div class="factor-bar-bg"><div class="factor-bar" id="fbar-aiae" style="width:50%"></div></div>
                                 <span class="factor-score" id="fscore-aiae">--</span>
                             </div>
@@ -469,7 +470,7 @@
                     <div class="hub-col col-allocation">
                         <div class="hub-col-header">
                             <span class="icon">📊</span>
-                            <h3>策略配仓</h3>
+                            <h3>策略配置</h3>
                             <span class="alloc-total-badge" id="val-alloc-total">总仓位: --%</span>
                         </div>
                         <div class="alloc-stacked-bar">

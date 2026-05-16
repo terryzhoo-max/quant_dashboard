@@ -696,8 +696,24 @@ function renderPositionHub(temp) {
         const erpScore = temp.hub_factors.erp_value.score;
         el('val-erp-tag').style.color = erpScore >= 70 ? '#10b981' : (erpScore >= 40 ? '#f59e0b' : '#ef4444');
     }
+
+    // V26.0: ERP 百分位极端告警 pill (中栏列头)
+    const erpWarnPill = el('hub-erp-warn-pill');
+    if (erpWarnPill && temp.hub_factors && temp.hub_factors.erp_value) {
+        const erpS = temp.hub_factors.erp_value.score;
+        if (erpS <= 10) {
+            erpWarnPill.className = 'hub-erp-warn-pill erp-warn-active';
+            erpWarnPill.innerText = `⚠ ERP P${Math.round(erpS)}%`;
+        } else if (erpS >= 90) {
+            erpWarnPill.className = 'hub-erp-warn-pill erp-bull-active';
+            erpWarnPill.innerText = `✦ ERP P${Math.round(erpS)}%`;
+        } else {
+            erpWarnPill.className = 'hub-erp-warn-pill';
+            erpWarnPill.innerText = '';
+        }
+    }
     
-    // === 中栏: 仓位决策面板 ===
+    // === 中栏: 仓位研判面板 ===
     if (el('val-pos-advice')) el('val-pos-advice').innerText = temp.advice;
     
     // 仓位进度条 (优先从 strategy_positions.total 数值字段读取, 正则降级)

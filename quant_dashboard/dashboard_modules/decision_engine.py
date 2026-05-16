@@ -296,6 +296,31 @@ def compute_jcs(snapshot: dict) -> dict:
         distance_bonus += abs(erp_s - 50) / 50 * 2.5
     base_agreement += min(distance_bonus, 5.0)  # 总距离分上限 5
 
+    # V26.0 S-3 科学修复: 信号强度调制层
+    # 三态映射 (+1/0/-1) 丢失强度信息, 此处补偿:
+    # 极端 ERP/VIX 读数让 JCS 更果断 (加/减分), 而非改变方向
+    intensity_adj = 0.0
+    erp_s_raw = snapshot.get("erp_score") or 50
+    vix_v_raw = snapshot.get("vix_val") or 20
+    # ERP 极端区: score<10 或 >90 → 信号极强, 应增加 JCS 决断力
+    if erp_s_raw < 10:       # ERP 极端看空 (如百分位3%)
+        intensity_adj -= 4.0  # 降低 JCS → 更偏向低置信/防御
+    elif erp_s_raw > 90:     # ERP 极端看多 (如百分位95%)
+        intensity_adj += 4.0  # 提升 JCS → 更偏向高置信/进攻
+    elif erp_s_raw < 20:
+        intensity_adj -= 2.0
+    elif erp_s_raw > 80:
+        intensity_adj += 2.0
+    # VIX 极端区: >30 恐慌 / <14 自满
+    if vix_v_raw > 35:
+        intensity_adj -= 3.0
+    elif vix_v_raw > 30:
+        intensity_adj -= 2.0
+    elif vix_v_raw < 14:
+        intensity_adj += 2.0
+    base_agreement += intensity_adj
+    base_agreement = max(5.0, min(65.0, base_agreement))  # 安全夹紧
+
     # ── 2. Data Health (占 20 分) ──
     stale_count = 0
     if snapshot.get("aiae_regime") is None:
@@ -659,6 +684,32 @@ def _build_snapshot_from_cache() -> dict:
         snapshot["margin_heat"] = aiae_ctx.get("margin_heat", 2.0)
         snapshot["fund_position"] = aiae_ctx.get("fund_position", 80)
 
+        # V26.0 S-1 科学修复: AIAE 三因子分裂检测
+        # 当三因子归一化值的方差过大时, 线性融合掩盖了内部矛盾
+        # 例: AIAE_简27.5%(热) + 基金85%(热) + 融资1.08%(冷) → "中性" 但实为分裂
+        try:
+            from engines.aiae_params import (sigmoid_normalize, FUND_SIGMOID_CENTER,
+                FUND_SIGMOID_K, MARGIN_SIGMOID_CENTER, MARGIN_SIGMOID_K)
+            _aiae_simple_val = aiae_ctx.get("aiae_simple", 20)
+            _fund_val = aiae_ctx.get("fund_position", 80)
+            _margin_val = aiae_ctx.get("margin_heat", 2.2)
+            # 归一化到 [8, 32] AIAE 等效空间
+            _fund_norm = sigmoid_normalize(_fund_val, FUND_SIGMOID_CENTER, FUND_SIGMOID_K)
+            _margin_norm = sigmoid_normalize(_margin_val, MARGIN_SIGMOID_CENTER, MARGIN_SIGMOID_K)
+            _norms = [_aiae_simple_val, _fund_norm, _margin_norm]
+            _mean = sum(_norms) / 3.0
+            _variance = sum((x - _mean) ** 2 for x in _norms) / 3.0
+            if _variance > 50:
+                snapshot["aiae_split"] = True
+                _hot = [n for n in ['AIAE_简', '基金仓位', '融资热度'] if _norms[['AIAE_简', '基金仓位', '融资热度'].index(n)] > _mean + 5]
+                _cold = [n for n in ['AIAE_简', '基金仓位', '融资热度'] if _norms[['AIAE_简', '基金仓位', '融资热度'].index(n)] < _mean - 5]
+                snapshot["aiae_split_detail"] = f"因子分裂(方差{_variance:.0f}): {'+'.join(_hot) or '无'}偏热, {'+'.join(_cold) or '无'}偏冷"
+            else:
+                snapshot["aiae_split"] = False
+        except Exception as _e:
+            logger.debug("AIAE分裂检测异常: %s", _e)
+            snapshot["aiae_split"] = False
+
     # 策略结果
     strategy_results = cache_manager.get_json("strategy_results") or {}
     mr_data = strategy_results.get("mr", {})
@@ -947,6 +998,38 @@ def generate_alerts(snapshot: dict) -> list:
             "title": "市场极度过热 (Ⅴ级)",
             "detail": "AIAE 配置热度达到极端，历史回撤概率最高",
             "rule": "规则: AIAE R5 → 仓位上限 15%，禁止追涨",
+        })
+
+    # 6. V26.0 S-2: ERP 百分位极端告警
+    erp_score = snapshot.get("erp_score") or 50
+    if erp_score <= 10:
+        alerts.append({
+            "type": "erp_pct_extreme_high",
+            "severity": "warning",
+            "icon": "📊",
+            "title": f"ERP 百分位极端 ({erp_score:.0f}%)",
+            "detail": f"ERP 4年百分位仅{erp_score:.0f}%，市场估值处于历史高位",
+            "rule": "规则: ERP百分位 ≤10% → 降低进攻权重，增配红利防御",
+        })
+    elif erp_score >= 90:
+        alerts.append({
+            "type": "erp_pct_extreme_low",
+            "severity": "caution",
+            "icon": "📊",
+            "title": f"ERP 百分位极高 ({erp_score:.0f}%)",
+            "detail": f"ERP 4年百分位达{erp_score:.0f}%，市场估值处于历史低位，高性价比",
+            "rule": "规则: ERP百分位 ≥90% → 可积极加仓",
+        })
+
+    # 7. V26.0 S-1: AIAE 三因子内部分裂
+    if snapshot.get("aiae_split"):
+        alerts.append({
+            "type": "aiae_factor_split",
+            "severity": "caution",
+            "icon": "⚡",
+            "title": "AIAE 因子内部分裂",
+            "detail": snapshot.get("aiae_split_detail", "三因子方向不一致"),
+            "rule": "规则: 因子分裂 → 不宜大幅调仓，等待因子收敛",
         })
 
     return alerts
