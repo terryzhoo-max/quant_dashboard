@@ -476,6 +476,9 @@ function updateDashboard(marketData) {
         renderAIAEThermometer(marketData.macro_cards.aiae_thermometer);
     }
 
+    // V8.0: 系统健康指示器 (模块 D)
+    renderSystemHealth(marketData);
+
     // 4. V6.0 情绪与持仓枢纽渲染 (Sentiment & Position Hub)
     if (marketData.macro_cards && marketData.macro_cards.market_temp) {
         renderPositionHub(marketData.macro_cards.market_temp);
@@ -612,11 +615,7 @@ function updateDashboard(marketData) {
         renderHeatmap('heatmap-grid', marketData.sector_heatmap);
     }
     
-    // 6. 更新个股列表
-    if (marketData.execution_lists) {
-        renderExecutionLists(document.getElementById('list-buy-zone'), marketData.execution_lists.buy_zone);
-        renderExecutionLists(document.getElementById('list-danger-zone'), marketData.execution_lists.danger_zone);
-    }
+    // 6. 买入/卖出区已下沉至策略详情页 (V8.0)
     
     // 2. 更新策略监控卡片 (5策略)
     if (marketData.strategy_status) {
@@ -1051,6 +1050,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ERP 历史走势图异步加载
     fetchAndRenderERPChart();
+
+    // V8.0: 新增模块异步加载 (不阻塞主数据流)
+    fetchAndRenderGlobalPulse();
+    fetchAndRenderIntelligenceFeed();
 });
 
 // ====== ERP 历史走势 V3.0 · 四档区间可视化 (近11.3年) ======
@@ -1511,3 +1514,396 @@ function renderAIAEThermometer(d) {
         }
     };
 })();
+
+// ═══════════════════════════════════════════════════════════
+//  V8.0 模块 D: 系统健康指示器 (System Health Indicator)
+// ═══════════════════════════════════════════════════════════
+
+function renderSystemHealth(marketData) {
+    const dotEl = el('sys-health-dot');
+    const labelEl = el('sys-health-label');
+    if (!dotEl || !labelEl) return;
+
+    // 从 dashboard-data 响应中提取置信度和降级信息
+    const mc = marketData.macro_cards || {};
+    const temp = mc.market_temp || {};
+    const isFallback = marketData._meta_is_fallback || false;
+    const isStale = marketData._meta_is_stale || false;
+    const degradedModules = temp.degraded_modules || marketData.degraded_modules || [];
+    const confidence = temp.temp_confidence || 'unknown';
+
+    // 数据年龄计算
+    const timestamp = marketData.timestamp || marketData._timestamp;
+    let freshnessText = '--';
+    let ageMinutes = 0;
+    if (timestamp) {
+        const dataTime = new Date(timestamp);
+        ageMinutes = Math.floor((Date.now() - dataTime.getTime()) / 60000);
+        if (ageMinutes < 1) freshnessText = '刚刚';
+        else if (ageMinutes < 60) freshnessText = `${ageMinutes}分钟前`;
+        else freshnessText = `${Math.floor(ageMinutes / 60)}小时前`;
+    }
+
+    // 健康状态判定
+    let healthClass, healthLabel;
+    if (isStale || ageMinutes > 120) {
+        healthClass = 'health-error';
+        healthLabel = '数据陈旧';
+    } else if (isFallback || degradedModules.length >= 2 || confidence === 'low') {
+        healthClass = 'health-warn';
+        healthLabel = '部分降级';
+    } else {
+        healthClass = 'health-ok';
+        healthLabel = '正常';
+    }
+
+    dotEl.className = `sys-health-dot ${healthClass}`;
+    labelEl.textContent = healthLabel;
+
+    // 弹出面板详情
+    const shpFreshness = el('shp-freshness');
+    const shpConfidence = el('shp-confidence');
+    const shpDegraded = el('shp-degraded');
+    const shpBackend = el('shp-cache-backend');
+
+    if (shpFreshness) {
+        shpFreshness.textContent = freshnessText;
+        shpFreshness.style.color = ageMinutes > 60 ? '#ef4444' : ageMinutes > 15 ? '#f59e0b' : '#10b981';
+    }
+    if (shpConfidence) {
+        const confMap = { high: '🟢 高', medium: '🟡 中', low: '🔴 低' };
+        shpConfidence.textContent = confMap[confidence] || '⚪ 未知';
+    }
+    if (shpDegraded) {
+        shpDegraded.textContent = degradedModules.length > 0 ? degradedModules.join(', ') : '无';
+        shpDegraded.style.color = degradedModules.length > 0 ? '#f59e0b' : '#10b981';
+    }
+    if (shpBackend) {
+        shpBackend.textContent = marketData._cache_backend || 'Memory';
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  V8.0 模块 B: 全球市场脉搏 (Global Market Pulse)
+// ═══════════════════════════════════════════════════════════
+
+async function fetchAndRenderGlobalPulse() {
+    const gridEl = el('gp-grid');
+    const timeEl = el('gp-update-time');
+    const advicePill = el('gp-advice-pill');
+    if (!gridEl) return;
+
+    try {
+        const resp = await fetch('/api/v1/strategy/erp-global');
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const json = await resp.json();
+
+        if (json.status !== 'success' || !json.global_comparison) {
+            throw new Error('数据格式异常');
+        }
+
+        const gc = json.global_comparison;
+        const alloc = gc.allocation || {};
+        const gp = gc.global_position || {};
+        const CIRC = 2 * Math.PI * 15.9; // SVG ring circumference
+
+        const regions = [
+            { key: 'cn', flag: '🇨🇳', name: 'A股' },
+            { key: 'us', flag: '🇺🇸', name: '美股' },
+            { key: 'jp', flag: '🇯🇵', name: '日股' },
+            { key: 'hk', flag: '🇭🇰', name: '港股' },
+        ];
+
+        regions.forEach(r => {
+            const card = gridEl.querySelector(`.gp-card[data-region="${r.key}"]`);
+            if (!card) return;
+            const d = gc[r.key] || {};
+            const score = d.score || 0;
+            const erpVal = d.erp || 0;
+            const allocPct = alloc[r.key] || 0;
+            const sigColor = d.color || '#f59e0b';
+
+            // 1. 移除骨架
+            card.classList.remove('gp-skeleton');
+
+            // 2. 多空分类
+            let cardClass = 'gp-neutral';
+            let sigClass = 'sig-neutral';
+            if (score >= 60) { cardClass = 'gp-bull'; sigClass = 'sig-bull'; }
+            else if (score <= 35) { cardClass = 'gp-bear'; sigClass = 'sig-bear'; }
+            card.classList.remove('gp-bull', 'gp-bear', 'gp-neutral');
+            card.classList.add(cardClass);
+
+            // 3. ERP 主数值
+            const erpEl = card.querySelector('.gp-erp-val');
+            if (erpEl) erpEl.textContent = erpVal.toFixed(2);
+
+            // 4. Score Ring (SVG)
+            const ringFill = card.querySelector('.gp-ring-fill');
+            const ringText = card.querySelector('.gp-ring-text');
+            if (ringFill) {
+                const pct = Math.min(100, Math.max(0, score));
+                ringFill.setAttribute('stroke-dasharray', `${pct} ${100 - pct}`);
+                ringFill.style.stroke = sigColor;
+            }
+            if (ringText) ringText.textContent = Math.round(score);
+
+            // 5. PE / Yield
+            const peEl = card.querySelector('[data-field="pe"]');
+            const yieldEl = card.querySelector('[data-field="yield"]');
+            if (peEl) peEl.textContent = (d.pe || 0).toFixed(1) + 'x';
+            if (yieldEl) yieldEl.textContent = (d.yield || 0).toFixed(2) + '%';
+
+            // 6. Signal Badge
+            const sigBadge = card.querySelector('.gp-sig-badge');
+            if (sigBadge) {
+                sigBadge.textContent = `${d.emoji || ''} ${d.label || '--'}`;
+                sigBadge.className = `gp-sig-badge ${sigClass}`;
+            }
+
+            // 7. Mini Allocation Bar
+            const allocFillMini = card.querySelector('.gp-alloc-fill-mini');
+            const allocPctEl = card.querySelector('.gp-alloc-pct');
+            if (allocFillMini) {
+                allocFillMini.style.width = `${allocPct}%`;
+                allocFillMini.style.background = sigColor;
+            }
+            if (allocPctEl) allocPctEl.textContent = `${allocPct}%`;
+        });
+
+        // — Footer: Equity track —
+        const equityFill = el('gp-equity-fill');
+        const equityPct = el('gp-equity-pct');
+        const allocText = el('gp-alloc-text');
+        if (equityFill && gp.equity_pct != null) {
+            equityFill.style.width = `${gp.equity_pct}%`;
+            equityFill.style.background = `linear-gradient(90deg, ${gp.color || '#3b82f6'}, ${gp.color || '#10b981'}88)`;
+        }
+        if (equityPct) equityPct.textContent = `${gp.equity_pct || '--'}%`;
+        if (allocText) allocText.textContent = gc.allocation_text || '--';
+
+        // — Header advice pill —
+        if (advicePill && gp.label) {
+            advicePill.textContent = `${gp.emoji || ''} ${gp.label} ${gp.position || ''}`;
+            advicePill.style.color = gp.color || 'var(--accent)';
+            advicePill.style.borderColor = `${gp.color || 'var(--accent)'}33`;
+            advicePill.style.background = `${gp.color || 'var(--accent)'}18`;
+        }
+
+        // — Update time —
+        if (timeEl && json.updated_at) {
+            const dt = new Date(json.updated_at);
+            timeEl.textContent = `${dt.getHours()}:${String(dt.getMinutes()).padStart(2, '0')} 更新`;
+        }
+
+    } catch (err) {
+        console.warn('[Global Pulse] 加载失败, 保留骨架:', err.message);
+        if (timeEl) timeEl.textContent = '数据待同步';
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  V8.0 模块 A: NLP 情报流 (Intelligence Feed)
+// ═══════════════════════════════════════════════════════════
+
+async function fetchAndRenderIntelligenceFeed() {
+    const cardsEl = el('intel-cards');
+    const scanTimeEl = el('intel-scan-time');
+    const emptyEl = el('intel-empty');
+    if (!cardsEl) return;
+
+    try {
+        const resp = await fetch('/api/v1/intelligence/latest');
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const json = await resp.json();
+
+        const data = json.data || json;
+        const events = data.events || [];
+
+        if (events.length === 0) {
+            // 保持空状态显示
+            if (emptyEl) emptyEl.style.display = 'flex';
+            if (scanTimeEl && data.scan_time) {
+                const d = new Date(data.scan_time);
+                scanTimeEl.textContent = `最后扫描 ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+            } else if (scanTimeEl) {
+                scanTimeEl.textContent = '未扫描';
+            }
+            return;
+        }
+
+        // 有事件: 渲染卡片
+        if (emptyEl) emptyEl.style.display = 'none';
+
+        const catMap = {
+            macro: { label: '宏观', cls: 'cat-macro' },
+            industry: { label: '行业', cls: 'cat-industry' },
+            stock: { label: '个股', cls: 'cat-stock' },
+            risk: { label: '风险', cls: 'cat-risk' },
+        };
+
+        const html = events.slice(0, 6).map(ev => {
+            const cat = catMap[ev.category] || catMap.macro;
+            const impact = Math.min(Math.max(Math.round(ev.impact_score || 0), 0), 10);
+            const isCritical = impact >= 7;
+
+            // 影响评分圆点 (最多10个)
+            let dots = '';
+            for (let i = 0; i < 10; i++) {
+                const isActive = i < impact;
+                const isHigh = isActive && impact >= 7;
+                dots += `<span class="intel-impact-dot ${isActive ? 'active' : ''} ${isHigh ? 'high' : ''}"></span>`;
+            }
+
+            return `<div class="intel-card ${isCritical ? 'intel-critical' : ''}">
+                <div class="intel-card-header">
+                    <span class="intel-category ${cat.cls}">${cat.label}</span>
+                    <div class="intel-impact">${dots}</div>
+                </div>
+                <div class="intel-title">${ev.title || '--'}</div>
+                <div class="intel-summary">${ev.summary || ''}</div>
+            </div>`;
+        }).join('');
+
+        cardsEl.innerHTML = html;
+
+        if (scanTimeEl && data.scan_time) {
+            const d = new Date(data.scan_time);
+            scanTimeEl.textContent = `${events.length}条 · ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+        }
+
+    } catch (err) {
+        console.warn('[Intelligence Feed] 加载失败:', err.message);
+        if (scanTimeEl) scanTimeEl.textContent = '离线';
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  V8.0 模块 C: AIAE 历史趋势迷你图 (Sparkline)
+// ═══════════════════════════════════════════════════════════
+
+let _aiaeSparklineChart = null;
+
+function renderAIAESparkline(history) {
+    const dom = el('aiae-sparkline-chart');
+    if (!dom || typeof echarts === 'undefined') return;
+    if (!history || history.length < 2) return;
+
+    if (_aiaeSparklineChart) _aiaeSparklineChart = AC.disposeChart(_aiaeSparklineChart);
+    _aiaeSparklineChart = AC.registerChart(echarts.init(dom));
+
+    const dates = history.map(h => h.date || h.month || '');
+    const values = history.map(h => h.aiae_v1 || h.value || 0);
+
+    _aiaeSparklineChart.setOption({
+        grid: { top: 6, bottom: 6, left: 4, right: 4 },
+        xAxis: { type: 'category', data: dates, show: false, boundaryGap: false },
+        yAxis: {
+            type: 'value', show: false,
+            min: 0, max: 50,
+        },
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(15,23,42,0.95)',
+            borderColor: '#334155',
+            textStyle: { fontSize: 10, color: '#e2e8f0' },
+            formatter: function(params) {
+                if (!params[0]) return '';
+                return `<div style="font-size:0.68rem;color:#64748b">${params[0].name}</div><div style="font-weight:700">AIAE ${params[0].value}%</div>`;
+            }
+        },
+        series: [{
+            type: 'line',
+            data: values,
+            symbol: 'none',
+            lineStyle: { color: '#eab308', width: 2 },
+            areaStyle: {
+                color: {
+                    type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                    colorStops: [
+                        { offset: 0, color: 'rgba(234,179,8,0.20)' },
+                        { offset: 1, color: 'rgba(234,179,8,0)' }
+                    ]
+                }
+            },
+            markArea: {
+                silent: true,
+                data: [
+                    [{ yAxis: 0, itemStyle: { color: 'rgba(16,185,129,0.06)' } }, { yAxis: 12.5 }],
+                    [{ yAxis: 12.5, itemStyle: { color: 'rgba(59,130,246,0.04)' } }, { yAxis: 17 }],
+                    [{ yAxis: 17, itemStyle: { color: 'transparent' } }, { yAxis: 23 }],
+                    [{ yAxis: 23, itemStyle: { color: 'rgba(249,115,22,0.04)' } }, { yAxis: 30 }],
+                    [{ yAxis: 30, itemStyle: { color: 'rgba(239,68,68,0.06)' } }, { yAxis: 50 }],
+                ]
+            },
+            markLine: {
+                silent: true, symbol: 'none',
+                lineStyle: { type: 'dotted', width: 0.5, color: 'rgba(255,255,255,0.1)' },
+                data: [
+                    { yAxis: 12.5 }, { yAxis: 17 }, { yAxis: 23 }, { yAxis: 30 }
+                ],
+                label: { show: false }
+            }
+        }]
+    });
+}
+
+// ── 注入 AIAE Sparkline 到 AIAE 温度计渲染流 ──
+(function() {
+    const _origRenderThermo = window.renderAIAEThermometer;
+    if (!_origRenderThermo) return;
+
+    window.renderAIAEThermometer = function(d) {
+        _origRenderThermo(d);
+
+        // 尝试从 AIAE 报告中获取历史数据
+        if (d && d.history && d.history.length >= 2) {
+            renderAIAESparkline(d.history);
+        } else {
+            // 尝试异步获取
+            _fetchAIAEHistory();
+        }
+    };
+})();
+
+let _aiaeHistoryFetched = false;
+
+async function _fetchAIAEHistory() {
+    if (_aiaeHistoryFetched) return;
+    _aiaeHistoryFetched = true;
+
+    try {
+        const resp = await fetch('/api/v1/strategy/erp-timing');
+        if (!resp.ok) return;
+        const json = await resp.json();
+
+        // 从 AIAE report 获取历史 (尝试多种路径)
+        let history = null;
+        if (json.data && json.data.aiae_history) {
+            history = json.data.aiae_history;
+        }
+
+        // 如果没有专门的 AIAE 历史, 用 ERP 数据构造简化趋势
+        if (!history && json.data && json.data.chart && json.data.chart.erp) {
+            const erp = json.data.chart.erp;
+            const dates = json.data.chart.dates;
+            if (erp && dates && erp.length > 12) {
+                // 取最后 12 个月的月末数据
+                history = [];
+                const step = Math.floor(erp.length / 12);
+                for (let i = 0; i < 12; i++) {
+                    const idx = Math.min(erp.length - 1, (i + 1) * step);
+                    if (erp[idx] != null) {
+                        history.push({ date: dates[idx], value: erp[idx] });
+                    }
+                }
+            }
+        }
+
+        if (history && history.length >= 2) {
+            renderAIAESparkline(history);
+        }
+    } catch (e) {
+        console.warn('[AIAE Sparkline] 历史数据获取失败:', e.message);
+    }
+}

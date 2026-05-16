@@ -12,7 +12,7 @@
     <title>AlphaCore 投研量化终端</title>
     <!-- 引入外部样式 -->
     <link rel="stylesheet" href="./static/css/fonts.css?v=1">
-    <link rel="stylesheet" href="./static/css/styles.css?v=12">
+    <link rel="stylesheet" href="./static/css/styles.css?v=14">
     <link rel="stylesheet" href="./static/css/visual_excellence.css?v=3">
     <link rel="stylesheet" href="./static/css/mobile.css?v=1">
     <!-- 引入高级无衬线字体 Inter -->
@@ -103,6 +103,19 @@
                 <input type="text" placeholder="搜索标的、宏观周期及因子数据...">
             </div>
             <div class="actions">
+                <!-- V8.0: 系统健康指示器 (模块 D) -->
+                <div class="sys-health-indicator" id="sys-health-indicator" title="系统状态">
+                    <span class="sys-health-dot" id="sys-health-dot">●</span>
+                    <span class="sys-health-label" id="sys-health-label">连接中</span>
+                    <div class="sys-health-popup" id="sys-health-popup">
+                        <div class="shp-title">🔋 系统状态面板</div>
+                        <div class="shp-row"><span>数据新鲜度</span><strong id="shp-freshness">--</strong></div>
+                        <div class="shp-row"><span>置信度等级</span><strong id="shp-confidence">--</strong></div>
+                        <div class="shp-row"><span>降级模块</span><strong id="shp-degraded">无</strong></div>
+                        <div class="shp-row"><span>缓存后端</span><strong id="shp-cache-backend">--</strong></div>
+                        <a href="/health" target="_blank" class="shp-link">查看完整健康报告 ▸</a>
+                    </div>
+                </div>
                 <button class="btn btn-primary" id="refresh-btn">刷新实时量化数据</button>
             </div>
         </header>
@@ -205,6 +218,67 @@
                 </div>
             </div>
 
+            <!-- V8.0 全球市场脉搏 (模块 B: Global Market Pulse) -->
+            <div class="gp-section glass-panel" id="global-pulse-section">
+                <div class="gp-header">
+                    <div class="gp-title-group">
+                        <span class="gp-icon">🌐</span>
+                        <h3 class="gp-title">全球权益脉搏</h3>
+                        <span class="gp-subtitle">Global ERP Matrix</span>
+                    </div>
+                    <div class="gp-header-right">
+                        <span class="gp-advice-pill" id="gp-advice-pill">--</span>
+                        <span class="gp-update-time" id="gp-update-time">同步中…</span>
+                    </div>
+                </div>
+                <div class="gp-grid" id="gp-grid">
+                    <!-- 骨架屏: 4 列占位 (data-region 用于 JS 匹配) -->
+                    <div class="gp-card gp-skeleton" data-region="cn">
+                        <div class="gp-card-top"><span class="gp-flag">🇨🇳</span><span class="gp-region-name">A股</span></div>
+                        <div class="gp-erp-hero"><span class="gp-erp-val">--</span><span class="gp-erp-unit">%</span></div>
+                        <div class="gp-score-ring"><svg viewBox="0 0 36 36" class="gp-ring-svg"><circle class="gp-ring-bg" cx="18" cy="18" r="15.9"/><circle class="gp-ring-fill" cx="18" cy="18" r="15.9" stroke-dasharray="0 100"/></svg><span class="gp-ring-text">--</span></div>
+                        <div class="gp-metrics"><div class="gp-metric"><span class="gp-metric-label">PE</span><span class="gp-metric-val" data-field="pe">--</span></div><div class="gp-metric"><span class="gp-metric-label">Yield</span><span class="gp-metric-val" data-field="yield">--</span></div></div>
+                        <div class="gp-signal-row"><span class="gp-sig-badge">--</span></div>
+                        <div class="gp-alloc-row"><span class="gp-alloc-label">配置</span><div class="gp-alloc-bar-mini"><div class="gp-alloc-fill-mini"></div></div><span class="gp-alloc-pct">--%</span></div>
+                    </div>
+                    <div class="gp-card gp-skeleton" data-region="us">
+                        <div class="gp-card-top"><span class="gp-flag">🇺🇸</span><span class="gp-region-name">美股</span></div>
+                        <div class="gp-erp-hero"><span class="gp-erp-val">--</span><span class="gp-erp-unit">%</span></div>
+                        <div class="gp-score-ring"><svg viewBox="0 0 36 36" class="gp-ring-svg"><circle class="gp-ring-bg" cx="18" cy="18" r="15.9"/><circle class="gp-ring-fill" cx="18" cy="18" r="15.9" stroke-dasharray="0 100"/></svg><span class="gp-ring-text">--</span></div>
+                        <div class="gp-metrics"><div class="gp-metric"><span class="gp-metric-label">PE</span><span class="gp-metric-val" data-field="pe">--</span></div><div class="gp-metric"><span class="gp-metric-label">Yield</span><span class="gp-metric-val" data-field="yield">--</span></div></div>
+                        <div class="gp-signal-row"><span class="gp-sig-badge">--</span></div>
+                        <div class="gp-alloc-row"><span class="gp-alloc-label">配置</span><div class="gp-alloc-bar-mini"><div class="gp-alloc-fill-mini"></div></div><span class="gp-alloc-pct">--%</span></div>
+                    </div>
+                    <div class="gp-card gp-skeleton" data-region="jp">
+                        <div class="gp-card-top"><span class="gp-flag">🇯🇵</span><span class="gp-region-name">日股</span></div>
+                        <div class="gp-erp-hero"><span class="gp-erp-val">--</span><span class="gp-erp-unit">%</span></div>
+                        <div class="gp-score-ring"><svg viewBox="0 0 36 36" class="gp-ring-svg"><circle class="gp-ring-bg" cx="18" cy="18" r="15.9"/><circle class="gp-ring-fill" cx="18" cy="18" r="15.9" stroke-dasharray="0 100"/></svg><span class="gp-ring-text">--</span></div>
+                        <div class="gp-metrics"><div class="gp-metric"><span class="gp-metric-label">PE</span><span class="gp-metric-val" data-field="pe">--</span></div><div class="gp-metric"><span class="gp-metric-label">Yield</span><span class="gp-metric-val" data-field="yield">--</span></div></div>
+                        <div class="gp-signal-row"><span class="gp-sig-badge">--</span></div>
+                        <div class="gp-alloc-row"><span class="gp-alloc-label">配置</span><div class="gp-alloc-bar-mini"><div class="gp-alloc-fill-mini"></div></div><span class="gp-alloc-pct">--%</span></div>
+                    </div>
+                    <div class="gp-card gp-skeleton" data-region="hk">
+                        <div class="gp-card-top"><span class="gp-flag">🇭🇰</span><span class="gp-region-name">港股</span></div>
+                        <div class="gp-erp-hero"><span class="gp-erp-val">--</span><span class="gp-erp-unit">%</span></div>
+                        <div class="gp-score-ring"><svg viewBox="0 0 36 36" class="gp-ring-svg"><circle class="gp-ring-bg" cx="18" cy="18" r="15.9"/><circle class="gp-ring-fill" cx="18" cy="18" r="15.9" stroke-dasharray="0 100"/></svg><span class="gp-ring-text">--</span></div>
+                        <div class="gp-metrics"><div class="gp-metric"><span class="gp-metric-label">PE</span><span class="gp-metric-val" data-field="pe">--</span></div><div class="gp-metric"><span class="gp-metric-label">Yield</span><span class="gp-metric-val" data-field="yield">--</span></div></div>
+                        <div class="gp-signal-row"><span class="gp-sig-badge">--</span></div>
+                        <div class="gp-alloc-row"><span class="gp-alloc-label">配置</span><div class="gp-alloc-bar-mini"><div class="gp-alloc-fill-mini"></div></div><span class="gp-alloc-pct">--%</span></div>
+                    </div>
+                </div>
+                <!-- 全球权益建议条 -->
+                <div class="gp-footer" id="gp-footer">
+                    <div class="gp-footer-left">
+                        <span class="gp-footer-label">权益仓位</span>
+                        <div class="gp-equity-track"><div class="gp-equity-fill" id="gp-equity-fill" style="width:50%"></div></div>
+                        <span class="gp-equity-pct" id="gp-equity-pct">--</span>
+                    </div>
+                    <div class="gp-footer-right">
+                        <span class="gp-alloc-text" id="gp-alloc-text">--</span>
+                    </div>
+                </div>
+            </div>
+
             <!-- 行业热力图：板块轮动与资金流向 -->
             <div class="heatmap-section">
                 <div class="section-header">
@@ -213,6 +287,21 @@
                 </div>
                 <div class="heatmap-grid" id="heatmap-grid">
                     <!-- 由 JS 动态渲染 -->
+                </div>
+            </div>
+
+            <!-- V8.0 NLP 情报流 (模块 A: Intelligence Feed) -->
+            <div class="intel-feed-section" id="intel-feed-section">
+                <div class="intel-header">
+                    <span class="icon">📡</span>
+                    <h3>AI 情报流 Intelligence Feed</h3>
+                    <span class="intel-scan-time" id="intel-scan-time">--</span>
+                </div>
+                <div class="intel-cards" id="intel-cards">
+                    <div class="intel-empty" id="intel-empty">
+                        <span class="intel-empty-icon">🤖</span>
+                        <span>AI 情报引擎待激活 · 配置 Gemini API Key 启用自动新闻分析</span>
+                    </div>
                 </div>
             </div>
 
@@ -257,6 +346,8 @@
                             <span class="hub-action-text" id="aiae-thermo-action-text">等待数据加载...</span>
                         </div>
                         <!-- 可折叠监控明细 -->
+                        <!-- V8.0 AIAE 历史趋势迷你图 (模块 C) -->
+                        <div id="aiae-sparkline-chart" class="aiae-sparkline-container"></div>
                         <details class="hub-details-group">
                             <summary class="hub-details-toggle">展开监控明细 ▾</summary>
                             <div class="hub-aiae-slope" id="aiae-thermo-slope">月环比: —</div>
@@ -588,24 +679,11 @@
                 </div>
             </div>
             
-            <div class="lists-grid">
-                <div class="list-panel glass-panel">
-                    <h3 style="color: #10b981; border-bottom: 2px solid rgba(16, 185, 129, 0.2); padding-bottom: 10px; margin-bottom: 15px;">🔥 今日强烈买入仓 (Buy Zone)</h3>
-                    <ul class="stock-list" id="list-buy-zone">
-                        <li><div style="color: #64748b; padding: 10px;">检索三大策略共振买点...</div></li>
-                    </ul>
-                </div>
-                <div class="list-panel glass-panel border-danger">
-                    <h3 style="color: #ef4444; border-bottom: 2px solid rgba(239, 68, 68, 0.2); padding-bottom: 10px; margin-bottom: 15px;">⚠️ 紧急撤离区 (Danger Zone)</h3>
-                    <ul class="stock-list" id="list-danger-zone">
-                        <li><div style="color: #64748b; padding: 10px;">扫描全市场破位/拥挤标的...</div></li>
-                    </ul>
-                </div>
-            </div>
+            <!-- 买入/卖出区已下沉至策略详情页 (V8.0 机构合规优化) -->
         </div>
     </main>
 
-    <script src="./static/js/script.js?v=11"></script>
+    <script src="./static/js/script.js?v=14"></script>
     <script>
     // PWA: Service Worker 注册 + 离线检测
     if ('serviceWorker' in navigator) {

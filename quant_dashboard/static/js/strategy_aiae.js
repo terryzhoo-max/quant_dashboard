@@ -460,66 +460,72 @@ function renderAIAEHistoryChart(chart, currentValue) {
             }
         }));
 
-        window._aiaeHistChart.setOption({
-            backgroundColor: 'transparent',
-            tooltip: {
-                trigger: 'axis',
-                backgroundColor: 'rgba(15,23,42,0.95)',
-                borderColor: 'rgba(245,158,11,0.3)',
-                textStyle: { color: '#e2e8f0', fontSize: 11 },
-                formatter: function(params) {
-                    if (!params.length) return '';
-                    const p = params[0];
-                    const idx = chart.dates.indexOf(p.axisValue);
-                    const label = idx >= 0 && chart.labels[idx] ? chart.labels[idx] : '';
-                    // Determine tier
-                    const val = p.value;
-                    let tierLabel = '';
-                    if (val < 12.5) tierLabel = '<span style="color:#10b981">Ⅰ级 极度恐慌</span>';
-                    else if (val < 17) tierLabel = '<span style="color:#3b82f6">Ⅱ级 低配置区</span>';
-                    else if (val < 23) tierLabel = '<span style="color:#eab308">Ⅲ级 中性均衡</span>';
-                    else if (val < 30) tierLabel = '<span style="color:#f97316">Ⅳ级 偏热区域</span>';
-                    else tierLabel = '<span style="color:#ef4444">Ⅴ级 极度过热</span>';
-
-                    return '<b>' + p.axisValue + '</b><br/>' +
-                        '<span style="color:#f59e0b">●</span> AIAE: <b>' + p.value + '%</b><br/>' +
-                        tierLabel +
-                        (label ? '<br/><span style="color:#94a3b8">' + label + '</span>' : '');
-                }
-            },
-            grid: { left: 55, right: 30, top: 32, bottom: 32 },
-            xAxis: {
-                type: 'category', data: chart.dates, boundaryGap: false,
-                axisLabel: { color: '#64748b', fontSize: 9, formatter: function(v) { return v.substring(0, 7); } },
-                axisLine: { lineStyle: { color: '#334155' } }
-            },
-            yAxis: {
-                type: 'value', min: 0, max: 50,
-                axisLabel: { color: '#64748b', fontSize: 9, formatter: function(v) { return v + '%'; } },
-                splitLine: { lineStyle: { color: 'rgba(255,255,255,0.04)' } }
-            },
-            series: [{
-                type: 'line', data: chart.values, smooth: true,
-                symbol: 'circle', symbolSize: 10,
-                lineStyle: { color: '#f59e0b', width: 3, shadowColor: 'rgba(245,158,11,0.3)', shadowBlur: 6 },
-                itemStyle: { color: '#f59e0b', borderColor: '#0f172a', borderWidth: 2 },
-                areaStyle: {
-                    color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
-                        colorStops: [
-                            { offset: 0, color: 'rgba(245,158,11,0.25)' },
-                            { offset: 1, color: 'rgba(245,158,11,0)' }
-                        ]
+            // V3.1: 根据数据密度自适应标记大小和标签显示
+            const isSparse = chart.values.length <= 12;
+            const symbolSizes = chart.labels.map(l => l ? (isSparse ? 10 : 7) : (isSparse ? 10 : 3));
+            window._aiaeHistChart.setOption({
+                backgroundColor: 'transparent',
+                tooltip: {
+                    trigger: 'axis',
+                    backgroundColor: 'rgba(15,23,42,0.95)',
+                    borderColor: 'rgba(245,158,11,0.3)',
+                    textStyle: { color: '#e2e8f0', fontSize: 11 },
+                    formatter: function(params) {
+                        if (!params.length) return '';
+                        const p = params[0];
+                        const idx = chart.dates.indexOf(p.axisValue);
+                        const label = idx >= 0 && chart.labels[idx] ? chart.labels[idx] : '';
+                        const val = p.value;
+                        let tierLabel = '';
+                        if (val < 12.5) tierLabel = '<span style="color:#10b981">Ⅰ级 极度恐慌</span>';
+                        else if (val < 17) tierLabel = '<span style="color:#3b82f6">Ⅱ级 低配置区</span>';
+                        else if (val < 23) tierLabel = '<span style="color:#eab308">Ⅲ级 中性均衡</span>';
+                        else if (val < 30) tierLabel = '<span style="color:#f97316">Ⅳ级 偏热区域</span>';
+                        else tierLabel = '<span style="color:#ef4444">Ⅴ级 极度过热</span>';
+                        return '<b>' + p.axisValue + '</b><br/>' +
+                            '<span style="color:#f59e0b">●</span> AIAE: <b>' + p.value + '%</b><br/>' +
+                            tierLabel +
+                            (label ? '<br/><span style="color:#94a3b8">' + label + '</span>' : '');
                     }
                 },
-                label: {
-                    show: true, fontSize: 8, color: '#f59e0b',
-                    formatter: function(p) { return p.value + '%'; },
-                    position: 'top'
+                grid: { left: 55, right: 30, top: 32, bottom: 32 },
+                xAxis: {
+                    type: 'category', data: chart.dates, boundaryGap: false,
+                    axisLabel: { color: '#64748b', fontSize: 9, formatter: function(v) { return v.substring(0, 7); } },
+                    axisLine: { lineStyle: { color: '#334155' } }
                 },
-                markArea: { silent: true, data: markAreaData },
-                markLine: { silent: true, symbol: 'none', data: markLines }
-            }]
-        });
+                yAxis: {
+                    type: 'value', min: 0, max: 50,
+                    axisLabel: { color: '#64748b', fontSize: 9, formatter: function(v) { return v + '%'; } },
+                    splitLine: { lineStyle: { color: 'rgba(255,255,255,0.04)' } }
+                },
+                series: [{
+                    type: 'line', data: chart.values, smooth: true,
+                    symbol: 'circle', symbolSize: symbolSizes,
+                    lineStyle: { color: '#f59e0b', width: isSparse ? 3 : 2, shadowColor: 'rgba(245,158,11,0.3)', shadowBlur: 6 },
+                    itemStyle: { color: '#f59e0b', borderColor: '#0f172a', borderWidth: 2 },
+                    areaStyle: {
+                        color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                            colorStops: [
+                                { offset: 0, color: 'rgba(245,158,11,0.25)' },
+                                { offset: 1, color: 'rgba(245,158,11,0)' }
+                            ]
+                        }
+                    },
+                    label: {
+                        show: true, fontSize: 8, color: '#f59e0b',
+                        formatter: function(p) {
+                            // V3.1: 仅在有标注的关键节点上显示标签, 避免密集数据时标签重叠
+                            const idx = p.dataIndex;
+                            if (chart.labels[idx]) return p.value + '%';
+                            return '';
+                        },
+                        position: 'top'
+                    },
+                    markArea: { silent: true, data: markAreaData },
+                    markLine: { silent: true, symbol: 'none', data: markLines }
+                }]
+            });
     } catch(err) {
         console.warn('[AIAE] History chart error:', err);
     }

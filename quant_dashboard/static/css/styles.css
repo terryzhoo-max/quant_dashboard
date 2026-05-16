@@ -1,4 +1,4 @@
-﻿:root {
+:root {
     /* 极致高级暗黑色系与金融专业蓝紫点缀 */
     --bg-dark: #07090e;
     --sidebar-bg: rgba(13, 16, 23, 0.7);
@@ -3175,4 +3175,580 @@ body.industry-scope .badge-beta {
 /* [P4] 策略卡片 metric 数字对齐 */
 .strat-metric strong {
     font-variant-numeric: tabular-nums;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   V8.0 模块 D: 系统健康指示器 (System Health Indicator)
+   ═══════════════════════════════════════════════════════════ */
+/* topbar actions 容器 */
+.topbar .actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.sys-health-indicator {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 0.78rem;
+    overflow: visible;
+}
+.sys-health-indicator:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.06);
+}
+.sys-health-dot {
+    font-size: 0.6rem;
+    transition: color 0.4s ease;
+    color: #64748b;
+}
+.sys-health-dot.health-ok { color: #10b981; text-shadow: 0 0 6px rgba(16,185,129,0.5); }
+.sys-health-dot.health-warn { color: #f59e0b; text-shadow: 0 0 6px rgba(245,158,11,0.5); animation: health-pulse 2s ease-in-out infinite; }
+.sys-health-dot.health-error { color: #ef4444; text-shadow: 0 0 8px rgba(239,68,68,0.6); animation: health-pulse 1.5s ease-in-out infinite; }
+.sys-health-label {
+    color: var(--text-muted);
+    font-weight: 500;
+    white-space: nowrap;
+}
+@keyframes health-pulse {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 1; }
+}
+
+/* 悬浮弹出面板 */
+.sys-health-popup {
+    display: none;
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    width: 260px;
+    background: rgba(15, 23, 42, 0.96);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 16px;
+    z-index: 200;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+    animation: shp-fadein 0.2s ease-out;
+}
+@keyframes shp-fadein {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.sys-health-indicator:hover .sys-health-popup {
+    display: block;
+}
+.shp-title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #e2e8f0;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.shp-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    font-size: 0.75rem;
+}
+.shp-row span { color: var(--text-muted); }
+.shp-row strong { color: #e2e8f0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.shp-link {
+    display: block;
+    margin-top: 10px;
+    text-align: center;
+    font-size: 0.72rem;
+    color: var(--accent-light);
+    text-decoration: none;
+    padding: 6px;
+    border-radius: 6px;
+    border: 1px solid rgba(59,130,246,0.2);
+    transition: all 0.2s;
+}
+.shp-link:hover {
+    background: rgba(59,130,246,0.1);
+    border-color: rgba(59,130,246,0.4);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   V8.1 模块 B: 全球权益脉搏 (Global Market Pulse) — 机构级重构
+   ═══════════════════════════════════════════════════════════ */
+.gp-section {
+    padding: 20px var(--space-card);
+}
+
+/* — Header — */
+.gp-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+.gp-title-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.gp-icon { font-size: 1.05rem; }
+.gp-title {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: #e2e8f0;
+    letter-spacing: -0.2px;
+}
+.gp-subtitle {
+    font-size: 0.62rem;
+    font-weight: 500;
+    color: var(--text-dim);
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    padding: 1px 6px;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 3px;
+    background: rgba(255,255,255,0.02);
+}
+.gp-header-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.gp-advice-pill {
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: var(--radius-pill);
+    background: rgba(59,130,246,0.12);
+    color: var(--accent);
+    border: 1px solid rgba(59,130,246,0.2);
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+    transition: all 0.4s ease;
+}
+.gp-update-time {
+    font-size: 0.62rem;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+}
+
+/* — Grid — */
+.gp-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+/* — Card — */
+.gp-card {
+    background: rgba(255,255,255,0.025);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: var(--radius-inner);
+    padding: 14px 12px 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+.gp-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: rgba(255,255,255,0.05);
+    transition: background 0.4s ease;
+}
+.gp-card:hover {
+    border-color: rgba(255,255,255,0.12);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+}
+/* 多空信号顶部色带 */
+.gp-card.gp-bull::before { background: linear-gradient(90deg, #10b981, #34d399); }
+.gp-card.gp-bear::before { background: linear-gradient(90deg, #ef4444, #f87171); }
+.gp-card.gp-neutral::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+/* 多空卡片微妙背景 */
+.gp-card.gp-bull { background: rgba(16,185,129,0.03); }
+.gp-card.gp-bear { background: rgba(239,68,68,0.03); }
+.gp-card.gp-neutral { background: rgba(245,158,11,0.025); }
+
+/* — Skeleton — */
+.gp-card.gp-skeleton .gp-erp-val,
+.gp-card.gp-skeleton .gp-ring-text,
+.gp-card.gp-skeleton .gp-metric-val,
+.gp-card.gp-skeleton .gp-sig-badge,
+.gp-card.gp-skeleton .gp-alloc-pct {
+    background: linear-gradient(90deg, rgba(255,255,255,0.04), rgba(255,255,255,0.09), rgba(255,255,255,0.04));
+    background-size: 200% 100%;
+    animation: gp-shimmer 1.8s infinite;
+    border-radius: 3px;
+    color: transparent !important;
+}
+@keyframes gp-shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* — Card Top (Flag + Name) — */
+.gp-card-top {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    width: 100%;
+    margin-bottom: 2px;
+}
+.gp-flag { font-size: 1.15rem; }
+.gp-region-name {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 0.5px;
+}
+
+/* — ERP Hero Number — */
+.gp-erp-hero {
+    display: flex;
+    align-items: baseline;
+    gap: 1px;
+    margin: 2px 0 0;
+}
+.gp-erp-val {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: #fff;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.5px;
+    line-height: 1.1;
+}
+.gp-erp-unit {
+    font-size: 0.6rem;
+    font-weight: 500;
+    color: var(--text-dim);
+    margin-left: 1px;
+}
+
+/* — Score Ring (SVG) — */
+.gp-score-ring {
+    position: relative;
+    width: 48px;
+    height: 48px;
+    margin: 4px 0;
+}
+.gp-ring-svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+}
+.gp-ring-bg {
+    fill: none;
+    stroke: rgba(255,255,255,0.06);
+    stroke-width: 3;
+}
+.gp-ring-fill {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 3;
+    stroke-linecap: round;
+    transition: stroke-dasharray 1s cubic-bezier(0.34, 1.56, 0.64, 1), stroke 0.4s;
+}
+.gp-ring-text {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 0.7rem;
+    font-weight: 800;
+    color: #e2e8f0;
+    font-variant-numeric: tabular-nums;
+}
+
+/* — PE / Yield Metrics — */
+.gp-metrics {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+    justify-content: center;
+    margin: 2px 0 4px;
+}
+.gp-metric {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+}
+.gp-metric-label {
+    font-size: 0.55rem;
+    font-weight: 500;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.gp-metric-val {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+/* — Signal Badge — */
+.gp-signal-row {
+    width: 100%;
+    text-align: center;
+    margin: 2px 0;
+}
+.gp-sig-badge {
+    font-size: 0.62rem;
+    font-weight: 700;
+    padding: 2px 10px;
+    border-radius: 4px;
+    display: inline-block;
+    letter-spacing: 0.3px;
+    background: rgba(255,255,255,0.04);
+    color: var(--text-muted);
+    border: 1px solid rgba(255,255,255,0.06);
+    transition: all 0.3s ease;
+}
+.gp-sig-badge.sig-bull { background: rgba(16,185,129,0.1); color: var(--success-light); border-color: rgba(16,185,129,0.2); }
+.gp-sig-badge.sig-bear { background: rgba(239,68,68,0.1); color: var(--danger-light); border-color: rgba(239,68,68,0.2); }
+.gp-sig-badge.sig-neutral { background: rgba(245,158,11,0.08); color: var(--warning-light); border-color: rgba(245,158,11,0.15); }
+
+/* — Mini Allocation Bar — */
+.gp-alloc-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    margin-top: 2px;
+}
+.gp-alloc-row .gp-alloc-label {
+    font-size: 0.55rem;
+    color: var(--text-dim);
+    font-weight: 500;
+    flex-shrink: 0;
+}
+.gp-alloc-bar-mini {
+    flex: 1;
+    height: 3px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 2px;
+    overflow: hidden;
+}
+.gp-alloc-fill-mini {
+    height: 100%;
+    border-radius: 2px;
+    width: 0%;
+    background: var(--accent);
+    transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.3s;
+}
+.gp-alloc-pct {
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    min-width: 24px;
+    text-align: right;
+}
+
+/* — Footer (Equity Track) — */
+.gp-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 10px 4px 0;
+    border-top: 1px solid rgba(255,255,255,0.04);
+}
+.gp-footer-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+}
+.gp-footer-label {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.gp-equity-track {
+    flex: 1;
+    height: 6px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+    max-width: 240px;
+}
+.gp-equity-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #3b82f6, #10b981);
+    transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.3s;
+}
+.gp-equity-pct {
+    font-size: 0.72rem;
+    font-weight: 800;
+    color: #e2e8f0;
+    font-variant-numeric: tabular-nums;
+    min-width: 36px;
+}
+.gp-footer-right {
+    flex-shrink: 0;
+}
+.gp-alloc-text {
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: var(--text-dim);
+    letter-spacing: 0.2px;
+}
+
+
+
+/* ═══════════════════════════════════════════════════════════
+   V8.0 模块 A: NLP 情报流 (Intelligence Feed)
+   ═══════════════════════════════════════════════════════════ */
+.intel-feed-section {
+    padding: 0;
+}
+.intel-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+.intel-header .icon { font-size: 1.1rem; }
+.intel-header h3 {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: #e2e8f0;
+    flex: 1;
+}
+.intel-scan-time {
+    font-size: 0.68rem;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+}
+
+.intel-cards {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.08) transparent;
+}
+.intel-cards::-webkit-scrollbar { height: 4px; }
+.intel-cards::-webkit-scrollbar-track { background: transparent; }
+.intel-cards::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+.intel-card {
+    min-width: 240px;
+    max-width: 280px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: var(--radius-inner);
+    padding: 14px;
+    flex-shrink: 0;
+    transition: all 0.3s ease;
+    cursor: default;
+    position: relative;
+}
+.intel-card:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+.intel-card.intel-critical {
+    border-color: rgba(239, 68, 68, 0.3);
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.08);
+}
+.intel-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.intel-category {
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+.intel-category.cat-macro { background: rgba(59,130,246,0.15); color: var(--accent-light); border: 1px solid rgba(59,130,246,0.25); }
+.intel-category.cat-industry { background: rgba(139,92,246,0.12); color: var(--purple-light); border: 1px solid rgba(139,92,246,0.25); }
+.intel-category.cat-stock { background: rgba(16,185,129,0.12); color: var(--success-light); border: 1px solid rgba(16,185,129,0.25); }
+.intel-category.cat-risk { background: rgba(239,68,68,0.12); color: var(--danger-light); border: 1px solid rgba(239,68,68,0.25); }
+
+.intel-impact {
+    display: flex;
+    gap: 2px;
+    margin-left: auto;
+}
+.intel-impact-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.1);
+    transition: background 0.3s;
+}
+.intel-impact-dot.active { background: var(--warning); }
+.intel-impact-dot.active.high { background: var(--danger); }
+
+.intel-title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #e2e8f0;
+    margin-bottom: 6px;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.intel-summary {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* 空状态 */
+.intel-empty {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 18px 20px;
+    background: rgba(255,255,255,0.02);
+    border: 1px dashed rgba(255,255,255,0.08);
+    border-radius: var(--radius-inner);
+    color: var(--text-dim);
+    font-size: 0.78rem;
+}
+.intel-empty-icon { font-size: 1.2rem; opacity: 0.6; }
+
+/* ═══════════════════════════════════════════════════════════
+   V8.0 模块 C: AIAE 历史趋势迷你图
+   ═══════════════════════════════════════════════════════════ */
+.aiae-sparkline-container {
+    width: 100%;
+    height: 70px;
+    margin: 8px 0 4px;
 }

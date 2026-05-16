@@ -871,19 +871,53 @@ class AIAEEngine:
     # ========== 历史走势数据 ==========
 
     def get_chart_data(self, live_aiae: float = None) -> Dict:
-        """输出历史 AIAE 走势 (静态+当前点)
-        H3: 如果提供 live_aiae, 自动替换末尾估算点为实时值
+        """输出历史 AIAE 走势 (静态关键节点 + 月度连续数据 + 当前实时点)
+        V3.1 P2: 将 SQLite 月度历史合并进图表, 从9个离散节点升级为连续趋势线
+        H3: 如果提供 live_aiae, 自动追加末尾实时点
         """
-        # V1.0: 使用预设历史关键节点
-        dates = [s["date"] for s in HISTORICAL_SNAPSHOTS]
-        values = [s["aiae"] for s in HISTORICAL_SNAPSHOTS]
-        labels = [s["label"] for s in HISTORICAL_SNAPSHOTS]
+        # Step 1: 静态历史关键节点 (保留标注)
+        static_points = {}
+        for s in HISTORICAL_SNAPSHOTS:
+            d = s["date"]
+            static_points[d] = {"value": s["aiae"], "label": s["label"]}
 
-        # H3: 替换末尾 "当前状态(估)" 为实时计算值
-        if live_aiae is not None and values:
-            values[-1] = round(live_aiae, 1)
-            dates[-1] = datetime.now().strftime("%Y-%m-%d")
-            labels[-1] = "当前状态(实时)"
+        # Step 2: 加载 SQLite 月度历史, 转为日期索引
+        monthly = self._load_monthly_history()
+        current_month_prefix = datetime.now().strftime("%Y-%m")
+        for entry in monthly:
+            m = entry.get("month", "")  # "2026-03"
+            if not m or len(m) < 7:
+                continue
+            # 当月数据由 live_aiae 实时点代表, 跳过月度历史
+            if live_aiae is not None and m == current_month_prefix:
+                continue
+            # 月度记录用月末日期作为图表X轴点
+            d = m + "-28"  # 近似月末
+            # 跳过与静态节点日期接近(30天内)的条目, 避免重叠
+            skip = False
+            for sd in static_points:
+                try:
+                    delta = abs((datetime.strptime(d, "%Y-%m-%d") - datetime.strptime(sd, "%Y-%m-%d")).days)
+                    if delta < 30:
+                        skip = True
+                        break
+                except Exception:
+                    pass
+            if not skip:
+                aiae_v1 = entry.get("aiae_v1")
+                if aiae_v1 is not None:
+                    static_points[d] = {"value": round(aiae_v1, 1), "label": ""}
+
+        # Step 3: 追加当前实时点
+        if live_aiae is not None:
+            now_str = datetime.now().strftime("%Y-%m-%d")
+            static_points[now_str] = {"value": round(live_aiae, 1), "label": "当前状态(实时)"}
+
+        # Step 4: 按日期排序, 拆分为平行数组
+        sorted_dates = sorted(static_points.keys())
+        dates = sorted_dates
+        values = [static_points[d]["value"] for d in dates]
+        labels = [static_points[d]["label"] for d in dates]
 
         # 五档区间线 (V3.0: 从参数中心读取, 消除硬编码漂移)
         _t = AP.REGIME_THRESHOLDS  # [12.5, 17, 23, 30]
@@ -898,8 +932,11 @@ class AIAEEngine:
             "dates": dates, "values": values, "labels": labels,
             "bands": bands,
             "stats": {
-                "mean": 18.5, "min": 8.2, "max": 42.5,
-                "current": values[-1] if values else 22.3
+                "mean": round(sum(values) / max(len(values), 1), 1),
+                "min": round(min(values), 1) if values else 8.2,
+                "max": round(max(values), 1) if values else 42.5,
+                "current": values[-1] if values else 22.3,
+                "data_points": len(values),
             }
         }
 

@@ -357,18 +357,38 @@ class ERPTimingEngine:
         return _cached("yield_10y_history", 30 * 60, _fetch)  # 30分钟TTL: 盘中实时刷新
 
     def _fetch_m1_history(self, months: int = 36) -> pd.DataFrame:
-        """获取M1/M2同比近N月数据"""
+        """获取M1/M2同比近N月数据 (V3.1: 增加磁盘缓存, 与PE/10Y对齐)"""
         def _fetch():
+            cache_file = os.path.join(CACHE_DIR, "erp_m1_history.parquet")
             end_m = datetime.now().strftime("%Y%m")
             start_m = (datetime.now() - timedelta(days=months * 31)).strftime("%Y%m")
             @retry_with_backoff(max_retries=3, base_delay=1.5)
             def _call_pro_cn():
                 return pro.cn_m(start_m=start_m, end_m=end_m, fields="month,m1,m1_yoy,m2,m2_yoy")
             
-            df = _call_pro_cn()
-            if df is None or df.empty:
-                raise ValueError("M1 数据为空")
-            return df.sort_values('month').reset_index(drop=True)
+            try:
+                df = _call_pro_cn()
+                if df is not None and not df.empty:
+                    df = df.sort_values('month').reset_index(drop=True)
+                    # 磁盘缓存持久化
+                    try:
+                        atomic_write_parquet(df, cache_file)
+                    except Exception:
+                        pass  # 写入失败不影响返回
+                    return df
+            except Exception as e:
+                print(f"[ERP] M1 API失败: {e}")
+
+            # 降级: 读磁盘缓存
+            if os.path.exists(cache_file):
+                try:
+                    df = pd.read_parquet(cache_file)
+                    print(f"[ERP] M1 使用磁盘缓存: {len(df)} rows")
+                    return df.sort_values('month').reset_index(drop=True)
+                except Exception:
+                    pass
+
+            raise ValueError("M1 数据为空且无磁盘缓存")
         return _cached("m1_history", 6 * 3600, _fetch)  # 6小时TTL: 月频数据无需太频繁
 
     # ========== 核心计算层 ==========
@@ -971,15 +991,15 @@ class ERPTimingEngine:
         return cards
 
     def _fallback_signal(self, reason: str) -> dict:
-        """降级输出"""
+        """降级输出 (V3.1 P1: 使用保守中性值, 避免误导性信号)"""
         return {
             "status": "fallback", "message": f"数据异常: {reason}",
-            "current_snapshot": {"pe_ttm": 12.5, "yield_10y": 1.80, "earnings_yield": 8.0, "erp_value": 6.2, "erp_percentile": 70.0, "trade_date": datetime.now().strftime('%Y-%m-%d')},
-            "signal": {"score": 70, "key": "hold", "label": "标配(降级)", "position": "50-70%", "color": "#f59e0b", "emoji": "🟡"},
+            "current_snapshot": {"pe_ttm": 13.0, "yield_10y": 2.30, "earnings_yield": 7.7, "erp_value": 4.0, "erp_percentile": 50.0, "trade_date": datetime.now().strftime('%Y-%m-%d')},
+            "signal": {"score": 50, "key": "hold", "label": "标配(降级)", "position": "50-70%", "color": "#f59e0b", "emoji": "🟡"},
             "dimensions": {k: {"score": 50, "weight": v, "label": k, "desc": f"降级估算"} for k, v in self.W.items()},
             "trade_rules": {"signal_key": "hold", "signal": self.SIGNAL_MAP["hold"], "resonance": "none", "resonance_label": "⚪ 降级模式", "etf_advice": [], "take_profit": [], "stop_loss": []},
-            "alerts": [{"level": "warning", "icon": "🟡", "text": reason}],
-            "diagnosis": [{"type": "warning", "title": "数据降级", "text": reason}],
+            "alerts": [{"level": "warning", "icon": "🟡", "text": f"⚠️ 数据降级中: {reason}。当前显示为保守中性值，非实时数据。"}],
+            "diagnosis": [{"type": "warning", "title": "数据降级", "text": f"引擎使用保守中性降级值(ERP=4.0%, Score=50)。原因: {reason}"}],
             "encyclopedia": ENCYCLOPEDIA,
         }
 
