@@ -1,14 +1,14 @@
 """
-AlphaCore · NLP 情报引擎 (P2-C)
-==================================
+AlphaCore · NLP 情报引擎 (P2-C · DeepSeek)
+=============================================
 流程:
   1. Tushare major_news() 拉取最近财经新闻 (关键词预过滤)
-  2. Gemini-2.0-flash 结构化提取 (JSON mode)
+  2. DeepSeek-Chat 结构化提取 (OpenAI-compatible JSON mode)
   3. 事件分类 (宏观/行业/个股) + 影响评分
   4. 自动匹配决策引擎情景模板
   5. SQLite 持久化 + 缓存推送
 
-数据成本: ~$0.50/月 (日均 1-2 次调用, flash 模型)
+数据成本: ~¥0.30/月 (日均 1-2 次调用, deepseek-chat)
 """
 
 import json
@@ -93,43 +93,48 @@ def _load_ai_config() -> dict:
         return {"enable_ai_narrative": False}
 
 
-def _call_gemini_json(prompt: str) -> list:
-    """调用 Gemini 并解析 JSON 响应"""
+def _call_deepseek_json(prompt: str) -> list:
+    """调用 DeepSeek (OpenAI-compatible) 并解析 JSON 响应"""
     cfg = _load_ai_config()
-    gemini_cfg = cfg.get("gemini", {})
-    api_key = gemini_cfg.get("api_key", "")
-    model = gemini_cfg.get("model", "gemini-2.0-flash")
+    ds_cfg = cfg.get("deepseek", {})
+    api_key = ds_cfg.get("api_key", "")
+    model = ds_cfg.get("model", "deepseek-chat")
+    base_url = ds_cfg.get("base_url", "https://api.deepseek.com")
     timeout = cfg.get("timeout_seconds", 30)
 
     if not api_key or len(api_key) < 10:
-        logger.warning("[NLP] Gemini API key 未配置, 跳过")
+        logger.warning("[NLP] DeepSeek API key 未配置, 跳过")
         return []
 
-    url = (f"https://generativelanguage.googleapis.com/v1beta/"
-           f"models/{model}:generateContent?key={api_key}")
+    url = f"{base_url.rstrip('/')}/v1/chat/completions"
 
     payload = json.dumps({
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "maxOutputTokens": 1024,
-            "temperature": 0.3,  # 低温度, 提高结构化输出质量
-            "responseMimeType": "application/json",
-        }
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "你是专业量化投资分析师。请严格以 JSON 数组格式回复。"},
+            {"role": "user", "content": prompt},
+        ],
+        "max_tokens": 1024,
+        "temperature": 0.3,
+        "response_format": {"type": "json_object"},
     }).encode("utf-8")
 
     req = urllib.request.Request(
         url, data=payload, method="POST",
-        headers={"Content-Type": "application/json"}
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        }
     )
 
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         result = json.loads(resp.read().decode("utf-8"))
 
-    candidates = result.get("candidates", [])
-    if not candidates:
+    choices = result.get("choices", [])
+    if not choices:
         return []
 
-    text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+    text = choices[0].get("message", {}).get("content", "")
 
     # 解析 JSON (兼容 markdown 代码块包裹)
     text = text.strip()
@@ -138,12 +143,15 @@ def _call_gemini_json(prompt: str) -> list:
         text = text.rsplit("```", 1)[0]
 
     try:
-        events = json.loads(text)
-        if isinstance(events, list):
-            return events
+        parsed = json.loads(text)
+        # DeepSeek JSON mode 可能返回 {"events": [...]} 或直接 [...]
+        if isinstance(parsed, list):
+            return parsed
+        if isinstance(parsed, dict) and "events" in parsed:
+            return parsed["events"]
         return []
     except json.JSONDecodeError:
-        logger.warning("[NLP] Gemini 返回非 JSON: %s...", text[:100])
+        logger.warning("[NLP] DeepSeek 返回非 JSON: %s...", text[:100])
         return []
 
 
@@ -190,12 +198,12 @@ def _generate_event_id(title: str, date_str: str) -> str:
 
 def scan_news() -> dict:
     """
-    主入口: 扫描新闻 → 预过滤 → Gemini 提取 → 持久化
+    主入口: 扫描新闻 → 预过滤 → DeepSeek 提取 → 持久化
 
     Returns:
         {"status": "success", "events_count": N, "events": [...]}
     """
-    logger.info("═══ NLP 情报扫描启动 ═══")
+    logger.info("═══ NLP 情报扫描启动 (DeepSeek) ═══")
     t0 = datetime.now()
 
     # 1. 拉取新闻
@@ -218,13 +226,13 @@ def scan_news() -> dict:
     if len(news_text) > 3000:
         news_text = news_text[:3000] + "\n...(截断)"
 
-    # 4. Gemini 提取
+    # 4. DeepSeek 提取
     try:
         prompt = _EXTRACTION_PROMPT.format(news_text=news_text)
-        raw_events = _call_gemini_json(prompt)
+        raw_events = _call_deepseek_json(prompt)
     except Exception as e:
-        logger.error("[NLP] Gemini 调用失败: %s\n%s", e, traceback.format_exc())
-        return {"status": "error", "message": f"Gemini 调用失败: {e}"}
+        logger.error("[NLP] DeepSeek 调用失败: %s\n%s", e, traceback.format_exc())
+        return {"status": "error", "message": f"DeepSeek 调用失败: {e}"}
 
     # 5. 结构化 + 持久化
     today_str = datetime.now().strftime("%Y-%m-%d")
@@ -246,7 +254,7 @@ def scan_news() -> dict:
             "summary": ev.get("summary", "")[:200],
             "affected_assets": ev.get("affected_assets", []),
             "scenario_id": scenario_id,
-            "source": "tushare+gemini",
+            "source": "tushare+deepseek",
             "raw_text": "",
         }
 

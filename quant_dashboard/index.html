@@ -12,7 +12,7 @@
     <title>AlphaCore 投研量化终端</title>
     <!-- 引入外部样式 -->
     <link rel="stylesheet" href="./static/css/fonts.css?v=1">
-    <link rel="stylesheet" href="./static/css/styles.css?v=14">
+    <link rel="stylesheet" href="./static/css/styles.css?v=15">
     <link rel="stylesheet" href="./static/css/visual_excellence.css?v=3">
     <link rel="stylesheet" href="./static/css/mobile.css?v=1">
     <!-- 引入高级无衬线字体 Inter -->
@@ -290,17 +290,31 @@
                 </div>
             </div>
 
-            <!-- V8.0 NLP 情报流 (模块 A: Intelligence Feed) -->
-            <div class="intel-feed-section" id="intel-feed-section">
+            <!-- V8.1 NLP 情报流 (模块 A: Intelligence Feed · DeepSeek) -->
+            <div class="intel-section glass-panel" id="intel-feed-section">
                 <div class="intel-header">
-                    <span class="icon">📡</span>
-                    <h3>AI 情报流 Intelligence Feed</h3>
-                    <span class="intel-scan-time" id="intel-scan-time">--</span>
+                    <div class="intel-title-group">
+                        <span class="intel-icon">📡</span>
+                        <h3 class="intel-title">AI 情报流</h3>
+                        <span class="intel-subtitle">DeepSeek NLP Engine</span>
+                    </div>
+                    <div class="intel-header-right">
+                        <button class="intel-scan-btn" id="intel-scan-btn" title="手动触发新闻扫描">
+                            <span class="intel-scan-icon">⚡</span> 扫描
+                        </button>
+                        <span class="intel-scan-time" id="intel-scan-time">待命</span>
+                    </div>
                 </div>
                 <div class="intel-cards" id="intel-cards">
                     <div class="intel-empty" id="intel-empty">
-                        <span class="intel-empty-icon">🤖</span>
-                        <span>AI 情报引擎待激活 · 配置 Gemini API Key 启用自动新闻分析</span>
+                        <div class="intel-empty-visual">
+                            <span class="intel-empty-icon">🧠</span>
+                            <div class="intel-empty-pulse"></div>
+                        </div>
+                        <div class="intel-empty-text">
+                            <strong>DeepSeek 情报引擎就绪</strong>
+                            <span>点击「扫描」抓取最新财经事件 · 自动结构化分析</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -683,7 +697,7 @@
         </div>
     </main>
 
-    <script src="./static/js/script.js?v=14"></script>
+    <script src="./static/js/script.js?v=15"></script>
     <script>
     // PWA: Service Worker 注册 + 离线检测
     if ('serviceWorker' in navigator) {

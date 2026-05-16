@@ -42,6 +42,7 @@ _PUBLIC_PREFIXES = (
     "/api/v1/decision/simulate",    # V23.0: 情景模拟 (纯数学推演, 无副作用)
     "/api/v1/decision/shock",       # V23.0: 冲击传播 (纯数学推演, 无副作用)
     "/api/v1/decision/param-snapshot",  # V23.0: 参数快照 (用户操作)
+    "/api/v1/intelligence/scan",    # V8.1: 情报扫描 (仪表盘内置按钮触发)
 )
 
 # 免认证的 HTTP 方法 (只读操作)

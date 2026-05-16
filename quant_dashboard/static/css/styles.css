@@ -3618,33 +3618,92 @@ body.industry-scope .badge-beta {
 
 
 /* ═══════════════════════════════════════════════════════════
-   V8.0 模块 A: NLP 情报流 (Intelligence Feed)
+   V8.1 模块 A: AI 情报流 (Intelligence Feed · DeepSeek)
    ═══════════════════════════════════════════════════════════ */
-.intel-feed-section {
-    padding: 0;
+.intel-section {
+    padding: 20px var(--space-card);
 }
+
+/* — Header — */
 .intel-header {
     display: flex;
     align-items: center;
-    gap: 10px;
+    justify-content: space-between;
     margin-bottom: 14px;
 }
-.intel-header .icon { font-size: 1.1rem; }
-.intel-header h3 {
+.intel-title-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.intel-icon { font-size: 1.05rem; }
+.intel-title {
     font-size: 0.92rem;
     font-weight: 700;
     color: #e2e8f0;
-    flex: 1;
+    letter-spacing: -0.2px;
+}
+.intel-subtitle {
+    font-size: 0.62rem;
+    font-weight: 500;
+    color: var(--text-dim);
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    padding: 1px 6px;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 3px;
+    background: rgba(255,255,255,0.02);
+}
+.intel-header-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.intel-scan-btn {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 4px 12px;
+    border-radius: var(--radius-pill);
+    background: rgba(139,92,246,0.12);
+    color: var(--purple-light, #c4b5fd);
+    border: 1px solid rgba(139,92,246,0.25);
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    letter-spacing: 0.3px;
+}
+.intel-scan-btn:hover {
+    background: rgba(139,92,246,0.2);
+    border-color: rgba(139,92,246,0.4);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(139,92,246,0.15);
+}
+.intel-scan-btn:active {
+    transform: translateY(0);
+}
+.intel-scan-btn.scanning {
+    opacity: 0.6;
+    pointer-events: none;
+}
+.intel-scan-btn.scanning .intel-scan-icon {
+    animation: intel-spin 0.8s linear infinite;
+}
+@keyframes intel-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
 }
 .intel-scan-time {
-    font-size: 0.68rem;
+    font-size: 0.62rem;
     color: var(--text-dim);
     font-variant-numeric: tabular-nums;
 }
 
+/* — Event Cards Container — */
 .intel-cards {
     display: flex;
-    gap: 12px;
+    gap: 10px;
     overflow-x: auto;
     padding-bottom: 6px;
     scrollbar-width: thin;
@@ -3654,66 +3713,101 @@ body.industry-scope .badge-beta {
 .intel-cards::-webkit-scrollbar-track { background: transparent; }
 .intel-cards::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
 
+/* — Event Card — */
 .intel-card {
-    min-width: 240px;
-    max-width: 280px;
-    background: rgba(255, 255, 255, 0.03);
+    min-width: 260px;
+    max-width: 300px;
+    background: rgba(255, 255, 255, 0.025);
     border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: var(--radius-inner);
-    padding: 14px;
+    padding: 14px 14px 10px;
     flex-shrink: 0;
     transition: all 0.3s ease;
     cursor: default;
     position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+/* 左侧分类色带 */
+.intel-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    width: 3px;
+    background: rgba(255,255,255,0.06);
+    transition: background 0.3s;
 }
 .intel-card:hover {
     border-color: rgba(255, 255, 255, 0.12);
     transform: translateY(-2px);
-    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.35);
 }
+/* 高影响事件 */
 .intel-card.intel-critical {
-    border-color: rgba(239, 68, 68, 0.3);
-    box-shadow: 0 0 12px rgba(239, 68, 68, 0.08);
+    border-color: rgba(239, 68, 68, 0.25);
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.06);
 }
+.intel-card.intel-critical::before { background: linear-gradient(180deg, #ef4444, #f87171); }
+
+/* 分类色带颜色 */
+.intel-card.cat-macro::before { background: linear-gradient(180deg, #3b82f6, #60a5fa); }
+.intel-card.cat-industry::before { background: linear-gradient(180deg, #8b5cf6, #a78bfa); }
+.intel-card.cat-stock::before { background: linear-gradient(180deg, #10b981, #34d399); }
+.intel-card.cat-risk::before { background: linear-gradient(180deg, #ef4444, #f87171); }
+
+/* — Card Header — */
 .intel-card-header {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-bottom: 8px;
 }
 .intel-category {
-    font-size: 0.6rem;
+    font-size: 0.58rem;
     font-weight: 700;
     padding: 2px 7px;
-    border-radius: 4px;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
+    border-radius: 3px;
+    letter-spacing: 0.4px;
 }
-.intel-category.cat-macro { background: rgba(59,130,246,0.15); color: var(--accent-light); border: 1px solid rgba(59,130,246,0.25); }
-.intel-category.cat-industry { background: rgba(139,92,246,0.12); color: var(--purple-light); border: 1px solid rgba(139,92,246,0.25); }
-.intel-category.cat-stock { background: rgba(16,185,129,0.12); color: var(--success-light); border: 1px solid rgba(16,185,129,0.25); }
-.intel-category.cat-risk { background: rgba(239,68,68,0.12); color: var(--danger-light); border: 1px solid rgba(239,68,68,0.25); }
+.intel-category.cat-macro { background: rgba(59,130,246,0.12); color: var(--accent-light); border: 1px solid rgba(59,130,246,0.2); }
+.intel-category.cat-industry { background: rgba(139,92,246,0.1); color: var(--purple-light, #c4b5fd); border: 1px solid rgba(139,92,246,0.2); }
+.intel-category.cat-stock { background: rgba(16,185,129,0.1); color: var(--success-light); border: 1px solid rgba(16,185,129,0.2); }
+.intel-category.cat-risk { background: rgba(239,68,68,0.1); color: var(--danger-light); border: 1px solid rgba(239,68,68,0.2); }
 
-.intel-impact {
-    display: flex;
-    gap: 2px;
+/* — Impact Score Bar — */
+.intel-impact-bar {
     margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 4px;
 }
-.intel-impact-dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: rgba(255,255,255,0.1);
-    transition: background 0.3s;
+.intel-impact-track {
+    width: 40px;
+    height: 3px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 2px;
+    overflow: hidden;
 }
-.intel-impact-dot.active { background: var(--warning); }
-.intel-impact-dot.active.high { background: var(--danger); }
+.intel-impact-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.6s ease;
+}
+.intel-impact-val {
+    font-size: 0.58rem;
+    font-weight: 800;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    min-width: 12px;
+    text-align: right;
+}
 
+/* — Card Content — */
 .intel-title {
     font-size: 0.82rem;
     font-weight: 600;
     color: #e2e8f0;
-    margin-bottom: 6px;
     line-height: 1.4;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -3721,7 +3815,7 @@ body.industry-scope .badge-beta {
     overflow: hidden;
 }
 .intel-summary {
-    font-size: 0.72rem;
+    font-size: 0.7rem;
     color: var(--text-muted);
     line-height: 1.5;
     display: -webkit-box;
@@ -3729,20 +3823,74 @@ body.industry-scope .badge-beta {
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
+/* 受影响资产 */
+.intel-assets {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    margin-top: 2px;
+}
+.intel-asset-tag {
+    font-size: 0.55rem;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(255,255,255,0.04);
+    color: var(--text-dim);
+    border: 1px solid rgba(255,255,255,0.06);
+    font-variant-numeric: tabular-nums;
+}
 
-/* 空状态 */
+/* — Empty State — */
 .intel-empty {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 18px 20px;
-    background: rgba(255,255,255,0.02);
-    border: 1px dashed rgba(255,255,255,0.08);
+    gap: 16px;
+    padding: 24px 20px;
+    background: linear-gradient(135deg, rgba(139,92,246,0.04), rgba(59,130,246,0.03));
+    border: 1px solid rgba(139,92,246,0.1);
     border-radius: var(--radius-inner);
-    color: var(--text-dim);
-    font-size: 0.78rem;
+    width: 100%;
 }
-.intel-empty-icon { font-size: 1.2rem; opacity: 0.6; }
+.intel-empty-visual {
+    position: relative;
+    flex-shrink: 0;
+}
+.intel-empty-icon {
+    font-size: 1.8rem;
+    display: block;
+    position: relative;
+    z-index: 1;
+}
+.intel-empty-pulse {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(139,92,246,0.1);
+    animation: intel-pulse 2.5s ease-in-out infinite;
+}
+@keyframes intel-pulse {
+    0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.4; }
+    50% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
+}
+.intel-empty-text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.intel-empty-text strong {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--text-muted);
+}
+.intel-empty-text span {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+}
+
 
 /* ═══════════════════════════════════════════════════════════
    V8.0 模块 C: AIAE 历史趋势迷你图

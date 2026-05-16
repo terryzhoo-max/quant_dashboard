@@ -6,7 +6,7 @@
         "model": "gemini-2.0-flash"
     },
     "deepseek": {
-        "api_key": "sk-640dc7d90a994787ae575425e5ea9173",
+        "api_key": "sk-79613a27780a41078d5f3e40fd32be94",
         "model": "deepseek-chat",
         "base_url": "https://api.deepseek.com"
     },

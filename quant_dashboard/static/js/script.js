@@ -1710,7 +1710,33 @@ async function fetchAndRenderIntelligenceFeed() {
     const cardsEl = el('intel-cards');
     const scanTimeEl = el('intel-scan-time');
     const emptyEl = el('intel-empty');
+    const scanBtn = el('intel-scan-btn');
     if (!cardsEl) return;
+
+    // — 手动扫描按钮 —
+    if (scanBtn && !scanBtn._bound) {
+        scanBtn._bound = true;
+        scanBtn.addEventListener('click', async () => {
+            scanBtn.classList.add('scanning');
+            scanBtn.querySelector('.intel-scan-icon').textContent = '⏳';
+            if (scanTimeEl) scanTimeEl.textContent = '扫描中…';
+            try {
+                const r = await fetch('/api/v1/intelligence/scan', { method: 'POST' });
+                const j = await r.json();
+                if (j.status === 'success') {
+                    await fetchAndRenderIntelligenceFeed();
+                } else {
+                    if (scanTimeEl) scanTimeEl.textContent = '扫描失败';
+                }
+            } catch (e) {
+                console.warn('[Intel] 扫描失败:', e.message);
+                if (scanTimeEl) scanTimeEl.textContent = '网络异常';
+            } finally {
+                scanBtn.classList.remove('scanning');
+                scanBtn.querySelector('.intel-scan-icon').textContent = '⚡';
+            }
+        });
+    }
 
     try {
         const resp = await fetch('/api/v1/intelligence/latest');
@@ -1721,13 +1747,12 @@ async function fetchAndRenderIntelligenceFeed() {
         const events = data.events || [];
 
         if (events.length === 0) {
-            // 保持空状态显示
             if (emptyEl) emptyEl.style.display = 'flex';
             if (scanTimeEl && data.scan_time) {
                 const d = new Date(data.scan_time);
-                scanTimeEl.textContent = `最后扫描 ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+                scanTimeEl.textContent = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')} · 无事件`;
             } else if (scanTimeEl) {
-                scanTimeEl.textContent = '未扫描';
+                scanTimeEl.textContent = '待命';
             }
             return;
         }
@@ -1746,22 +1771,30 @@ async function fetchAndRenderIntelligenceFeed() {
             const cat = catMap[ev.category] || catMap.macro;
             const impact = Math.min(Math.max(Math.round(ev.impact_score || 0), 0), 10);
             const isCritical = impact >= 7;
+            const impactPct = impact * 10;
 
-            // 影响评分圆点 (最多10个)
-            let dots = '';
-            for (let i = 0; i < 10; i++) {
-                const isActive = i < impact;
-                const isHigh = isActive && impact >= 7;
-                dots += `<span class="intel-impact-dot ${isActive ? 'active' : ''} ${isHigh ? 'high' : ''}"></span>`;
-            }
+            // Impact 颜色梯度
+            let impactColor = '#10b981'; // green
+            if (impact >= 7) impactColor = '#ef4444';
+            else if (impact >= 5) impactColor = '#f59e0b';
 
-            return `<div class="intel-card ${isCritical ? 'intel-critical' : ''}">
+            // 受影响资产标签
+            const assets = (ev.affected_assets || []).slice(0, 3);
+            const assetHtml = assets.length > 0
+                ? `<div class="intel-assets">${assets.map(a => `<span class="intel-asset-tag">${a}</span>`).join('')}</div>`
+                : '';
+
+            return `<div class="intel-card ${isCritical ? 'intel-critical' : ''} ${cat.cls}">
                 <div class="intel-card-header">
                     <span class="intel-category ${cat.cls}">${cat.label}</span>
-                    <div class="intel-impact">${dots}</div>
+                    <div class="intel-impact-bar">
+                        <div class="intel-impact-track"><div class="intel-impact-fill" style="width:${impactPct}%;background:${impactColor}"></div></div>
+                        <span class="intel-impact-val">${impact}</span>
+                    </div>
                 </div>
                 <div class="intel-title">${ev.title || '--'}</div>
                 <div class="intel-summary">${ev.summary || ''}</div>
+                ${assetHtml}
             </div>`;
         }).join('');
 

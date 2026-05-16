@@ -1,9 +1,9 @@
 """
 AlphaCore P3-A · NLP 情报引擎单元测试
 ========================================
-mock 掉 Tushare 和 Gemini API, 验证:
+mock 掉 Tushare 和 DeepSeek API, 验证:
   - 关键词过滤逻辑
-  - Gemini JSON 解析 (包含 markdown 包裹)
+  - DeepSeek JSON 解析 (包含 markdown 包裹 + dict 包裹)
   - 事件 ID 生成
   - scan_news 集成流程
   - 情景模板映射
@@ -108,25 +108,26 @@ class TestScenarioMapping:
 
 
 # ═══════════════════════════════════════════════════
-#  Gemini JSON 解析
+#  DeepSeek JSON 解析
 # ═══════════════════════════════════════════════════
 
-class TestGeminiJsonParsing:
+class TestDeepSeekJsonParsing:
     @patch("engines.news_intelligence._load_ai_config")
     @patch("engines.news_intelligence.urllib.request.urlopen")
     def test_clean_json_response(self, mock_urlopen, mock_config):
         mock_config.return_value = {
-            "gemini": {"api_key": "test_key_12345", "model": "gemini-2.0-flash"},
+            "deepseek": {"api_key": "sk-test_key_12345678", "model": "deepseek-chat",
+                         "base_url": "https://api.deepseek.com"},
             "timeout_seconds": 10,
         }
         response_body = json.dumps({
-            "candidates": [{
-                "content": {
-                    "parts": [{"text": json.dumps([
+            "choices": [{
+                "message": {
+                    "content": json.dumps([
                         {"title": "央行降息", "category": "macro",
                          "impact_score": 8, "summary": "50bp降息",
                          "affected_assets": [], "scenario_hint": "rate_cut"}
-                    ])}]
+                    ])
                 }
             }]
         }).encode()
@@ -136,22 +137,26 @@ class TestGeminiJsonParsing:
         mock_resp.__exit__ = MagicMock(return_value=False)
         mock_urlopen.return_value = mock_resp
 
-        from engines.news_intelligence import _call_gemini_json
-        events = _call_gemini_json("test prompt")
+        from engines.news_intelligence import _call_deepseek_json
+        events = _call_deepseek_json("test prompt")
         assert len(events) == 1
         assert events[0]["title"] == "央行降息"
 
     @patch("engines.news_intelligence._load_ai_config")
     @patch("engines.news_intelligence.urllib.request.urlopen")
-    def test_markdown_wrapped_json(self, mock_urlopen, mock_config):
-        """Gemini 有时用 ```json 包裹"""
+    def test_dict_wrapped_events(self, mock_urlopen, mock_config):
+        """DeepSeek JSON mode 可能返回 {"events": [...]} 包裹格式"""
         mock_config.return_value = {
-            "gemini": {"api_key": "test_key_12345", "model": "gemini-2.0-flash"},
+            "deepseek": {"api_key": "sk-test_key_12345678", "model": "deepseek-chat",
+                         "base_url": "https://api.deepseek.com"},
             "timeout_seconds": 10,
         }
-        wrapped = '```json\n[{"title":"test","category":"macro","impact_score":5,"summary":"x","affected_assets":[],"scenario_hint":""}]\n```'
         response_body = json.dumps({
-            "candidates": [{"content": {"parts": [{"text": wrapped}]}}]
+            "choices": [{"message": {"content": json.dumps({
+                "events": [{"title": "VIX暴涨", "category": "risk",
+                            "impact_score": 9, "summary": "恐慌", 
+                            "affected_assets": [], "scenario_hint": "vix_spike"}]
+            })}}]
         }).encode()
         mock_resp = MagicMock()
         mock_resp.read.return_value = response_body
@@ -159,15 +164,40 @@ class TestGeminiJsonParsing:
         mock_resp.__exit__ = MagicMock(return_value=False)
         mock_urlopen.return_value = mock_resp
 
-        from engines.news_intelligence import _call_gemini_json
-        events = _call_gemini_json("test prompt")
+        from engines.news_intelligence import _call_deepseek_json
+        events = _call_deepseek_json("test prompt")
+        assert len(events) == 1
+        assert events[0]["title"] == "VIX暴涨"
+
+    @patch("engines.news_intelligence._load_ai_config")
+    @patch("engines.news_intelligence.urllib.request.urlopen")
+    def test_markdown_wrapped_json(self, mock_urlopen, mock_config):
+        """DeepSeek 有时用 ```json 包裹"""
+        mock_config.return_value = {
+            "deepseek": {"api_key": "sk-test_key_12345678", "model": "deepseek-chat",
+                         "base_url": "https://api.deepseek.com"},
+            "timeout_seconds": 10,
+        }
+        wrapped = '```json\n[{"title":"test","category":"macro","impact_score":5,"summary":"x","affected_assets":[],"scenario_hint":""}]\n```'
+        response_body = json.dumps({
+            "choices": [{"message": {"content": wrapped}}]
+        }).encode()
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = response_body
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+
+        from engines.news_intelligence import _call_deepseek_json
+        events = _call_deepseek_json("test prompt")
         assert len(events) == 1
 
     @patch("engines.news_intelligence._load_ai_config")
     def test_no_api_key_returns_empty(self, mock_config):
-        mock_config.return_value = {"gemini": {"api_key": "", "model": "test"}}
-        from engines.news_intelligence import _call_gemini_json
-        assert _call_gemini_json("test") == []
+        mock_config.return_value = {"deepseek": {"api_key": "", "model": "test",
+                                                  "base_url": "https://api.deepseek.com"}}
+        from engines.news_intelligence import _call_deepseek_json
+        assert _call_deepseek_json("test") == []
 
 
 # ═══════════════════════════════════════════════════
