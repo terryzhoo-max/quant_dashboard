@@ -103,10 +103,10 @@ def _compute_jcs_with_weights(snapshot: dict, weights: dict, n_core: int = 4) ->
     # V19.1: 中性距离加分
     distance_bonus = 0.0
     if directions.get("vix", 0) == 0:
-        vix_v = snapshot.get("vix_val", 20)
+        vix_v = snapshot.get("vix_val") or 20  # 审计修复: None 安全降级
         distance_bonus += max(0, (25 - vix_v) / 25) * 2.5
     if directions.get("erp", 0) == 0:
-        erp_s = snapshot.get("erp_score", 50)
+        erp_s = snapshot.get("erp_score") or 50  # 审计修复: None 安全降级
         distance_bonus += abs(erp_s - 50) / 50 * 2.5
     base_agreement += min(distance_bonus, 5.0)
 

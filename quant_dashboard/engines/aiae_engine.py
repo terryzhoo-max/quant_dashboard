@@ -190,12 +190,11 @@ AIAE_ETF_POOL = [
     {"ts_code": "159905.SZ", "name": "深红利ETF",  "style": "深市红利", "group": "dividend"},
 ]
 
-# ===== AIAE 五档 × ETF 仓位矩阵 (同档内各 ETF 相对权重占比) =====
-# 注意: 各档数值为"相对权重"而非绝对仓位百分比。
-# 实际仓位 = matrix_position × (etf_weight / sum_of_row_weights)
-# 例: Ⅰ级总和=110 → 沪深300ETF 实际占比 = 25/110 = 22.7% (× 仓位上限)
+# ===== AIAE 五档 × ETF 仓位矩阵 (绝对建议仓位, 单位: %) =====
+# 注意: 各档数值为"绝对建议仓位百分比", 直接输出为 suggested_position。
+# 行和随档位递减: Ⅰ级=110 > Ⅱ级=90 > Ⅲ级=65 > Ⅳ级=40 > Ⅴ级=15
 AIAE_ETF_MATRIX = {
-    #                300   50  500  创业 1000 红利 低波 深红  (和)
+    #                300   50  500  创业 1000 红利 低波 深红  (行和)
     1: {"510300.SH": 25, "510050.SH": 20, "510500.SH": 20, "159915.SZ": 15, "512100.SH": 10,
         "510880.SH": 10, "515180.SH":  5, "159905.SZ":  5},  # 110
     2: {"510300.SH": 25, "510050.SH": 20, "510500.SH": 15, "159915.SZ":  5, "512100.SH":  0,
@@ -970,6 +969,7 @@ class AIAEEngine:
                 "recorded_at": datetime.now().isoformat(),
                 "updated_at": datetime.now().isoformat(),
                 "source": "seed_estimate",
+                "is_seed": True,
             })
         
         if seed_entries:
@@ -1060,6 +1060,27 @@ class AIAEEngine:
                         "severity": "warning",
                         "message": f"{src_name}数据使用降级值，非实时",
                     })
+            # F4 加固: ERP 降级状态告警
+            erp_is_degraded = False
+            try:
+                erp_cache_file = os.path.join(CACHE_DIR, "aiae_erp_latest.json")
+                if os.path.exists(erp_cache_file):
+                    with open(erp_cache_file, 'r', encoding='utf-8') as f:
+                        erp_cache = json.load(f)
+                    erp_age_hours = (time.time() - datetime.fromisoformat(erp_cache.get("ts", datetime.now().isoformat())).timestamp()) / 3600
+                    if erp_age_hours > 48:
+                        erp_is_degraded = True
+                else:
+                    erp_is_degraded = True
+            except Exception:
+                erp_is_degraded = True
+            if erp_value == 3.5 or erp_is_degraded:
+                stale_warnings.append({
+                    "type": "erp_degraded",
+                    "severity": "warning",
+                    "message": f"ERP使用降级值({erp_value}%)，仓位矩阵查表结果可能偏中性",
+                    "erp_value": erp_value,
+                })
 
             return {
                 "status": "success",
@@ -1158,6 +1179,8 @@ class AIAEEngine:
             confidence, verdict, color = 3, "中性", "#94a3b8"
         elif regime == 3 and erp_value < 2.0:
             confidence, verdict, color = 3, "中性偏谨慎", "#eab308"
+        elif regime == 4 and erp_value >= 6.0:
+            confidence, verdict, color = 2, "极端矛盾 · AIAE偏热但ERP极度低估", "#f97316"
         elif regime == 4 and erp_value >= 4.0:
             confidence, verdict, color = 2, "矛盾信号 · 以保守为准", "#f97316"
         elif regime == 4 and erp_value < 4.0:
@@ -1232,7 +1255,7 @@ if __name__ == "__main__":
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
     engine = AIAEEngine()
-    print("=== AIAE Engine V2.0 Self-Test ===")
+    print("=== AIAE Engine V3.0 Self-Test ===")
     report = engine.generate_report()
     if report.get("status") in ("success", "fallback"):
         c = report["current"]

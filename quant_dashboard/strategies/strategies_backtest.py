@@ -265,17 +265,20 @@ def momentum_rotation_strategy_vectorized(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  宏观ERP择时策略 V1.0 (与 erp_timing_engine.py V2.0 评分公式对齐)
+#  宏观ERP择时策略 V2.0 (与 erp_timing_engine.py V3.0 Sigmoid 评分公式对齐)
+#  P0 fix: D1/D3/D4/D5 从 V2 分段线性升级到 V3 Sigmoid 连续化
+#  所有 Sigmoid 参数从 erp_params.py 读取 (Single Source of Truth)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+import erp_params as _ep
+
+
 def _score_d1_erp_abs_vec(erp_series: pd.Series) -> pd.Series:
-    """D1: ERP绝对值 → 0-100 (向量化, 对齐 erp_timing_engine._score_d1)"""
-    score = pd.Series(0.0, index=erp_series.index)
-    score = np.where(erp_series >= 6.0, 100,
-            np.where(erp_series >= 5.0, 70 + (erp_series - 5.0) * 30,
-            np.where(erp_series >= 4.0, 50 + (erp_series - 4.0) * 20,
-            np.where(erp_series >= 3.0, 25 + (erp_series - 3.0) * 25,
-            np.where(erp_series >= 2.0, (erp_series - 2.0) * 25, 0)))))
+    """D1: ERP绝对值 → 0-100 (V3 Sigmoid, 对齐 erp_timing_engine._score_d1_v3)
+    score = 100 / (1 + exp(-k * (erp - center)))
+    center=4.0% (A股历史中位数), k=1.5
+    """
+    score = 100.0 / (1.0 + np.exp(-_ep.D1_SIGMOID_K * (erp_series - _ep.D1_SIGMOID_CENTER)))
     return pd.Series(np.clip(score, 0, 100), index=erp_series.index)
 
 
@@ -291,43 +294,26 @@ def _score_d2_erp_pct_vec(erp_series: pd.Series, window: int = 1260) -> pd.Serie
 
 
 def _score_d3_m1_vec(m1_yoy: pd.Series) -> pd.Series:
-    """D3: M1同比趋势 → 0-100 (向量化, 对齐 erp_timing_engine._score_d3)"""
-    # 计算趋势: 当前 vs 3个月前 (约63个交易日)
+    """D3: M1同比趋势 → 0-100 (V3 双因子 Sigmoid 融合, 对齐 erp_timing_engine._score_d3_v3)
+    因子1 — M1水位: Sigmoid(m1_now, center=0, k=0.4)
+    因子2 — M1动量: Sigmoid(m1_now - m1_3m, center=0, k=0.5)
+    融合: 水位60% + 动量40%
+    """
     m1_3m_ago = m1_yoy.shift(63).fillna(m1_yoy)
-    m1_1m_ago = m1_yoy.shift(21).fillna(m1_yoy)
+    delta_3m = m1_yoy - m1_3m_ago
 
-    is_positive = m1_yoy > 0
-    is_rising = m1_yoy > m1_1m_ago
-    is_3m_rising = m1_yoy > m1_3m_ago
-
-    score = pd.Series(50.0, index=m1_yoy.index)
-
-    # 正增长 + 3月趋势上行 → 80-100
-    cond1 = is_positive & is_3m_rising
-    score = np.where(cond1, np.clip(80 + m1_yoy * 2, 80, 100), score)
-
-    # 正增长 + 环比回升 → 60-80
-    cond2 = is_positive & is_rising & ~is_3m_rising
-    score = np.where(cond2, np.clip(60 + m1_yoy * 2, 60, 80), score)
-
-    # 正增长但趋势下 → 40-60
-    cond3 = is_positive & ~is_rising
-    score = np.where(cond3, np.clip(40 + m1_yoy * 2, 40, 60), score)
-
-    # 负增长但拐头 → 30
-    cond4 = ~is_positive & is_rising
-    score = np.where(cond4, 30, score)
-
-    # 负增长且下行 → 0-20
-    cond5 = ~is_positive & ~is_rising
-    score = np.where(cond5, np.clip(20 + m1_yoy * 2, 0, 20), score)
+    level_score = 100.0 / (1.0 + np.exp(-_ep.D3_LEVEL_K * m1_yoy))
+    momentum_score = 100.0 / (1.0 + np.exp(-_ep.D3_MOMENTUM_K * delta_3m))
+    score = level_score * _ep.D3_LEVEL_WEIGHT + momentum_score * _ep.D3_MOMENTUM_WEIGHT
 
     return pd.Series(np.clip(score, 0, 100), index=m1_yoy.index)
 
 
 def _score_d4_vol_vec(pe_vol: pd.Series) -> pd.Series:
-    """D4: PE波动率 → 0-100 (逆向: 高波低分, 对齐 erp_timing_engine._score_d4)"""
-    # 滚动分位
+    """D4: PE波动率 → 0-100 (V3 反向 Sigmoid, 对齐 erp_timing_engine._score_d4_v3)
+    score = scale / (1 + exp(k * (vol_pct - center))) + floor
+    高波动 → 低分
+    """
     def rolling_vol_pct(arr):
         if len(arr) < 20:
             return 50.0
@@ -336,26 +322,23 @@ def _score_d4_vol_vec(pe_vol: pd.Series) -> pd.Series:
 
     vol_pct = pe_vol.rolling(500, min_periods=60).apply(rolling_vol_pct, raw=True).fillna(50.0)
 
-    score = pd.Series(70.0, index=pe_vol.index)
-    score = np.where(vol_pct >= 90, 15,      # 极度恐慌 (逆向机会)
-            np.where(vol_pct >= 70, 35,      # 高波
-            np.where(vol_pct >= 30, 70,      # 正常
-            90)))                              # 平静
+    score = _ep.D4_SIGMOID_SCALE / (1.0 + np.exp(_ep.D4_SIGMOID_K * (vol_pct - _ep.D4_SIGMOID_CENTER))) + _ep.D4_SIGMOID_FLOOR
+
     return pd.Series(np.clip(score, 0, 100), index=pe_vol.index)
 
 
 def _score_d5_credit_vec(scissor: pd.Series, m1_yoy: pd.Series) -> pd.Series:
-    """D5: 信用环境(M1-M2剪刀差) → 0-100 (对齐 erp_timing_engine._score_d5)"""
-    score = pd.Series(50.0, index=scissor.index)
-    score = np.where(scissor >= 0, np.clip(85 + scissor * 3, 85, 100),
-            np.where(scissor >= -3, 55 + (scissor + 3) * 10,
-            np.where(scissor >= -6, 25 + (scissor + 6) * 10,
-            np.clip(10 + scissor, 0, 25))))
+    """D5: 信用环境(M1-M2剪刀差) → 0-100 (V3 Sigmoid, 对齐 erp_timing_engine._score_d5_v3)
+    score = 100 / (1 + exp(-k * (scissor - center)))
+    center=-2.0 (历史中位数), k=0.4
+    趋势加分: 剪刀差为负但收窄中 → +8分 (V3.0 从10下调)
+    """
+    score = 100.0 / (1.0 + np.exp(-_ep.D5_SIGMOID_K * (scissor - _ep.D5_SIGMOID_CENTER)))
 
-    # 趋势修正: M1 3月趋势上行且剪刀差为负 → +10
+    # 趋势修正: M1 3月趋势上行且剪刀差为负 → +D5_TREND_BONUS
     m1_3m_ago = m1_yoy.shift(63).fillna(m1_yoy)
     is_improving = (m1_yoy > m1_3m_ago) & (scissor < 0)
-    score = np.where(is_improving, score + 10, score)
+    score = np.where(is_improving, score + _ep.D5_TREND_BONUS, score)
 
     return pd.Series(np.clip(score, 0, 100), index=scissor.index)
 
@@ -375,14 +358,22 @@ def erp_timing_strategy_vectorized(
     stop_loss: float = None,
 ) -> pd.Series:
     """
-    宏观ERP择时策略 V1.0 — 与 erp_timing_engine.py V2.0 五维评分完全对齐
+    宏观ERP择时策略 V2.0 — 与 erp_timing_engine.py V3.0 Sigmoid 评分完全对齐
 
     核心逻辑:
       1. 五维宏观评分 (D1-D5) 加权合成 composite_score
+         D1: Sigmoid(erp, center=4.0, k=1.5)
+         D2: 滚动分位 (不变)
+         D3: 双因子 Sigmoid (水位60% + 动量40%)
+         D4: 反向 Sigmoid (scale=85, floor=10)
+         D5: Sigmoid(scissor, center=-2.0, k=0.4) + 8分趋势加分
       2. composite >= buy_threshold  → 买入信号 (1)
       3. composite <= sell_threshold → 卖出信号 (-1)
       4. 其他 → 保持 (0)
       5. 内嵌止损
+
+    注: O7(动量修正)/O10(自适应权重)/O11(多时框确认)/O8(EMA平滑) 不纳入回测。
+        这四个后处理模块合计贡献 ±8分 (8%), 向量化代价高, 不影响核心公式验证。
 
     参数:
       df:             ETF 价格 DataFrame (需含 close 列, DatetimeIndex)
@@ -427,7 +418,7 @@ def erp_timing_strategy_vectorized(
     aligned = m.reindex(dates, method='ffill')
     aligned = aligned.ffill().bfill()
 
-    # 五维评分
+    # 五维评分 (V3.0 Sigmoid)
     d1 = _score_d1_erp_abs_vec(aligned['erp'])
     d2 = _score_d2_erp_pct_vec(aligned['erp'], window=erp_window)
     d3 = _score_d3_m1_vec(aligned['m1_yoy'])

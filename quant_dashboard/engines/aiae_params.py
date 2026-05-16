@@ -23,17 +23,24 @@ W_AIAE_SIMPLE  = 0.55   # AIAE_简 (月频M2 + 日频市值) — 核心信号，
 W_FUND_POS     = 0.20   # 基金仓位 (季频手动) — 滞后因子，降权
 W_MARGIN_HEAT  = 0.25   # 融资热度 (日频自动) — 唯一高频因子，升权
 
+assert abs(W_AIAE_SIMPLE + W_FUND_POS + W_MARGIN_HEAT - 1.0) < 1e-9, \
+    f"三维权重总和 ≠ 1.0: {W_AIAE_SIMPLE + W_FUND_POS + W_MARGIN_HEAT}"
+
 # ──── 基金仓位 Sigmoid 归一化参数 ────
 # 历史实际分布: 68-92% (2019-2026 偏股型基金)
 # 旧区间 60-95% 过宽，底部/顶部区分能力丧失
 FUND_SIGMOID_CENTER = 80.0   # 偏股基金仓位中位数 (%)
 FUND_SIGMOID_K      = 0.15   # 斜率: 68%→11.4 AIAE等效, 80%→20.0, 92%→28.6
+# 有效贡献区间: W_FUND_POS × [sigmoid(68%), sigmoid(92%)] = [2.28, 5.72] AIAE pt
+# 即基金仓位从极低(68%)到极高(92%)对 AIAE_V1 的影响幅度 ≈ 3.4pt
 
 # ──── 融资热度 Sigmoid 归一化参数 ────
 # 历史实际分布: 1.2-3.5% (2019-2026, 杠杆监管趋严后)
 # 旧区间 1-4% 上限几乎触不到，顶部信号钝化
 MARGIN_SIGMOID_CENTER = 2.2  # 融资占比中位数 (%)
 MARGIN_SIGMOID_K      = 2.5  # 斜率: 1.2%→9.8 AIAE等效, 2.2%→20.0, 3.5%→31.1
+# 有效贡献区间: W_MARGIN_HEAT × [sigmoid(1.2%), sigmoid(3.5%)] = [2.46, 7.78] AIAE pt
+# 即融资热度从极低(1.2%)到极高(3.5%)对 AIAE_V1 的影响幅度 ≈ 5.3pt
 
 # ──── 归一化输出区间 ────
 NORM_MIN = 8.0    # AIAE 等效最小值 (对应极度恐慌)
@@ -53,7 +60,12 @@ NORM_MAX = 32.0   # AIAE 等效最大值 (对应极度过热)
 REGIME_THRESHOLDS = [12.5, 17, 23, 30]  # [Ⅰ/Ⅱ, Ⅱ/Ⅲ, Ⅲ/Ⅳ, Ⅳ/Ⅴ]
 
 # 分界线平滑缓冲带 (±BUFFER 内做线性插值, 消除仓位跳变)
+# 前提约束: BUFFER < min(相邻分界线间距) / 2, 否则缓冲带重叠
 REGIME_SMOOTH_BUFFER = 1.5  # AIAE 百分点
+
+_min_gap = min(REGIME_THRESHOLDS[i+1] - REGIME_THRESHOLDS[i] for i in range(len(REGIME_THRESHOLDS)-1))
+assert REGIME_SMOOTH_BUFFER < _min_gap / 2, \
+    f"REGIME_SMOOTH_BUFFER({REGIME_SMOOTH_BUFFER}) 必须 < 最小分界线间距({_min_gap})/2={_min_gap/2}"
 
 # ═══════════════════════════════════════════════════════════════
 #  仓位矩阵 (V3.0 微调)
@@ -79,6 +91,10 @@ SUB_STRATEGY_ALLOC = {
     4: {"mr": 10, "div": 50, "mom": 15, "erp": 25},  # Ⅳ级: 系统减仓
     5: {"mr":  0, "div": 80, "mom":  0, "erp": 20},  # Ⅴ级: 清仓防守
 }
+
+for _regime, _alloc in SUB_STRATEGY_ALLOC.items():
+    _row_sum = sum(_alloc.values())
+    assert _row_sum == 100, f"SUB_STRATEGY_ALLOC[{_regime}] 行和={_row_sum}, 应为100"
 
 # ═══════════════════════════════════════════════════════════════
 #  告警阈值

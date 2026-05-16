@@ -20,6 +20,12 @@ from services.logger import get_logger
 
 logger = get_logger("ac.decision")
 
+# V3.1: ERP Sigmoid 参数从 erp_params 读取 (消除硬编码漂移)
+try:
+    from engines.erp_params import D1_SIGMOID_CENTER as _ERP_CENTER, D1_SIGMOID_K as _ERP_K
+except ImportError:
+    _ERP_CENTER, _ERP_K = 4.0, 1.5  # fallback
+
 
 # ═══════════════════════════════════════════════════════════
 #  预设情景库 (8 个核心情景)
@@ -281,11 +287,11 @@ def compute_jcs(snapshot: dict) -> dict:
     # VIX=16 (安全) vs VIX=24 (临界) 不应得分相同
     distance_bonus = 0.0
     if directions["vix"] == 0:
-        vix_v = snapshot.get("vix_val", 20)
+        vix_v = snapshot.get("vix_val") or 20  # 审计修复: None 安全降级
         # VIX 离恐慌线 (25) 越远越安全, 最多+2.5
         distance_bonus += max(0, (25 - vix_v) / 25) * 2.5
     if directions["erp"] == 0:
-        erp_s = snapshot.get("erp_score", 50)
+        erp_s = snapshot.get("erp_score") or 50  # 审计修复: None 安全降级
         # ERP 偏离中位 50 越远, 方向性越明确, 最多+2.5
         distance_bonus += abs(erp_s - 50) / 50 * 2.5
     base_agreement += min(distance_bonus, 5.0)  # 总距离分上限 5
@@ -476,11 +482,10 @@ def simulate_scenario(scenario_id: str, current_snapshot: dict) -> dict:
         after["suggested_position"] = _REGIME_CAP_MAP.get(new_regime, 55)
         after["aiae_regime_cn"] = _REGIME_CN_MAP.get(new_regime, "中性均衡")
 
-    # V17.0: ERP 值变化时联动重算 erp_score (Sigmoid 映射)
+    # V17.0→V3.1: ERP 值变化时联动重算 erp_score (从 erp_params 读取 Sigmoid 参数)
     if "erp_val" in deltas:
         erp_v = after["erp_val"]
-        # 复用 ERP 绝对值→分位的近似映射: ERP 3%→20分, 4.5%→50分, 6%→80分
-        _erp_x = max(-20, min(20, 2.5 * (erp_v - 4.5)))
+        _erp_x = max(-20, min(20, _ERP_K * (erp_v - _ERP_CENTER)))
         after["erp_score"] = round(100.0 / (1.0 + math.exp(-_erp_x)), 1)
 
     if deltas.get("is_circuit_breaker"):
@@ -951,14 +956,20 @@ def generate_alerts(snapshot: dict) -> list:
 #  V19.0: 全球市场温度聚合 (纯缓存读取, 零 API 调用)
 # ═══════════════════════════════════════════════════════════
 
+# V3.0 加固: CN 分界线从参数中心派生, 消除硬编码漂移 (与 temperature.py 同步)
+try:
+    from aiae_params import REGIME_THRESHOLDS as _DE_CN_THRESHOLDS
+except ImportError:
+    _DE_CN_THRESHOLDS = [12.5, 17, 23, 30]
+
 # 各市场 AIAE 五档定义 (从各引擎同步, 用于 action 文案)
 _GLOBAL_REGIMES = {
     "cn": {
-        1: {"cn": "极度恐慌", "emoji": "🟢", "color": "#10b981", "action": "满配进攻", "range": "<12.5%", "pos": "90-95%"},
-        2: {"cn": "低配置区", "emoji": "🔵", "color": "#3b82f6", "action": "标准建仓", "range": "12.5-17%", "pos": "70-85%"},
-        3: {"cn": "中性均衡", "emoji": "🟡", "color": "#eab308", "action": "均衡持有", "range": "17-23%", "pos": "50-65%"},
-        4: {"cn": "偏热区域", "emoji": "🟠", "color": "#f97316", "action": "系统减仓", "range": "23-30%", "pos": "25-40%"},
-        5: {"cn": "极度过热", "emoji": "🔴", "color": "#ef4444", "action": "清仓防守", "range": ">30%", "pos": "0-15%"},
+        1: {"cn": "极度恐慌", "emoji": "🟢", "color": "#10b981", "action": "满配进攻", "range": f"<{_DE_CN_THRESHOLDS[0]}%", "pos": "90-95%"},
+        2: {"cn": "低配置区", "emoji": "🔵", "color": "#3b82f6", "action": "标准建仓", "range": f"{_DE_CN_THRESHOLDS[0]}-{_DE_CN_THRESHOLDS[1]}%", "pos": "70-85%"},
+        3: {"cn": "中性均衡", "emoji": "🟡", "color": "#eab308", "action": "均衡持有", "range": f"{_DE_CN_THRESHOLDS[1]}-{_DE_CN_THRESHOLDS[2]}%", "pos": "50-65%"},
+        4: {"cn": "偏热区域", "emoji": "🟠", "color": "#f97316", "action": "系统减仓", "range": f"{_DE_CN_THRESHOLDS[2]}-{_DE_CN_THRESHOLDS[3]}%", "pos": "25-40%"},
+        5: {"cn": "极度过热", "emoji": "🔴", "color": "#ef4444", "action": "清仓防守", "range": f">{_DE_CN_THRESHOLDS[3]}%", "pos": "0-15%"},
     },
     "us": {
         1: {"cn": "极度恐慌", "emoji": "🟢", "color": "#10b981", "action": "满配进攻", "range": "<15%", "pos": "90-95%"},
@@ -992,7 +1003,7 @@ except ImportError:
 
 # 各市场 AIAE gauge 色带阈值 (用于 ECharts)
 _GLOBAL_GAUGE_BANDS = {
-    "cn": [12.5, 17, 23, 30, 40],
+    "cn": _DE_CN_THRESHOLDS + [40],  # 从参数中心派生 + gauge 满刻度
     "us": [15, 20, 27, 34, 45],
     "hk": [8, 12, 18, 25, 35],
     "jp": [10, 14, 20, 28, 40],
@@ -2299,9 +2310,9 @@ def apply_shock_to_snapshot(snapshot: dict, node_impacts: dict) -> dict:
                 after[sk] = round(after[sk] + mapper(shock), 2)
 
     # ── 衍生变量联动 ──
-    # ERP score 联锁
+    # ERP score 联锁 (V3.1: 参数从 erp_params 读取)
     if "erp_val" in after and after["erp_val"] is not None:
-        _x = max(-20, min(20, 2.5 * (after["erp_val"] - 4.5)))
+        _x = max(-20, min(20, _ERP_K * (after["erp_val"] - _ERP_CENTER)))
         after["erp_score"] = round(100.0 / (1.0 + math.exp(-_x)), 1)
 
     # VIX score 联锁

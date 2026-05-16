@@ -108,17 +108,20 @@ OPTIMIZER_DEFAULTS = {
 #  元信息
 # ═══════════════════════════════════════════════════════════════
 
-VERSION = "3.0"
+VERSION = "3.1"
 OPTIMIZED_AT = "2026-04-21"
 OPTIMIZER_RANK = 1
 COMPOSITE_SHARPE = 1.019
-BACKTEST_GRADE = {"IS": "D", "OOS": "A"}  # IS 2018-2023, OOS 2024-2025
+# NOTE: BACKTEST_GRADE 基于 V2 公式优化, V3.1 对齐后需重新回测更新
+# 回测策略层已于 2026-05-16 升级到 V3 Sigmoid (strategies_backtest.py P0 fix)
+BACKTEST_GRADE = {"IS": "D", "OOS": "A", "_formula_version": "v2_stale"}
 V3_CHANGELOG = [
     "D5 信用环境 Sigmoid 平滑化 (center=-2.0, k=0.4)",
     "O7 ERP动量修正 Sigmoid 连续化 (scale=5, k=0.15)",
     "O11 多时框确认阈值收紧 (±5% → ±10%)",
     "O8 EMA 平滑状态持久化",
     "前端阈值统一管理 (FRONTEND_ERP_BULLISH/BEARISH)",
+    "V3.1: 回测策略层 D1/D3/D4/D5 升级到 V3 Sigmoid (P0 fix, 2026-05-16)",
 ]
 
 # ═══════════════════════════════════════════════════════════════

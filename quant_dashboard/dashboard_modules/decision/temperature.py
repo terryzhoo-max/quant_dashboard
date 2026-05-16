@@ -13,14 +13,20 @@ AlphaCore · 全球市场温度聚合
 
 from services.cache_service import cache_manager
 
+# V3.0 加固: CN 分界线从参数中心派生, 消除硬编码漂移
+try:
+    from aiae_params import REGIME_THRESHOLDS as _CN_THRESHOLDS
+except ImportError:
+    _CN_THRESHOLDS = [12.5, 17, 23, 30]
+
 # 各市场 AIAE 五档定义 (从各引擎同步, 用于 action 文案)
 _GLOBAL_REGIMES = {
     "cn": {
-        1: {"cn": "极度恐慌", "emoji": "🟢", "color": "#10b981", "action": "满配进攻", "range": "<12.5%", "pos": "90-95%"},
-        2: {"cn": "低配置区", "emoji": "🔵", "color": "#3b82f6", "action": "标准建仓", "range": "12.5-17%", "pos": "70-85%"},
-        3: {"cn": "中性均衡", "emoji": "🟡", "color": "#eab308", "action": "均衡持有", "range": "17-23%", "pos": "50-65%"},
-        4: {"cn": "偏热区域", "emoji": "🟠", "color": "#f97316", "action": "系统减仓", "range": "23-30%", "pos": "25-40%"},
-        5: {"cn": "极度过热", "emoji": "🔴", "color": "#ef4444", "action": "清仓防守", "range": ">30%", "pos": "0-15%"},
+        1: {"cn": "极度恐慌", "emoji": "🟢", "color": "#10b981", "action": "满配进攻", "range": f"<{_CN_THRESHOLDS[0]}%", "pos": "90-95%"},
+        2: {"cn": "低配置区", "emoji": "🔵", "color": "#3b82f6", "action": "标准建仓", "range": f"{_CN_THRESHOLDS[0]}-{_CN_THRESHOLDS[1]}%", "pos": "70-85%"},
+        3: {"cn": "中性均衡", "emoji": "🟡", "color": "#eab308", "action": "均衡持有", "range": f"{_CN_THRESHOLDS[1]}-{_CN_THRESHOLDS[2]}%", "pos": "50-65%"},
+        4: {"cn": "偏热区域", "emoji": "🟠", "color": "#f97316", "action": "系统减仓", "range": f"{_CN_THRESHOLDS[2]}-{_CN_THRESHOLDS[3]}%", "pos": "25-40%"},
+        5: {"cn": "极度过热", "emoji": "🔴", "color": "#ef4444", "action": "清仓防守", "range": f">{_CN_THRESHOLDS[3]}%", "pos": "0-15%"},
     },
     "us": {
         1: {"cn": "极度恐慌", "emoji": "🟢", "color": "#10b981", "action": "满配进攻", "range": "<15%", "pos": "90-95%"},
@@ -54,7 +60,7 @@ except ImportError:
 
 # 各市场 AIAE gauge 色带阈值 (用于 ECharts)
 _GLOBAL_GAUGE_BANDS = {
-    "cn": [12.5, 17, 23, 30, 40],
+    "cn": _CN_THRESHOLDS + [40],  # 前4个从参数中心派生, 最后一个为 gauge 满刻度
     "us": [15, 20, 27, 34, 45],
     "hk": [8, 12, 18, 25, 35],
     "jp": [10, 14, 20, 28, 40],
