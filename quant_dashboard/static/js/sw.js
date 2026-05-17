@@ -8,7 +8,7 @@
  *   - CDN 资源 (ECharts/Fonts): Cache-First (长期缓存)
  */
 
-const CACHE_VERSION = 'alphacore-v2';
+const CACHE_VERSION = 'alphacore-v3';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const API_CACHE = `${CACHE_VERSION}-api`;
 

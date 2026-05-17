@@ -1070,6 +1070,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // V8.0: 新增模块异步加载 (不阻塞主数据流)
     fetchAndRenderGlobalPulse();
     fetchAndRenderIntelligenceFeed();
+
+    // 辅助决策模块: 延迟加载 (避免与 dashboard-data 竞争)
+    setTimeout(() => {
+        fetchDecisionSummary();
+        fetchAlertBell();
+    }, 800);
+
+    // 预警铃铛交互
+    const bellWrap = document.getElementById('alert-bell-wrap');
+    if (bellWrap) {
+        bellWrap.addEventListener('click', (e) => {
+            e.stopPropagation();
+            bellWrap.classList.toggle('open');
+        });
+        document.addEventListener('click', () => bellWrap.classList.remove('open'));
+    }
 });
 
 // ====== ERP 历史走势 V3.0 · 四档区间可视化 (近11.3年) ======
@@ -1535,6 +1551,329 @@ function renderAIAEThermometer(d) {
         }
     };
 })();
+
+// ═══════════════════════════════════════════════════════════
+//  辅助决策模块 · Decision Support Module
+//  从 /api/v1/decision/hub + /alerts 拉取数据
+// ═══════════════════════════════════════════════════════════
+
+let _decisionHubData = null; // 全局缓存，供 renderPositionHub 共振使用
+
+async function fetchDecisionSummary() {
+    try {
+        const resp = await fetch('/api/v1/decision/hub');
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const hub = await resp.json();
+        _decisionHubData = hub;
+        renderDecisionSummary(hub);
+        renderDecisionSupport(hub);
+    } catch (err) {
+        console.warn('[Decision Support] 加载降级:', err.message);
+        renderDecisionSummaryFallback();
+    }
+}
+
+function renderDecisionSummary(hub) {
+    const jcs = hub.jcs || {};
+    const score = jcs.score || 0;
+    const level = jcs.level || 'medium';
+    const conflicts = hub.conflicts || {};
+    const conflictList = conflicts.conflicts || [];
+    const actionableConflicts = conflictList.filter(c => c.severity === 'high' || c.severity === 'medium');
+
+    // ── JCS 环形分数 ──
+    const jcsFill = el('qa-jcs-fill');
+    const jcsScore = el('qa-jcs-score');
+    const CIRC = 2 * Math.PI * 18; // r=18
+    if (jcsFill) {
+        const pct = Math.min(100, Math.max(0, score));
+        const dashLen = (pct / 100) * CIRC;
+        jcsFill.setAttribute('stroke-dasharray', `${dashLen} ${CIRC - dashLen}`);
+        const strokeColor = score >= 70 ? '#10b981' : score >= 40 ? '#f59e0b' : '#ef4444';
+        jcsFill.style.stroke = strokeColor;
+    }
+    if (jcsScore) jcsScore.textContent = Math.round(score);
+
+    // ── 主结论 (直接消费后端 action_plan) ──
+    const actionLabel = el('qa-action-label');
+    const reasoning = el('qa-reasoning');
+    const snapshot = hub.snapshot || {};
+    const plan = hub.action_plan || {};
+
+    // 优先使用后端精算的 action_label，fallback 到 regime 映射
+    if (actionLabel) {
+        if (plan.action_label) {
+            const planIcon = plan.action_icon || '⚖️';
+            actionLabel.textContent = `${planIcon} ${plan.action_label}`;
+        } else {
+            const actionMap = {1:'🟢 满配进攻',2:'🔵 标准建仓',3:'🟡 均衡持有',4:'🟠 系统减仓',5:'🔴 清仓防守'};
+            actionLabel.textContent = actionMap[snapshot.aiae_regime || 3] || actionMap[3];
+        }
+    }
+
+    // 构造 reasoning: 优先用后端 reasoning，fallback 拼接
+    if (reasoning) {
+        if (plan.reasoning) {
+            reasoning.textContent = plan.reasoning;
+        } else {
+            const parts = [];
+            if (jcs.label) parts.push(`JCS ${jcs.label}`);
+            if (snapshot.erp_val != null) parts.push(`ERP ${snapshot.erp_val}%`);
+            if (snapshot.vix_val != null) parts.push(`VIX ${snapshot.vix_val}`);
+            reasoning.textContent = parts.join(' · ') || '数据同步中...';
+        }
+    }
+
+    // ── 矛盾徽章 ──
+    const conflictBadge = el('qa-conflict-badge');
+    const conflictCount = el('qa-conflict-count');
+    if (actionableConflicts.length > 0) {
+        if (conflictBadge) conflictBadge.style.display = 'flex';
+        if (conflictCount) conflictCount.textContent = actionableConflicts.length;
+    } else {
+        if (conflictBadge) conflictBadge.style.display = 'none';
+    }
+}
+
+function renderDecisionSummaryFallback() {
+    const actionLabel = el('qa-action-label');
+    const reasoning = el('qa-reasoning');
+    if (actionLabel) actionLabel.textContent = '决策中枢离线';
+    if (reasoning) reasoning.textContent = '启动 main.py 后自动连接';
+}
+
+function renderDecisionSupport(hub) {
+    const snapshot = hub.snapshot || {};
+    const jcs = hub.jcs || {};
+    const conflicts = hub.conflicts || {};
+    const conflictList = conflicts.conflicts || [];
+    const plan = hub.action_plan || {};
+
+    // ═══════ 左栏: 仓位缺口 (P0修复: 直接读后端 action_plan) ═══════
+    const currentPos = plan.current_position != null && plan.current_position >= 0
+        ? plan.current_position : null;
+    const targetPos = plan.position_target != null
+        ? plan.position_target : (snapshot.suggested_position || 55);
+    const gap = plan.position_gap != null
+        ? plan.position_gap : (currentPos != null ? targetPos - currentPos : null);
+
+    if (el('ds-gap-current')) {
+        el('ds-gap-current').textContent = currentPos != null ? currentPos.toFixed(1) + '%' : '--';
+    }
+    if (el('ds-gap-target')) {
+        el('ds-gap-target').textContent = targetPos + '%';
+    }
+
+    const deltaEl = el('ds-gap-delta');
+    if (deltaEl && gap != null) {
+        const sign = gap > 0 ? '+' : '';
+        deltaEl.textContent = sign + gap.toFixed(1) + 'pp';
+        deltaEl.className = 'ds-gap-delta ' + (gap > 2 ? 'gap-positive' : gap < -2 ? 'gap-negative' : 'gap-zero');
+    } else if (deltaEl) {
+        deltaEl.textContent = '--';
+        deltaEl.className = 'ds-gap-delta gap-zero';
+    }
+
+    const noteEl = el('ds-gap-note');
+    if (noteEl && gap != null) {
+        if (Math.abs(gap) <= 2) noteEl.textContent = '✅ 仓位接近目标，无需调整';
+        else if (gap > 0) noteEl.textContent = `📈 可加仓 ${gap.toFixed(1)}pp，建议分 2-3 批执行`;
+        else noteEl.textContent = `📉 需减仓 ${Math.abs(gap).toFixed(1)}pp，优先清退高波动标的`;
+    } else if (noteEl) {
+        noteEl.textContent = '仓位数据不可用';
+    }
+
+    // ECharts 半圆仪表
+    const ringEl = el('ds-gap-ring');
+    const displayCurrent = currentPos != null ? currentPos : (snapshot.suggested_position || 55);
+    if (ringEl && typeof echarts !== 'undefined') {
+        const gapChart = AC.registerChart(echarts.init(ringEl));
+        const gapColor = gap != null ? (gap > 2 ? '#10b981' : gap < -2 ? '#ef4444' : '#f59e0b') : '#64748b';
+        const safeTarget = Math.min(targetPos, 100);
+        gapChart.setOption({
+            series: [{
+                type: 'gauge', startAngle: 200, endAngle: -20,
+                min: 0, max: 100,
+                pointer: {
+                    show: true, length: '55%', width: 3,
+                    itemStyle: { color: gapColor, shadowColor: gapColor, shadowBlur: 4 },
+                    icon: 'triangle'
+                },
+                anchor: { show: true, size: 6, itemStyle: { color: '#0f172a', borderColor: gapColor, borderWidth: 2 } },
+                axisLine: {
+                    lineStyle: {
+                        width: 10,
+                        color: [[displayCurrent/100, '#3b82f6'], [safeTarget/100, 'rgba(255,255,255,0.06)'], [1, 'rgba(255,255,255,0.03)']]
+                    }
+                },
+                axisTick: { show: false },
+                splitLine: { show: false },
+                axisLabel: { show: false },
+                detail: { show: false },
+                data: [{ value: displayCurrent }],
+                animationDuration: 1000
+            }]
+        });
+    }
+
+    // ═══════ 中栏: 信号矛盾 (P1修复: 字段名 conflicts.conflicts) ═══════
+    const actionableConflicts = conflictList.filter(c => c.severity === 'high' || c.severity === 'medium');
+    const totalEl = el('ds-conflict-total');
+    const summaryEl = el('ds-conflict-summary');
+    const listEl = el('ds-conflict-list');
+
+    if (totalEl) {
+        const count = actionableConflicts.length;
+        totalEl.textContent = count === 0 ? '✓ 0' : count;
+        totalEl.className = 'ds-conflict-total ' + (
+            count === 0 ? 'ct-clean' : count >= 2 ? 'ct-danger' : 'ct-warn'
+        );
+    }
+
+    if (summaryEl) {
+        summaryEl.textContent = conflicts.matrix_summary
+            || (actionableConflicts.length === 0
+                ? '各引擎方向一致，信号共振'
+                : `检测到 ${actionableConflicts.length} 条可操作矛盾信号`);
+    }
+
+    if (listEl) {
+        if (actionableConflicts.length === 0) {
+            listEl.innerHTML = '<div class="ds-conflict-clean">🟢 信号共振 · 无引擎冲突</div>';
+        } else {
+            listEl.innerHTML = actionableConflicts.map(c => {
+                const sevClass = c.severity === 'high' ? 'sev-high' : 'sev-medium';
+                // 从 desc 字段解析引擎对比 (后端格式: "AIAE偏热(减仓) × ERP看多(加仓)")
+                let engineTags = '';
+                const descMatch = (c.desc || '').match(/^(\S+?)[偏看处].*[×x]\s*(\S+?)[偏看处]/i);
+                if (descMatch) {
+                    engineTags = `
+                        <div class="ds-conflict-engines">
+                            <span class="ds-conflict-engine-tag">${descMatch[1]}</span>
+                            <span class="ds-conflict-vs">×</span>
+                            <span class="ds-conflict-engine-tag">${descMatch[2]}</span>
+                        </div>`;
+                }
+                return `
+                    <div class="ds-conflict-item ${sevClass}">
+                        ${engineTags}
+                        <div class="ds-conflict-desc">${c.desc || '--'}</div>
+                        ${c.action ? `<div class="ds-conflict-action">→ ${c.action}</div>` : ''}
+                    </div>`;
+            }).join('');
+        }
+    }
+
+    // ═══════ 右栏: 执行建议 (P0修复: 直接消费 action_plan) ═══════
+    const heroEl = el('ds-action-hero');
+    const iconEl = el('ds-action-icon');
+    const textEl = el('ds-action-text');
+    const directivesEl = el('ds-action-directives');
+    const nextEl = el('ds-action-next');
+
+    // 行动标签: 优先用后端 action_plan，fallback 到简单 3 档
+    const actionIcon = plan.action_icon || '⚖️';
+    const actionText = plan.action_label || '均衡持有';
+    const confidence = plan.confidence || 'medium';
+    const heroClassMap = { high: 'action-bullish', low: 'action-bearish', medium: 'action-neutral' };
+    // 精细化: 基于 action_label 内容判断 hero 样式
+    let heroClass = heroClassMap[confidence] || 'action-neutral';
+    if (/加仓|进攻/.test(actionText)) heroClass = 'action-bullish';
+    else if (/减仓|防守|清仓|暂停/.test(actionText)) heroClass = 'action-bearish';
+
+    if (heroEl) heroEl.className = 'ds-action-hero ' + heroClass;
+    if (iconEl) iconEl.textContent = actionIcon;
+    if (textEl) textEl.textContent = actionText;
+
+    // 指令列表: 消费 action_plan 的结构化字段
+    if (directivesEl) {
+        const items = [];
+        // top_signals: 后端引擎级信号摘要
+        const signals = plan.top_signals || [];
+        signals.forEach(s => items.push({ icon: '📡', text: s }));
+        // risk_note: 风控提示 (含仓位缺口分析)
+        if (plan.risk_note) items.push({ icon: '🛡️', text: plan.risk_note });
+        // ERP 估值状态
+        if (items.length === 0 && snapshot.erp_val != null) {
+            const erpAction = snapshot.erp_val >= 5 ? '估值吸引力高' : snapshot.erp_val <= 3 ? '估值偏贵' : '估值中性';
+            items.push({ icon: '📊', text: `ERP ${snapshot.erp_val}% → ${erpAction}` });
+        }
+        // 矛盾提示
+        if (actionableConflicts.length > 0) {
+            items.push({ icon: '⚠️', text: `${actionableConflicts.length} 条矛盾未解，建议保守执行` });
+        }
+
+        directivesEl.innerHTML = items.slice(0, 4).map(d => `
+            <div class="ds-directive-item">
+                <span class="ds-directive-icon">${d.icon}</span>
+                <span class="ds-directive-text">${d.text}</span>
+            </div>`).join('');
+    }
+
+    // 下次检查: 用后端 next_check，fallback 到 SWR TTL
+    if (nextEl) {
+        if (plan.next_check) {
+            nextEl.textContent = `📋 ${plan.next_check}`;
+        } else {
+            const now = new Date();
+            const next = new Date(now.getTime() + 5 * 60 * 1000);
+            nextEl.textContent = `下次同步: ${next.getHours()}:${String(next.getMinutes()).padStart(2, '0')}`;
+        }
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════
+//  预警铃铛 · Alert Bell
+// ═══════════════════════════════════════════════════════════
+
+async function fetchAlertBell() {
+    try {
+        const resp = await fetch('/api/v1/decision/alerts?limit=5');
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const json = await resp.json();
+        renderAlertBell(json);
+    } catch (err) {
+        console.warn('[Alert Bell] 加载降级:', err.message);
+    }
+}
+
+function renderAlertBell(data) {
+    const badge = el('alert-bell-badge');
+    const list = el('alert-bell-list');
+    const unread = data.unread_count || 0;
+    const alerts = data.alerts || [];
+
+    if (badge) {
+        if (unread > 0) {
+            badge.style.display = 'flex';
+            badge.textContent = unread > 9 ? '9+' : unread;
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+
+    if (list) {
+        if (alerts.length === 0) {
+            list.innerHTML = '<div class="abp-empty">🟢 暂无预警 · 信号正常</div>';
+        } else {
+            list.innerHTML = alerts.map(a => {
+                const sevClass = a.severity === 'high' ? 'abp-sev-high' : a.severity === 'medium' ? 'abp-sev-medium' : 'abp-sev-low';
+                const icon = a.severity === 'high' ? '🔴' : a.severity === 'medium' ? '🟡' : '🔵';
+                const time = a.created_at ? new Date(a.created_at).toLocaleString('zh-CN', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+                return `
+                    <a href="./decision.html#alerts" class="abp-item ${sevClass}">
+                        <span class="abp-item-icon">${icon}</span>
+                        <div class="abp-item-body">
+                            <div class="abp-item-title">${a.title || a.message || '--'}</div>
+                            <div class="abp-item-meta">${a.source || ''} · ${time}</div>
+                        </div>
+                    </a>`;
+            }).join('');
+        }
+    }
+}
+
 
 // ═══════════════════════════════════════════════════════════
 //  V8.0 模块 D: 系统健康指示器 (System Health Indicator)

@@ -190,14 +190,14 @@
 
 
 /* ═══════════════════════════════════════════════════
-   3. 快速决策行动条 (Quick Action Strip)
+   3. 快速决策行动条 · JCS 驱动版
    ── 主页首屏核心决策组件 ──
    ═══════════════════════════════════════════════════ */
 
 .quick-action-strip {
     display: flex;
     align-items: center;
-    gap: 20px;
+    gap: 18px;
     padding: 14px 24px;
     border-radius: var(--radius-card);
     position: relative;
@@ -214,118 +214,426 @@
 .quick-action-strip::before {
     content: '';
     position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
+    top: 0; left: 0; right: 0;
     height: 2px;
     background: linear-gradient(90deg, transparent, #f59e0b, #a78bfa, transparent);
     opacity: 0.6;
 }
 
+/* ── JCS 环形分数 ── */
+.qa-jcs-ring {
+    width: 48px; height: 48px;
+    position: relative;
+    flex-shrink: 0;
+}
+.qa-jcs-svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.qa-jcs-bg {
+    fill: none; stroke: rgba(255,255,255,0.06); stroke-width: 3;
+}
+.qa-jcs-fill {
+    fill: none; stroke: var(--success); stroke-width: 3;
+    stroke-linecap: round;
+    transition: stroke-dasharray 1s cubic-bezier(0.34,1.56,0.64,1), stroke 0.4s ease;
+}
+.qa-jcs-score {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+    font-size: 0.92rem; font-weight: 900;
+    font-family: var(--font-mono);
+    color: #f8fafc;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── 主结论列 ── */
+.qa-main-col {
+    display: flex; flex-direction: column; gap: 2px;
+    min-width: 0; flex: 1;
+}
+.qa-action-label {
+    font-size: 0.92rem; font-weight: 800; color: #f8fafc;
+    letter-spacing: 0.2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.qa-reasoning {
+    font-size: 0.72rem; color: #94a3b8;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
 /* 心态标签 */
 .qa-mindset {
-    font-size: 0.88rem;
+    font-size: 0.78rem;
     font-weight: 700;
     color: #f8fafc;
-    padding: 6px 16px;
+    padding: 5px 14px;
     border-radius: 8px;
     background: rgba(59, 130, 246, 0.12);
     border-left: 3px solid var(--accent);
     white-space: nowrap;
     flex-shrink: 0;
     letter-spacing: 0.3px;
-    max-width: 200px;
+    max-width: 180px;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
 /* 仓位区 */
 .qa-position {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-shrink: 0;
+    display: flex; align-items: center; gap: 6px; flex-shrink: 0;
 }
-
 .qa-label {
-    font-size: 0.7rem;
-    color: #94a3b8;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    white-space: nowrap;
+    font-size: 0.65rem; color: #94a3b8; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;
 }
-
 .qa-position strong {
-    font-size: 1.5rem;
-    font-weight: 900;
+    font-size: 1.35rem; font-weight: 900;
     background: linear-gradient(135deg, #f59e0b, #fbbf24);
-    -webkit-background-clip: text;
-    background-clip: text;
+    -webkit-background-clip: text; background-clip: text;
     -webkit-text-fill-color: transparent;
-    filter: drop-shadow(0 0 12px rgba(245, 158, 11, 0.3));
-    font-family: var(--font-mono);
-    font-variant-numeric: tabular-nums;
+    filter: drop-shadow(0 0 12px rgba(245,158,11,0.3));
+    font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 }
 
 /* 置信度区 */
 .qa-confidence {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex: 1;
-    min-width: 120px;
+    display: flex; align-items: center; gap: 6px;
+    min-width: 100px;
 }
-
 .qa-conf-bar {
-    flex: 1;
-    height: 6px;
-    background: rgba(255, 255, 255, 0.06);
-    border-radius: 3px;
-    overflow: hidden;
-    min-width: 60px;
-    max-width: 140px;
+    flex: 1; height: 5px;
+    background: rgba(255,255,255,0.06); border-radius: 3px;
+    overflow: hidden; min-width: 50px; max-width: 120px;
 }
-
 .qa-conf-fill {
-    height: 100%;
-    border-radius: 3px;
+    height: 100%; border-radius: 3px;
     background: linear-gradient(90deg, #ef4444, #f59e0b, #10b981);
-    transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: width 0.8s cubic-bezier(0.34,1.56,0.64,1);
     width: 0%;
 }
-
 .qa-conf-val {
-    font-size: 0.82rem;
-    font-weight: 800;
-    color: #f8fafc;
+    font-size: 0.78rem; font-weight: 800; color: #f8fafc;
+    font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+    min-width: 24px; text-align: right;
+}
+
+/* ── 矛盾徽章 ── */
+.qa-conflict-badge {
+    display: flex; align-items: center; gap: 4px;
+    padding: 4px 10px; border-radius: 6px;
+    background: rgba(239,68,68,0.12);
+    border: 1px solid rgba(239,68,68,0.25);
+    flex-shrink: 0;
+    animation: conflictPulse 2s ease-in-out infinite;
+}
+.qa-conflict-icon { font-size: 0.85rem; }
+.qa-conflict-count {
+    font-size: 0.78rem; font-weight: 800; color: var(--danger-light);
     font-family: var(--font-mono);
-    font-variant-numeric: tabular-nums;
-    min-width: 28px;
-    text-align: right;
+}
+@keyframes conflictPulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
+    50% { box-shadow: 0 0 8px 2px rgba(239,68,68,0.15); }
 }
 
 /* 跳转链接 */
 .qa-detail-link {
-    font-size: 0.75rem;
-    color: #a78bfa;
-    text-decoration: none;
-    padding: 6px 14px;
-    border-radius: 8px;
-    border: 1px solid rgba(139, 92, 246, 0.25);
-    background: rgba(139, 92, 246, 0.08);
-    white-space: nowrap;
-    font-weight: 600;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    flex-shrink: 0;
+    font-size: 0.72rem; color: #a78bfa; text-decoration: none;
+    padding: 5px 12px; border-radius: 8px;
+    border: 1px solid rgba(139,92,246,0.25);
+    background: rgba(139,92,246,0.08);
+    white-space: nowrap; font-weight: 600; flex-shrink: 0;
+    transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+}
+.qa-detail-link:hover {
+    background: rgba(139,92,246,0.18);
+    border-color: rgba(139,92,246,0.5);
+    color: #c4b5fd;
+    box-shadow: 0 0 12px rgba(139,92,246,0.15);
+    transform: translateY(-1px);
 }
 
-.qa-detail-link:hover {
-    background: rgba(139, 92, 246, 0.18);
-    border-color: rgba(139, 92, 246, 0.5);
-    color: #c4b5fd;
-    box-shadow: 0 0 12px rgba(139, 92, 246, 0.15);
-    transform: translateY(-1px);
+
+/* ═══════════════════════════════════════════════════
+   3B. 预警铃铛 (Alert Bell)
+   ── 顶栏实时预警入口 ──
+   ═══════════════════════════════════════════════════ */
+
+.alert-bell-wrap {
+    position: relative;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 8px;
+    transition: background 0.2s ease;
+}
+.alert-bell-wrap:hover { background: rgba(255,255,255,0.06); }
+.alert-bell-icon { font-size: 1.2rem; filter: grayscale(0.3); transition: filter 0.2s; }
+.alert-bell-wrap:hover .alert-bell-icon { filter: grayscale(0); }
+.alert-bell-badge {
+    position: absolute; top: 0; right: 0;
+    min-width: 16px; height: 16px;
+    background: var(--danger); color: #fff;
+    font-size: 0.6rem; font-weight: 800;
+    border-radius: 8px; padding: 0 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-mono);
+    box-shadow: 0 0 8px rgba(239,68,68,0.5);
+    animation: bellBadgePulse 2s ease-in-out infinite;
+}
+@keyframes bellBadgePulse {
+    0%,100% { transform: scale(1); }
+    50% { transform: scale(1.15); }
+}
+
+/* ── 预警弹窗 ── */
+.alert-bell-popup {
+    display: none;
+    position: absolute; top: calc(100% + 8px); right: 0;
+    width: 340px;
+    background: rgba(15,23,42,0.97);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+    z-index: 200;
+    overflow: hidden;
+}
+.alert-bell-wrap.open .alert-bell-popup { display: block; }
+.abp-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.abp-title { font-size: 0.82rem; font-weight: 700; color: #e2e8f0; }
+.abp-view-all {
+    font-size: 0.7rem; color: #a78bfa; text-decoration: none;
+    font-weight: 600; transition: color 0.2s;
+}
+.abp-view-all:hover { color: #c4b5fd; }
+.abp-list { max-height: 280px; overflow-y: auto; padding: 8px; }
+.abp-empty {
+    text-align: center; padding: 24px 16px;
+    color: #64748b; font-size: 0.78rem;
+}
+.abp-item {
+    display: flex; gap: 10px; padding: 10px 12px;
+    border-radius: 8px; transition: background 0.15s;
+    cursor: pointer; text-decoration: none; color: inherit;
+}
+.abp-item:hover { background: rgba(255,255,255,0.04); }
+.abp-item-icon { font-size: 1rem; flex-shrink: 0; line-height: 1.3; }
+.abp-item-body { flex: 1; min-width: 0; }
+.abp-item-title {
+    font-size: 0.78rem; font-weight: 600; color: #e2e8f0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.abp-item-meta {
+    font-size: 0.65rem; color: #64748b; margin-top: 2px;
+}
+.abp-sev-high { border-left: 2px solid var(--danger); }
+.abp-sev-medium { border-left: 2px solid var(--warning); }
+.abp-sev-low { border-left: 2px solid #64748b; }
+
+
+/* ═══════════════════════════════════════════════════
+   3C. 辅助决策模块 (Decision Support Module)
+   ── 机构级三栏决策收敛面板 ──
+   ═══════════════════════════════════════════════════ */
+
+.decision-support-section {
+    animation: fadeSlideUp 0.5s 0.15s cubic-bezier(0.25,0.46,0.45,0.94) both;
+}
+
+.ds-grid {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr 1fr;
+    gap: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+.ds-col {
+    padding: 22px 24px;
+    border-right: 1px solid rgba(255,255,255,0.04);
+    display: flex;
+    flex-direction: column;
+}
+.ds-col:last-child { border-right: none; }
+
+.ds-col-header {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.ds-col-header .icon { font-size: 1rem; }
+.ds-col-header h3 {
+    margin: 0; font-size: 0.82rem; font-weight: 700;
+    color: #e2e8f0; letter-spacing: 0.3px;
+}
+
+/* ── 左栏: 仓位缺口 ── */
+.ds-gap-visual {
+    display: flex; align-items: center; gap: 16px;
+    flex: 1;
+}
+.ds-gap-ring {
+    width: 90px; height: 90px; flex-shrink: 0;
+}
+.ds-gap-nums {
+    display: flex; flex-direction: column; gap: 6px;
+    flex: 1;
+}
+.ds-gap-row {
+    display: flex; justify-content: space-between; align-items: center;
+}
+.ds-gap-label {
+    font-size: 0.72rem; color: #94a3b8; font-weight: 500;
+}
+.ds-gap-current, .ds-gap-target {
+    font-size: 1rem; font-weight: 800; color: #e2e8f0;
+    font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+}
+.ds-gap-divider {
+    height: 1px; background: rgba(255,255,255,0.06);
+    margin: 2px 0;
+}
+.ds-gap-delta {
+    font-size: 1.2rem; font-weight: 900;
+    font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+}
+.ds-gap-delta.gap-positive { color: var(--success-light); }
+.ds-gap-delta.gap-negative { color: var(--danger-light); }
+.ds-gap-delta.gap-zero { color: #94a3b8; }
+.ds-gap-note {
+    font-size: 0.68rem; color: #64748b; margin-top: 8px;
+    padding: 6px 10px; border-radius: 6px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.04);
+    line-height: 1.4;
+}
+
+/* ── 中栏: 信号矛盾 ── */
+.ds-conflict-total {
+    margin-left: auto;
+    font-size: 0.72rem; font-weight: 800;
+    padding: 2px 8px; border-radius: 4px;
+    font-family: var(--font-mono);
+}
+.ds-conflict-total.ct-clean {
+    background: rgba(16,185,129,0.12); color: var(--success-light);
+    border: 1px solid rgba(16,185,129,0.2);
+}
+.ds-conflict-total.ct-warn {
+    background: rgba(245,158,11,0.12); color: var(--warning-light);
+    border: 1px solid rgba(245,158,11,0.2);
+}
+.ds-conflict-total.ct-danger {
+    background: rgba(239,68,68,0.12); color: var(--danger-light);
+    border: 1px solid rgba(239,68,68,0.2);
+}
+.ds-conflict-summary {
+    font-size: 0.75rem; color: #94a3b8; margin-bottom: 12px;
+}
+
+.ds-conflict-list {
+    display: flex; flex-direction: column; gap: 8px;
+    flex: 1; overflow-y: auto; max-height: 200px;
+}
+.ds-conflict-item {
+    padding: 10px 12px; border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.04);
+    background: rgba(255,255,255,0.02);
+    transition: background 0.2s, border-color 0.2s;
+}
+.ds-conflict-item:hover {
+    background: rgba(255,255,255,0.04);
+    border-color: rgba(255,255,255,0.08);
+}
+.ds-conflict-item.sev-high {
+    border-left: 3px solid var(--danger);
+    background: rgba(239,68,68,0.04);
+}
+.ds-conflict-item.sev-medium {
+    border-left: 3px solid var(--warning);
+    background: rgba(245,158,11,0.03);
+}
+.ds-conflict-item.sev-info {
+    border-left: 3px solid #475569;
+}
+
+.ds-conflict-engines {
+    display: flex; align-items: center; gap: 6px;
+    margin-bottom: 4px;
+}
+.ds-conflict-engine-tag {
+    font-size: 0.65rem; font-weight: 700;
+    padding: 2px 6px; border-radius: 4px;
+    background: rgba(139,92,246,0.12);
+    color: var(--purple-light);
+    border: 1px solid rgba(139,92,246,0.2);
+    white-space: nowrap;
+}
+.ds-conflict-vs {
+    font-size: 0.6rem; color: #475569; font-weight: 700;
+}
+.ds-conflict-desc {
+    font-size: 0.72rem; color: #cbd5e1; line-height: 1.4;
+}
+.ds-conflict-action {
+    font-size: 0.65rem; color: #94a3b8; margin-top: 4px;
+    font-style: italic;
+}
+
+.ds-conflict-clean {
+    text-align: center; padding: 24px 16px;
+    color: var(--success); font-size: 0.82rem;
+}
+
+/* ── 右栏: 执行建议 ── */
+.ds-action-hero {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 16px; border-radius: 10px;
+    background: rgba(59,130,246,0.08);
+    border: 1px solid rgba(59,130,246,0.15);
+    margin-bottom: 14px;
+    transition: all 0.3s ease;
+}
+.ds-action-hero.action-bullish {
+    background: rgba(16,185,129,0.08);
+    border-color: rgba(16,185,129,0.2);
+}
+.ds-action-hero.action-bearish {
+    background: rgba(239,68,68,0.08);
+    border-color: rgba(239,68,68,0.2);
+}
+.ds-action-hero.action-neutral {
+    background: rgba(245,158,11,0.08);
+    border-color: rgba(245,158,11,0.15);
+}
+.ds-action-icon { font-size: 1.5rem; flex-shrink: 0; }
+.ds-action-text {
+    font-size: 0.95rem; font-weight: 800; color: #f1f5f9;
+    line-height: 1.3;
+}
+
+.ds-action-directives {
+    display: flex; flex-direction: column; gap: 6px;
+    flex: 1;
+}
+.ds-directive-item {
+    display: flex; align-items: flex-start; gap: 8px;
+    padding: 6px 0;
+    font-size: 0.72rem; color: #cbd5e1; line-height: 1.5;
+}
+.ds-directive-icon {
+    flex-shrink: 0; font-size: 0.8rem; margin-top: 1px;
+}
+.ds-directive-text { flex: 1; }
+
+.ds-action-next {
+    font-size: 0.65rem; color: #475569; margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255,255,255,0.04);
+    text-align: right;
 }
 
 
