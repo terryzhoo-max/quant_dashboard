@@ -1677,6 +1677,34 @@
     transform: rotate(180deg);
 }
 
+/* 模型标签 */
+.brinson-model-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    font-family: 'Outfit', monospace;
+    letter-spacing: 0.5px;
+    color: #a78bfa;
+    background: rgba(167, 139, 250, 0.08);
+    border: 1px solid rgba(167, 139, 250, 0.2);
+    vertical-align: middle;
+    margin-left: 6px;
+    cursor: help;
+}
+
+/* 汇总行 */
+.brinson-summary-row {
+    border-top: 2px solid rgba(148, 163, 184, 0.15) !important;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.brinson-summary-row td {
+    padding-top: 10px !important;
+    padding-bottom: 10px !important;
+}
+
 /* ════════════════════════════════════
    V2: Diagnostic Card Color Bars
    ════════════════════════════════════ */
@@ -1736,7 +1764,7 @@
 /* 单条警示 */
 .pf-alert-item {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 10px;
     padding: 10px 16px;
     border-radius: 10px;
@@ -1786,6 +1814,16 @@
 .pf-alert-icon {
     font-size: 0.92rem;
     flex-shrink: 0;
+    margin-top: 1px;
+}
+
+.pf-alert-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.pf-alert-main {
+    line-height: 1.45;
 }
 
 .pf-alert-title {
@@ -1795,6 +1833,47 @@
 
 .pf-alert-detail {
     opacity: 0.85;
+}
+
+/* 操作建议行 */
+.pf-alert-action {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 5px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.03);
+    font-size: 0.75rem;
+    font-weight: 600;
+    opacity: 0.75;
+    transition: opacity 0.2s;
+    line-height: 1.4;
+}
+
+.pf-alert-item:hover .pf-alert-action {
+    opacity: 1;
+}
+
+.pf-alert-warn .pf-alert-action {
+    color: #fde68a;
+    background: rgba(245, 158, 11, 0.06);
+}
+
+.pf-alert-info .pf-alert-action {
+    color: #bfdbfe;
+    background: rgba(59, 130, 246, 0.05);
+}
+
+.pf-alert-block .pf-alert-action {
+    color: #fecaca;
+    background: rgba(239, 68, 68, 0.06);
+}
+
+.pf-alert-action-icon {
+    font-size: 0.7rem;
+    opacity: 0.6;
+    flex-shrink: 0;
 }
 
 /* 全局合规指示灯 */

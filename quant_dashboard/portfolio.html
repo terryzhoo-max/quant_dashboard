@@ -34,7 +34,6 @@
             <a href="./decision.html" class="nav-item">
                 <span class="icon">🧠</span>
                 <span>决策中枢</span>
-                <span class="badge-beta" style="background:rgba(139,92,246,0.15);color:#a78bfa;border-color:rgba(139,92,246,0.3);">V16</span>
             </a>
 
             <div class="nav-group-title">研 究 审 计</div>
@@ -218,7 +217,7 @@
 
                 <!-- Sector Detail Table -->
                 <div class="slip-orders-section" style="margin-top:16px;">
-                    <h4>📋 板块归因明细 <span class="pf-chart-sub">Sector Decomposition</span></h4>
+                    <h4>📋 板块归因明细 <span class="pf-chart-sub">Sector Decomposition</span> <span class="brinson-model-tag" title="简化模型: 配置效应使用沪深300整体收益近似各行业基准收益 (rb_i ≈ Rb)，超配板块的配置效应方向可能偏差">BHB · Simplified</span></h4>
                     <div class="pf-table-wrap">
                         <table class="pf-table" id="brinson-sector-table">
                             <thead>
@@ -228,13 +227,16 @@
                                     <th>基准权重</th>
                                     <th>超配</th>
                                     <th>组合收益</th>
+                                    <th>基准收益</th>
+                                    <th>板块超额</th>
                                     <th>配置效应</th>
                                     <th>选股效应</th>
+                                    <th>交互效应</th>
                                     <th>总效应</th>
                                 </tr>
                             </thead>
                             <tbody id="brinson-sector-body">
-                                <tr><td colspan="8" class="pf-table-empty">点击 ↻ 加载归因数据</td></tr>
+                                <tr><td colspan="11" class="pf-table-empty">点击 ↻ 加载归因数据</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -561,6 +563,6 @@
         </div>
     </div>
 
-    <script src="./static/js/portfolio_manager.js?v=36"></script>
+    <script src="./static/js/portfolio_manager.js?v=40"></script>
 </body>
 </html>

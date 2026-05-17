@@ -59,9 +59,15 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             el.innerHTML = alerts.map((a, i) => {
                 const cls = a.level === 'block' ? 'pf-alert-block' : a.level === 'warn' ? 'pf-alert-warn' : 'pf-alert-info';
+                const actionHtml = a.action
+                    ? `<div class="pf-alert-action"><span class="pf-alert-action-icon">→</span>${a.action}</div>`
+                    : '';
                 return `<div class="pf-alert-item ${cls}" style="animation-delay:${i * 0.08}s">
                     <span class="pf-alert-icon">${a.icon}</span>
-                    <span><span class="pf-alert-title">${a.title}</span><span class="pf-alert-detail">${a.detail}</span></span>
+                    <div class="pf-alert-body">
+                        <div class="pf-alert-main"><span class="pf-alert-title">${a.title}</span><span class="pf-alert-detail">${a.detail}</span></div>
+                        ${actionHtml}
+                    </div>
                 </div>`;
             }).join('');
         },
@@ -224,7 +230,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (Math.abs(interact) > pureEffects && interactPct > 50) {
                     alerts.push({ level: 'warn', icon: '⚠️', title: '交互效应主导',
                         detail: `超额中 ${interactPct.toFixed(0)}% 来自配置×选股交叉项 (${interact > 0 ? '+' : ''}${interact.toFixed(2)}%)，` +
-                                `纯配置 ${alloc > 0 ? '+' : ''}${alloc.toFixed(2)}%、纯选股 ${select > 0 ? '+' : ''}${select.toFixed(2)}%，Alpha 可复制性存疑` });
+                                `纯配置 ${alloc > 0 ? '+' : ''}${alloc.toFixed(2)}%、纯选股 ${select > 0 ? '+' : ''}${select.toFixed(2)}%，Alpha 可复制性存疑`,
+                        action: '审视超配板块的选股逻辑，考虑向基准权重靠拢以降低交互效应占比' });
                 }
             }
 
@@ -232,11 +239,13 @@ document.addEventListener('DOMContentLoaded', function () {
             // 机构含义: 板块配置环节的决策框架需要反思, 超额完全靠选股/交互扛
             if (excess > 0.5 && alloc < -0.3) {
                 alerts.push({ level: 'warn', icon: '⚠️', title: '配置效应拖累',
-                    detail: `板块权重偏离基准带来 ${alloc.toFixed(2)}% 拖累，超额 ${excess > 0 ? '+' : ''}${excess.toFixed(2)}% 完全依赖选股和交互效应` });
+                    detail: `板块权重偏离基准带来 ${alloc.toFixed(2)}% 拖累，超额 ${excess > 0 ? '+' : ''}${excess.toFixed(2)}% 完全依赖选股和交互效应`,
+                    action: '复查板块配置逻辑，减少非基准板块超配或增配正贡献基准行业' });
             } else if (excess < -0.5 && alloc > 0.3) {
                 // 反向: 配置正确但选股拖累
                 alerts.push({ level: 'info', icon: 'ℹ️', title: '配置正确但选股拖累',
-                    detail: `配置效应 +${alloc.toFixed(2)}% 为正贡献，但选股 ${select.toFixed(2)}% 抵消了配置优势` });
+                    detail: `配置效应 +${alloc.toFixed(2)}% 为正贡献，但选股 ${select.toFixed(2)}% 抵消了配置优势`,
+                    action: '板块配置方向正确，聚焦优化各板块内个股质量' });
             }
 
             // ════════════════════════════════════
@@ -250,7 +259,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     const ratio = Math.abs(topSector.total_effect / excess) * 100;
                     alerts.push({ level: 'warn', icon: '⚠️', title: '归因集中度风险',
                         detail: `[${topSector.sector}] 贡献 ${topSector.total_effect > 0 ? '+' : ''}${topSector.total_effect.toFixed(3)}%，` +
-                                `占超额 ${ratio.toFixed(0)}%，单板块依赖度过高，反转时 Alpha 将瞬间消失` });
+                                `占超额 ${ratio.toFixed(0)}%，单板块依赖度过高，反转时 Alpha 将瞬间消失`,
+                        action: `设置单板块贡献上限，分散至 2-3 个正贡献板块以降低尾部风险` });
                 }
             }
 
@@ -263,7 +273,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     `${s.sector} ${s.portfolio_weight.toFixed(1)}%→${s.total_effect > 0 ? '+' : ''}${s.total_effect.toFixed(3)}%`
                 ).join('、');
                 alerts.push({ level: 'info', icon: 'ℹ️', title: '高权重低效板块',
-                    detail: `${names}，大比例资金配置在归因贡献微弱的板块，资金使用效率待优化` });
+                    detail: `${names}，大比例资金配置在归因贡献微弱的板块，资金使用效率待优化`,
+                    action: '评估持仓必要性，考虑减仓释放资金至高贡献板块或降低仓位' });
             }
 
             // ════════════════════════════════════
@@ -279,7 +290,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (coverageRate < 30) {
                         alerts.push({ level: 'info', icon: 'ℹ️', title: '组合覆盖率偏低',
                             detail: `仅覆盖基准 ${coveredSectors.length}/${benchSectors.length} 个行业 (${coverageRate.toFixed(0)}%)，` +
-                                    `主动偏离度极高，跟踪误差风险需关注` });
+                                    `主动偏离度极高，跟踪误差风险需关注`,
+                            action: '若非主动策略设计，考虑补充基准核心行业敞口以降低跟踪误差' });
                     }
                 }
             }
@@ -294,7 +306,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (defTotal < -0.1 && excess > 0) {
                     const defNames = defensiveSectors.map(s => s.sector).join('/');
                     alerts.push({ level: 'info', icon: 'ℹ️', title: '防守配置拖累',
-                        detail: `${defNames}等低波板块总效应 ${defTotal.toFixed(3)}%，上涨市中机会成本凸显，评估防守仓位择时` });
+                        detail: `${defNames}等低波板块总效应 ${defTotal.toFixed(3)}%，上涨市中机会成本凸显`,
+                        action: '结合 ERP 择时信号评估：若上涨趋势确认，可适度减持防守仓位释放进攻空间' });
                 }
             }
 
@@ -302,20 +315,24 @@ document.addEventListener('DOMContentLoaded', function () {
             if (excess < -5) {
                 const dragSource = Math.abs(alloc) > Math.abs(select) ? '配置效应' : '选股效应';
                 alerts.push({ level: 'block', icon: '🛑', title: '显著跑输基准',
-                    detail: `超额 ${excess.toFixed(2)}% 严重落后沪深300，主要拖累来自${dragSource}，建议立即审查投资策略` });
+                    detail: `超额 ${excess.toFixed(2)}% 严重落后沪深300，主要拖累来自${dragSource}`,
+                    action: '立即审查投资策略：暂停新增仓位，评估止损/对冲方案' });
             } else if (excess < -2) {
                 alerts.push({ level: 'warn', icon: '⚠️', title: '跑输基准',
-                    detail: `超额 ${excess.toFixed(2)}%，落后沪深300，配置效应 ${alloc > 0 ? '+' : ''}${alloc.toFixed(2)}%、选股 ${select > 0 ? '+' : ''}${select.toFixed(2)}%` });
+                    detail: `超额 ${excess.toFixed(2)}%，落后沪深300，配置效应 ${alloc > 0 ? '+' : ''}${alloc.toFixed(2)}%、选股 ${select > 0 ? '+' : ''}${select.toFixed(2)}%`,
+                    action: '关注效应拆解，配置或选股哪个是主要拖累源并针对性优化' });
             }
 
             // R8 (升级): 选股+配置联合判断
             if (alloc < -0.5 && select < -0.5) {
                 // 配置和选股双负 — 升级为 warn
                 alerts.push({ level: 'warn', icon: '⚠️', title: '配置+选股双拖累',
-                    detail: `配置 ${alloc.toFixed(2)}% + 选股 ${select.toFixed(2)}% 同时为负，板块选择和个股能力均弱于基准` });
+                    detail: `配置 ${alloc.toFixed(2)}% + 选股 ${select.toFixed(2)}% 同时为负，板块选择和个股能力均弱于基准`,
+                    action: '建议回归基准配置并优化选股模型，避免同时在两个维度承受偏差' });
             } else if (select < -1) {
                 alerts.push({ level: 'info', icon: 'ℹ️', title: '选股效应拖累',
-                    detail: `选股效应 ${select.toFixed(3)}%，板块内标的选择弱于基准均值` });
+                    detail: `选股效应 ${select.toFixed(3)}%，板块内标的选择弱于基准均值`,
+                    action: '审查各板块内个股质量，替换持续跑输行业均值的标的' });
             }
 
             this._allAlerts = this._allAlerts.filter(a => a._zone !== 'brinson');
@@ -1903,8 +1920,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // 板块归因明细: 默认前20, 其余折叠
-    const SECTOR_VISIBLE_COUNT = 20;
+    // 板块归因明细: 持仓板块全部显示, 纯基准板块默认折叠
     let _sectorExpanded = false;
 
     function renderSectorTable(d) {
@@ -1912,42 +1928,109 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!body) return;
 
         if (!d.sector_detail || d.sector_detail.length === 0) {
-            body.innerHTML = '<tr><td colspan="8" class="pf-table-empty">无板块归因数据</td></tr>';
+            body.innerHTML = '<tr><td colspan="11" class="pf-table-empty">无板块归因数据</td></tr>';
             _hideSectorToggle();
             return;
         }
 
-        const total = d.sector_detail.length;
-        const hasMore = total > SECTOR_VISIBLE_COUNT;
         _sectorExpanded = false;
 
-        body.innerHTML = d.sector_detail.map((s, i) => {
+        // F3: 阈值与后端精度对齐 (后端 round(wp*100, 2) 最小非零=0.01%)
+        const HOLD_THRESHOLD = 0.005;
+
+        // 分离持仓板块 vs 纯基准板块
+        const holdingSectors = d.sector_detail.filter(s => s.portfolio_weight > HOLD_THRESHOLD);
+        const benchOnlySectors = d.sector_detail.filter(s => s.portfolio_weight <= HOLD_THRESHOLD);
+
+        holdingSectors.sort((a, b) => Math.abs(b.total_effect) - Math.abs(a.total_effect));
+        benchOnlySectors.sort((a, b) => Math.abs(b.total_effect) - Math.abs(a.total_effect));
+
+        const allSorted = [...holdingSectors, ...benchOnlySectors];
+
+        const rowsHtml = allSorted.map((s, i) => {
             const wdClass = s.weight_diff > 0 ? 'pf-up' : s.weight_diff < 0 ? 'pf-danger' : '';
             const teClass = s.total_effect > 0 ? 'pf-up' : s.total_effect < 0 ? 'pf-danger' : '';
-            const isCollapsed = hasMore && i >= SECTOR_VISIBLE_COUNT;
+            const isBenchOnly = s.portfolio_weight <= HOLD_THRESHOLD;
+            const isCollapsed = isBenchOnly;
             const rowCls = isCollapsed ? ' class="brinson-collapsed-row"' : '';
-            // 零持仓+零效应的板块使用低优先级视觉
-            const isZeroRow = s.portfolio_weight === 0 && s.total_effect === 0;
-            const nameStyle = isZeroRow ? 'color:#64748b;font-weight:500' : '';
+            const hasHolding = s.portfolio_weight > HOLD_THRESHOLD;
+
+            const interactionEffect = s.interaction_effect !== undefined
+                ? s.interaction_effect
+                : (s.total_effect - s.allocation_effect - s.selection_effect);
+
+            // F2: 非基准板块(wb=0)的配置效应添加 tooltip
+            const isNonBench = s.benchmark_weight <= 0.05 && hasHolding;
+            const allocTooltip = isNonBench
+                ? ` title="非基准板块: 配置+交互合计 = ${(s.allocation_effect + interactionEffect).toFixed(3)}% (板块全部贡献)"`
+                : '';
+            const allocCell = `<td class="pf-mono"${allocTooltip} style="color:${pctColor(s.allocation_effect)}">${s.allocation_effect.toFixed(3)}%</td>`;
+
+            const selectCell = hasHolding
+                ? `<td class="pf-mono" style="color:${pctColor(s.selection_effect)}">${s.selection_effect.toFixed(3)}%</td>`
+                : `<td class="pf-mono pf-dim" style="opacity:0.4">—</td>`;
+
+            const interactCell = hasHolding
+                ? `<td class="pf-mono" style="color:${pctColor(interactionEffect)}">${interactionEffect.toFixed(3)}%</td>`
+                : `<td class="pf-mono pf-dim" style="opacity:0.4">—</td>`;
+
+            // F5: 基准收益 + 板块超额
+            const benchReturn = s.benchmark_return !== undefined ? s.benchmark_return : 0;
+            const returnDiff = s.return_diff !== undefined ? s.return_diff : (s.portfolio_return - benchReturn);
+            const benchReturnCell = `<td class="pf-mono pf-dim">${fmtPct(benchReturn)}</td>`;
+            const returnDiffCell = hasHolding
+                ? `<td class="pf-mono" style="color:${pctColor(returnDiff)};font-weight:600">${fmtPct(returnDiff)}</td>`
+                : `<td class="pf-mono pf-dim" style="opacity:0.4">—</td>`;
+
+            const nameStyle = isBenchOnly ? 'color:#64748b;font-weight:400' : '';
+
             return `<tr${rowCls}>
                 <td><span class="brinson-row-idx">${i + 1}</span><strong style="${nameStyle}">${s.sector}</strong></td>
                 <td class="pf-mono">${s.portfolio_weight.toFixed(1)}%</td>
                 <td class="pf-mono pf-dim">${s.benchmark_weight.toFixed(1)}%</td>
                 <td class="pf-mono ${wdClass}">${s.weight_diff > 0 ? '+' : ''}${s.weight_diff.toFixed(1)}pp</td>
-                <td class="pf-mono" style="color:${pctColor(s.portfolio_return)}">${fmtPct(s.portfolio_return)}</td>
-                <td class="pf-mono" style="color:${pctColor(s.allocation_effect)}">${s.allocation_effect.toFixed(3)}%</td>
-                <td class="pf-mono" style="color:${pctColor(s.selection_effect)}">${s.selection_effect.toFixed(3)}%</td>
+                <td class="pf-mono" style="color:${pctColor(s.portfolio_return)}">${hasHolding ? fmtPct(s.portfolio_return) : '<span style="opacity:0.4">—</span>'}</td>
+                ${benchReturnCell}
+                ${returnDiffCell}
+                ${allocCell}
+                ${selectCell}
+                ${interactCell}
                 <td class="pf-mono ${teClass}" style="font-weight:600">${s.total_effect > 0 ? '+' : ''}${s.total_effect.toFixed(3)}%</td>
             </tr>`;
         }).join('');
 
-        // 折叠/展开控制
+        // F4: 汇总行 — BHB 加法恒等式验证
+        const eff = d.effects || {};
+        const sumAlloc = eff.allocation || 0;
+        const sumSelect = eff.selection || 0;
+        const sumInteract = eff.interaction || 0;
+        const sumTotal = eff.total || (sumAlloc + sumSelect + sumInteract);
+        const excess = d.excess_return || 0;
+
+        // 检查闭合: Σ效应 ≈ 超额
+        const residual = Math.abs(sumTotal - excess);
+        const closureOk = residual < 0.05;
+        const closureIcon = closureOk ? '✓' : '≈';
+        const closureColor = closureOk ? '#10b981' : '#f59e0b';
+
+        const summaryRow = `<tr class="brinson-summary-row">
+            <td colspan="7" style="text-align:right;font-weight:700;color:#94a3b8;font-size:0.78rem;padding-right:12px;">
+                Σ 合计 <span style="font-size:0.65rem;color:${closureColor};margin-left:4px;" title="Σ效应 ${closureOk ? '=' : '≈'} 超额收益 (残差 ${residual.toFixed(3)}%)">${closureIcon} ${closureOk ? '闭合' : '残差 ' + residual.toFixed(3) + '%'}</span>
+            </td>
+            <td class="pf-mono" style="color:${pctColor(sumAlloc)};font-weight:700">${sumAlloc > 0 ? '+' : ''}${sumAlloc.toFixed(3)}%</td>
+            <td class="pf-mono" style="color:${pctColor(sumSelect)};font-weight:700">${sumSelect > 0 ? '+' : ''}${sumSelect.toFixed(3)}%</td>
+            <td class="pf-mono" style="color:${pctColor(sumInteract)};font-weight:700">${sumInteract > 0 ? '+' : ''}${sumInteract.toFixed(3)}%</td>
+            <td class="pf-mono" style="font-weight:800;font-size:0.88rem;color:${pctColor(sumTotal)}">${sumTotal > 0 ? '+' : ''}${sumTotal.toFixed(3)}%</td>
+        </tr>`;
+
+        body.innerHTML = rowsHtml + summaryRow;
+
+        // 折叠控制
         const toggleWrap = document.getElementById('brinson-sector-toggle-wrap');
-        if (hasMore && toggleWrap) {
-            const hiddenCount = total - SECTOR_VISIBLE_COUNT;
+        if (benchOnlySectors.length > 0 && toggleWrap) {
             toggleWrap.style.display = '';
             const btn = document.getElementById('brinson-sector-toggle-btn');
-            if (btn) btn.innerHTML = `<span class="brinson-toggle-icon">▼</span> 展开剩余 ${hiddenCount} 个板块`;
+            if (btn) btn.innerHTML = `<span class="brinson-toggle-icon">▼</span> 展开 ${benchOnlySectors.length} 个基准板块 (未持仓)`;
         } else {
             _hideSectorToggle();
         }
@@ -1966,8 +2049,9 @@ document.addEventListener('DOMContentLoaded', function () {
         if (btn) {
             const count = rows.length;
             btn.innerHTML = _sectorExpanded
-                ? '<span class="brinson-toggle-icon brinson-toggle-open">▲</span> 收起低权重板块'
-                : `<span class="brinson-toggle-icon">▼</span> 展开剩余 ${count} 个板块`;
+                ? '<span class="brinson-toggle-icon brinson-toggle-open">▲</span> 收起基准板块'
+                : `<span class="brinson-toggle-icon">▼</span> 展开 ${count} 个基准板块 (未持仓)`;
+
         }
     }
 

@@ -133,11 +133,7 @@ async function initDecisionHub() {
     window._riskMatrixCacheTs = 0; // V25.1: 对齐 TTL 缓存时间戳
     if (typeof resetRiskTabGuards === 'function') resetRiskTabGuards(); // V25.1: 重置 Risk Tab guards
 
-    // P4: 版本号自动同步 (fire-and-forget, 不阻塞主流程)
-    fetch('/version').then(r => r.json()).then(v => {
-        const short = 'V' + v.version;
-        document.querySelectorAll('#ac-ver-nav, #ac-ver-header').forEach(el => { if (el) el.textContent = short; });
-    }).catch(() => {});
+    // 版本号已从 UI 移除 (信噪分离: 版本号为工程内部概念，非决策信息)
 
     initTabs();
     initSOPToggle();  // V19.3: SOP 折叠事件委托
