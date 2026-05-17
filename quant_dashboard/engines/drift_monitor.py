@@ -172,7 +172,7 @@ def check_jcs_trend() -> dict:
         return {
             "status": "critical",
             "label": f"JCS 急降 ({trend:+.0f})",
-            "detail": f"JCS 30日均值从 {first_half:.0f} 降至 {second_half:.0f}, 当前 {current:.0f}。信号方向在持续恶化, 建议全面防御。",
+            "detail": f"JCS 30日中位数从 {median_first:.0f} 降至 {median_second:.0f}, 当前 {current:.0f}。信号方向在持续恶化, 建议全面防御。",
             "current_jcs": current,
             "trend_30d": trend,
         }
@@ -180,7 +180,7 @@ def check_jcs_trend() -> dict:
         return {
             "status": "warning",
             "label": f"JCS 下降 ({trend:+.0f})",
-            "detail": f"JCS 呈下降趋势 (30日均值 {first_half:.0f}→{second_half:.0f})。关注信号是否持续弱化。",
+            "detail": f"JCS 呈下降趋势 (30日中位数 {median_first:.0f}→{median_second:.0f})。关注信号是否持续弱化。",
             "current_jcs": current,
             "trend_30d": trend,
         }

@@ -766,7 +766,7 @@ class PortfolioEngine:
         if not all_rets:
             return {"status": "no_data", "dates": [], "nav": [], "benchmark": []}
 
-        df_rets = pd.DataFrame(all_rets).fillna(0)
+        df_rets = pd.DataFrame(all_rets).ffill().fillna(0)
         # 去重日期行索引
         if df_rets.index.duplicated().any():
             df_rets = df_rets[~df_rets.index.duplicated(keep='last')]

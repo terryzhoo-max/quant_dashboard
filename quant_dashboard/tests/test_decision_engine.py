@@ -37,19 +37,19 @@ class TestSignalDirection:
         """极度看多: AIAE 恐慌 + ERP 极高 + VIX 极低 + MR 牛市"""
         snap = {"aiae_regime": 1, "erp_score": 80, "vix_val": 12, "mr_regime": "BULL"}
         d = _signal_direction(snap)
-        assert d == {"aiae": 1, "erp": 1, "vix": 1, "mr": 1}
+        assert d == {"aiae": 1, "erp": 1, "vix": 1, "mr": 1, "gold": 0, "bond": 0}
 
     def test_all_bearish(self):
         """极度看空: AIAE 过热 + ERP 极低 + VIX 恐慌 + MR 崩盘"""
         snap = {"aiae_regime": 5, "erp_score": 20, "vix_val": 35, "mr_regime": "CRASH"}
         d = _signal_direction(snap)
-        assert d == {"aiae": -1, "erp": -1, "vix": -1, "mr": -1}
+        assert d == {"aiae": -1, "erp": -1, "vix": -1, "mr": -1, "gold": 0, "bond": 0}
 
     def test_all_neutral(self):
         """全中性: 所有引擎无方向"""
         snap = {"aiae_regime": 3, "erp_score": 45, "vix_val": 20, "mr_regime": "RANGE"}
         d = _signal_direction(snap)
-        assert d == {"aiae": 0, "erp": 0, "vix": 0, "mr": 0}
+        assert d == {"aiae": 0, "erp": 0, "vix": 0, "mr": 0, "gold": 0, "bond": 0}
 
     def test_aiae_boundary(self):
         """AIAE 边界: 2=看多, 3=中性, 4=看空"""
@@ -88,7 +88,7 @@ class TestSignalDirection:
         snap = {"aiae_regime": None, "erp_score": None,
                 "vix_val": None, "mr_regime": None}
         d = _signal_direction(snap)
-        assert d == {"aiae": 0, "erp": 0, "vix": 0, "mr": 0}
+        assert d == {"aiae": 0, "erp": 0, "vix": 0, "mr": 0, "gold": 0, "bond": 0}
 
 
 # ═══════════════════════════════════════════════════════
@@ -166,15 +166,17 @@ class TestComputeJCS:
             assert key in jcs, f"Missing key: {key}"
 
     def test_consensus_bonus_full_agreement(self):
-        """4 引擎全一致 → consensus_bonus = 20"""
+        """6 引擎全一致 → consensus_bonus = 20 (V25.3: 需要 gold/bond 也看多)"""
         jcs = compute_jcs(self._make_snap(
-            aiae_regime=1, erp_score=80, vix_val=12, mr_regime="BULL"))
+            aiae_regime=1, erp_score=80, vix_val=12, mr_regime="BULL",
+            gold_signal=50, bond_signal=50))
         assert jcs["consensus_bonus"] == 20.0
 
     def test_consensus_bonus_partial(self):
-        """2 引擎一致 + 2 中性 → consensus_bonus = 10"""
+        """≥3 引擎一致 (V25.3: n_core//2=3) → consensus_bonus = 10"""
         jcs = compute_jcs(self._make_snap(
-            aiae_regime=1, erp_score=80, vix_val=20, mr_regime="RANGE"))
+            aiae_regime=1, erp_score=80, vix_val=20, mr_regime="RANGE",
+            gold_signal=50))
         assert jcs["consensus_bonus"] == 10.0
 
 

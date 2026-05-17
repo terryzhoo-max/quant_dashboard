@@ -1,6 +1,6 @@
 """
-AlphaCore V24.0 · Brinson-Fachler 收益归因引擎
-=================================================
+AlphaCore V25.0 · Brinson-Hood-Beebower 收益归因引擎
+=====================================================
 将组合超额收益分解为三大效应:
   - 配置效应 (Allocation Effect):  板块权重偏离基准带来的超额
   - 选股效应 (Selection Effect):   板块内选股能力带来的超额
@@ -13,11 +13,15 @@ AlphaCore V24.0 · Brinson-Fachler 收益归因引擎
 
 降级链: 完整归因 → 简化归因 (无基准行业数据时) → 错误
 
-数学公式 (Brinson-Fachler 单期模型):
-  AA_i = (wp_i - wb_i) × (rb_i - Rb)
+数学公式 (BHB 单期模型):
+  AA_i = (wp_i - wb_i) × rb_i
   SS_i = wb_i × (rp_i - rb_i)
   II_i = (wp_i - wb_i) × (rp_i - rb_i)
   Total Alpha = Σ(AA + SS + II) = Rp - Rb
+
+注意: 当 rb_i 使用统一 Rb 近似时 (简化模型):
+  - BHB 的 AA_i = (wp_i - wb_i) × Rb, 各板块方向有意义 (总和=0)
+  - 旧 BF 的 AA_i = (wp_i - wb_i) × (Rb - Rb) = 0, 恒等零, 已弃用
 
 其中:
   wp_i = 组合在板块 i 的权重
@@ -238,11 +242,11 @@ def compute_brinson_attribution(lookback: int = 20) -> dict:
     except Exception:
         Rb = 0.0
 
-    # 用组合板块收益率近似基准板块收益 (简化模型: rb_i ≈ Rb 统一)
-    # 精确版本需要获取每个行业指数的收益率, 但 Tushare 行业指数 API 限制较多
-    # 这里使用 Rb 作为各板块基准收益, 使选股效应更突出
+    # 用统一基准收益近似各板块基准收益 (简化模型: rb_i ≈ Rb)
+    # 精确版本需要获取申万行业指数收益率, 但 Tushare API 限制较多
+    # 已从 BF 切换到 BHB 模型, 确保配置效应在简化模型下仍有意义
 
-    # ── 6. Brinson 分解 ──
+    # ── 6. Brinson-Hood-Beebower 分解 ──
     sector_detail = []
     total_allocation = 0
     total_selection = 0
@@ -256,8 +260,8 @@ def compute_brinson_attribution(lookback: int = 20) -> dict:
         rp_i = portfolio_sector_returns.get(sector, 0)  # 组合板块收益
         rb_i = Rb  # 简化: 基准各板块收益统一为 Rb
 
-        # Brinson-Fachler 公式
-        AA_i = (wp - wb) * (rb_i - Rb)   # 配置效应 (BF 版: 相对于基准总收益)
+        # BHB 公式 (V25.0: 从 BF 切换, 修复配置效应恒等零缺陷)
+        AA_i = (wp - wb) * rb_i           # 配置效应 (BHB: 超配/低配 × 基准收益)
         SS_i = wb * (rp_i - rb_i)         # 选股效应
         II_i = (wp - wb) * (rp_i - rb_i)  # 交互效应
 

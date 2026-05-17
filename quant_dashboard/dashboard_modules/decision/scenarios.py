@@ -28,6 +28,12 @@ from dashboard_modules.decision.jcs import (
 )
 from dashboard_modules.decision.snapshot import _build_snapshot_from_cache
 
+# D6修复: ERP Sigmoid 参数从 erp_params 统一读取 (消除硬编码 4.5/2.5 与生产的 4.0/1.5 偏差)
+try:
+    from engines.erp_params import D1_SIGMOID_CENTER as _ERP_CENTER, D1_SIGMOID_K as _ERP_K
+except ImportError:
+    _ERP_CENTER, _ERP_K = 4.0, 1.5  # fallback: 与 decision_engine.py 保持一致
+
 
 # ═══════════════════════════════════════════════════════════
 #  预设情景库 (8 个核心情景)
@@ -287,7 +293,8 @@ def apply_shock_to_snapshot(snapshot: dict, node_impacts: dict) -> dict:
                 after[sk] = round(after[sk] + mapper(shock), 2)
 
     if "erp_val" in after and after["erp_val"] is not None:
-        _x = max(-20, min(20, 2.5 * (after["erp_val"] - 4.5)))
+        # D6修复: 统一使用 erp_params Sigmoid 参数 (旧版硬编码 4.5/2.5)
+        _x = max(-20, min(20, _ERP_K * (after["erp_val"] - _ERP_CENTER)))
         after["erp_score"] = round(100.0 / (1.0 + math.exp(-_x)), 1)
 
     if "vix_val" in after and after["vix_val"] is not None:
@@ -438,7 +445,8 @@ def simulate_scenario(scenario_id: str, current_snapshot: dict) -> dict:
         after["aiae_regime_cn"] = _REGIME_CN_MAP.get(new_regime, "中性均衡")
     if "erp_val" in deltas:
         erp_v = after["erp_val"]
-        _erp_x = max(-20, min(20, 2.5 * (erp_v - 4.5)))
+        # D6修复: 统一使用 erp_params Sigmoid 参数
+        _erp_x = max(-20, min(20, _ERP_K * (erp_v - _ERP_CENTER)))
         after["erp_score"] = round(100.0 / (1.0 + math.exp(-_erp_x)), 1)
     if deltas.get("is_circuit_breaker"):
         after["suggested_position"] = 0

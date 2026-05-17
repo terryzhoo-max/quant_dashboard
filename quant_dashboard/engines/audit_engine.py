@@ -50,6 +50,7 @@ def _load_audit_cfg():
             "min_holdings": 5, "daily_stale_warn_days": 3,
             "daily_stale_fail_days": 5, "fina_fresh_days": 90,
             "erp_stale_warn_days": 3, "erp_stale_fail_days": 7,
+            "rates_stale_warn_days": 3, "rates_stale_fail_days": 7,
             "strategy_fresh_days": 30, "strategy_stale_days": 60,
         }
 
@@ -261,7 +262,10 @@ def audit_data_quality():
             rates_ages.append(age_days)
         max_age = max(rates_ages)
         s = max(0, 100 - int(max_age) * 8)
-        status = "pass" if max_age <= 3 else ("warn" if max_age <= 7 else "fail")
+        # P1修复: FRED 阈值从 AUDIT_CFG 读取 (消除硬编码 3/7 天)
+        _rates_warn = AUDIT_CFG.get("rates_stale_warn_days", 3)
+        _rates_fail = AUDIT_CFG.get("rates_stale_fail_days", 7)
+        status = "pass" if max_age <= _rates_warn else ("warn" if max_age <= _rates_fail else "fail")
         scores.append(s)
         checks.append({
             "name": "FRED 利率数据",

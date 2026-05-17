@@ -8,7 +8,7 @@
 
     <link rel="stylesheet" href="./static/css/styles.css?v=12">
     <link rel="stylesheet" href="./static/css/visual_excellence.css?v=3">
-    <link rel="stylesheet" href="./static/css/portfolio.css?v=30">
+    <link rel="stylesheet" href="./static/css/portfolio.css?v=34">
     <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
     <script>window.echarts || document.write('<script src="./static/vendor/echarts.min.js"><\/script>')</script>
@@ -60,6 +60,7 @@
                 <h2 style="font-size: 1.5rem">组合管理中心 <span style="font-size: 0.8rem; font-weight: 300; opacity: 0.6; font-family: 'Outfit'">/ Portfolio Management</span></h2>
             </div>
             <div class="actions" style="display: flex; gap: 12px; align-items: center;">
+                <span class="pf-compliance-dot pf-compliance-ok" id="pf-compliance-dot" title="组合合规状态">🟢 COMPLIANT</span>
                 <span class="pf-live-badge" id="pf-live-badge">● LIVE</span>
                 <button class="btn btn-import" id="import-btn">📥 导入持仓 / Import</button>
                 <input type="file" id="import-file-input" accept=".txt,.csv,.xls" style="display:none;">
@@ -76,7 +77,7 @@
                     <div class="pf-hero-left">
                         <div class="pf-hero-label">TOTAL NET ASSET VALUE</div>
                         <div class="pf-hero-nav" id="nav-val">--</div>
-                        <div class="pf-hero-sub" id="pf-hero-sub">组合持仓 <span id="pos-count">0</span> 只 · 总仓位 <span id="total-position-weight" style="font-weight:700;color:#6366f1">--</span>% · 现金占比 <span id="cash-weight">--</span>%</div>
+                        <div class="pf-hero-sub" id="pf-hero-sub">组合持仓 <span id="pos-count">0</span> 只 · 总仓位 <span id="total-position-weight" style="font-weight:700;color:#6366f1">--</span>% · <span id="untracked-weight" style="opacity:0.5"></span>现金占比 <span id="cash-weight">--</span>%</div>
                     </div>
                     <div class="pf-hero-right">
                         <div class="pf-sparkline-container" id="pf-sparkline" style="height: 60px; width: 200px;"></div>
@@ -92,22 +93,23 @@
                         <span class="pf-kpi-value" id="port-mv">--</span>
                     </div>
                     <div class="pf-kpi-card">
-                        <span class="pf-kpi-label">账户收益率 ROI</span>
+                        <span class="pf-kpi-label">建仓以来 ROI</span>
                         <span class="pf-kpi-value" id="port-roi">--</span>
                     </div>
                     <div class="pf-kpi-card">
-                        <span class="pf-kpi-label">年化波动率 VOL</span>
+                        <span class="pf-kpi-label">年化波动率 VOL <small style="opacity:0.5">120D</small></span>
                         <span class="pf-kpi-value" id="port-vol">--</span>
                     </div>
                     <div class="pf-kpi-card">
-                        <span class="pf-kpi-label">夏普比率 SHARPE</span>
+                        <span class="pf-kpi-label">夏普比率 SHARPE <small style="opacity:0.5">120D</small></span>
                         <span class="pf-kpi-value" id="port-sharpe">--</span>
                     </div>
                     <div class="pf-kpi-card">
-                        <span class="pf-kpi-label">最大回撤 MAX DD</span>
+                        <span class="pf-kpi-label">最大回撤 MAX DD <small style="opacity:0.5">120D</small></span>
                         <span class="pf-kpi-value pf-danger" id="port-maxdd">--</span>
                     </div>
                 </div>
+                <div class="pf-alert-strip" id="pf-alerts-hero" style="margin-top:14px;"></div>
             </div>
 
             <!-- ═══ ZONE 2: 持仓监控表 ═══ -->
@@ -118,6 +120,7 @@
                         <span class="pf-pos-count" id="pf-total-positions">0 只持仓</span>
                     </div>
                 </div>
+                <div class="pf-alert-strip" id="pf-alerts-positions"></div>
                 <div class="pf-table-wrap">
                     <table class="pf-table" id="pf-positions-table">
                         <thead>
@@ -141,6 +144,7 @@
             </div>
 
             <!-- ═══ ZONE 3: 双图表行 — 行业敞口 + MCTR ═══ -->
+            <div class="pf-alert-strip" id="pf-alerts-risk"></div>
             <div class="pf-charts-row">
                 <div class="glass-panel pf-chart-box">
                     <h4>🛡️ 行业风向敞口 <span class="pf-chart-sub">Sector Exposure</span></h4>
@@ -198,6 +202,7 @@
                         <div class="slip-kpi-value" id="brinson-interact">--</div>
                     </div>
                 </div>
+                <div class="pf-alert-strip" id="pf-alerts-brinson" style="margin-top:8px;"></div>
 
                 <!-- Waterfall Chart -->
                 <div class="pf-charts-row" style="margin-top:16px;">
@@ -233,6 +238,11 @@
                             </tbody>
                         </table>
                     </div>
+                    <div class="brinson-sector-toggle-wrap" id="brinson-sector-toggle-wrap" style="display:none;text-align:center;padding:10px 0 2px;">
+                        <button class="brinson-sector-toggle-btn" id="brinson-sector-toggle-btn">
+                            <span class="brinson-toggle-icon">▼</span> 展开更多板块
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -240,7 +250,10 @@
             <div class="glass-panel pf-chart-box pf-panel-collapsed" style="flex:1;min-height:auto;" id="pf-nav-zone">
                 <div class="pf-panel-header pf-collapsible-header" data-toggle="nav-body">
                     <h3>📈 模拟净值走势 <span class="pf-panel-sub">Simulated NAV (假设持仓不变) vs 沪深300</span></h3>
-                    <span class="pf-collapse-arrow">▶</span>
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <span class="pf-pos-count" id="nav-coverage" style="display:none;">--</span>
+                        <span class="pf-collapse-arrow">▶</span>
+                    </div>
                 </div>
                 <div class="pf-collapsible-body" id="nav-body">
                     <div id="nav-chart" style="height: 360px;"></div>
@@ -263,6 +276,7 @@
                 </div>
                 <div class="pf-collapsible-body" id="factor-body">
 
+                <div class="pf-alert-strip" id="pf-alerts-factor" style="margin-bottom:8px;"></div>
                 <!-- Regression KPI -->
                 <div class="slip-kpi-row" id="factor-kpi-row">
                     <div class="slip-kpi-card" style="border-left:2px solid rgba(99,102,241,0.3);">
@@ -336,6 +350,7 @@
                 </div>
                 <div class="pf-collapsible-body" id="slippage-body">
 
+                <div class="pf-alert-strip" id="pf-alerts-slippage" style="margin-bottom:8px;"></div>
                 <!-- KPI Cards Row -->
                 <div class="slip-kpi-row" id="slip-kpi-row">
                     <div class="slip-kpi-card slip-kpi-eqs">
@@ -546,6 +561,6 @@
         </div>
     </div>
 
-    <script src="./static/js/portfolio_manager.js?v=31"></script>
+    <script src="./static/js/portfolio_manager.js?v=35"></script>
 </body>
 </html>

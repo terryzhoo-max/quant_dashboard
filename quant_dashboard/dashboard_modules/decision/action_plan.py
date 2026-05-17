@@ -37,15 +37,21 @@ def _get_current_position() -> float:
 
 
 def _apply_position_gap_note(base_note: str, target: float, current: float) -> str:
-    """根据目标仓位与实际仓位的缺口, 动态生成 risk_note"""
+    """根据目标仓位与实际仓位的缺口, 在原始 risk_note 基础上追加缺口信息。
+    D4修复: 不再替换原始 risk_note, 避免丢失 '严格止损' 等关键风控语义。"""
     if current < 0:
         return base_note
     gap = target - current
     if abs(gap) <= 10:
-        return f"仓位与目标基本匹配 (现{current:.0f}% → 目标{target}%)"
-    if gap < 0:
-        return f"当前仓位 {current:.0f}% 高于目标 {target}%，建议逐步减仓 {abs(gap):.0f}pp"
-    return f"当前仓位 {current:.0f}% 低于目标 {target}%，可分批加仓 {gap:.0f}pp"
+        gap_info = f"仓位与目标基本匹配 (现{current:.0f}%→目标{target}%)"
+    elif gap < 0:
+        gap_info = f"现{current:.0f}%高于目标{target}%，建议减仓{abs(gap):.0f}pp"
+    else:
+        gap_info = f"现{current:.0f}%低于目标{target}%，可加仓{gap:.0f}pp"
+    # 追加而非替换: 保留原始风控语义
+    if base_note:
+        return f"{base_note} | {gap_info}"
+    return gap_info
 
 
 def generate_action_plan(snapshot: dict, jcs: dict, conflicts: dict) -> dict:

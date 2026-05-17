@@ -1605,6 +1605,79 @@
 }
 
 /* ════════════════════════════════════
+   Brinson 板块归因明细 — 折叠/展开系统
+   ════════════════════════════════════ */
+
+/* 行序号 */
+.brinson-row-idx {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.04);
+    color: #475569;
+    font-size: 0.65rem;
+    font-weight: 700;
+    font-family: 'Outfit', monospace;
+    margin-right: 8px;
+    flex-shrink: 0;
+    vertical-align: middle;
+}
+
+/* 折叠行: 默认隐藏 */
+.brinson-collapsed-row {
+    display: none;
+}
+
+/* 展开后的折叠行淡入 */
+.brinson-collapsed-row[style*="display: table-row"],
+.brinson-collapsed-row:not([style*="display: none"]):not(.brinson-collapsed-row) {
+    animation: brinson-row-fadein 0.3s ease-out both;
+}
+
+@keyframes brinson-row-fadein {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* 展开/收起按钮 */
+.brinson-sector-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 24px;
+    background: rgba(99, 102, 241, 0.06);
+    border: 1px solid rgba(99, 102, 241, 0.15);
+    border-radius: 10px;
+    color: #a5b4fc;
+    font-size: 0.78rem;
+    font-weight: 600;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    letter-spacing: 0.3px;
+}
+
+.brinson-sector-toggle-btn:hover {
+    background: rgba(99, 102, 241, 0.12);
+    border-color: rgba(99, 102, 241, 0.3);
+    box-shadow: 0 0 16px rgba(99, 102, 241, 0.1);
+    transform: translateY(-1px);
+}
+
+.brinson-toggle-icon {
+    font-size: 0.65rem;
+    transition: transform 0.3s ease;
+    display: inline-block;
+}
+
+.brinson-toggle-open {
+    transform: rotate(180deg);
+}
+
+/* ════════════════════════════════════
    V2: Diagnostic Card Color Bars
    ════════════════════════════════════ */
 .slip-diag-card {
@@ -1642,4 +1715,118 @@
 }
 .pf-collapsible-body {
     overflow: hidden;
+}
+
+/* ════════════════════════════════════
+   Portfolio Alert Bar 智能警示系统
+   ════════════════════════════════════ */
+
+/* 容器: 空时不占位 */
+.pf-alert-strip {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 0;
+}
+
+.pf-alert-strip:empty {
+    display: none;
+}
+
+/* 单条警示 */
+.pf-alert-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    border-left: 3px solid transparent;
+    font-size: 0.82rem;
+    font-weight: 500;
+    line-height: 1.4;
+    animation: pf-alert-in 0.4s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes pf-alert-in {
+    from { opacity: 0; transform: translateX(-8px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
+/* 🛑 硬阻断 */
+.pf-alert-block {
+    background: rgba(239, 68, 68, 0.08);
+    border-left-color: #ef4444;
+    color: #fca5a5;
+}
+
+.pf-alert-block .pf-alert-icon {
+    animation: pf-alert-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pf-alert-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* ⚠️ 软警告 */
+.pf-alert-warn {
+    background: rgba(245, 158, 11, 0.06);
+    border-left-color: #f59e0b;
+    color: #fcd34d;
+}
+
+/* ℹ️ 情报提示 */
+.pf-alert-info {
+    background: rgba(59, 130, 246, 0.05);
+    border-left-color: #3b82f6;
+    color: #93c5fd;
+}
+
+/* 内部元素 */
+.pf-alert-icon {
+    font-size: 0.92rem;
+    flex-shrink: 0;
+}
+
+.pf-alert-title {
+    font-weight: 700;
+    margin-right: 6px;
+}
+
+.pf-alert-detail {
+    opacity: 0.85;
+}
+
+/* 全局合规指示灯 */
+.pf-compliance-dot {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    font-family: 'Outfit', sans-serif;
+    transition: all 0.4s ease;
+}
+
+.pf-compliance-ok {
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    color: #34d399;
+}
+
+.pf-compliance-warn {
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    color: #fbbf24;
+    animation: pf-alert-pulse 2s ease-in-out infinite;
+}
+
+.pf-compliance-block {
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #f87171;
+    animation: pf-alert-pulse 1.5s ease-in-out infinite;
 }

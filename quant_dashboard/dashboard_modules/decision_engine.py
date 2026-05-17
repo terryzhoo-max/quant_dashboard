@@ -210,141 +210,135 @@ def compute_conflict_matrix(snapshot: dict) -> dict:
 
 
 # ═══════════════════════════════════════════════════════════
-#  联合置信度引擎 (JCS) — V17.0 加法模型
+#  联合置信度引擎 (JCS) — V25.3 六维加法模型 + V26.0 强度调制
+#  D1修复: 从 decision/jcs.py 回合并六维权重+影子模式到生产文件
 # ═══════════════════════════════════════════════════════════
 
-# 引擎权重 (用于方向一致性加权)
+# V25.3: 6 维权重 (原4维各降 2.5pp, 给 gold + bond 各 5%)
 _JCS_WEIGHTS = {
-    "aiae": 0.35,   # V19.1: 主锚降权 (0.45→0.35), 月频滞后指标不应过半
-    "erp": 0.25,    # 估值锚不变
-    "vix": 0.20,    # V19.1: 提权 (0.15→0.20), 唯一实时情绪指标
-    "mr": 0.20,     # V19.1: 提权 (0.15→0.20), 唯一价格结构指标
+    "aiae": 0.325,  # V25.3: 0.35 → 0.325
+    "erp": 0.225,   # V25.3: 0.25 → 0.225
+    "vix": 0.175,   # V25.3: 0.20 → 0.175
+    "mr": 0.175,    # V25.3: 0.20 → 0.175
+    "gold": 0.05,   # V25.3 NEW: 黄金对冲信号
+    "bond": 0.05,   # V25.3 NEW: 国债利率信号
+}
+
+# V25.3 影子模式: 旧4维权重 (用于并行对比)
+_JCS_WEIGHTS_V4 = {
+    "aiae": 0.35,
+    "erp": 0.25,
+    "vix": 0.20,
+    "mr": 0.20,
 }
 
 
 def _signal_direction(snapshot: dict) -> dict:
-    """将各引擎状态映射为方向: +1(看多), 0(中性), -1(看空)"""
+    """将各引擎状态映射为方向: +1(看多), 0(中性), -1(看空)
+    V25.3: 扩展至 6 维 (原4 + gold + bond)"""
     aiae_r = snapshot.get("aiae_regime") or 3        # None → 中性
     erp_s = snapshot.get("erp_score") or 50          # None → 中性
     vix_v = snapshot.get("vix_val") or 20            # None → 中性
     mr_r = snapshot.get("mr_regime") or "RANGE"      # None → 中性
+
+    # V25.3: 多资产信号
+    gold_sig = snapshot.get("gold_signal")           # [-100, 100] or None
+    bond_sig = snapshot.get("bond_signal")           # [-100, 100] or None
 
     return {
         "aiae": 1 if aiae_r <= 2 else (-1 if aiae_r >= 4 else 0),
         "erp": 1 if erp_s > 55 else (-1 if erp_s < 35 else 0),  # V19.1: 拓宽 (60/40→55/35, A股ERP分布校准)
         "vix": 1 if vix_v < 16 else (-1 if vix_v > 25 else 0),  # P1: 收窄阈值 (A股实证校准)
         "mr": 1 if mr_r == "BULL" else (-1 if mr_r in ("BEAR", "CRASH") else 0),
+        # V25.3: 多资产维度 (None → 0 中性, 不影响旧逻辑)
+        "gold": (1 if gold_sig > 25 else (-1 if gold_sig < -25 else 0)) if gold_sig is not None else 0,
+        "bond": (1 if bond_sig > 25 else (-1 if bond_sig < -25 else 0)) if bond_sig is not None else 0,
     }
 
 
-def compute_jcs(snapshot: dict) -> dict:
+def _compute_jcs_core(snapshot: dict, weights: dict, n_core: int = 6,
+                      apply_intensity: bool = True) -> dict:
     """
-    V17.0 联合置信度引擎 (加法模型, 替代旧版乘法连乘):
-
-    JCS = base_agreement (60%) + data_health (20%) + consensus_bonus (20%)
-
-    旧版问题: agreement × freshness × health 三乘数连乘导致分值被压缩到 30-50 区间,
-              "中置信" 成为常态, 丧失信号区分价值.
-
-    返回:
-    {
-        "score": 0-100,
-        "level": "high" / "medium" / "low",
-        "label": str,
-        "directions": {engine: direction},
-        "agreement_pct": float,
-        "data_health": float,
-        "consensus_bonus": float,
-        "conflict_count": int,
-    }
+    JCS 计算核心 (可配权重, 供正式/影子模式复用)
+    D1修复: 合并 V25.3 六维 + V26.0 S-3 信号强度调制层
     """
     directions = _signal_direction(snapshot)
-    dir_vals = list(directions.values())  # [+1, 0, -1, ...]
+
+    # 只取当前权重中存在的引擎方向
+    active_engines = list(weights.keys())
+    dir_vals = [directions.get(k, 0) for k in active_engines]
 
     # ── 1. Base Agreement (占 60 分) ──
-    # 有明确方向的引擎数量 (非中性)
     active_count = sum(1 for d in dir_vals if d != 0)
-    # 所有有方向引擎的方向是否一致 (全+1 或全-1)
     active_dirs = [d for d in dir_vals if d != 0]
     if active_count == 0:
-        # 全部中性 → 无信号, 基础分 30 (不应高也不应低)
         base_agreement = 30.0
     elif all(d == active_dirs[0] for d in active_dirs):
-        # 所有有方向的引擎一致
-        # 4引擎全一致=60, 3一致1中性=52, 2一致2中性=42
-        base_agreement = 30.0 + active_count * 7.5
+        # V25.3: 按比例缩放, n_core引擎全一致 = 60
+        base_agreement = 30.0 + active_count * (30.0 / n_core)
     else:
-        # 存在方向对冲: 按加权方向计算衰减
         weighted_sum = sum(
-            directions[k] * _JCS_WEIGHTS[k] for k in _JCS_WEIGHTS
+            directions.get(k, 0) * weights[k] for k in weights
         )
-        max_weight = sum(_JCS_WEIGHTS.values())
+        max_weight = sum(weights.values())
         agreement_ratio = abs(weighted_sum) / max_weight if max_weight > 0 else 0
-        # 对冲越严重分越低: 完全对冲→10, 弱对冲→25
         base_agreement = 10.0 + agreement_ratio * 20.0
 
-    # V19.1: 中性距离加分 — 中性引擎的读数仍含信息量
-    # VIX=16 (安全) vs VIX=24 (临界) 不应得分相同
+    # V19.1: 中性距离加分
     distance_bonus = 0.0
-    if directions["vix"] == 0:
-        vix_v = snapshot.get("vix_val") or 20  # 审计修复: None 安全降级
-        # VIX 离恐慌线 (25) 越远越安全, 最多+2.5
+    if directions.get("vix", 0) == 0:
+        vix_v = snapshot.get("vix_val") or 20
         distance_bonus += max(0, (25 - vix_v) / 25) * 2.5
-    if directions["erp"] == 0:
-        erp_s = snapshot.get("erp_score") or 50  # 审计修复: None 安全降级
-        # ERP 偏离中位 50 越远, 方向性越明确, 最多+2.5
+    if directions.get("erp", 0) == 0:
+        erp_s = snapshot.get("erp_score") or 50
         distance_bonus += abs(erp_s - 50) / 50 * 2.5
-    base_agreement += min(distance_bonus, 5.0)  # 总距离分上限 5
+    base_agreement += min(distance_bonus, 5.0)
 
-    # V26.0 S-3 科学修复: 信号强度调制层
-    # 三态映射 (+1/0/-1) 丢失强度信息, 此处补偿:
-    # 极端 ERP/VIX 读数让 JCS 更果断 (加/减分), 而非改变方向
-    intensity_adj = 0.0
-    erp_s_raw = snapshot.get("erp_score") or 50
-    vix_v_raw = snapshot.get("vix_val") or 20
-    # ERP 极端区: score<10 或 >90 → 信号极强, 应增加 JCS 决断力
-    if erp_s_raw < 10:       # ERP 极端看空 (如百分位3%)
-        intensity_adj -= 4.0  # 降低 JCS → 更偏向低置信/防御
-    elif erp_s_raw > 90:     # ERP 极端看多 (如百分位95%)
-        intensity_adj += 4.0  # 提升 JCS → 更偏向高置信/进攻
-    elif erp_s_raw < 20:
-        intensity_adj -= 2.0
-    elif erp_s_raw > 80:
-        intensity_adj += 2.0
-    # VIX 极端区: >30 恐慌 / <14 自满
-    if vix_v_raw > 35:
-        intensity_adj -= 3.0
-    elif vix_v_raw > 30:
-        intensity_adj -= 2.0
-    elif vix_v_raw < 14:
-        intensity_adj += 2.0
-    base_agreement += intensity_adj
-    base_agreement = max(5.0, min(65.0, base_agreement))  # 安全夹紧
+    # V26.0 S-3 科学修复: 信号强度调制层 (仅正式模式启用)
+    # 三态映射 (+1/0/-1) 丢失强度信息, 此处补偿
+    if apply_intensity:
+        intensity_adj = 0.0
+        erp_s_raw = snapshot.get("erp_score") or 50
+        vix_v_raw = snapshot.get("vix_val") or 20
+        if erp_s_raw < 10:
+            intensity_adj -= 4.0
+        elif erp_s_raw > 90:
+            intensity_adj += 4.0
+        elif erp_s_raw < 20:
+            intensity_adj -= 2.0
+        elif erp_s_raw > 80:
+            intensity_adj += 2.0
+        if vix_v_raw > 35:
+            intensity_adj -= 3.0
+        elif vix_v_raw > 30:
+            intensity_adj -= 2.0
+        elif vix_v_raw < 14:
+            intensity_adj += 2.0
+        base_agreement += intensity_adj
+
+    base_agreement = max(5.0, min(65.0, base_agreement))
 
     # ── 2. Data Health (占 20 分) ──
     stale_count = 0
-    if snapshot.get("aiae_regime") is None:
-        stale_count += 1
-    if snapshot.get("erp_score") is None:
-        stale_count += 1
-    if snapshot.get("vix_val") is None:
-        stale_count += 1
-    if snapshot.get("mr_regime") is None:
-        stale_count += 1
+    for key in ["aiae_regime", "erp_score", "vix_val", "mr_regime"]:
+        if snapshot.get(key) is None:
+            stale_count += 1
+    # V25.3: 新维度缺失只扣 0.25 (软信号)
+    for key in ["gold_signal", "bond_signal"]:
+        if key in weights and snapshot.get(key) is None:
+            stale_count += 0.25
 
     degraded = snapshot.get("degraded_modules", [])
     if isinstance(degraded, str):
         degraded = [d.strip() for d in degraded.split(",") if d.strip()]
     degraded_count = len(degraded)
 
-    # 每个缺失引擎扣 4 分, 每个降级模块扣 2 分
     data_health = max(0.0, 20.0 - stale_count * 4.0 - degraded_count * 2.0)
 
     # ── 3. Consensus Bonus (占 20 分) ──
-    # 全方向一致且无中性 → +20; 有中性但无矛盾 → +10; 其他 → 0
-    if active_count == 4 and all(d == active_dirs[0] for d in active_dirs):
+    if active_count == n_core and all(d == active_dirs[0] for d in active_dirs):
         consensus_bonus = 20.0
-    elif active_count >= 2 and all(d == active_dirs[0] for d in active_dirs):
+    elif active_count >= max(2, n_core // 2) and all(d == active_dirs[0] for d in active_dirs):
         consensus_bonus = 10.0
     else:
         consensus_bonus = 0.0
@@ -352,21 +346,18 @@ def compute_jcs(snapshot: dict) -> dict:
     # ── 合成 JCS ──
     raw_jcs = base_agreement + data_health + consensus_bonus
 
-    # ── 矛盾惩罚 (减法, 不再用乘法) ──
-    # V22.0 O1: 直接复用 compute_conflict_matrix 已计算好的
-    #          conflict_count/has_severe, 避免重复过滤
+    # 矛盾惩罚
     conflicts = compute_conflict_matrix(snapshot)
     penalty_count = conflicts["conflict_count"]
     has_severe = conflicts["has_severe"]
 
     if has_severe:
-        raw_jcs -= 25.0  # 严重矛盾扣 25 分
+        raw_jcs -= 25.0
     elif penalty_count > 0:
-        raw_jcs -= penalty_count * 10.0  # 每个中度矛盾扣 10 分
+        raw_jcs -= penalty_count * 10.0
 
     jcs = round(min(100, max(0, raw_jcs)), 1)
 
-    # ── 分级 ──
     if jcs >= 70:
         level, label = "high", "🟢 高置信 — 多引擎方向一致"
     elif jcs >= 40:
@@ -384,6 +375,30 @@ def compute_jcs(snapshot: dict) -> dict:
         "consensus_bonus": round(consensus_bonus, 1),
         "conflict_count": conflicts["conflict_count"],
     }
+
+
+def compute_jcs(snapshot: dict) -> dict:
+    """
+    V25.3 联合置信度引擎 (6维 + 影子模式 + V26.0 强度调制):
+
+    JCS = base_agreement (60%) + data_health (20%) + consensus_bonus (20%)
+
+    D1修复: 合并子包 V25.3 六维权重与旧版 V26.0 强度调制层的两版优势。
+    """
+    # V25.3: 6 维正式计算 (含 V26.0 强度调制)
+    result = _compute_jcs_core(snapshot, _JCS_WEIGHTS, n_core=6, apply_intensity=True)
+
+    # P3-C 影子模式: 并行计算旧4维版本, 供30天验证对比
+    v4_result = _compute_jcs_core(snapshot, _JCS_WEIGHTS_V4, n_core=4, apply_intensity=True)
+
+    result["shadow"] = {
+        "v4_score": v4_result["score"],
+        "v6_score": result["score"],
+        "delta": round(result["score"] - v4_result["score"], 1),
+        "v4_level": v4_result["level"],
+    }
+
+    return result
 
 
 # ═══════════════════════════════════════════════════════════
@@ -750,15 +765,21 @@ def _get_current_position() -> float:
 
 
 def _apply_position_gap_note(base_note: str, target: float, current: float) -> str:
-    """根据目标仓位与实际仓位的缺口, 动态生成 risk_note"""
+    """根据目标仓位与实际仓位的缺口, 在原始 risk_note 基础上追加缺口信息。
+    D4修复: 不再替换原始 risk_note, 避免丢失 '严格止损' 等关键风控语义。"""
     if current < 0:
         return base_note
     gap = target - current
     if abs(gap) <= 10:
-        return f"仓位与目标基本匹配 (现{current:.0f}% → 目标{target}%)"
-    if gap < 0:
-        return f"当前仓位 {current:.0f}% 高于目标 {target}%，建议逐步减仓 {abs(gap):.0f}pp"
-    return f"当前仓位 {current:.0f}% 低于目标 {target}%，可分批加仓 {gap:.0f}pp"
+        gap_info = f"仓位与目标基本匹配 (现{current:.0f}%→目标{target}%)"
+    elif gap < 0:
+        gap_info = f"现{current:.0f}%高于目标{target}%，建议减仓{abs(gap):.0f}pp"
+    else:
+        gap_info = f"现{current:.0f}%低于目标{target}%，可加仓{gap:.0f}pp"
+    # 追加而非替换: 保留原始风控语义
+    if base_note:
+        return f"{base_note} | {gap_info}"
+    return gap_info
 
 
 # ═══════════════════════════════════════════════════════════

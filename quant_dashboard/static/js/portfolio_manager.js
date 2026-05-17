@@ -42,6 +42,230 @@ document.addEventListener('DOMContentLoaded', function () {
     ];
 
     // ════════════════════════════════════
+    //  组合智能警示引擎 (纯前端, 12 条规则)
+    // ════════════════════════════════════
+
+    const PfAlerts = {
+        // 全局累积器 — 各 Zone 检查结果汇总, 用于合规指示灯
+        _allAlerts: [],
+
+        // ── 统一渲染 ──
+        render(containerId, alerts) {
+            const el = document.getElementById(containerId);
+            if (!el) return;
+            if (!alerts || alerts.length === 0) {
+                el.innerHTML = '';
+                return;
+            }
+            el.innerHTML = alerts.map((a, i) => {
+                const cls = a.level === 'block' ? 'pf-alert-block' : a.level === 'warn' ? 'pf-alert-warn' : 'pf-alert-info';
+                return `<div class="pf-alert-item ${cls}" style="animation-delay:${i * 0.08}s">
+                    <span class="pf-alert-icon">${a.icon}</span>
+                    <span><span class="pf-alert-title">${a.title}</span><span class="pf-alert-detail">${a.detail}</span></span>
+                </div>`;
+            }).join('');
+        },
+
+        // ── 全局合规状态更新 ──
+        updateComplianceDot() {
+            const dot = document.getElementById('pf-compliance-dot');
+            if (!dot) return;
+            const blocks = this._allAlerts.filter(a => a.level === 'block');
+            const warns = this._allAlerts.filter(a => a.level === 'warn');
+            if (blocks.length > 0) {
+                dot.className = 'pf-compliance-dot pf-compliance-block';
+                dot.innerHTML = `🔴 ${blocks.length} BLOCK`;
+                dot.title = blocks.map(a => a.title).join('; ');
+            } else if (warns.length > 0) {
+                dot.className = 'pf-compliance-dot pf-compliance-warn';
+                dot.innerHTML = `🟡 ${warns.length} WARN`;
+                dot.title = warns.map(a => a.title).join('; ');
+            } else {
+                dot.className = 'pf-compliance-dot pf-compliance-ok';
+                dot.innerHTML = '🟢 COMPLIANT';
+                dot.title = '组合合规状态: 全部通过';
+            }
+        },
+
+        // ──────────────────────────────────
+        //  Zone 1: Hero KPI (valuation data)
+        // ──────────────────────────────────
+
+        checkHero(data) {
+            const alerts = [];
+
+            // Rule 1: 总仓位偏离
+            const positions = data.positions || [];
+            // 排除国债逆回购
+            const isRepo = (p) => {
+                const code = (p.ts_code || '').split('.')[0];
+                return code.startsWith('131') || code.startsWith('204') || /逆回购/.test(p.name || '');
+            };
+            const nonRepoMV = positions.filter(p => !isRepo(p)).reduce((s, p) => s + (p.market_value || 0), 0);
+            const totalPos = data.total_asset > 0 ? (nonRepoMV / data.total_asset * 100) : 0;
+
+            if (positions.length > 0 && totalPos > 90) {
+                alerts.push({ level: 'warn', icon: '⚠️', title: '仓位过重',
+                    detail: `总仓位 ${totalPos.toFixed(0)}% 超过 90% 安全线，回撤风险显著放大` });
+            } else if (positions.length > 0 && totalPos < 10 && totalPos > 0) {
+                alerts.push({ level: 'info', icon: 'ℹ️', title: '极低仓位',
+                    detail: `总仓位仅 ${totalPos.toFixed(0)}%，资金利用率不足` });
+            }
+
+            // Rule 2: 价格源降级
+            const costFallback = positions.filter(p => p.price_source === 'cost');
+            if (costFallback.length > 0) {
+                const names = costFallback.slice(0, 3).map(p => p.name).join('、');
+                alerts.push({ level: 'warn', icon: '⚠️', title: '价格源降级',
+                    detail: `${costFallback.length} 只标的使用成本价兜底 (${names})，市值可能失真` });
+            }
+
+            this._allAlerts = this._allAlerts.filter(a => a._zone !== 'hero');
+            alerts.forEach(a => { a._zone = 'hero'; this._allAlerts.push(a); });
+            this.render('pf-alerts-hero', alerts);
+            this.updateComplianceDot();
+        },
+
+        // ──────────────────────────────────
+        //  Zone 2: 持仓表 (positions data)
+        // ──────────────────────────────────
+
+        checkPositions(positions) {
+            const alerts = [];
+
+            // Rule 3: 单票超配
+            const overweight = (positions || []).filter(p => (p.weight || 0) > 20);
+            if (overweight.length > 0) {
+                const names = overweight.map(p => `${p.name} ${p.weight.toFixed(1)}%`).join('、');
+                alerts.push({ level: 'block', icon: '🛑', title: '单票超配',
+                    detail: `${names} 超过 20% 仓位上限，触发硬阻断` });
+            }
+
+            // Rule 4: 深度亏损标的
+            const deepLoss = (positions || []).filter(p => (p.pnl_pct || 0) < -15);
+            if (deepLoss.length > 0) {
+                const names = deepLoss.map(p => `${p.name} ${p.pnl_pct.toFixed(1)}%`).join('、');
+                alerts.push({ level: 'warn', icon: '⚠️', title: '深度亏损',
+                    detail: `${deepLoss.length} 只标的浮亏超过 15% (${names})，评估止损或加仓摊薄` });
+            }
+
+            this._allAlerts = this._allAlerts.filter(a => a._zone !== 'positions');
+            alerts.forEach(a => { a._zone = 'positions'; this._allAlerts.push(a); });
+            this.render('pf-alerts-positions', alerts);
+            this.updateComplianceDot();
+        },
+
+        // ──────────────────────────────────
+        //  Zone 3: 风控 (risk data)
+        // ──────────────────────────────────
+
+        checkRisk(risk) {
+            const alerts = [];
+
+            // Rule 5: 行业集中度
+            const sectors = risk.industry_exposure || [];
+            const topSector = sectors[0];
+            if (topSector && topSector.value > 40) {
+                alerts.push({ level: 'warn', icon: '⚠️', title: '行业过度集中',
+                    detail: `${topSector.name} 板块占比 ${topSector.value.toFixed(0)}% 超过 40% 红线，尾部风险急剧上升` });
+            } else if (topSector && topSector.value > 30) {
+                alerts.push({ level: 'info', icon: 'ℹ️', title: '行业偏集中',
+                    detail: `${topSector.name} 板块 ${topSector.value.toFixed(0)}%，接近 40% 红线` });
+            }
+
+            // Rule 6: 组合波动率
+            const vol = (risk.portfolio_vol || 0) * 100;
+            if (vol > 30) {
+                alerts.push({ level: 'warn', icon: '⚠️', title: '波动率过高',
+                    detail: `年化波动率 ${vol.toFixed(1)}% 超过 30%，建议降低高 Beta 标的敞口` });
+            }
+
+            this._allAlerts = this._allAlerts.filter(a => a._zone !== 'risk');
+            alerts.forEach(a => { a._zone = 'risk'; this._allAlerts.push(a); });
+            this.render('pf-alerts-risk', alerts);
+            this.updateComplianceDot();
+        },
+
+        // ──────────────────────────────────
+        //  Zone 4: Brinson 归因
+        // ──────────────────────────────────
+
+        checkBrinson(d) {
+            const alerts = [];
+
+            // Rule 7: 持续跑输基准
+            if (d.excess_return < -3) {
+                alerts.push({ level: 'warn', icon: '⚠️', title: '持续跑输基准',
+                    detail: `超额收益 ${d.excess_return.toFixed(2)}%，显著落后沪深300，审查配置策略` });
+            }
+
+            // Rule 8: 选股效应大幅拖累
+            if (d.effects && d.effects.selection < -1) {
+                alerts.push({ level: 'info', icon: 'ℹ️', title: '选股效应拖累',
+                    detail: `选股效应 ${d.effects.selection.toFixed(3)}%，板块内标的选择弱于基准均值` });
+            }
+
+            this._allAlerts = this._allAlerts.filter(a => a._zone !== 'brinson');
+            alerts.forEach(a => { a._zone = 'brinson'; this._allAlerts.push(a); });
+            this.render('pf-alerts-brinson', alerts);
+            this.updateComplianceDot();
+        },
+
+        // ──────────────────────────────────
+        //  Zone 6: 三因子暴露
+        // ──────────────────────────────────
+
+        checkFactor(d) {
+            const alerts = [];
+
+            // Rule 9: 系统性风险过载
+            const sysPct = d.portfolio_decomposition?.systematic_pct || 0;
+            if (sysPct > 80) {
+                alerts.push({ level: 'warn', icon: '⚠️', title: '系统性风险过载',
+                    detail: `${sysPct.toFixed(0)}% 收益波动来自市场因子，选股 Alpha 空间极小` });
+            }
+
+            // Rule 10: Beta 过高
+            const mktFactor = (d.factors || []).find(f => f.name === 'market');
+            if (mktFactor && mktFactor.beta > 1.3) {
+                alerts.push({ level: 'warn', icon: '⚠️', title: 'Beta 过高',
+                    detail: `市场 Beta ${mktFactor.beta.toFixed(2)} > 1.3，组合对大盘下跌放大 ${((mktFactor.beta - 1) * 100).toFixed(0)}%` });
+            }
+
+            this._allAlerts = this._allAlerts.filter(a => a._zone !== 'factor');
+            alerts.forEach(a => { a._zone = 'factor'; this._allAlerts.push(a); });
+            this.render('pf-alerts-factor', alerts);
+            this.updateComplianceDot();
+        },
+
+        // ──────────────────────────────────
+        //  Zone 7: 执行质量
+        // ──────────────────────────────────
+
+        checkSlippage(eqs) {
+            const alerts = [];
+            if (!eqs || !eqs.has_data) return;
+
+            // Rule 11: 滑点恶化
+            if (eqs.trend === 'deteriorating') {
+                alerts.push({ level: 'warn', icon: '⚠️', title: '滑点恶化趋势',
+                    detail: `执行损耗呈上升趋势，平均滑点 ${eqs.avg_slippage_bps?.toFixed(1) || '--'} bps，审查委托策略` });
+            }
+
+            // Rule 12: EQS 过低
+            if (eqs.score !== undefined && eqs.score < 60) {
+                alerts.push({ level: 'warn', icon: '⚠️', title: 'EQS 评分偏低',
+                    detail: `执行质量评分 ${eqs.score}（${eqs.grade || '--'}），建议优化挂单时机和价位` });
+            }
+
+            this._allAlerts = this._allAlerts.filter(a => a._zone !== 'slippage');
+            alerts.forEach(a => { a._zone = 'slippage'; this._allAlerts.push(a); });
+            this.render('pf-alerts-slippage', alerts);
+            this.updateComplianceDot();
+        }
+    };
+
+    // ════════════════════════════════════
     //  Toast 通知系统
     // ════════════════════════════════════
 
@@ -140,6 +364,18 @@ document.addEventListener('DOMContentLoaded', function () {
         // 颜色语义: >90% 过重(红), >80% 偏高(橙), 正常(紫)
         tpwEl.style.color = totalPosWeight > 90 ? '#f87171' : totalPosWeight > 80 ? '#fbbf24' : '#6366f1';
 
+        // 未追踪资产占比 (场外基金/理财/逆回购到期等)
+        const untrackedEl = document.getElementById('untracked-weight');
+        if (untrackedEl) {
+            const untrackedPct = 100 - totalPosWeight - cashWeight;
+            if (untrackedPct > 1) {
+                untrackedEl.textContent = '未追踪 ' + untrackedPct.toFixed(0) + '% · ';
+                untrackedEl.title = '场外基金、理财产品、逆回购到期等未录入持仓系统的资产';
+            } else {
+                untrackedEl.textContent = '';
+            }
+        }
+
         // ROI — 使用后端统一计算的盈亏 (券商/Tushare 一致)
         let totalROI = data.total_pnl_pct != null ? data.total_pnl_pct : 0;
         // 向后兼容: 旧 API 可能无 total_pnl_pct 字段
@@ -159,6 +395,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Render table
         renderPositionsTable(data.positions);
+
+        // 警示引擎: Hero + 持仓
+        PfAlerts.checkHero(data);
+        PfAlerts.checkPositions(data.positions);
     }
 
     function renderPositionsTable(positions) {
@@ -226,6 +466,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const result = await res.json();
             if (result.status === 'success' && result.data.status !== 'empty') {
                 renderRiskCharts(result.data);
+                PfAlerts.checkRisk(result.data);
                 if (result.data.skipped_codes && result.data.skipped_codes.length > 0) {
                     console.info('Risk: ' + result.data.skipped_codes.length + ' 只缺行情数据已跳过');
                 }
@@ -371,6 +612,23 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function renderNavChart(navData) {
         initCharts();
+
+        // 数据覆盖率标签
+        const covEl = document.getElementById('nav-coverage');
+        if (covEl && navData.available_count != null) {
+            const avail = navData.available_count;
+            const total = navData.total_count || avail;
+            const skipped = total - avail;
+            covEl.style.display = '';
+            if (skipped > 0) {
+                covEl.textContent = `${avail}/${total} 只覆盖`;
+                covEl.style.color = '#fbbf24';
+                covEl.title = `${skipped} 只标的缺行情数据，未参与净值模拟`;
+            } else {
+                covEl.textContent = `${avail} 只全覆盖`;
+                covEl.style.color = '';
+            }
+        }
 
         const series = [{
             name: '组合净值',
@@ -1109,7 +1367,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 fetch('/api/v1/slippage/diagnose').then(r => r.json()),
                 fetch('/api/v1/slippage/orders?days=90').then(r => r.json()),
             ]);
-            if (eqsRes.status === 'success') renderSlipEQS(eqsRes.data);
+            if (eqsRes.status === 'success') { renderSlipEQS(eqsRes.data); PfAlerts.checkSlippage(eqsRes.data); }
             if (summRes.status === 'success') renderSlipSummary(summRes.data);
             if (histRes.status === 'success') renderSlipTrend(histRes.data);
             if (attrRes.status === 'success') renderSlipAttribution(attrRes.data);
@@ -1379,6 +1637,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const result = await res.json();
             if (result.status === 'success' && result.data?.status === 'success') {
                 renderBrinson(result.data);
+                PfAlerts.checkBrinson(result.data);
             } else {
                 console.warn('Brinson:', result.data?.error || result.message);
             }
@@ -1528,20 +1787,34 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    // 板块归因明细: 默认前20, 其余折叠
+    const SECTOR_VISIBLE_COUNT = 20;
+    let _sectorExpanded = false;
+
     function renderSectorTable(d) {
         const body = document.getElementById('brinson-sector-body');
         if (!body) return;
 
         if (!d.sector_detail || d.sector_detail.length === 0) {
             body.innerHTML = '<tr><td colspan="8" class="pf-table-empty">无板块归因数据</td></tr>';
+            _hideSectorToggle();
             return;
         }
 
-        body.innerHTML = d.sector_detail.map(s => {
+        const total = d.sector_detail.length;
+        const hasMore = total > SECTOR_VISIBLE_COUNT;
+        _sectorExpanded = false;
+
+        body.innerHTML = d.sector_detail.map((s, i) => {
             const wdClass = s.weight_diff > 0 ? 'pf-up' : s.weight_diff < 0 ? 'pf-danger' : '';
             const teClass = s.total_effect > 0 ? 'pf-up' : s.total_effect < 0 ? 'pf-danger' : '';
-            return `<tr>
-                <td><strong>${s.sector}</strong></td>
+            const isCollapsed = hasMore && i >= SECTOR_VISIBLE_COUNT;
+            const rowCls = isCollapsed ? ' class="brinson-collapsed-row"' : '';
+            // 零持仓+零效应的板块使用低优先级视觉
+            const isZeroRow = s.portfolio_weight === 0 && s.total_effect === 0;
+            const nameStyle = isZeroRow ? 'color:#64748b;font-weight:500' : '';
+            return `<tr${rowCls}>
+                <td><span class="brinson-row-idx">${i + 1}</span><strong style="${nameStyle}">${s.sector}</strong></td>
                 <td class="pf-mono">${s.portfolio_weight.toFixed(1)}%</td>
                 <td class="pf-mono pf-dim">${s.benchmark_weight.toFixed(1)}%</td>
                 <td class="pf-mono ${wdClass}">${s.weight_diff > 0 ? '+' : ''}${s.weight_diff.toFixed(1)}pp</td>
@@ -1551,7 +1824,46 @@ document.addEventListener('DOMContentLoaded', function () {
                 <td class="pf-mono ${teClass}" style="font-weight:600">${s.total_effect > 0 ? '+' : ''}${s.total_effect.toFixed(3)}%</td>
             </tr>`;
         }).join('');
+
+        // 折叠/展开控制
+        const toggleWrap = document.getElementById('brinson-sector-toggle-wrap');
+        if (hasMore && toggleWrap) {
+            const hiddenCount = total - SECTOR_VISIBLE_COUNT;
+            toggleWrap.style.display = '';
+            const btn = document.getElementById('brinson-sector-toggle-btn');
+            if (btn) btn.innerHTML = `<span class="brinson-toggle-icon">▼</span> 展开剩余 ${hiddenCount} 个板块`;
+        } else {
+            _hideSectorToggle();
+        }
     }
+
+    function _hideSectorToggle() {
+        const wrap = document.getElementById('brinson-sector-toggle-wrap');
+        if (wrap) wrap.style.display = 'none';
+    }
+
+    function _toggleSectorRows() {
+        _sectorExpanded = !_sectorExpanded;
+        const rows = document.querySelectorAll('.brinson-collapsed-row');
+        const btn = document.getElementById('brinson-sector-toggle-btn');
+        rows.forEach(r => r.style.display = _sectorExpanded ? 'table-row' : 'none');
+        if (btn) {
+            const count = rows.length;
+            btn.innerHTML = _sectorExpanded
+                ? '<span class="brinson-toggle-icon brinson-toggle-open">▲</span> 收起低权重板块'
+                : `<span class="brinson-toggle-icon">▼</span> 展开剩余 ${count} 个板块`;
+        }
+    }
+
+    // 初始化折叠行隐藏 (MutationObserver 不需要, renderSectorTable 调用后 DOM 已就绪)
+    // 绑定按钮事件 (按钮在 HTML 中静态存在)
+    document.addEventListener('DOMContentLoaded', () => {
+        const btn = document.getElementById('brinson-sector-toggle-btn');
+        if (btn) btn.addEventListener('click', _toggleSectorRows);
+    });
+    // 也立即尝试绑定（DOMContentLoaded 可能已触发）
+    const _stBtn = document.getElementById('brinson-sector-toggle-btn');
+    if (_stBtn) _stBtn.addEventListener('click', _toggleSectorRows);
 
     // Bind events
     const refreshBtn = document.getElementById('brinson-refresh-btn');
@@ -1615,6 +1927,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const result = await res.json();
             if (result.status === 'success' && result.data?.status === 'success') {
                 renderFactorAttr(result.data);
+                PfAlerts.checkFactor(result.data);
             } else {
                 console.warn('FactorAttr:', result.data?.error || result.message);
             }
