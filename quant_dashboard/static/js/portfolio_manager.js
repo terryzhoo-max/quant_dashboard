@@ -186,23 +186,136 @@ document.addEventListener('DOMContentLoaded', function () {
             this.updateComplianceDot();
         },
 
-        // ──────────────────────────────────
-        //  Zone 4: Brinson 归因
-        // ──────────────────────────────────
+        // ──────────────────────────────────────────────
+        //  Zone 4: Brinson 归因 (机构级 8 规则体系)
+        //
+        //  三层递进:
+        //    Tier 1 — 方法论可信度 (B1, B2): 归因结果本身是否可信
+        //    Tier 2 — 集中度风险 (B3, B4): 超额来源是否过度集中
+        //    Tier 3 — 持仓结构 (B5, B6, R7, R8): 配置/选股决策质量
+        // ──────────────────────────────────────────────
 
         checkBrinson(d) {
             const alerts = [];
-
-            // Rule 7: 持续跑输基准
-            if (d.excess_return < -3) {
-                alerts.push({ level: 'warn', icon: '⚠️', title: '持续跑输基准',
-                    detail: `超额收益 ${d.excess_return.toFixed(2)}%，显著落后沪深300，审查配置策略` });
+            if (!d || !d.effects) {
+                this._allAlerts = this._allAlerts.filter(a => a._zone !== 'brinson');
+                this.render('pf-alerts-brinson', []);
+                this.updateComplianceDot();
+                return;
             }
 
-            // Rule 8: 选股效应大幅拖累
-            if (d.effects && d.effects.selection < -1) {
+            const eff = d.effects;
+            const excess = d.excess_return || 0;
+            const alloc = eff.allocation || 0;
+            const select = eff.selection || 0;
+            const interact = eff.interaction || 0;
+            const sectors = d.sector_detail || [];
+
+            // ════════════════════════════════════
+            //  Tier 1: 方法论可信度 (归因结果本身是否值得信赖)
+            // ════════════════════════════════════
+
+            // B1: 交互效应主导 — 超额收益可复制性存疑
+            // 机构含义: 超额主要来自"超配了同时涨得好的板块"这种不可复制的交叉项,
+            //          配置能力和选股能力的纯贡献都不充分
+            if (Math.abs(excess) > 0.5) {
+                const interactPct = Math.abs(interact / excess) * 100;
+                const pureEffects = Math.abs(alloc) + Math.abs(select);
+                if (Math.abs(interact) > pureEffects && interactPct > 50) {
+                    alerts.push({ level: 'warn', icon: '⚠️', title: '交互效应主导',
+                        detail: `超额中 ${interactPct.toFixed(0)}% 来自配置×选股交叉项 (${interact > 0 ? '+' : ''}${interact.toFixed(2)}%)，` +
+                                `纯配置 ${alloc > 0 ? '+' : ''}${alloc.toFixed(2)}%、纯选股 ${select > 0 ? '+' : ''}${select.toFixed(2)}%，Alpha 可复制性存疑` });
+                }
+            }
+
+            // B2: 配置效应符号冲突 — 板块权重决策是负贡献
+            // 机构含义: 板块配置环节的决策框架需要反思, 超额完全靠选股/交互扛
+            if (excess > 0.5 && alloc < -0.3) {
+                alerts.push({ level: 'warn', icon: '⚠️', title: '配置效应拖累',
+                    detail: `板块权重偏离基准带来 ${alloc.toFixed(2)}% 拖累，超额 ${excess > 0 ? '+' : ''}${excess.toFixed(2)}% 完全依赖选股和交互效应` });
+            } else if (excess < -0.5 && alloc > 0.3) {
+                // 反向: 配置正确但选股拖累
+                alerts.push({ level: 'info', icon: 'ℹ️', title: '配置正确但选股拖累',
+                    detail: `配置效应 +${alloc.toFixed(2)}% 为正贡献，但选股 ${select.toFixed(2)}% 抵消了配置优势` });
+            }
+
+            // ════════════════════════════════════
+            //  Tier 2: 集中度风险 (超额来源是否过度集中)
+            // ════════════════════════════════════
+
+            // B3: 单板块贡献过度集中 — 超额严重依赖单一板块
+            if (sectors.length > 0 && Math.abs(excess) > 0.3) {
+                const topSector = sectors[0]; // 已按 |total_effect| 降序排列
+                if (topSector && Math.abs(topSector.total_effect) > Math.abs(excess) * 0.8) {
+                    const ratio = Math.abs(topSector.total_effect / excess) * 100;
+                    alerts.push({ level: 'warn', icon: '⚠️', title: '归因集中度风险',
+                        detail: `[${topSector.sector}] 贡献 ${topSector.total_effect > 0 ? '+' : ''}${topSector.total_effect.toFixed(3)}%，` +
+                                `占超额 ${ratio.toFixed(0)}%，单板块依赖度过高，反转时 Alpha 将瞬间消失` });
+                }
+            }
+
+            // B4: 高权重低回报 — 大量资金配置在贡献微弱的板块
+            const deadWeights = sectors.filter(s =>
+                s.portfolio_weight > 10 && Math.abs(s.total_effect) < 0.05
+            );
+            if (deadWeights.length > 0) {
+                const names = deadWeights.slice(0, 2).map(s =>
+                    `${s.sector} ${s.portfolio_weight.toFixed(1)}%→${s.total_effect > 0 ? '+' : ''}${s.total_effect.toFixed(3)}%`
+                ).join('、');
+                alerts.push({ level: 'info', icon: 'ℹ️', title: '高权重低效板块',
+                    detail: `${names}，大比例资金配置在归因贡献微弱的板块，资金使用效率待优化` });
+            }
+
+            // ════════════════════════════════════
+            //  Tier 3: 持仓结构 (配置/选股决策质量)
+            // ════════════════════════════════════
+
+            // B5: 组合覆盖率过低 — 主动偏离度极高
+            if (sectors.length > 0) {
+                const benchSectors = sectors.filter(s => s.benchmark_weight > 0.5);
+                const coveredSectors = sectors.filter(s => s.benchmark_weight > 0.5 && s.portfolio_weight > 0.1);
+                if (benchSectors.length > 5) {
+                    const coverageRate = coveredSectors.length / benchSectors.length * 100;
+                    if (coverageRate < 30) {
+                        alerts.push({ level: 'info', icon: 'ℹ️', title: '组合覆盖率偏低',
+                            detail: `仅覆盖基准 ${coveredSectors.length}/${benchSectors.length} 个行业 (${coverageRate.toFixed(0)}%)，` +
+                                    `主动偏离度极高，跟踪误差风险需关注` });
+                    }
+                }
+            }
+
+            // B6: 防守板块反噬 — 低波配置在上涨市中拖累
+            const defensiveKeywords = ['红利', '低波', '贵金属', '黄金', '国债', '货币'];
+            const defensiveSectors = sectors.filter(s =>
+                s.portfolio_weight > 1 && defensiveKeywords.some(kw => s.sector.includes(kw))
+            );
+            if (defensiveSectors.length > 0) {
+                const defTotal = defensiveSectors.reduce((s, x) => s + x.total_effect, 0);
+                if (defTotal < -0.1 && excess > 0) {
+                    const defNames = defensiveSectors.map(s => s.sector).join('/');
+                    alerts.push({ level: 'info', icon: 'ℹ️', title: '防守配置拖累',
+                        detail: `${defNames}等低波板块总效应 ${defTotal.toFixed(3)}%，上涨市中机会成本凸显，评估防守仓位择时` });
+                }
+            }
+
+            // R7 (升级): 跑输基准分级 + 决策诊断
+            if (excess < -5) {
+                const dragSource = Math.abs(alloc) > Math.abs(select) ? '配置效应' : '选股效应';
+                alerts.push({ level: 'block', icon: '🛑', title: '显著跑输基准',
+                    detail: `超额 ${excess.toFixed(2)}% 严重落后沪深300，主要拖累来自${dragSource}，建议立即审查投资策略` });
+            } else if (excess < -2) {
+                alerts.push({ level: 'warn', icon: '⚠️', title: '跑输基准',
+                    detail: `超额 ${excess.toFixed(2)}%，落后沪深300，配置效应 ${alloc > 0 ? '+' : ''}${alloc.toFixed(2)}%、选股 ${select > 0 ? '+' : ''}${select.toFixed(2)}%` });
+            }
+
+            // R8 (升级): 选股+配置联合判断
+            if (alloc < -0.5 && select < -0.5) {
+                // 配置和选股双负 — 升级为 warn
+                alerts.push({ level: 'warn', icon: '⚠️', title: '配置+选股双拖累',
+                    detail: `配置 ${alloc.toFixed(2)}% + 选股 ${select.toFixed(2)}% 同时为负，板块选择和个股能力均弱于基准` });
+            } else if (select < -1) {
                 alerts.push({ level: 'info', icon: 'ℹ️', title: '选股效应拖累',
-                    detail: `选股效应 ${d.effects.selection.toFixed(3)}%，板块内标的选择弱于基准均值` });
+                    detail: `选股效应 ${select.toFixed(3)}%，板块内标的选择弱于基准均值` });
             }
 
             this._allAlerts = this._allAlerts.filter(a => a._zone !== 'brinson');
@@ -264,6 +377,9 @@ document.addEventListener('DOMContentLoaded', function () {
             this.updateComplianceDot();
         }
     };
+
+    // 暴露到 window — Brinson/Factor IIFE 需要跨作用域访问
+    window.PfAlerts = PfAlerts;
 
     // ════════════════════════════════════
     //  Toast 通知系统
@@ -1637,7 +1753,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const result = await res.json();
             if (result.status === 'success' && result.data?.status === 'success') {
                 renderBrinson(result.data);
-                PfAlerts.checkBrinson(result.data);
+                window.PfAlerts.checkBrinson(result.data);
             } else {
                 console.warn('Brinson:', result.data?.error || result.message);
             }
@@ -1927,7 +2043,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const result = await res.json();
             if (result.status === 'success' && result.data?.status === 'success') {
                 renderFactorAttr(result.data);
-                PfAlerts.checkFactor(result.data);
+                window.PfAlerts.checkFactor(result.data);
             } else {
                 console.warn('FactorAttr:', result.data?.error || result.message);
             }
