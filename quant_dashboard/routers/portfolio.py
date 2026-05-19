@@ -190,3 +190,15 @@ async def get_factor_attribution(days: int = 60):
         f"swr_factor_attr_{days}", _compute, fresh_ttl=7200, stale_ttl=28800)
 
 
+@router.get("/portfolio/intraday-pnl")
+async def get_intraday_pnl():
+    """V27.0 P1-A: 盘中实时P&L — 今日涨跌归因 (每只持仓 + 行业聚合)"""
+    from services.cache_service import stale_while_revalidate
+
+    def _compute():
+        engine = get_portfolio_engine()
+        result = engine.get_intraday_pnl()
+        return R.ok(result)
+
+    return stale_while_revalidate(
+        "swr_intraday_pnl", _compute, fresh_ttl=60, stale_ttl=300)

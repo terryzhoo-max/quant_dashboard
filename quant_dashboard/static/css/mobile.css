@@ -245,3 +245,77 @@
         padding-top: max(8px, env(safe-area-inset-top)) !important;
     }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   §6 V27.0 P2-C 增量: 新增组件移动端适配
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── 策略健康诊断条: 横向滚动 (≤768px) ── */
+@media (max-width: 768px) {
+    #ac-health-strip {
+        display: flex !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+        gap: 6px !important;
+        padding-bottom: 6px;
+        flex-wrap: nowrap !important;
+    }
+    #ac-health-strip > * {
+        min-width: 120px;
+        flex-shrink: 0;
+    }
+
+    /* ── 盘中P&L 面板: 单列 ── */
+    .pnl-kpi-row {
+        grid-template-columns: 1fr !important;
+        gap: 8px !important;
+    }
+    .pnl-charts-row {
+        grid-template-columns: 1fr !important;
+    }
+
+    /* ── Factor 因子分析: 单列 ── */
+    .factor-grid {
+        grid-template-columns: 1fr !important;
+    }
+
+    /* ── Strategy 策略页: 信号表横向滚动 ── */
+    .strategy-signal-table-wrap {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+    }
+    .strategy-signal-table {
+        min-width: 600px;
+    }
+
+    /* ── 底部导航条 (手机) ── */
+    #ac-mobile-nav {
+        display: flex !important;
+    }
+}
+
+/* ── 底部 Tab Bar (V27.0 P2-C: 手机核心导航) ── */
+#ac-mobile-nav {
+    display: none;
+    position: fixed; bottom: 0; left: 0; right: 0;
+    z-index: 9998;
+    background: rgba(15, 17, 28, 0.97);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-top: 1px solid rgba(255,255,255,0.06);
+    padding: 6px 0 calc(6px + env(safe-area-inset-bottom, 0px));
+    justify-content: space-around;
+    align-items: center;
+}
+#ac-mobile-nav a {
+    display: flex; flex-direction: column; align-items: center;
+    text-decoration: none; color: rgba(255,255,255,0.4);
+    font-size: 0.6rem; gap: 2px;
+    padding: 4px 8px; border-radius: 8px;
+    transition: color 0.2s;
+}
+#ac-mobile-nav a .mn-icon { font-size: 1.2rem; }
+#ac-mobile-nav a.active {
+    color: #a5b4fc;
+}
+#ac-mobile-nav a:hover { color: rgba(255,255,255,0.7); }

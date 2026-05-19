@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlphaCore Investment Committee Report</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0f111c;
+            --surface: rgba(255,255,255,0.03);
+            --border: rgba(255,255,255,0.06);
+            --text: #e2e8f0;
+            --text-dim: rgba(255,255,255,0.5);
+            --accent: #6366f1;
+            --green: #34d399;
+            --red: #f87171;
+            --yellow: #fbbf24;
+            --blue: #60a5fa;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Noto Serif SC', 'Outfit', serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.8;
+            padding: 0;
+        }
+        .toolbar {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+            background: rgba(15,17,28,0.95);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 32px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .toolbar-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.85rem; font-weight: 500; color: var(--text-dim);
+        }
+        .toolbar-actions { display: flex; gap: 10px; }
+        .btn {
+            padding: 8px 20px; border-radius: 8px; border: none; cursor: pointer;
+            font-size: 0.82rem; font-weight: 600; transition: all 0.2s;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            color: #fff;
+        }
+        .btn-primary:hover { transform: scale(1.03); box-shadow: 0 4px 20px rgba(99,102,241,0.4); }
+        .btn-secondary {
+            background: rgba(255,255,255,0.06); color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover { background: rgba(255,255,255,0.1); }
+        .btn-date {
+            background: rgba(255,255,255,0.04); color: var(--text-dim);
+            border: 1px solid var(--border); padding: 6px 14px;
+            font-size: 0.78rem; border-radius: 6px;
+        }
+        .report-container {
+            max-width: 820px; margin: 80px auto 60px; padding: 48px;
+            background: rgba(255,255,255,0.02);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+        }
+        .report-body h1 {
+            font-size: 1.6rem; font-weight: 700; color: #fff;
+            margin-bottom: 8px; letter-spacing: -0.02em;
+        }
+        .report-body blockquote {
+            padding: 10px 16px; margin: 8px 0 20px;
+            border-left: 3px solid var(--accent);
+            background: rgba(99,102,241,0.06);
+            border-radius: 0 8px 8px 0;
+            color: var(--text-dim); font-size: 0.82rem;
+            font-family: 'Outfit', sans-serif;
+        }
+        .report-body h2 {
+            font-size: 1.15rem; font-weight: 700; color: var(--blue);
+            margin: 32px 0 14px; padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+        .report-body h3 {
+            font-size: 1rem; font-weight: 600; color: var(--text);
+            margin: 20px 0 10px;
+        }
+        .report-body hr {
+            border: none; border-top: 1px solid var(--border);
+            margin: 24px 0;
+        }
+        .report-body table {
+            width: 100%; border-collapse: collapse;
+            margin: 12px 0 20px; font-size: 0.82rem;
+        }
+        .report-body th {
+            background: rgba(99,102,241,0.08);
+            text-align: left; padding: 10px 12px;
+            font-weight: 600; font-size: 0.78rem;
+            color: var(--text-dim); border-bottom: 2px solid var(--accent);
+            font-family: 'Outfit', sans-serif; text-transform: uppercase;
+        }
+        .report-body td {
+            padding: 9px 12px; border-bottom: 1px solid var(--border);
+            color: var(--text); vertical-align: top;
+        }
+        .report-body tr:hover td { background: rgba(255,255,255,0.02); }
+        .report-body strong { color: #fff; font-weight: 600; }
+        .report-body p {
+            margin: 8px 0 12px; text-align: justify;
+            font-size: 0.88rem;
+        }
+        .report-body ul, .report-body ol {
+            margin: 8px 0 14px; padding-left: 24px;
+        }
+        .report-body li {
+            margin: 4px 0; font-size: 0.85rem; line-height: 1.7;
+        }
+        .report-body code {
+            background: rgba(99,102,241,0.12); padding: 2px 6px;
+            border-radius: 4px; font-size: 0.78rem; color: #a5b4fc;
+            font-family: 'Outfit', monospace;
+        }
+        .report-loading {
+            text-align: center; padding: 80px 0;
+            color: var(--text-dim); font-size: 0.9rem;
+        }
+        .report-loading .spinner {
+            display: inline-block; width: 32px; height: 32px;
+            border: 3px solid var(--border); border-top-color: var(--accent);
+            border-radius: 50%; animation: spin 1s linear infinite;
+            margin-bottom: 16px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .report-footer {
+            margin-top: 32px; padding-top: 20px;
+            border-top: 2px solid var(--accent);
+            display: flex; justify-content: space-between;
+            font-size: 0.72rem; color: var(--text-dim);
+            font-family: 'Outfit', sans-serif;
+        }
+        @media print {
+            @page { size: A4; margin: 18mm 15mm 15mm; }
+            body {
+                background: #fff !important; color: #1a1a1a !important;
+                font-size: 10.5pt; line-height: 1.6;
+                -webkit-print-color-adjust: exact; print-color-adjust: exact;
+            }
+            .toolbar { display: none !important; }
+            .report-container { margin: 0; padding: 0; border: none; background: none; max-width: 100%; }
+            .report-body h1 { color: #111; font-size: 18pt; }
+            .report-body h2 { color: #2c3e7a; font-size: 13pt; border-bottom: 1.5pt solid #2c3e7a; page-break-after: avoid; }
+            .report-body h3 { color: #333; font-size: 11pt; }
+            .report-body blockquote { background: #f5f5f5; border-left-color: #2c3e7a; color: #555; }
+            .report-body table { font-size: 9pt; }
+            .report-body th { background: #e8eaf6 !important; color: #333; border-bottom: 1.5pt solid #2c3e7a; }
+            .report-body td { border-bottom: 0.5pt solid #ddd; color: #333; }
+            .report-body strong { color: #111; }
+            .report-body p { font-size: 10pt; }
+            .report-body li { font-size: 9.5pt; }
+            .report-body code { background: #eef; color: #2c3e7a; border: 0.5pt solid #ccd; }
+            .report-footer { color: #888; border-top-color: #2c3e7a; }
+            table, tr, td { page-break-inside: avoid; }
+        }
+        @media (max-width: 768px) {
+            .toolbar { padding: 8px 12px; flex-wrap: wrap; gap: 6px; }
+            .toolbar-title { font-size: 0.72rem; }
+            .toolbar-actions { flex-wrap: wrap; gap: 6px; }
+            .btn { padding: 6px 12px; font-size: 0.72rem; }
+            .report-container { margin: 60px 8px 80px; padding: 16px; border-radius: 10px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <div class="toolbar-title">AlphaCore Report</div>
+        <div class="toolbar-actions">
+            <input type="date" id="report-date" class="btn-date" />
+            <button class="btn btn-secondary" id="btn-load" onclick="loadReport()">Load Date</button>
+            <button class="btn btn-secondary" onclick="window.location.href='./index.html'">Back</button>
+            <button class="btn btn-primary" onclick="window.print()">Print / Export PDF</button>
+        </div>
+    </div>
+
+    <div class="report-container">
+        <div id="report-body" class="report-body">
+            <div class="report-loading">
+                <div class="spinner"></div>
+                <div>Generating report...</div>
+            </div>
+        </div>
+        <div class="report-footer" id="report-footer" style="display:none;">
+            <div>
+                <strong>AlphaCore</strong> Decision Terminal<br>
+                Auto-generated. Not investment advice.
+            </div>
+            <div style="text-align:right;">
+                <span id="footer-date"></span><br>
+                <span id="footer-id"></span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function mdToHtml(md) {
+        var html = md
+            .replace(/^### (.*)/gm, '<h3>$1</h3>')
+            .replace(/^## (.*)/gm, '<h2>$1</h2>')
+            .replace(/^# (.*)/gm, '<h1>$1</h1>')
+            .replace(/^> (.*)/gm, '<blockquote>$1</blockquote>')
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/`([^`]+)`/g, '<code>$1</code>')
+            .replace(/^---$/gm, '<hr>')
+            .replace(/^- (.*)/gm, '<li>$1</li>');
+
+        html = html.replace(/(\|.*\|[\r\n]+\|[-|: ]+\|[\r\n]+((\|.*\|[\r\n]*)+))/g, function(table) {
+            var rows = table.trim().split('\n').filter(function(r) { return r.trim() && !r.match(/^\|[-|: ]+\|$/); });
+            if (rows.length < 1) return table;
+            var tableHtml = '<table>';
+            rows.forEach(function(row, i) {
+                var cells = row.split('|').filter(function(c) { return c.trim() !== ''; });
+                var tag = i === 0 ? 'th' : 'td';
+                if (i === 0) tableHtml += '<thead>';
+                if (i === 1) tableHtml += '</thead><tbody>';
+                tableHtml += '<tr>';
+                cells.forEach(function(c) { tableHtml += '<' + tag + '>' + c.trim() + '</' + tag + '>'; });
+                tableHtml += '</tr>';
+            });
+            tableHtml += '</tbody></table>';
+            return tableHtml;
+        });
+
+        html = html.replace(/((<li>.*<\/li>\s*)+)/g, '<ul>$1</ul>');
+        html = html.replace(/^(?!<[hbultd]|<\/|<hr|<code|<strong)(.*\S.*)$/gm, '<p>$1</p>');
+        html = html.replace(/<\/blockquote>\s*<blockquote>/g, '<br>');
+
+        return html;
+    }
+
+    function loadReport(dateStr) {
+        var body = document.getElementById('report-body');
+        var footer = document.getElementById('report-footer');
+
+        body.innerHTML = '<div class="report-loading"><div class="spinner"></div><div>Generating report...</div></div>';
+        footer.style.display = 'none';
+
+        var dateInput = document.getElementById('report-date');
+        var date = dateStr || dateInput.value || '';
+        var url = date ? '/api/v1/decision/daily-report?date=' + date : '/api/v1/decision/daily-report';
+
+        fetch(url)
+            .then(function(resp) { return resp.json(); })
+            .then(function(data) {
+                if (data.status === 'success' && data.markdown) {
+                    body.innerHTML = mdToHtml(data.markdown);
+                    var reportDate = data.date || new Date().toISOString().slice(0, 10);
+                    document.getElementById('footer-date').textContent = 'Date: ' + reportDate + ' ' + (data.weekday || '');
+                    document.getElementById('footer-id').textContent = 'RPT-' + reportDate.replace(/-/g, '') + '-001';
+                    footer.style.display = 'flex';
+                    dateInput.value = reportDate;
+                } else {
+                    body.innerHTML = '<div class="report-loading">Error: ' + (data.error || 'Report generation failed') + '</div>';
+                }
+            })
+            .catch(function(err) {
+                body.innerHTML = '<div class="report-loading">Network error: ' + err.message + '</div>';
+            });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        var today = new Date().toISOString().slice(0, 10);
+        document.getElementById('report-date').value = today;
+        loadReport();
+    });
+    </script>
+    <script src="./static/js/sidebar.js?v=3"></script>
+</body>
+</html>

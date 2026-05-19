@@ -44,6 +44,7 @@ _PUBLIC_PREFIXES = (
     "/api/v1/decision/param-snapshot",  # V23.0: 参数快照 (用户操作)
     "/api/v1/decision/narrative",   # V8.2: 叙事报告重新生成 (仪表盘按钮)
     "/api/v1/intelligence/scan",    # V8.1: 情报扫描 (仪表盘内置按钮触发)
+    "/api/v1/assistant/chat",       # V27.0: AI 助手对话 (前端用户交互, 无副作用)
 )
 
 # 免认证的 HTTP 方法 (只读操作)

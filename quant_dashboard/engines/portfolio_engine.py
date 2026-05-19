@@ -467,7 +467,113 @@ class PortfolioEngine:
             "position_count": len(details)
         }
 
-    # ──────────────────────────────────────
+    def get_intraday_pnl(self) -> dict:
+        """V27.0 P1-A: 盘中实时 P&L — 计算每只持仓的日内涨跌
+        
+        核心公式:
+            daily_pnl_i = (current_price - prev_close) × amount
+            daily_pnl_pct_i = (current_price / prev_close - 1) × 100
+        
+        数据源:
+            current_price: get_valuation() 已解析的最新价 (Tushare/Broker)
+            prev_close:    Tushare parquet 倒数第二根K线的close
+            
+        Returns: {
+            total_daily_pnl, total_daily_pnl_pct,
+            market_value, total_asset,
+            positions: [{ts_code, name, daily_pnl, daily_pnl_pct, ...}],
+            by_strategy: [{strategy, daily_pnl}],  # 按行业聚合
+            updated_at
+        }
+        """
+        valuation = self.get_valuation()
+        positions = valuation.get("positions", [])
+        
+        if not positions:
+            return {
+                "status": "empty",
+                "total_daily_pnl": 0,
+                "total_daily_pnl_pct": 0,
+                "positions": [],
+                "by_sector": [],
+                "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+        
+        pnl_details = []
+        sector_pnl = {}
+        total_daily_pnl = 0.0
+        total_prev_mv = 0.0
+        
+        for pos in positions:
+            code = pos["ts_code"]
+            amount = pos["amount"]
+            current_price = pos["price"]
+            
+            # 从 Tushare 日线取前一交易日收盘价
+            prev_close = None
+            try:
+                p_df = self.dm.get_price_payload(code)
+                if p_df is not None and not p_df.empty and len(p_df) >= 2:
+                    prev_close = float(p_df['close'].iloc[-2])
+                elif p_df is not None and not p_df.empty:
+                    # 只有一根K线，用它作为prev (通常不会发生)
+                    prev_close = float(p_df['close'].iloc[-1])
+            except Exception:
+                pass
+            
+            # fallback: 用成本价作为参考基准 (极端降级)
+            if prev_close is None or prev_close <= 0:
+                prev_close = pos["cost"] if pos["cost"] > 0 else current_price
+            
+            daily_pnl = (current_price - prev_close) * amount
+            daily_pnl_pct = ((current_price / prev_close) - 1) * 100 if prev_close > 0 else 0.0
+            prev_mv = prev_close * amount
+            
+            total_daily_pnl += daily_pnl
+            total_prev_mv += prev_mv
+            
+            # 按行业聚合
+            industry = pos.get("industry", "其他")
+            sector_pnl[industry] = sector_pnl.get(industry, 0.0) + daily_pnl
+            
+            pnl_details.append({
+                "ts_code": code,
+                "name": pos["name"],
+                "industry": industry,
+                "amount": amount,
+                "prev_close": safe_round(prev_close, 2),
+                "current_price": safe_round(current_price, 2),
+                "daily_change": safe_round(current_price - prev_close, 3),
+                "daily_pnl": safe_round(daily_pnl, 2),
+                "daily_pnl_pct": safe_round(daily_pnl_pct, 2),
+                "market_value": pos["market_value"],
+                "weight": pos.get("weight", 0),
+            })
+        
+        # 按日内P&L绝对值排序 (亏损大的排前面 → 风险优先)
+        pnl_details.sort(key=lambda x: x["daily_pnl"])
+        
+        # 组合级日内收益率
+        total_daily_pnl_pct = (total_daily_pnl / total_prev_mv * 100) if total_prev_mv > 0 else 0.0
+        
+        # 行业P&L瀑布
+        by_sector = [
+            {"sector": k, "daily_pnl": safe_round(v, 2)}
+            for k, v in sorted(sector_pnl.items(), key=lambda x: x[1])
+        ]
+        
+        return {
+            "status": "success",
+            "total_daily_pnl": safe_round(total_daily_pnl, 2),
+            "total_daily_pnl_pct": safe_round(total_daily_pnl_pct, 2),
+            "market_value": valuation["market_value"],
+            "total_asset": valuation["total_asset"],
+            "position_count": len(pnl_details),
+            "positions": pnl_details,
+            "by_sector": by_sector,
+            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+
     #  风险指标
     # ──────────────────────────────────────
 

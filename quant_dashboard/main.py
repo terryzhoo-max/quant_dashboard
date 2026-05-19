@@ -371,7 +371,7 @@ async def get_dashboard_data():
 #  Router 模块注册 (Batch 7: 策略路由独立)
 # ═══════════════════════════════════════════════════════════════════
 
-from routers import portfolio, audit, aiae, market, industry, strategy, decision, slippage, ci, intelligence
+from routers import portfolio, audit, aiae, market, industry, strategy, decision, slippage, ci, intelligence, assistant
 app.include_router(portfolio.router)
 app.include_router(audit.router)
 app.include_router(aiae.router)
@@ -382,6 +382,7 @@ app.include_router(decision.router)
 app.include_router(slippage.router)
 app.include_router(ci.router)
 app.include_router(intelligence.router)
+app.include_router(assistant.router)
 
 
 
