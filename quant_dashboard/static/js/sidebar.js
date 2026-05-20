@@ -179,7 +179,7 @@
         }
         // CSS 模块 (移动端响应式)
         const styles = [
-            './static/css/mobile.css?v=2',
+            './static/css/mobile.css?v=3',
         ];
         for (const href of styles) {
             if (!document.querySelector(`link[href="${href}"]`)) {
