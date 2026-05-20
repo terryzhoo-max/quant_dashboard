@@ -150,15 +150,18 @@
         const toggle = document.getElementById('sidebar-toggle');
         if (!toggle) return;
 
+        const sidebar = toggle.closest('.sidebar') || document.querySelector('.sidebar');
+        if (!sidebar) return;
+
         // 恢复收缩状态
         const collapsed = localStorage.getItem('ac-sidebar-collapsed') === 'true';
         if (collapsed) {
-            document.body.classList.add('sidebar-collapsed');
+            sidebar.classList.add('collapsed');
         }
 
         toggle.addEventListener('click', function () {
-            document.body.classList.toggle('sidebar-collapsed');
-            const isCollapsed = document.body.classList.contains('sidebar-collapsed');
+            sidebar.classList.toggle('collapsed');
+            const isCollapsed = sidebar.classList.contains('collapsed');
             localStorage.setItem('ac-sidebar-collapsed', isCollapsed);
         });
     }
