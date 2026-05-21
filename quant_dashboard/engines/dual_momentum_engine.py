@@ -508,8 +508,8 @@ def _compute_composite_score(
     维度:
       1. excess_return: 超额收益 Sigmoid 映射 [0, 100]
       2. conviction:    双窗口一致性 (0 or 100)
-      3. rank_quality:  排名稳定性 (12m vs 6m best 的排名差)
-      4. breadth:       市场广度 (12m 正收益资产占比)
+      3. rank_quality:  排名稳定性 (primary vs confirm 的排名差)
+      4. breadth:       市场广度 (primary 正收益资产占比)
       5. mdd_penalty:   路径质量 (MDD 绝对值)
     """
     W = SCORE_WEIGHTS
@@ -628,7 +628,7 @@ def compute_gem_signal(etf_data: dict, risk_free_rate: float = None) -> dict:
 
     best_primary = ranked_primary[0]
 
-    # ── Step 2: 6 个月相对动量 (Confirmation) ──
+    # ── Step 2: 7 个月相对动量 (Confirmation, 147日) ──
     returns_confirm = compute_total_returns(etf_data, LOOKBACK_CONFIRM)
     ranked_confirm  = relative_momentum(returns_confirm)
     best_confirm = ranked_confirm[0] if ranked_confirm else best_primary

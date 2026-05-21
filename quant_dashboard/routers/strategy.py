@@ -28,7 +28,7 @@ from momentum_rotation_engine import run_momentum_strategy
 from dual_momentum_engine import run_gem_strategy
 from erp_timing_engine import get_erp_engine
 from aiae_engine import get_aiae_engine, REGIMES as AIAE_REGIMES
-from services.cache_service import cache_manager
+from services.cache_service import cache_manager, stale_while_revalidate
 
 router = APIRouter(prefix="/api/v1", tags=["strategy"])
 executor = ThreadPoolExecutor(max_workers=10)
@@ -183,21 +183,56 @@ async def get_momentum_strategy():
 # ─────────────────────────────────────────────
 # GEM 双重动量策略 (第 1.5 层战术资产配置)
 # ─────────────────────────────────────────────
+_GEM_SWR_KEY = "swr_gem_strategy"
+_GEM_FRESH_TTL = 1800   # 30 分钟内直接返回缓存 (GEM 月度调仓, 不需要秒级)
+_GEM_STALE_TTL = 21600  # 6 小时过期容忍 (Tushare 限频, 避免重复调用)
+
+
 def _run_gem_strategy() -> dict:
     """GEM 策略执行包装 (与其他策略统一格式)"""
     try:
-        return run_gem_strategy()
+        result = run_gem_strategy()
+        # 同步写入 strategy_results 缓存 (供 run-all / decision hub 读取)
+        with _STRATEGY_LOCK:
+            _sr = cache_manager.get_json("strategy_results", {})
+            _sr["gem"] = result
+            cache_manager.set_json("strategy_results", _sr)
+        return result
     except Exception as e:
         logger.error(f"GEM Strategy Error: {e}", exc_info=True)
         return {"status": "error", "message": str(e)}
 
 
 @router.get("/gem_strategy")
-async def get_gem_strategy_api():
-    """双重动量策略信号 (GEM) — 第 1.5 层战术资产配置"""
-    if cache_manager.get_json("strategy_results", {}).get("gem"):
-        return cache_manager.get_json("strategy_results", {}).get("gem")
-    return await asyncio.get_running_loop().run_in_executor(executor, _run_gem_strategy)
+async def get_gem_strategy_api(refresh: int = 0):
+    """双重动量策略信号 (GEM) — 第 1.5 层战术资产配置
+
+    生产级接口:
+      - SWR 三级缓存 (Fresh 30min / Stale 6h / Miss 同步计算)
+      - ?refresh=1 强制跳过缓存重新计算
+      - 计算结果同时写入 strategy_results (供 run-all / decision hub 联动)
+    """
+    # ?refresh=1 → 清除 SWR 缓存, 强制重算
+    if refresh:
+        from services.cache_service import swr_clear
+        swr_clear(_GEM_SWR_KEY)
+        # 同时清除 strategy_results 中的 gem 缓存
+        with _STRATEGY_LOCK:
+            _sr = cache_manager.get_json("strategy_results", {})
+            _sr.pop("gem", None)
+            cache_manager.set_json("strategy_results", _sr)
+
+    # 优先检查 strategy_results 缓存 (run-all 写入的)
+    cached = cache_manager.get_json("strategy_results", {}).get("gem")
+    if cached and not refresh:
+        if isinstance(cached, dict) and cached.get("status") == "success":
+            return cached
+
+    # SWR 三级缓存
+    return await asyncio.get_running_loop().run_in_executor(
+        executor,
+        lambda: stale_while_revalidate(_GEM_SWR_KEY, _run_gem_strategy, _GEM_FRESH_TTL, _GEM_STALE_TTL)
+    )
 
 
 # ─────────────────────────────────────────────
