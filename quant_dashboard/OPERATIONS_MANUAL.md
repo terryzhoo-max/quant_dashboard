@@ -1,6 +1,6 @@
 # AlphaCore 量化终端 · 部署与运维手册
 
-> **版本**: V21.2 · 最后更新: 2026-05-04
+> **版本**: V27.0 · 最后更新: 2026-05-20
 > **服务器**: 阿里云轻量应用服务器 · `iZrj9hm8oe9aow6jr63lngZ`
 > **技术栈**: Python 3.12 + FastAPI + Redis + Docker + SQLite
 
@@ -19,6 +19,8 @@
 9. [常用运维命令](#9-常用运维命令)
 10. [故障排除手册](#10-故障排除手册)
 11. [安全注意事项](#11-安全注意事项)
+12. [功能版本速查](#12-功能版本速查)
+13. [模块化架构说明](#13-模块化架构说明)
 
 ---
 
@@ -53,8 +55,13 @@
 |:-----|:-----|:-----|
 | **FastAPI App** | 量化终端主服务 (1 Worker, 2GB 内存限制) | 8000 |
 | **Redis 7** | L1 缓存层 (256MB LRU, RDB 持久化) | 6379 (内部) |
-| **SQLite** | 交易记录 + AIAE 历史 + ERP 日志 + 信号预警 (WAL 模式) | 文件存储 |
-| **APScheduler** | 10 个定时任务 (盘中/收盘/早间/FRED/AIAE/波段/日报/预警) | 内嵌 |
+| **SQLite** | 交易记录 + AIAE 历史 + ERP 日志 + 信号预警 + 决策快照 (WAL 模式) | 文件存储 |
+| **APScheduler** | 13 个定时任务 (见 §6 完整列表) | 内嵌 |
+| **Realtime Poller** | 自适应盘中轮询器 (V25.3 替代固定 120s) | 内嵌 |
+| **Circuit Breaker** | 外部 API 熔断器 (防止级联故障) | 内嵌 |
+| **NLP Intelligence** | 新闻情报引擎 (盘前+盘中扫描) | 内嵌 |
+| **Strategy CI/CD** | 策略参数月度自动优化 | 内嵌 |
+| **Narrative Engine** | AI 叙事分析引擎 | 内嵌 |
 | **Tushare Pro** | A股数据源 (有频率限制: 20次/分钟) | 外部 API |
 | **FRED API** | 美国经济数据 (利率/VIX) | 外部 API |
 | **Finnhub** | 美股/日股实时数据 | 外部 API |
@@ -328,18 +335,24 @@ CORS_ORIGINS=http://127.0.0.1:8000,http://localhost:8000
 
 ### 6.2 应用内 APScheduler (容器内自动运行)
 
-| ID | 触发时间 | 功能 |
-|:---|:---------|:-----|
-| `hot_data` | 每 2 分钟 | 盘中热点数据刷新 |
-| `daily_warmup` | 周一至五 15:35 | 收盘预热 (ERP+AIAE+因子+Dashboard+组合快照+信号扫描) |
-| `morning_warmup` | 周一至五 08:30 | 盘前数据补偿 + 信号扫描 |
-| `fred_daily` | 周一至五 18:30 | FRED 利率数据刷新 |
-| `us_aiae` | 周二至六 06:30 | 美股 AIAE 预热 + 全球对比更新 |
-| `jp_aiae` | 周一至五 15:30 | 日股 AIAE 预热 + 全球对比更新 |
-| `aaii_crawl` | 每周五 09:00 | AAII 情绪指数爬取 |
-| `swing_guard` | 周一至五 15:40 | 波段守卫 7 大 ETF 信号刷新 |
-| `daily_report` | 周一至五 16:35 | V21.0 投委会日报自动生成 |
-| `alert_scan` | 每 10 分钟 | V21.2 信号预警扫描 (JCS/VIX 三通道推送) |
+| ID | 触发时间 | 功能 | 版本 |
+|:---|:---------|:-----|:-----|
+| `adaptive_poller` | 每 30 秒 | 自适应盘中轮询 (VIX 跳变时加速) | V25.3 |
+| `daily_warmup` | 周一至五 15:35 | 收盘预热 (ERP+AIAE+因子+Dashboard+组合快照+信号扫描) | V3.0 |
+| `morning_warmup` | 周一至五 08:30 | 盘前数据补偿 + 信号扫描 | V3.0 |
+| `fred_daily` | 周一至五 18:30 | FRED 利率数据刷新 | V3.0 |
+| `us_aiae` | 周二至六 06:30 | 美股 AIAE 预热 + 全球对比更新 | V15.0 |
+| `jp_aiae` | 周一至五 15:30 | 日股 AIAE 预热 + 全球对比更新 | V15.0 |
+| `aaii_crawl` | 每周五 09:00 | AAII 情绪指数爬取 | V15.0 |
+| `swing_guard` | 周一至五 15:40 | 波段守卫 7 大 ETF 信号刷新 | V19.0 |
+| `daily_report` | 周一至五 16:35 | 投委会日报自动生成 | V21.0 |
+| `alert_scan` | 每 10 分钟 | 信号预警扫描 (JCS/VIX 三通道推送) | V21.2 |
+| `event_monitor` | 每 5 分钟 | 事件驱动监控 (VIX/AIAE/MR 跳变检测) | V22.2 |
+| `strategy_ci_monthly` | 每月1日 02:00 | 策略 CI/CD 月度自动优化 | P1-3 |
+| `nlp_scan_am` | 周一至五 09:35 | NLP 情报扫描 (盘前) | P2-C |
+| `nlp_scan_pm` | 周一至五 15:15 | NLP 情报扫描 (盘中) | P2-C |
+
+> ⚠️ V25.3 变更: `hot_data` (固定 2 分钟轮询) 已被 `adaptive_poller` (30s tick + 自适应频率) 替代。
 
 > 💡 查看调度器状态: `curl -s http://localhost:8000/health | python3 -c "import sys,json; d=json.load(sys.stdin); print(json.dumps(d['scheduler'], indent=2))"`
 
@@ -429,10 +442,13 @@ curl -s http://localhost:8000/health | python3 -m json.tool
 | 字段 | 正常值 | 异常处理 |
 |:-----|:-------|:---------|
 | `status` | `"ok"` | 如果是 `"starting"` 等待 1 分钟 |
-| `cache_backend` | `"redis"` | 如果是 `"memory"` 检查 Redis |
+| `engines.cache_backend` | `"redis"` | 如果是 `"memory"` 检查 Redis |
 | `scheduler.running` | `true` | 如果 `false` 需重启容器 |
-| `scheduler.job_count` | `7` | 少于 7 说明有任务注册失败 |
+| `scheduler.job_count` | `14` | 少于 14 说明有任务注册失败 |
 | `database.backend` | `"SQLite (WAL)"` | WAL 模式确保读写并发 |
+| `poller.status` | `"active"` | 自适应轮询器状态 (V25.3) |
+| `breakers.healthy` | `true` | 所有熔断器健康 (V25.3) |
+| `breakers.open` | `0` | 大于 0 表示有 API 源被熔断 |
 
 ### 8.2 Docker 容器监控
 
@@ -709,7 +725,9 @@ chmod +x /root/update.sh
 
 ---
 
-## 12. V21.0-V21.2 新增功能速查
+## 12. 功能版本速查
+
+### V20.0 - V21.2
 
 | 版本 | 功能 | 配置 |
 |:-----|:-----|:-----|
@@ -718,6 +736,37 @@ chmod +x /root/update.sh
 | V21.2 | 三通道信号预警 (浏览器/微信/邮件) | `config/alert_config.json` |
 | V21.2 | 数据新鲜度状态栏 | 自动 (决策中枢标题下方) |
 | V21.2 | 启动竞态修复 (ThreadPoolExecutor 分层启动) | 自动 |
+
+### V22.0 - V25.3
+
+| 版本 | 功能 | 配置 |
+|:-----|:-----|:-----|
+| V22.0 | 跨市场风险传染矩阵 (四大市场 120 日 Pearson) | 自动 (零 API 调用, 读 data_lake) |
+| V22.0 | 策略参数版本对比 + 敏感度分析 | 自动 (决策中枢面板) |
+| V22.0 | 合规引擎 (审计阻断 + 交易冻结) | `engines/compliance_engine.py` |
+| V22.0 | 动态市场事件检测 (VIX/AIAE/MR 跳变) | 自动 (event_monitor 5min) |
+| V22.0 | 有向冲击传播模拟器 | 自动 (决策中枢情景模拟) |
+| V22.0 | 仓位调整路径规划 + 执行成本估算 | 自动 |
+| V22.2 | 事件驱动监控 (每5分钟) | 自动 (APScheduler) |
+| V25.2 | 信号准确率 T+5 真实收益回填 | 自动 (启动时 + 收盘后) |
+| V25.3 | 自适应实时轮询器 (替代固定 2min) | `services/realtime_poller.py` |
+| V25.3 | 外部 API 熔断器 (CircuitBreaker) | `services/circuit_breaker.py` |
+
+### P 系列 (产品增强)
+
+| 编号 | 功能 | 配置 |
+|:-----|:-----|:-----|
+| P1-3 | 策略 CI/CD 月度自动优化 | 自动 (每月1日 02:00) |
+| P2-C | NLP 新闻情报引擎 (盘前+盘中扫描) | `engines/news_intelligence.py` |
+| P4 | AI 叙事分析引擎 | `services/narrative_engine.py` |
+
+### O 系列 (工程优化)
+
+| 编号 | 功能 | 状态 |
+|:-----|:-----|:-----|
+| O1 | decision_engine.py 模块化拆分 (2949→~230行) | ✅ 完成 |
+| O3 | 前端 JS 模块化 (script.js 110KB→多模块) | ✅ 完成 |
+| O7 | 运维手册从 V21.2 更新至 V27.0 | ✅ 完成 |
 
 ### 预警阈值配置
 
@@ -745,4 +794,61 @@ chmod +x /root/update.sh
 
 ---
 
-> 📌 **维护者备忘**: 本手册对应 V21.2。如果架构发生重大变更（如迁移到 K8s、切换数据库等），请同步更新此文档。
+## 13. 模块化架构说明
+
+### 13.1 后端决策引擎 (O1 拆分后)
+
+```
+dashboard_modules/
+├── decision_engine.py          ← Facade (~230行, 聚合+re-export)
+├── decision/                   ← 子模块包
+│   ├── __init__.py             ← 统一导出
+│   ├── jcs.py                  ← JCS 置信分数计算
+│   ├── conflicts.py            ← 矛盾检测矩阵
+│   ├── snapshot.py             ← 快照构建 (从缓存聚合)
+│   ├── action_plan.py          ← 行动方案生成 + 预警
+│   ├── scenarios.py            ← 情景模拟 + 冲击传播
+│   ├── temperature.py          ← 全球市场温度
+│   ├── position_path.py        ← 仓位调整路径 + 成本
+│   ├── events.py               ← 市场事件检测
+│   ├── risk_matrix.py          ← 风险关联矩阵 (V27.0)
+│   ├── accuracy.py             ← 信号准确率回填 (V27.0)
+│   └── contagion.py            ← 跨市场传染矩阵 (V27.0)
+```
+
+**向后兼容**: 所有外部 `from dashboard_modules.decision_engine import xxx` 仍然有效。
+
+### 13.2 前端 JS 模块 (O3 拆分后)
+
+**Dashboard (index.html) 加载链**:
+```
+alphacore_utils.js → ui_utils.js → renderers_dashboard.js
+→ renderers_charts.js → renderers_decision.js → renderers.js
+→ data_fetch.js → script.js → sidebar.js
+```
+
+**决策中枢 (decision.html) 加载链**:
+```
+alphacore_utils.js → decision/_infra.js → hub_core.js
+→ simulation.js → global_analytics.js → perf_matrix.js
+→ swing_guard.js → risk_alerts.js → optimizer.js → decision.js
+```
+
+### 13.3 服务层
+
+| 服务 | 文件 | 职责 |
+|:-----|:-----|:-----|
+| 缓存管理 | `services/cache_service.py` | Redis L1 + Memory fallback |
+| 数据库 | `services/db.py` | SQLite WAL + 迁移 |
+| 预热管线 | `services/warmup_pipeline.py` | 收盘/早间/全球预热编排 |
+| 实时轮询 | `services/realtime_poller.py` | 自适应 tick (V25.3) |
+| 熔断器 | `services/circuit_breaker.py` | 外部 API 故障隔离 |
+| 预警监控 | `services/alert_monitor.py` | JCS/VIX 三通道推送 |
+| 策略CI | `services/strategy_pipeline.py` | 月度参数优化 |
+| AI叙事 | `services/narrative_engine.py` | 叙事分析生成 |
+| 认证 | `services/auth_middleware.py` | API Key 中间件 |
+| 日志 | `services/logger.py` | 结构化日志 |
+
+---
+
+> 📌 **维护者备忘**: 本手册对应 V27.0。如果架构发生重大变更（如迁移到 K8s、切换数据库等），请同步更新此文档。

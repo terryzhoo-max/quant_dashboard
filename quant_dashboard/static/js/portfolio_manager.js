@@ -107,7 +107,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 const code = (p.ts_code || '').split('.')[0];
                 return code.startsWith('131') || code.startsWith('204') || /逆回购/.test(p.name || '');
             };
-            const nonRepoMV = positions.filter(p => !isRepo(p)).reduce((s, p) => s + (p.market_value || 0), 0);
+            const repoMV = positions.filter(p => isRepo(p)).reduce((s, p) => s + (p.market_value || 0), 0);
+            const nonRepoMV = (data.market_value || 0) - repoMV;
             const totalPos = data.total_asset > 0 ? (nonRepoMV / data.total_asset * 100) : 0;
 
             if (positions.length > 0 && totalPos > 90) {
@@ -481,16 +482,18 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('cash-weight').textContent = cashWeight.toFixed(1);
 
         // 总仓位 (不含国债逆回购)
-        // 国债逆回购代码: 131810/131811/131813 (深市), 204001/204002/204007 (沪市)
+        // 使用后端返回的 data.market_value (导入当日=券商参考市值, 隔日=Tushare 重算)
+        // 避免前端逐笔累加 positions[].market_value 在 broker_market_value=0 时产生偏差
         const isRepo = (pos) => {
             const code = (pos.ts_code || '').split('.')[0];
             if (code.startsWith('131') || code.startsWith('204')) return true;
             const name = pos.name || '';
             return /逆回购|GC\d/.test(name);
         };
-        const nonRepoMV = data.positions
-            .filter(p => !isRepo(p))
+        const repoMV = data.positions
+            .filter(p => isRepo(p))
             .reduce((sum, p) => sum + (p.market_value || 0), 0);
+        const nonRepoMV = (data.market_value || 0) - repoMV;
         const totalPosWeight = data.total_asset > 0 ? (nonRepoMV / data.total_asset * 100) : 0;
         const tpwEl = document.getElementById('total-position-weight');
         tpwEl.textContent = totalPosWeight.toFixed(1);

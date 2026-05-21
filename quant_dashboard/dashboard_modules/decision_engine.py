@@ -70,6 +70,18 @@ from dashboard_modules.decision.events import (  # noqa: F401,F403
     detect_market_events, get_recent_events,
 )
 
+from dashboard_modules.decision.risk_matrix import (  # noqa: F401,F403
+    compute_risk_matrix,
+)
+
+from dashboard_modules.decision.accuracy import (  # noqa: F401,F403
+    _get_index_close, _get_t5_trade_date, backfill_signal_accuracy,
+)
+
+from dashboard_modules.decision.contagion import (  # noqa: F401,F403
+    _CONTAGION_INDICES, compute_contagion_matrix,
+)
+
 
 # ==============================================================
 #  Aggregation functions (depend on multiple submodules)

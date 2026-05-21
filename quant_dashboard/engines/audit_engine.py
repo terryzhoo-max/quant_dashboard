@@ -602,7 +602,8 @@ def _get_live_portfolio():
     """
     尝试从 portfolio_engine 获取实时估值 (含真实价格/盈亏)。
     若引擎不可用，则降级为成本估算 (fallback)。
-    返回: (pos_list, cash, total_asset, is_live, risk_metrics)
+    返回: (pos_list, cash, total_asset, is_live, risk_metrics, market_value)
+    market_value: 券商参考市值 (导入当日) 或 Tushare 重算市值 (隔日)
     """
     # ── 优先: 调用 portfolio_engine 单例 (真实价格) ──
     try:
@@ -612,6 +613,7 @@ def _get_live_portfolio():
         pos_list = val.get("positions", [])
         cash = val.get("cash", 0)
         total_asset = val.get("total_asset", 0)
+        market_value = val.get("market_value", 0)
 
         # 尝试获取风险指标 (行业敞口)
         risk_metrics = None
@@ -622,7 +624,7 @@ def _get_live_portfolio():
         except Exception:
             pass
 
-        return pos_list, cash, total_asset, True, risk_metrics
+        return pos_list, cash, total_asset, True, risk_metrics, market_value
     except Exception as e:
         print(f"[Audit] portfolio_engine 不可用, 降级为成本估算: {e}")
 
@@ -657,9 +659,9 @@ def _get_live_portfolio():
         total_asset = cash + total_mv
         for p in pos_list:
             p["weight"] = round(p["market_value"] / max(total_asset, 1) * 100, 2)
-        return pos_list, cash, total_asset, False, None
+        return pos_list, cash, total_asset, False, None, total_mv
     except Exception:
-        return [], 0, 0, False, None
+        return [], 0, 0, False, None, 0
 
 
 def audit_risk_control():
@@ -667,7 +669,7 @@ def audit_risk_control():
     scores = []
 
     # ── 获取实时组合数据 ──
-    pos_list, cash, total_asset, is_live, risk_metrics = _get_live_portfolio()
+    pos_list, cash, total_asset, is_live, risk_metrics, ref_market_value = _get_live_portfolio()
     data_source = "实时估值" if is_live else "成本估算 (降级)"
 
     if total_asset <= 0 and not pos_list:
@@ -839,19 +841,20 @@ def audit_risk_control():
     # ── 检查 5: 总仓位水平 ──
     if total_asset > 0:
         POS_CAP = AUDIT_CFG.get("total_position_cap", 95.0)
-        # V24.1: 用持仓市值之和 / 总资产, 排除国债逆回购
-        # 旧公式 (1 - cash/total_asset) 在有冻结资金/逆回购到期款时严重偏高
+        # V28.0: 使用 get_valuation() 返回的权威 market_value (导入当日=券商参考市值)
+        # 避免逐笔累加 positions[].market_value 在 broker_market_value=0 时偏高
         def _is_repo(code: str, name: str) -> bool:
             prefix = code.split('.')[0]
             if prefix.startswith('131') or prefix.startswith('204'):
                 return True
             return '逆回购' in name or bool(re.search(r'GC\d', name))
 
-        equity_mv = sum(
+        repo_mv = sum(
             p.get("market_value", 0)
             for p in pos_list
-            if not _is_repo(p.get("ts_code", ""), p.get("name", ""))
+            if _is_repo(p.get("ts_code", ""), p.get("name", ""))
         )
+        equity_mv = (ref_market_value or 0) - repo_mv
         pos_pct = equity_mv / max(total_asset, 1) * 100
         s = 100 if pos_pct <= POS_CAP else max(40, 100 - int((pos_pct - POS_CAP) * 5))
         scores.append(s)

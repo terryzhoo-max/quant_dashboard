@@ -451,8 +451,15 @@ class PortfolioEngine:
         broker_ref_mv = float(self.holdings.get("broker_ref_market_value", 0))
         display_market_value = broker_ref_mv if (is_import_day and broker_ref_mv > 0) else total_market_value
 
-        for d in details:
-            d["weight"] = safe_round(d["market_value"] / total_asset * 100, 2) if total_asset > 0 else 0.0
+        # 计算仓位权重: 当导入当日使用 broker_ref_market_value 时, 按比例缩放 weight
+        # 避免 broker_market_value=0 的持仓用 cost 价自算市值导致 weight 系统性偏高
+        if total_asset > 0 and total_market_value > 0:
+            scale = display_market_value / total_market_value  # 缩放因子
+            for d in details:
+                d["weight"] = safe_round(d["market_value"] * scale / total_asset * 100, 2)
+        else:
+            for d in details:
+                d["weight"] = 0.0
 
         cash_weight = safe_round(float(self.holdings.get("cash", 0)) / total_asset * 100, 2) if total_asset > 0 else 100.0
 
