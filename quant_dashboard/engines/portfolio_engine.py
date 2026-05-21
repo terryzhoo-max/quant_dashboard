@@ -451,12 +451,42 @@ class PortfolioEngine:
         broker_ref_mv = float(self.holdings.get("broker_ref_market_value", 0))
         display_market_value = broker_ref_mv if (is_import_day and broker_ref_mv > 0) else total_market_value
 
-        # 计算仓位权重: 当导入当日使用 broker_ref_market_value 时, 按比例缩放 weight
-        # 避免 broker_market_value=0 的持仓用 cost 价自算市值导致 weight 系统性偏高
+        # V29.0: 计算仓位权重 — 两段式精确分配
+        # Tier 1: broker_market_value > 0 的标的 → 直接用券商市值
+        # Tier 2: broker_market_value = 0 的标的 → 按 cost 估值比例分摊 (broker_ref - Tier1 总和)
         if total_asset > 0 and total_market_value > 0:
-            scale = display_market_value / total_market_value  # 缩放因子
-            for d in details:
-                d["weight"] = safe_round(d["market_value"] * scale / total_asset * 100, 2)
+            if is_import_day and broker_ref_mv > 0:
+                # ── 当日导入: 两段式精确分配 ──
+                tier1_sum = 0.0  # 有券商市值的标的总和
+                tier2_indices = []  # broker_market_value=0 的标的索引
+                tier2_cost_sum = 0.0  # tier2 标的的成本估值总和
+
+                for idx, d in enumerate(details):
+                    code = d["ts_code"]
+                    bmv = float(self.holdings.get("positions", {}).get(code, {}).get("broker_market_value", 0))
+                    if bmv > 0:
+                        tier1_sum += bmv
+                        d["weight"] = safe_round(bmv / total_asset * 100, 2)
+                        d["market_value"] = safe_round(bmv, 2)  # 修正市值列也用券商值
+                    else:
+                        tier2_indices.append(idx)
+                        tier2_cost_sum += d["market_value"]  # amount * cost_or_price
+
+                # Tier 2 分摊: 剩余市值 = broker_ref_market_value - tier1_sum
+                tier2_remaining = max(0, broker_ref_mv - tier1_sum)
+                for idx in tier2_indices:
+                    d = details[idx]
+                    if tier2_cost_sum > 0:
+                        share = d["market_value"] / tier2_cost_sum  # 按成本估值比例
+                        allocated_mv = tier2_remaining * share
+                    else:
+                        allocated_mv = 0
+                    d["weight"] = safe_round(allocated_mv / total_asset * 100, 2)
+                    d["market_value"] = safe_round(allocated_mv, 2)  # 修正显示市值
+            else:
+                # ── 非导入日: 均匀缩放 (无券商数据参考) ──
+                for d in details:
+                    d["weight"] = safe_round(d["market_value"] / total_asset * 100, 2)
         else:
             for d in details:
                 d["weight"] = 0.0

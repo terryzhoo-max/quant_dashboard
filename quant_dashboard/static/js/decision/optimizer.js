@@ -54,7 +54,11 @@ async function runOptimizer() {
     // Show shimmer loading
     const empty = document.getElementById('opt-empty');
     if (empty) {
-        empty.innerHTML = '<div class="opt-loading">⏳ Black-Litterman 优化计算中<br><span style="font-size:0.72rem;color:#64748b;">协方差估计 → 观点融合 → 约束求解</span></div>';
+        empty.innerHTML = `<div class="opt-loading">
+            <div style="font-size:1.8rem;margin-bottom:12px;filter:drop-shadow(0 0 12px rgba(59,130,246,0.4))">⚡</div>
+            Black-Litterman 组合优化计算中<br>
+            <span style="font-size:0.72rem;color:#64748b;">协方差估计 → 观点融合 → 约束求解 → 合规校验</span>
+        </div>`;
     }
 
     try {
@@ -118,18 +122,39 @@ function _renderOptResults(d) {
     const sharpeImproved = d.optimal.sharpe > d.current.sharpe;
     _setText('opt-cur-sharpe', d.current.sharpe.toFixed(2));
 
-    const newSharpeEl = document.getElementById('opt-new-sharpe');
-    if (newSharpeEl) {
-        newSharpeEl.textContent = d.optimal.sharpe.toFixed(2);
-        newSharpeEl.style.color = sharpeImproved ? '#6ee7b7' : '#fca5a5';
-        newSharpeEl.style.textShadow = sharpeImproved
-            ? '0 0 16px rgba(16,185,129,0.5)'
-            : '0 0 16px rgba(239,68,68,0.5)';
+    // Sharpe 卡片动态着色
+    const sharpeCard = document.getElementById('opt-new-sharpe')?.closest('.opt-stat-card');
+    if (sharpeCard) {
+        sharpeCard.classList.remove('sharpe-improved', 'sharpe-degraded');
+        sharpeCard.classList.add(sharpeImproved ? 'sharpe-improved' : 'sharpe-degraded');
     }
 
-    _setText('opt-turnover', (d.turnover || 0).toFixed(1) + '%');
+    const newSharpeEl = document.getElementById('opt-new-sharpe');
+    if (newSharpeEl) {
+        const delta = (d.optimal.sharpe - d.current.sharpe).toFixed(2);
+        const sign = delta > 0 ? '+' : '';
+        newSharpeEl.textContent = d.optimal.sharpe.toFixed(2);
+        // Sharpe 变化微标
+        const existing = newSharpeEl.parentElement.querySelector('.opt-sharpe-delta');
+        if (existing) existing.remove();
+        const deltaTag = document.createElement('div');
+        deltaTag.className = 'opt-sharpe-delta';
+        deltaTag.style.cssText = `font-size:0.68rem;margin-top:4px;font-weight:700;color:${sharpeImproved ? '#6ee7b7' : '#fca5a5'};font-family:'JetBrains Mono',monospace;`;
+        deltaTag.textContent = `${sign}${delta}`;
+        newSharpeEl.parentElement.appendChild(deltaTag);
+    }
+
+    // 换手率色标
+    const turnoverVal = d.turnover || 0;
+    const turnoverEl = document.getElementById('opt-turnover');
+    if (turnoverEl) {
+        turnoverEl.textContent = turnoverVal.toFixed(1) + '%';
+        turnoverEl.style.color = turnoverVal > 20 ? '#fca5a5' : turnoverVal > 10 ? '#fbbf24' : '#6ee7b7';
+    }
+
     _setText('opt-cost', (d.estimated_cost || 0).toFixed(2) + '%');
 
+    // 方法徽章
     const methodEl = document.getElementById('opt-method');
     if (methodEl) {
         const shortLabel = d.method === 'black_litterman' ? 'BL' : d.method === 'mvo' ? 'MVO' : 'EW';
@@ -368,10 +393,13 @@ function _renderRebalanceTable(rebalance) {
         <th style="width:12%">行业</th>
         <th style="width:10%;text-align:right">当前%</th>
         <th style="width:10%;text-align:right">最优%</th>
-        <th style="width:10%;text-align:right">Δ权重</th>
+        <th style="width:14%;text-align:right">Δ权重</th>
         <th style="width:14%;text-align:right">Δ金额</th>
         <th style="width:10%;text-align:center">操作</th>
     </tr></thead><tbody>`;
+
+    // 找到最大 delta 用于归一化 bar 宽度
+    const maxDelta = Math.max(...rebalance.map(r => Math.abs(r.delta_weight)), 1);
 
     for (const r of rebalance) {
         const a = actionMap[r.action] || actionMap.hold;
@@ -380,19 +408,24 @@ function _renderRebalanceTable(rebalance) {
         const deltaVal = Math.abs(r.delta_value) >= 10000
             ? (r.delta_value / 10000).toFixed(1) + '万'
             : Math.round(r.delta_value).toLocaleString();
+        const barWidth = Math.min(Math.abs(r.delta_weight) / maxDelta * 40, 40);
+        const barColor = r.delta_weight > 0 ? '#10b981' : '#ef4444';
 
-        html += `<tr style="background:${a.bg}">
+        html += `<tr style="background:${a.bg}" data-action="${r.action}">
             <td>
                 <b style="color:#e2e8f0">${r.name}</b><br>
-                <span style="color:#475569;font-size:0.65rem;font-family:monospace;">${r.code}</span>
+                <span style="color:#475569;font-size:0.62rem;font-family:'JetBrains Mono',monospace;letter-spacing:0.3px;">${r.code}</span>
             </td>
             <td style="color:#94a3b8;font-size:0.72rem;">${r.industry}</td>
-            <td style="text-align:right;font-variant-numeric:tabular-nums;">${r.current_weight.toFixed(1)}</td>
-            <td style="text-align:right;color:#60a5fa;font-weight:700;font-variant-numeric:tabular-nums;">${r.optimal_weight.toFixed(1)}</td>
-            <td style="text-align:right;color:${deltaColor};font-weight:700;font-variant-numeric:tabular-nums;">${deltaSign}${r.delta_weight.toFixed(1)}</td>
-            <td style="text-align:right;color:${deltaColor};font-variant-numeric:tabular-nums;">${r.delta_value > 0 ? '+' : ''}${deltaVal}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums;font-family:'JetBrains Mono',monospace;">${r.current_weight.toFixed(1)}</td>
+            <td style="text-align:right;color:#60a5fa;font-weight:700;font-variant-numeric:tabular-nums;font-family:'JetBrains Mono',monospace;">${r.optimal_weight.toFixed(1)}</td>
+            <td style="text-align:right;color:${deltaColor};font-weight:700;font-variant-numeric:tabular-nums;font-family:'JetBrains Mono',monospace;">
+                ${deltaSign}${r.delta_weight.toFixed(1)}
+                ${Math.abs(r.delta_weight) > 0.3 ? `<span class="opt-delta-bar" style="width:${barWidth}px;background:${barColor};color:${barColor}"></span>` : ''}
+            </td>
+            <td style="text-align:right;color:${deltaColor};font-variant-numeric:tabular-nums;font-family:'JetBrains Mono',monospace;">${r.delta_value > 0 ? '+' : ''}${deltaVal}</td>
             <td style="text-align:center;">
-                <span style="color:${a.color};font-weight:700;font-size:0.75rem;">
+                <span style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:6px;background:${a.bg === 'transparent' ? 'rgba(100,116,139,0.06)' : a.bg};color:${a.color};font-weight:700;font-size:0.72rem;border:1px solid ${a.color}22;">
                     ${a.icon} ${a.label}
                 </span>
             </td>

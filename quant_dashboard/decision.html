@@ -534,7 +534,14 @@
                     <div class="empty-state">
                         <div class="icon">⚡</div>
                         <p>点击「一键优化」开始 Black-Litterman 组合权重优化</p>
-                        <p style="font-size:0.78rem;color:#64748b;">需要至少 2 只持仓 · 基于 120 日数据 · 含合规校验</p>
+                        <p style="font-size:0.78rem;color:#64748b;">至少 2 只持仓 · 120 日协方差窗口 · Ledoit-Wolf 收缩 · 合规校验</p>
+                        <div class="opt-degradation-chain">
+                            <span class="chain-node">BL 后验</span>
+                            <span class="chain-arrow">→</span>
+                            <span class="chain-node">MVO</span>
+                            <span class="chain-arrow">→</span>
+                            <span class="chain-node">等权</span>
+                        </div>
                     </div>
                 </div>
             </div>

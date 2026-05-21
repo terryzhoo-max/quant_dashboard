@@ -412,9 +412,12 @@ def full_optimize(risk_aversion: float = 2.5,
     dedup_positions = []
     for i, code in enumerate(codes_raw):
         if code in seen:
-            # 合并市值到已有条目
+            # 合并市值和权重到已有条目
             dedup_positions[seen[code]]["market_value"] = (
                 dedup_positions[seen[code]].get("market_value", 0) + positions[i].get("market_value", 0)
+            )
+            dedup_positions[seen[code]]["weight"] = (
+                dedup_positions[seen[code]].get("weight", 0) + positions[i].get("weight", 0)
             )
         else:
             seen[code] = len(dedup_positions)
@@ -425,7 +428,8 @@ def full_optimize(risk_aversion: float = 2.5,
     names = [p["name"] for p in positions]
     n = len(codes)
 
-    w_current = np.array([p.get("market_value", 0) / total_asset for p in positions])
+    # V28.0: 使用已修正的 p["weight"] (经 display_market_value 缩放)
+    w_current = np.array([p.get("weight", 0) / 100.0 for p in positions])
 
     # ── 2. 收益率 + 协方差 ──
     rets_data = {}

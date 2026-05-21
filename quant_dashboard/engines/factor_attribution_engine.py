@@ -318,11 +318,12 @@ def compute_factor_attribution(lookback: int = 60) -> dict:
     from data_manager import FactorDataManager
     dm = FactorDataManager()
 
-    total_mv = sum(p.get("market_value", 0) for p in positions)
-    if total_mv <= 0:
-        return {"status": "error", "error": "总市值为零"}
+    # V28.0: 使用已修正的 p["weight"] (经 display_market_value 缩放)
+    total_weight = sum(p.get("weight", 0) for p in positions)
+    if total_weight <= 0:
+        return {"status": "error", "error": "总权重为零"}
 
-    weights = {p["ts_code"]: p.get("market_value", 0) / total_mv for p in positions}
+    weights = {p["ts_code"]: p.get("weight", 0) / total_weight for p in positions}
 
     stock_rets = {}
     for pos in positions:
@@ -409,7 +410,7 @@ def compute_factor_attribution(lookback: int = 60) -> dict:
         stock_exposures.append({
             "ts_code": code,
             "name": pos["name"],
-            "weight": round(weights.get(code, 0) * 100, 2),
+            "weight": round(pos.get("weight", 0), 2),
             "industry": pos.get("industry", "其他"),
             "momentum": sc.get("momentum", 0.5),
             "volatility": sc.get("volatility", 0.5),

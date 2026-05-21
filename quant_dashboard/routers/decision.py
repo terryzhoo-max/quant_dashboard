@@ -744,13 +744,17 @@ async def get_efficient_frontier(points: int = Query(15, ge=5, le=30)):
             dedup_positions[seen[code]]["market_value"] = (
                 dedup_positions[seen[code]].get("market_value", 0) + p.get("market_value", 0)
             )
+            dedup_positions[seen[code]]["weight"] = (
+                dedup_positions[seen[code]].get("weight", 0) + p.get("weight", 0)
+            )
         else:
             seen[code] = len(dedup_positions)
             dedup_positions.append({**p})
     positions = dedup_positions
 
     codes = [p["ts_code"] for p in positions]
-    w_current = np.array([p.get("market_value", 0) / total_asset for p in positions])
+    # V28.0: 使用已修正的 p["weight"] (经 display_market_value 缩放)
+    w_current = np.array([p.get("weight", 0) / 100.0 for p in positions])
 
     rets_data = {}
     for p in positions:
