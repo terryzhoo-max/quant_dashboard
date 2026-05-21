@@ -24,13 +24,16 @@ def _get_current_position() -> float:
         total_asset = val.get("total_asset", 0)
         if total_asset <= 0:
             return 0.0
-        equity_mv = sum(
+        # V28.0: 使用后端权威 market_value (导入当日=券商参考市值)
+        # 避免逐笔累加 positions[].market_value 在 broker_market_value=0 时偏高
+        repo_mv = sum(
             p.get("market_value", 0)
             for p in val.get("positions", [])
-            if not (p.get("ts_code", "").split('.')[0][:3] in ('131', '204')
+            if (p.get("ts_code", "").split('.')[0][:3] in ('131', '204')
                     or '逆回购' in p.get("name", "")
                     or bool(_re.search(r'GC\d', p.get("name", ""))))
         )
+        equity_mv = (val.get("market_value", 0) or 0) - repo_mv
         return round(equity_mv / total_asset * 100, 1)
     except Exception:
         return -1

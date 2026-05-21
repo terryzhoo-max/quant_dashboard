@@ -625,11 +625,12 @@ class PortfolioEngine:
         df_rets = df_rets[available_codes].fillna(0)
         cov_matrix = df_rets.cov() * 252
 
-        avail_val = sum(float(p["market_value"]) for p in available_pos)
-        if avail_val == 0:
+        # V28.0: 使用已修正的 p["weight"] (经 display_market_value 缩放)
+        avail_weight_sum = sum(float(p.get("weight", 0)) for p in available_pos)
+        if avail_weight_sum == 0:
             return {"status": "zero_value"}
 
-        weights = np.array([float(p["market_value"]) / avail_val for p in available_pos])
+        weights = np.array([float(p.get("weight", 0)) / avail_weight_sum for p in available_pos])
 
         # ── 组合波动率 ──
         port_vol = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
@@ -659,14 +660,10 @@ class PortfolioEngine:
         # ── 个股风险明细 + 行业敞口 (包含所有持仓, 缺数据的给零值) ──
         risk_details = []
         sector_weights = {}
-        # 用全量持仓的总市值计算展示权重
-        total_val = float(valuation["market_value"])
-        if total_val == 0:
-            total_val = avail_val
-
+        # V28.0: 直接使用已修正的 p["weight"] (经 display_market_value 缩放)
         for i_full, pos in enumerate(valuation["positions"]):
             ind = pos.get("industry", "其他")
-            w = float(pos["market_value"]) / total_val * 100 if total_val > 0 else 0.0
+            w = float(pos.get("weight", 0))
             sector_weights[ind] = sector_weights.get(ind, 0.0) + w
 
             # 找到该 code 在 available_pos 中的索引
@@ -801,11 +798,12 @@ class PortfolioEngine:
 
         # ── MCTR 风险贡献 (复用 cov → MCTR 公式) ──
         cov_matrix = df_rets.cov().fillna(0) * 252
-        total_val = float(valuation.get("market_value", 0))
-        if total_val == 0:
+        # V28.0: 使用已修正的 p["weight"] (经 display_market_value 缩放)
+        total_weight = sum(float(p.get("weight", 0)) for p in positions)
+        if total_weight == 0:
             return {"status": "zero_value", "message": "组合市值为零"}
 
-        weights = np.array([float(p["market_value"]) / total_val for p in positions])
+        weights = np.array([float(p.get("weight", 0)) / total_weight for p in positions])
         port_var = np.dot(weights.T, np.dot(cov_matrix, weights))
         if np.isnan(port_var) or port_var <= 0:
             port_var = 0.0001
@@ -822,7 +820,7 @@ class PortfolioEngine:
                 "code": pos["ts_code"],
                 "name": pos["name"],
                 "industry": pos.get("industry", "其他"),
-                "weight": safe_round(weights[i] * 100, 2),
+                "weight": safe_round(pos.get("weight", 0), 2),
                 "mctr": safe_round(marginal_risk[i], 4),
                 "risk_contribution": safe_round(rc, 2),
             })

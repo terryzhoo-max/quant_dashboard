@@ -78,8 +78,9 @@ def generate_position_path(snapshot: dict = None, jcs_data: dict = None,
             "data_source": "signal",
         }
 
-    # ── 有持仓: 计算当前风险暴露 ──
-    current_cap = round(100 - val.get("cash_weight", 100), 1) if total_asset > 0 else 0
+    # V28.0: 使用 market_value / total_asset 计算实际仓位
+    # 旧方式 100 - cash_weight 在 broker_total_asset 含场外资产时严重偏高
+    current_cap = round((val.get("market_value", 0) or 0) / total_asset * 100, 1) if total_asset > 0 else 0
     target_cap = suggested_pos
     gap = round(target_cap - current_cap, 1)
 
