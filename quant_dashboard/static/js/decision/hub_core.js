@@ -96,24 +96,42 @@ function renderConflicts(data) {
 //  方向指示器
 // ═══════════════════════════════════════════════════
 
-function renderDirections(directions, snapshot) {
+function renderDirections(directions, snapshot, engineMeta) {
     const grid = document.getElementById('direction-grid');
     if (!grid) return;
 
+    // 本地引擎定义 (降级默认值, 后端 engine_meta 可覆盖权重)
     const engines = {
-        aiae: { label: 'AIAE', weight: 35, unit: '%',
+        aiae: { label: 'AIAE', weight: 32.5, unit: '%',
             val: snapshot ? snapshot.aiae_v1 : null,
             fmt: v => v != null ? v.toFixed(1) + '%' : '--' },
-        erp:  { label: 'ERP', weight: 25, unit: '%',
+        erp:  { label: 'ERP', weight: 22.5, unit: '%',
             val: snapshot ? snapshot.erp_val : null,
+            score: snapshot ? snapshot.erp_score : null,
             fmt: v => v != null ? v.toFixed(2) + '%' : '--' },
-        vix:  { label: 'VIX', weight: 20, unit: '',
+        vix:  { label: 'VIX', weight: 17.5, unit: '',
             val: snapshot ? snapshot.vix_val : null,
             fmt: v => v != null ? v.toFixed(1) : '--' },
-        mr:   { label: 'MR', weight: 20, unit: '',
+        mr:   { label: 'MR', weight: 17.5, unit: '',
             val: snapshot ? snapshot.mr_regime : null,
             fmt: v => v || '--' },
+        gold: { label: 'GOLD', weight: 5, unit: '',
+            val: snapshot ? snapshot.gold_signal : null,
+            fmt: v => v != null ? (v > 0 ? '+' : '') + v.toFixed(0) : '--' },
+        bond: { label: 'BOND', weight: 5, unit: '',
+            val: snapshot ? snapshot.bond_signal : null,
+            fmt: v => v != null ? (v > 0 ? '+' : '') + v.toFixed(0) : '--' },
     };
+
+    // A: 后端权重覆盖 (消除前后端硬编码不同步)
+    if (engineMeta) {
+        Object.entries(engineMeta).forEach(([key, meta]) => {
+            if (engines[key] && meta.weight != null) {
+                engines[key].weight = meta.weight;
+            }
+        });
+    }
+
     const arrows = { '1': '▲', '-1': '▼', '0': '━' };
     const cls = { '1': 'up', '-1': 'down', '0': 'neutral' };
     const meanings = {
@@ -121,23 +139,46 @@ function renderDirections(directions, snapshot) {
         erp:  { '1': '估值偏低', '-1': '估值偏高', '0': '估值中性' },
         vix:  { '1': '恐慌低迷', '-1': '恐慌较高', '0': '波动正常' },
         mr:   { '1': '技术看多', '-1': '技术看空', '0': '区间震荡' },
+        gold: { '1': '避险看多', '-1': '风险偏好', '0': '中性配置' },
+        bond: { '1': '利率利好', '-1': '利率承压', '0': '利率中性' },
     };
 
     grid.innerHTML = Object.entries(directions).map(([key, dir]) => {
         const eng = engines[key] || {};
         const dirStr = String(dir);
         const arrowCls = cls[dirStr] || 'neutral';
+
+        // B: 无数据检测 — val 为 null 且方向中性 → 灰化
+        const hasData = eng.val != null;
+        const noDataCls = (!hasData && dirStr === '0') ? ' dir-no-data' : '';
+        const meaningText = hasData
+            ? ((meanings[key] || {})[dirStr] || '')
+            : '暂无数据';
+
+        // C: ERP tooltip — 解释 erp_val 到 erp_score 到方向的判定链路
+        let tooltipHtml = '';
+        if (key === 'erp' && eng.score != null && hasData) {
+            const scoreTier = eng.score > 55 ? '看多 ▲' : (eng.score < 35 ? '看空 ▼' : '中性 ━');
+            tooltipHtml = `<div class="dir-tooltip">
+                <div class="dir-tooltip-title">ERP 判定链路</div>
+                <div class="dir-tooltip-row">原始值: ${eng.fmt(eng.val)}</div>
+                <div class="dir-tooltip-row">→ 归一化评分: <strong>${eng.score.toFixed(0)}</strong>分</div>
+                <div class="dir-tooltip-row">→ 方向判定: <strong>${scoreTier}</strong></div>
+                <div class="dir-tooltip-rule">&gt;55分=偏低(看多) · 35-55=中性 · &lt;35=偏高(看空)</div>
+            </div>`;
+        }
+
         return `
-        <div class="direction-item dir-${arrowCls}">
+        <div class="direction-item dir-${arrowCls}${noDataCls}">
             <div class="dir-header">
-                <span class="direction-label">${eng.label || key}</span>
-                <span class="dir-weight">${eng.weight || 10}%</span>
+                <span class="direction-label">${eng.label || key.toUpperCase()}</span>
+                <span class="dir-weight">${eng.weight || 5}%</span>
             </div>
             <div class="dir-center">
                 <div class="direction-arrow ${arrowCls}">${arrows[dirStr] || '●'}</div>
-                <div class="dir-realval">${eng.fmt ? eng.fmt(eng.val) : '--'}</div>
+                <div class="dir-realval">${eng.fmt ? eng.fmt(eng.val) : '--'}${tooltipHtml}</div>
             </div>
-            <div class="direction-meaning">${(meanings[key] || {})[dirStr] || ''}</div>
+            <div class="direction-meaning">${meaningText}</div>
         </div>`;
     }).join('');
 }

@@ -106,7 +106,7 @@ def generate_action_plan(snapshot: dict, jcs: dict, conflicts: dict) -> dict:
             # ── 强多: 3+引擎看多 ──
             action_label = "积极加仓"
             action_icon = "🚀"
-            reasoning = f"JCS {jcs_score}分，{bullish}/4引擎看多，方向明确"
+            reasoning = f"JCS {jcs_score}分，{bullish}/6引擎看多，方向明确"
             if mr_regime == "BULL":
                 top_signals.append("MR技术面处于牛市区间")
             if erp_score > 60:
@@ -119,7 +119,7 @@ def generate_action_plan(snapshot: dict, jcs: dict, conflicts: dict) -> dict:
             # ── 强空: 3+引擎看空 ──
             action_label = "防御减仓"
             action_icon = "🛡️"
-            reasoning = f"JCS {jcs_score}分但方向偏空，{bearish}/4引擎看空"
+            reasoning = f"JCS {jcs_score}分但方向偏空，{bearish}/6引擎看空"
             if aiae_regime >= 4:
                 top_signals.append(f"AIAE过热(R{aiae_regime})")
             if erp_score < 40:
@@ -132,7 +132,7 @@ def generate_action_plan(snapshot: dict, jcs: dict, conflicts: dict) -> dict:
             # ── V25.0 中等偏空 ──
             action_label = "逐步减仓"
             action_icon = "📉"
-            reasoning = f"JCS {jcs_score}分，加权方向 {weighted_dir:+.2f} 偏空，{bearish}/4引擎看空"
+            reasoning = f"JCS {jcs_score}分，加权方向 {weighted_dir:+.2f} 偏空，{bearish}/6引擎看空"
             if aiae_regime >= 4:
                 top_signals.append(f"AIAE过热(R{aiae_regime})，主锚看空")
             if erp_score < 45:
@@ -145,7 +145,7 @@ def generate_action_plan(snapshot: dict, jcs: dict, conflicts: dict) -> dict:
             # ── V25.0 中等偏多 ──
             action_label = "择机加仓"
             action_icon = "📈"
-            reasoning = f"JCS {jcs_score}分，加权方向 {weighted_dir:+.2f} 偏多，{bullish}/4引擎看多"
+            reasoning = f"JCS {jcs_score}分，加权方向 {weighted_dir:+.2f} 偏多，{bullish}/6引擎看多"
             if aiae_regime <= 2:
                 top_signals.append(f"AIAE冷配区(R{aiae_regime})，主锚看多")
             if erp_score > 55:
@@ -193,17 +193,48 @@ def generate_action_plan(snapshot: dict, jcs: dict, conflicts: dict) -> dict:
         }
 
     # ── 中置信 / 默认场景 ──
-    action_label = "持仓观望"
-    action_icon = "👁️"
-    reasoning = f"JCS {jcs_score}分，信号不够强烈，等待明确方向"
+    # V25.3-fix: 中置信不等于无方向, 加权方向强时仍应给方向性建议
+    weighted_dir = sum(directions.get(k, 0) * _JCS_WEIGHTS.get(k, 0) for k in _JCS_WEIGHTS)
     neutral_count = sum(1 for d in directions.values() if d == 0)
-    if neutral_count >= 3:
-        top_signals.append(f"{neutral_count}/4引擎中性，市场缺乏方向")
-    if conflict_count == 1:
-        top_signals.append("存在轻度矛盾，不宜大幅调仓")
-    top_signals.append(f"当前仓位目标: {pos}%")
-    next_check = "明日收盘后复查 或 VIX出现异动"
-    risk_note = _apply_position_gap_note("维持现有仓位，不追涨杀跌", pos, current_pos)
+
+    if weighted_dir <= -0.30:
+        # 中置信偏空: 核心引擎看空但信号尚未达到高置信
+        bearish = sum(1 for d in directions.values() if d == -1)
+        action_label = "谨慎减仓"
+        action_icon = "📉"
+        reasoning = f"JCS {jcs_score}分(中置信)，加权方向 {weighted_dir:+.2f} 偏空，{bearish}引擎看空"
+        if aiae_regime >= 4:
+            top_signals.append(f"AIAE过热(R{aiae_regime})，主锚看空")
+        if erp_score < 45:
+            top_signals.append(f"ERP估值偏高({erp_score:.0f}分)")
+        top_signals.append(f"当前仓位目标: {pos}%")
+        next_check = "AIAE降至R3 或 加权方向转正时停止减仓"
+        risk_note = _apply_position_gap_note("分批减仓，优先减非核心持仓", pos, current_pos)
+    elif weighted_dir >= 0.30:
+        # 中置信偏多
+        bullish = sum(1 for d in directions.values() if d == 1)
+        action_label = "轻仓试探"
+        action_icon = "📈"
+        reasoning = f"JCS {jcs_score}分(中置信)，加权方向 {weighted_dir:+.2f} 偏多，{bullish}引擎看多"
+        if aiae_regime <= 2:
+            top_signals.append(f"AIAE冷配区(R{aiae_regime})")
+        if erp_score > 55:
+            top_signals.append(f"ERP估值偏低({erp_score:.0f}分)")
+        top_signals.append(f"当前仓位目标: {pos}%")
+        next_check = "确认技术面共振后可加大力度"
+        risk_note = _apply_position_gap_note(f"分批加仓至 {pos}%，单次不超3%", pos, current_pos)
+    else:
+        # 真正中性
+        action_label = "持仓观望"
+        action_icon = "👁️"
+        reasoning = f"JCS {jcs_score}分，信号不够强烈，等待明确方向"
+        if neutral_count >= 3:
+            top_signals.append(f"{neutral_count}/6引擎中性，市场缺乏方向")
+        if conflict_count == 1:
+            top_signals.append("存在轻度矛盾，不宜大幅调仓")
+        top_signals.append(f"当前仓位目标: {pos}%")
+        next_check = "明日收盘后复查 或 VIX出现异动"
+        risk_note = _apply_position_gap_note("维持现有仓位，不追涨杀跌", pos, current_pos)
 
     return {
         "action_label": action_label, "action_icon": action_icon,

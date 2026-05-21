@@ -128,10 +128,16 @@ def _compute_jcs_with_weights(snapshot: dict, weights: dict, n_core: int = 4) ->
     data_health = max(0.0, 20.0 - stale_count * 4.0 - degraded_count * 2.0)
 
     # ── 3. Consensus Bonus (占 20 分) ──
-    if active_count == n_core and all(d == active_dirs[0] for d in active_dirs):
+    # V25.3-fix: 只看核心 4 引擎的一致性, gold/bond 为软信号不阻塞共识奖励
+    _CORE_ENGINES = ["aiae", "erp", "vix", "mr"]
+    core_active = [directions.get(k, 0) for k in _CORE_ENGINES if directions.get(k, 0) != 0]
+    core_active_count = len(core_active)
+
+    if core_active_count == 4 and all(d == core_active[0] for d in core_active):
         consensus_bonus = 20.0
-    elif active_count >= max(2, n_core // 2) and all(d == active_dirs[0] for d in active_dirs):
-        consensus_bonus = 10.0
+    elif core_active_count >= 2 and all(d == core_active[0] for d in core_active):
+        # 按比例: 2/4=10, 3/4=15
+        consensus_bonus = core_active_count * 5.0
     else:
         consensus_bonus = 0.0
 

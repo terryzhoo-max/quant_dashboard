@@ -236,6 +236,11 @@ def get_hub_data() -> dict:
         "data_date": _primary_date,
         "date_consistent": _date_consistent,
         "compliance": _compliance,
+        # V27.1: 权重后端统一下发 (消除前后端硬编码不同步问题)
+        "engine_meta": {
+            k: {"weight": round(w * 100, 1)}
+            for k, w in _JCS_WEIGHTS.items()
+        },
     }
 
 

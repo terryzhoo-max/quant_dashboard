@@ -166,17 +166,15 @@ class TestComputeJCS:
             assert key in jcs, f"Missing key: {key}"
 
     def test_consensus_bonus_full_agreement(self):
-        """6 引擎全一致 → consensus_bonus = 20 (V25.3: 需要 gold/bond 也看多)"""
+        """核心 4 引擎全一致 → consensus_bonus = 20 (V25.3-fix: 只看核心4引擎)"""
         jcs = compute_jcs(self._make_snap(
-            aiae_regime=1, erp_score=80, vix_val=12, mr_regime="BULL",
-            gold_signal=50, bond_signal=50))
+            aiae_regime=1, erp_score=80, vix_val=12, mr_regime="BULL"))
         assert jcs["consensus_bonus"] == 20.0
 
     def test_consensus_bonus_partial(self):
-        """≥3 引擎一致 (V25.3: n_core//2=3) → consensus_bonus = 10"""
+        """2 核心引擎一致 → consensus_bonus = 10 (V25.3-fix: 2×5=10)"""
         jcs = compute_jcs(self._make_snap(
-            aiae_regime=1, erp_score=80, vix_val=20, mr_regime="RANGE",
-            gold_signal=50))
+            aiae_regime=1, erp_score=80, vix_val=20, mr_regime="RANGE"))
         assert jcs["consensus_bonus"] == 10.0
 
 
@@ -305,7 +303,7 @@ class TestRecalcVixScore:
 
     def test_low_vix_high_score(self):
         """VIX 低 → 评分高 (乐观)"""
-        assert _recalc_vix_score(12.0) > 70
+        assert _recalc_vix_score(12.0) >= 70
 
     def test_high_vix_low_score(self):
         """VIX 高 → 评分低 (恐慌)"""

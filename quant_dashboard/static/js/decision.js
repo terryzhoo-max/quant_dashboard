@@ -179,7 +179,7 @@ async function initDecisionHub() {
             if (data.signal_decay) renderSignalDecay(data.signal_decay);
 
             // ④ 方向指示器
-            renderDirections(data.jcs.directions, data.snapshot);
+            renderDirections(data.jcs.directions, data.snapshot, data.engine_meta);
 
             // ⑤ 矛盾检测
             renderConflicts(data.conflicts);
