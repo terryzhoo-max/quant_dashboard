@@ -25,6 +25,7 @@ logger = get_logger("strategy")
 from mean_reversion_engine import run_strategy
 from dividend_trend_engine import run_dividend_strategy
 from momentum_rotation_engine import run_momentum_strategy
+from dual_momentum_engine import run_gem_strategy
 from erp_timing_engine import get_erp_engine
 from aiae_engine import get_aiae_engine, REGIMES as AIAE_REGIMES
 from services.cache_service import cache_manager
@@ -177,6 +178,26 @@ async def get_momentum_strategy():
     if cache_manager.get_json("strategy_results", {}).get("mom"):
         return cache_manager.get_json("strategy_results", {}).get("mom")
     return await asyncio.get_running_loop().run_in_executor(executor, run_momentum_strategy)
+
+
+# ─────────────────────────────────────────────
+# GEM 双重动量策略 (第 1.5 层战术资产配置)
+# ─────────────────────────────────────────────
+def _run_gem_strategy() -> dict:
+    """GEM 策略执行包装 (与其他策略统一格式)"""
+    try:
+        return run_gem_strategy()
+    except Exception as e:
+        logger.error(f"GEM Strategy Error: {e}", exc_info=True)
+        return {"status": "error", "message": str(e)}
+
+
+@router.get("/gem_strategy")
+async def get_gem_strategy_api():
+    """双重动量策略信号 (GEM) — 第 1.5 层战术资产配置"""
+    if cache_manager.get_json("strategy_results", {}).get("gem"):
+        return cache_manager.get_json("strategy_results", {}).get("gem")
+    return await asyncio.get_running_loop().run_in_executor(executor, _run_gem_strategy)
 
 
 # ─────────────────────────────────────────────
@@ -336,10 +357,11 @@ def _extract_signals_normalized(strategy_type: str, raw_result) -> list:
     return []
 
 
-def _compute_resonance(mr_signals, div_signals, mom_signals, erp_signals=None, aiae_signals=None):
-    """计算五策略信号共振：找到多策略一致看好/看空的重叠标的 (V4.2)"""
+def _compute_resonance(mr_signals, div_signals, mom_signals, erp_signals=None, aiae_signals=None, gem_signals=None):
+    """计算六策略信号共振：找到多策略一致看好/看空的重叠标的 (V5.0 含 GEM)"""
     if erp_signals is None: erp_signals = []
     if aiae_signals is None: aiae_signals = []
+    if gem_signals is None: gem_signals = []
 
     def build_map(signals):
         m = {}
@@ -353,14 +375,14 @@ def _compute_resonance(mr_signals, div_signals, mom_signals, erp_signals=None, a
         return m
 
     mr_map, div_map, mom_map = build_map(mr_signals), build_map(div_signals), build_map(mom_signals)
-    erp_map, aiae_map = build_map(erp_signals), build_map(aiae_signals)
+    erp_map, aiae_map, gem_map = build_map(erp_signals), build_map(aiae_signals), build_map(gem_signals)
 
-    all_codes = set(list(mr_map.keys()) + list(div_map.keys()) + list(mom_map.keys()) + list(erp_map.keys()) + list(aiae_map.keys()))
+    all_codes = set(list(mr_map.keys()) + list(div_map.keys()) + list(mom_map.keys()) + list(erp_map.keys()) + list(aiae_map.keys()) + list(gem_map.keys()))
 
     consensus_buy, consensus_sell, divergence = [], [], []
 
     for code in all_codes:
-        maps = {"mr": mr_map, "div": div_map, "mom": mom_map, "erp": erp_map, "aiae": aiae_map}
+        maps = {"mr": mr_map, "div": div_map, "mom": mom_map, "erp": erp_map, "aiae": aiae_map, "gem": gem_map}
         present = sum(1 for m in maps.values() if code in m)
         if present < 2:
             continue
@@ -422,45 +444,49 @@ def _compute_risk_overlay(all_signals):
 
 @router.get("/strategy/run-all")
 async def run_all_strategies_api(override_cap: int = None):
-    """V4.0 五策略并行执行 (MR+DIV+MOM+ERP+AIAE_ETF)
+    """V5.0 六策略并行执行 (MR+DIV+MOM+GEM+ERP+AIAE_ETF)
     + AIAE主控仓位Cap + 动态权重 + 共振分析
+    含第 1.5 层 GEM 双重动量战术配置
     """
     loop = asyncio.get_running_loop()
 
     try:
-        # ── 并行执行5策略 ──
+        # ── 并行执行6策略 ──
         mr_task   = loop.run_in_executor(executor, run_strategy)
         div_task  = loop.run_in_executor(executor, lambda: run_dividend_strategy(regime=None))
         mom_task  = loop.run_in_executor(executor, run_momentum_strategy)
+        gem_task  = loop.run_in_executor(executor, _run_gem_strategy)
         erp_task  = loop.run_in_executor(executor, _run_erp_strategy)
         aiae_task = loop.run_in_executor(executor, _run_aiae_strategy)
 
-        mr_raw, div_raw, mom_raw, erp_raw, aiae_raw = await asyncio.gather(
-            mr_task, div_task, mom_task, erp_task, aiae_task
+        mr_raw, div_raw, mom_raw, gem_raw, erp_raw, aiae_raw = await asyncio.gather(
+            mr_task, div_task, mom_task, gem_task, erp_task, aiae_task
         )
 
         from dashboard_modules.run_strategies import wrap_mr_results
         mr_result = wrap_mr_results(mr_raw) if isinstance(mr_raw, list) else mr_raw
-        div_result, mom_result, erp_result, aiae_result = div_raw, mom_raw, erp_raw, aiae_raw
+        div_result, mom_result, gem_result, erp_result, aiae_result = div_raw, mom_raw, gem_raw, erp_raw, aiae_raw
 
         with _STRATEGY_LOCK:
             _sr = cache_manager.get_json("strategy_results", {})
-            _sr["mr"] = mr_result; _sr["div"] = div_result; _sr["mom"] = mom_result
+            _sr["mr"] = mr_result; _sr["div"] = div_result; _sr["mom"] = mom_result; _sr["gem"] = gem_result
             cache_manager.set_json("strategy_results", _sr)
 
         # 提取标准化信号
         mr_signals   = _extract_signals_normalized("mr", mr_result)
         div_signals  = _extract_signals_normalized("div", div_result)
         mom_signals  = _extract_signals_normalized("mom", mom_result)
+        gem_signals  = _extract_signals_normalized("gem", gem_result)
         erp_signals  = _extract_signals_normalized("erp", erp_result)
         aiae_signals = _extract_signals_normalized("aiae_etf", aiae_result)
 
-        resonance = _compute_resonance(mr_signals, div_signals, mom_signals, erp_signals, aiae_signals)
+        resonance = _compute_resonance(mr_signals, div_signals, mom_signals, erp_signals, aiae_signals, gem_signals)
 
         all_buy_signals = (
             [s for s in mr_signals if s.get("signal") == "buy"] +
             [s for s in div_signals if s.get("signal") == "buy"] +
             [s for s in mom_signals if s.get("signal") == "buy"] +
+            [s for s in gem_signals if s.get("signal") == "buy"] +
             [s for s in aiae_signals if s.get("signal") == "buy"]
         )
         risk_overlay = _compute_risk_overlay(all_buy_signals)
@@ -469,12 +495,14 @@ async def run_all_strategies_api(override_cap: int = None):
         mr_ov   = mr_result.get("data", {}).get("market_overview", {}) if isinstance(mr_result, dict) else {}
         div_ov  = div_result.get("data", {}).get("market_overview", {}) if isinstance(div_result, dict) else {}
         mom_ov  = mom_result.get("data", {}).get("market_overview", {}) if isinstance(mom_result, dict) else {}
+        gem_ov  = gem_result.get("data", {}).get("market_overview", {}) if isinstance(gem_result, dict) else {}
         erp_ov  = erp_result.get("data", {}).get("market_overview", {}) if isinstance(erp_result, dict) else {}
         aiae_ov = aiae_result.get("data", {}).get("market_overview", {}) if isinstance(aiae_result, dict) else {}
 
         mr_regime = mr_signals[0].get("regime", "RANGE") if mr_signals else "RANGE"
         total_buy = (mr_ov.get("signal_count", {}).get("buy", 0) + div_ov.get("buy_count", 0) +
-                     mom_ov.get("buy_count", 0) + erp_ov.get("buy_count", 0) + aiae_ov.get("buy_count", 0))
+                     mom_ov.get("buy_count", 0) + gem_ov.get("buy_count", 0) +
+                     erp_ov.get("buy_count", 0) + aiae_ov.get("buy_count", 0))
         total_sell = (mr_ov.get("signal_count", {}).get("sell", 0) + div_ov.get("sell_count", 0) +
                       mom_ov.get("sell_count", 0) + erp_ov.get("sell_count", 0) + aiae_ov.get("sell_count", 0))
 
@@ -486,7 +514,8 @@ async def run_all_strategies_api(override_cap: int = None):
             return sum(positions) / len(positions) if positions else 0.0
 
         mr_conf, div_conf = _avg_confidence(mr_signals), _avg_confidence(div_signals)
-        mom_conf, erp_conf = _avg_confidence(mom_signals), _avg_confidence(erp_signals)
+        mom_conf, gem_conf = _avg_confidence(mom_signals), _avg_confidence(gem_signals)
+        erp_conf = _avg_confidence(erp_signals)
         aiae_conf = _avg_confidence(aiae_signals)
 
         aiae_regime = aiae_ov.get("regime", 3)
@@ -502,12 +531,12 @@ async def run_all_strategies_api(override_cap: int = None):
                 engine = get_aiae_engine()
                 w, erp_tier = engine.get_run_all_weights(aiae_regime, erp_score)
             except Exception:
-                w = {"mr": 0.15, "div": 0.30, "mom": 0.10, "erp": 0.15, "aiae_etf": 0.30}
+                w = {"mr": 0.12, "div": 0.25, "mom": 0.08, "gem": 0.12, "erp": 0.13, "aiae_etf": 0.30}
                 erp_tier = "neutral"
 
         raw_pos = round(
             mr_conf * w["mr"] + div_conf * w["div"] + mom_conf * w["mom"] +
-            erp_conf * w["erp"] + aiae_conf * w["aiae_etf"]
+            gem_conf * w.get("gem", 0) + erp_conf * w["erp"] + aiae_conf * w["aiae_etf"]
         )
 
         aiae_cap = aiae_ov.get("matrix_position", 65)
@@ -551,10 +580,11 @@ async def run_all_strategies_api(override_cap: int = None):
                 "global": {
                     "regime": mr_regime, "total_position": avg_pos,
                     "regime_cap": cap, "total_buy": total_buy, "total_sell": total_sell,
-                    "consistency": consistency, "strategy_count": 5,
+                    "consistency": consistency, "strategy_count": 6,
                     "erp_score": erp_score, "erp_cap_active": erp_cap_active,
                     "confidence": {
                         "mr": round(mr_conf), "div": round(div_conf), "mom": round(mom_conf),
+                        "gem": round(gem_conf),
                         "erp": round(erp_conf), "aiae_etf": round(aiae_conf),
                     },
                     "weights": w,
@@ -573,6 +603,7 @@ async def run_all_strategies_api(override_cap: int = None):
                     "mr": mr_result.get("data", mr_result) if isinstance(mr_result, dict) else {"signals": mr_signals},
                     "div": div_result.get("data", div_result) if isinstance(div_result, dict) else {"signals": div_signals},
                     "mom": mom_result.get("data", mom_result) if isinstance(mom_result, dict) else {"signals": mom_signals},
+                    "gem": gem_result.get("data", gem_result) if isinstance(gem_result, dict) else {"signals": gem_signals},
                     "erp": erp_result.get("data", erp_result) if isinstance(erp_result, dict) else {"signals": erp_signals},
                     "aiae_etf": aiae_result.get("data", aiae_result) if isinstance(aiae_result, dict) else {"signals": aiae_signals},
                 },

@@ -212,35 +212,35 @@ AIAE_ETF_MATRIX = {
 # ERP档: bull(≥55) / neutral(40-55) / bear(<40)
 # 每行权重总和 = 1.0
 JOINT_WEIGHTS = {
-    # AIAE Ⅰ 恐慌
+    # AIAE Ⅰ 恐慌  (GEM低配: 牛市追强时价值最小)
     1: {
-        "bull":    {"mr": 0.35, "div": 0.10, "mom": 0.25, "erp": 0.10, "aiae_etf": 0.20},  # 极端贪婪
-        "neutral": {"mr": 0.25, "div": 0.20, "mom": 0.20, "erp": 0.10, "aiae_etf": 0.25},  # 温和进攻
-        "bear":    {"mr": 0.10, "div": 0.30, "mom": 0.10, "erp": 0.10, "aiae_etf": 0.40},  # 矛盾态防御优先
+        "bull":    {"mr": 0.30, "div": 0.10, "mom": 0.20, "gem": 0.07, "erp": 0.10, "aiae_etf": 0.23},
+        "neutral": {"mr": 0.22, "div": 0.18, "mom": 0.17, "gem": 0.08, "erp": 0.10, "aiae_etf": 0.25},
+        "bear":    {"mr": 0.08, "div": 0.28, "mom": 0.08, "gem": 0.10, "erp": 0.10, "aiae_etf": 0.36},
     },
     # AIAE Ⅱ 低估
     2: {
-        "bull":    {"mr": 0.30, "div": 0.15, "mom": 0.20, "erp": 0.10, "aiae_etf": 0.25},
-        "neutral": {"mr": 0.20, "div": 0.25, "mom": 0.15, "erp": 0.10, "aiae_etf": 0.30},
-        "bear":    {"mr": 0.10, "div": 0.30, "mom": 0.05, "erp": 0.10, "aiae_etf": 0.45},
+        "bull":    {"mr": 0.27, "div": 0.13, "mom": 0.17, "gem": 0.08, "erp": 0.10, "aiae_etf": 0.25},
+        "neutral": {"mr": 0.17, "div": 0.23, "mom": 0.12, "gem": 0.10, "erp": 0.10, "aiae_etf": 0.28},
+        "bear":    {"mr": 0.08, "div": 0.27, "mom": 0.03, "gem": 0.12, "erp": 0.10, "aiae_etf": 0.40},
     },
     # AIAE Ⅲ 中性
     3: {
-        "bull":    {"mr": 0.25, "div": 0.20, "mom": 0.20, "erp": 0.10, "aiae_etf": 0.25},
-        "neutral": {"mr": 0.15, "div": 0.30, "mom": 0.10, "erp": 0.15, "aiae_etf": 0.30},
-        "bear":    {"mr": 0.05, "div": 0.40, "mom": 0.05, "erp": 0.10, "aiae_etf": 0.40},
+        "bull":    {"mr": 0.22, "div": 0.18, "mom": 0.17, "gem": 0.10, "erp": 0.10, "aiae_etf": 0.23},
+        "neutral": {"mr": 0.12, "div": 0.27, "mom": 0.08, "gem": 0.12, "erp": 0.13, "aiae_etf": 0.28},
+        "bear":    {"mr": 0.03, "div": 0.35, "mom": 0.03, "gem": 0.14, "erp": 0.10, "aiae_etf": 0.35},
     },
-    # AIAE Ⅳ 偏热
+    # AIAE Ⅳ 偏热  (GEM升权: 绝对动量过滤价值凸显)
     4: {
-        "bull":    {"mr": 0.15, "div": 0.30, "mom": 0.10, "erp": 0.10, "aiae_etf": 0.35},
-        "neutral": {"mr": 0.05, "div": 0.40, "mom": 0.05, "erp": 0.15, "aiae_etf": 0.35},
-        "bear":    {"mr": 0.00, "div": 0.45, "mom": 0.00, "erp": 0.10, "aiae_etf": 0.45},
+        "bull":    {"mr": 0.12, "div": 0.27, "mom": 0.07, "gem": 0.14, "erp": 0.10, "aiae_etf": 0.30},
+        "neutral": {"mr": 0.03, "div": 0.35, "mom": 0.03, "gem": 0.16, "erp": 0.13, "aiae_etf": 0.30},
+        "bear":    {"mr": 0.00, "div": 0.38, "mom": 0.00, "gem": 0.17, "erp": 0.10, "aiae_etf": 0.35},
     },
-    # AIAE Ⅴ 过热 — 纯防御，MR/MOM归零
+    # AIAE Ⅴ 过热 — MR/MOM归零, GEM保留(自动持有现金/黄金)
     5: {
-        "bull":    {"mr": 0.00, "div": 0.40, "mom": 0.00, "erp": 0.10, "aiae_etf": 0.50},
-        "neutral": {"mr": 0.00, "div": 0.45, "mom": 0.00, "erp": 0.10, "aiae_etf": 0.45},
-        "bear":    {"mr": 0.00, "div": 0.50, "mom": 0.00, "erp": 0.05, "aiae_etf": 0.45},
+        "bull":    {"mr": 0.00, "div": 0.35, "mom": 0.00, "gem": 0.13, "erp": 0.10, "aiae_etf": 0.42},
+        "neutral": {"mr": 0.00, "div": 0.38, "mom": 0.00, "gem": 0.15, "erp": 0.10, "aiae_etf": 0.37},
+        "bear":    {"mr": 0.00, "div": 0.42, "mom": 0.00, "gem": 0.15, "erp": 0.05, "aiae_etf": 0.38},
     },
 }
 
@@ -687,13 +687,14 @@ class AIAEEngine:
             return "erp_lt2"
 
     def allocate_sub_strategies(self, regime: int, total_position: int) -> Dict:
-        """子策略配额分配"""
+        """子策略配额分配 (V5.0: 含 GEM 双重动量)"""
         alloc_pct = SUB_STRATEGY_ALLOC.get(regime, SUB_STRATEGY_ALLOC[3])
         return {
-            "mr":  {"name": "均值回归", "pct": alloc_pct["mr"],  "position": round(total_position * alloc_pct["mr"] / 100, 1)},
-            "div": {"name": "红利趋势", "pct": alloc_pct["div"], "position": round(total_position * alloc_pct["div"] / 100, 1)},
-            "mom": {"name": "行业动量", "pct": alloc_pct["mom"], "position": round(total_position * alloc_pct["mom"] / 100, 1)},
-            "erp": {"name": "ERP择时", "pct": alloc_pct["erp"], "position": round(total_position * alloc_pct["erp"] / 100, 1)},
+            "mr":  {"name": "均值回归",   "pct": alloc_pct["mr"],  "position": round(total_position * alloc_pct["mr"] / 100, 1)},
+            "div": {"name": "红利趋势",   "pct": alloc_pct["div"], "position": round(total_position * alloc_pct["div"] / 100, 1)},
+            "mom": {"name": "行业动量",   "pct": alloc_pct["mom"], "position": round(total_position * alloc_pct["mom"] / 100, 1)},
+            "gem": {"name": "双重动量",   "pct": alloc_pct["gem"], "position": round(total_position * alloc_pct["gem"] / 100, 1)},
+            "erp": {"name": "ERP择时",    "pct": alloc_pct["erp"], "position": round(total_position * alloc_pct["erp"] / 100, 1)},
         }
 
     # ========== AIAE ETF 标的池执行 (run-all 集成) ==========

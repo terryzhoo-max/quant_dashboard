@@ -94,6 +94,13 @@ POSITION_CONFIG = {
         "BEAR":  35,
         "CRASH":  0,
     },
+    # 双重动量 (GEM): 第1.5层战术配置, 绝对动量过滤天然防御
+    "gem_regime_cap": {
+        "BULL":  90,
+        "RANGE": 70,
+        "BEAR":  40,
+        "CRASH":  0,
+    },
 
     # ── 回测引擎统一上限 ──
     # 回测不受 AIAE 动态调整, 用固定值保证可重复性

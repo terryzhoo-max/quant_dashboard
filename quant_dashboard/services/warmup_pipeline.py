@@ -320,6 +320,24 @@ def warmup_global_aiae_cache():
         logger.error(f"Global AIAE 预热失败 (non-fatal): {e}")
 
 
+def warmup_gem_cache():
+    """预热 GEM 双重动量策略缓存: 拉取7资产历史数据 + 生成信号"""
+    from dual_momentum_engine import run_gem_strategy
+    from services.cache_service import cache_manager
+    result = run_gem_strategy()
+    status = result.get('status', 'unknown')
+    if status == 'success':
+        _sr = cache_manager.get_json("strategy_results", {})
+        _sr["gem"] = result
+        cache_manager.set_json("strategy_results", _sr)
+    overview = result.get('data', {}).get('market_overview', {})
+    selected = overview.get('selected_asset', '?')
+    signal = overview.get('signal_type', '?')
+    logger.info(f"GEM 预热完成 · status={status} · 信号={signal} · 持有={selected}")
+    if status not in ('success', 'fallback'):
+        raise Exception(f"GEM warmup failed: {status}")
+
+
 # ═══════════════════════════════════════════════════
 #  定时回调 (由 APScheduler 在 lifespan 中注册)
 # ═══════════════════════════════════════════════════
@@ -335,6 +353,7 @@ def daily_warmup_callback():
     with_retry(warmup_industry_tracking, "Industry_Warmup", 2, 60)
     with_retry(warmup_dashboard_cache, "Dashboard_Warmup", 3, 60)
     with_retry(warmup_factor_data, "Factor_Sync", 3, 60)
+    with_retry(warmup_gem_cache, "GEM_Warmup", 2, 60)
     # Batch 11: 收盘后自动存档组合净值快照
     try:
         from portfolio_engine import get_portfolio_engine

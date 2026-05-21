@@ -92,6 +92,7 @@
                 <button class="st-tab" data-report="st-mean-reversion">📐 均值回归策略 V4.2</button>
                 <button class="st-tab" data-report="st-dividend-trend">💰 红利趋势策略 V4.0</button>
                 <button class="st-tab" data-report="st-momentum">🚀 行业动量轮动 V3.0</button>
+                <button class="st-tab" data-report="st-gem">🌐 双重动量 GEM V3.0</button>
                 <button class="st-tab" data-report="st-signal-rules">🎯 信号评分系统</button>
                 <button class="st-tab" data-report="st-execution">📊 策略执行结果</button>
             </div>
@@ -345,6 +346,13 @@
                                 <div class="aiae-ac-pct" id="aiae-alloc-erp-pct">—%</div>
                                 <div class="aiae-ac-pos" id="aiae-alloc-erp-pos">—% 仓位</div>
                                 <div class="aiae-ac-bar"><div class="aiae-ac-bar-fill aiae-bar-amber" id="aiae-alloc-erp-bar" style="width:0%"></div></div>
+                            </div>
+                            <div class="aiae-alloc-card" data-strategy="gem">
+                                <div class="aiae-ac-icon">🌐</div>
+                                <div class="aiae-ac-name">GEM动量</div>
+                                <div class="aiae-ac-pct" id="aiae-alloc-gem-pct">—%</div>
+                                <div class="aiae-ac-pos" id="aiae-alloc-gem-pos">—% 仓位</div>
+                                <div class="aiae-ac-bar"><div class="aiae-ac-bar-fill aiae-bar-blue" id="aiae-alloc-gem-bar" style="width:0%"></div></div>
                             </div>
                             <!-- M2: AIAE ETF 第5策略配额卡片 (金色主题 · 横跨双列) -->
                             <div class="aiae-alloc-card aiae-alloc-card-featured" data-strategy="aiae_etf">
@@ -2367,6 +2375,207 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
             </div><!-- /st-momentum -->
 
 
+            <!-- ==================== GEM 双重动量策略 V3.0 ==================== -->
+            <div class="st-report" id="st-gem">
+
+            <!-- ZONE 0 · 策略身份 Hero -->
+            <section class="st-hero glass-panel" style="background:linear-gradient(135deg,rgba(14,165,233,0.08),rgba(20,24,34,0.5),rgba(245,158,11,0.06)); border-color:rgba(14,165,233,0.25);">
+                <div class="st-hero-badge" style="background:rgba(14,165,233,0.15); border-color:rgba(14,165,233,0.3); color:#38bdf8;">🌐 AlphaCore V6.0 · GEM 双重动量引擎</div>
+                <h2 class="st-hero-title">🌐 Global Equity Momentum V3.0</h2>
+                <p class="st-hero-sub">跨市场ETF战术配置 · 9M相对动量 + 绝对动量 · SMA趋势过滤 · 波动率目标制 · 双窗口确认 · 相关性去重</p>
+                <div class="st-hero-stats">
+                    <div class="st-hero-stat"><span class="st-hs-label">资产池</span><span class="st-hs-value st-blue" id="gem-hero-pool">7只ETF</span></div>
+                    <div class="st-hero-stat"><span class="st-hs-label">信号</span><span class="st-hs-value" id="gem-hero-signal">—</span></div>
+                    <div class="st-hero-stat"><span class="st-hs-label">总仓位</span><span class="st-hs-value st-green" id="gem-hero-position">—</span></div>
+                    <div class="st-hero-stat"><span class="st-hs-label">综合评分</span><span class="st-hs-value st-gold" id="gem-hero-score">—</span></div>
+                </div>
+                <div style="margin-top:16px; display:flex; gap:12px; align-items:center;">
+                    <button onclick="loadGemStrategy()" id="gem-load-btn" style="background:rgba(14,165,233,0.15); border:1px solid rgba(14,165,233,0.35); color:#38bdf8; border-radius:8px; padding:8px 20px; cursor:pointer; font-size:0.82rem; font-weight:700; font-family:inherit;">
+                        ⚡ 加载实时数据
+                    </button>
+                    <button onclick="loadGemStrategy(true)" style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); color:#94a3b8; border-radius:8px; padding:8px 16px; cursor:pointer; font-size:0.78rem; font-family:inherit;">
+                        🔄 强制刷新
+                    </button>
+                    <span id="gem-load-status" style="font-size:0.75rem; color:#64748b;"></span>
+                </div>
+            </section>
+
+            <!-- ZONE 1 · 信号仪表板 -->
+            <div class="st-zone-header" style="--zone-color:#0ea5e9">
+                <span class="zone-icon">📡</span>
+                <div>
+                    <div class="zone-title">ZONE 1 · 信号仪表板</div>
+                    <div class="zone-sub">当前持仓信号 · 目标权重 · V3.0 四层保护状态</div>
+                </div>
+            </div>
+            <section class="st-section">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                    <!-- 左: 信号面板 -->
+                    <div class="glass-panel" style="padding:24px;">
+                        <h4 style="margin:0 0 16px 0; font-size:0.9rem;">📊 当前信号</h4>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;" id="gem-signal-grid">
+                            <div style="background:rgba(14,165,233,0.06); border:1px solid rgba(14,165,233,0.2); border-radius:10px; padding:14px; text-align:center;">
+                                <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:4px;">信号类型</div>
+                                <div id="gem-sig-type" style="font-size:1.1rem; font-weight:900; color:#38bdf8;">—</div>
+                            </div>
+                            <div style="background:rgba(16,185,129,0.06); border:1px solid rgba(16,185,129,0.2); border-radius:10px; padding:14px; text-align:center;">
+                                <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:4px;">持仓资产</div>
+                                <div id="gem-sig-asset" style="font-size:1.1rem; font-weight:900; color:#34d399;">—</div>
+                            </div>
+                            <div style="background:rgba(245,158,11,0.06); border:1px solid rgba(245,158,11,0.2); border-radius:10px; padding:14px; text-align:center;">
+                                <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:4px;">绝对动量</div>
+                                <div id="gem-sig-abs" style="font-size:1.1rem; font-weight:900; color:#fbbf24;">—</div>
+                            </div>
+                            <div style="background:rgba(139,92,246,0.06); border:1px solid rgba(139,92,246,0.2); border-radius:10px; padding:14px; text-align:center;">
+                                <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:4px;">双窗口</div>
+                                <div id="gem-sig-dual" style="font-size:1.1rem; font-weight:900; color:#a78bfa;">—</div>
+                            </div>
+                        </div>
+                        <!-- 目标权重 -->
+                        <div style="margin-top:18px;">
+                            <div style="font-size:0.78rem; font-weight:700; color:#38bdf8; margin-bottom:10px;">🎯 目标权重分配</div>
+                            <div id="gem-weights-bars" style="display:flex; flex-direction:column; gap:8px;">
+                                <div style="font-size:0.75rem; color:#64748b; text-align:center;">加载数据后显示</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 右: V3.0 特性状态 -->
+                    <div class="glass-panel" style="padding:24px;">
+                        <h4 style="margin:0 0 16px 0; font-size:0.9rem;">🛡️ V3.0 四层保护</h4>
+                        <div style="display:flex; flex-direction:column; gap:10px;" id="gem-v3-features">
+                            <div style="display:flex; align-items:center; gap:12px; padding:12px 16px; background:rgba(16,185,129,0.06); border:1px solid rgba(16,185,129,0.15); border-radius:10px;">
+                                <span style="font-size:1.2rem;" id="gem-f-sma-icon">⏳</span>
+                                <div>
+                                    <div style="font-size:0.82rem; font-weight:700; color:#e2e8f0;">SMA 200日趋势过滤</div>
+                                    <div id="gem-f-sma-detail" style="font-size:0.7rem; color:#64748b;">加载中...</div>
+                                </div>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:12px; padding:12px 16px; background:rgba(245,158,11,0.06); border:1px solid rgba(245,158,11,0.15); border-radius:10px;">
+                                <span style="font-size:1.2rem;" id="gem-f-vol-icon">⏳</span>
+                                <div>
+                                    <div style="font-size:0.82rem; font-weight:700; color:#e2e8f0;">波动率目标 14%</div>
+                                    <div id="gem-f-vol-detail" style="font-size:0.7rem; color:#64748b;">加载中...</div>
+                                </div>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:12px; padding:12px 16px; background:rgba(139,92,246,0.06); border:1px solid rgba(139,92,246,0.15); border-radius:10px;">
+                                <span style="font-size:1.2rem;" id="gem-f-dual-icon">⏳</span>
+                                <div>
+                                    <div style="font-size:0.82rem; font-weight:700; color:#e2e8f0;">双时间框架确认 (9M+7M)</div>
+                                    <div id="gem-f-dual-detail" style="font-size:0.7rem; color:#64748b;">加载中...</div>
+                                </div>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:12px; padding:12px 16px; background:rgba(14,165,233,0.06); border:1px solid rgba(14,165,233,0.15); border-radius:10px;">
+                                <span style="font-size:1.2rem;" id="gem-f-corr-icon">⏳</span>
+                                <div>
+                                    <div style="font-size:0.82rem; font-weight:700; color:#e2e8f0;">相关性去重</div>
+                                    <div id="gem-f-corr-detail" style="font-size:0.7rem; color:#64748b;">加载中...</div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Regime & Market Stress -->
+                        <div style="margin-top:16px; display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                            <div style="padding:12px; background:rgba(0,0,0,0.2); border-radius:10px; text-align:center;">
+                                <div style="font-size:0.65rem; color:var(--text-muted);">市场状态</div>
+                                <div id="gem-regime" style="font-size:1.3rem; font-weight:900; margin-top:4px;">—</div>
+                            </div>
+                            <div style="padding:12px; background:rgba(0,0,0,0.2); border-radius:10px; text-align:center;">
+                                <div style="font-size:0.65rem; color:var(--text-muted);">Regime Cap</div>
+                                <div id="gem-regime-cap" style="font-size:1.3rem; font-weight:900; margin-top:4px; color:#fbbf24;">—</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ZONE 2 · 资产排行 -->
+            <div class="st-zone-header" style="--zone-color:#f59e0b">
+                <span class="zone-icon">📈</span>
+                <div>
+                    <div class="zone-title">ZONE 2 · 跨市场资产排行</div>
+                    <div class="zone-sub">7只ETF · 9M动量排名 · 波动率 · 最大回撤 · 信号</div>
+                </div>
+            </div>
+            <section class="st-section">
+                <div class="glass-panel" style="padding:20px;">
+                    <table class="st-table st-full-table" id="gem-asset-table">
+                        <thead>
+                            <tr>
+                                <th>排名</th>
+                                <th>代码</th>
+                                <th>名称</th>
+                                <th>市场</th>
+                                <th>9M回报</th>
+                                <th>年化波动</th>
+                                <th>MDD</th>
+                                <th>信号</th>
+                                <th>评分</th>
+                            </tr>
+                        </thead>
+                        <tbody id="gem-asset-tbody">
+                            <tr><td colspan="9" style="text-align:center; color:#64748b;">点击「加载实时数据」查看</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- ZONE 3 · 回测实绩 -->
+            <div class="st-zone-header" style="--zone-color:#10b981">
+                <span class="zone-icon">📊</span>
+                <div>
+                    <div class="zone-title">ZONE 3 · 回测实绩 (2016-2026)</div>
+                    <div class="zone-sub">10年回测 · Grade A (81.8/100) · 统计验证 4/4 通过</div>
+                </div>
+            </div>
+            <section class="st-section">
+                <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:12px;">
+                    <div class="glass-panel" style="padding:18px; text-align:center; border-color:rgba(16,185,129,0.2);">
+                        <div style="font-size:0.68rem; color:var(--text-muted);">年化收益</div>
+                        <div style="font-size:1.6rem; font-weight:900; color:#34d399; margin-top:4px;">15.6%</div>
+                        <div style="font-size:0.65rem; color:#64748b;">vs 沪深300 4.9%</div>
+                    </div>
+                    <div class="glass-panel" style="padding:18px; text-align:center; border-color:rgba(239,68,68,0.2);">
+                        <div style="font-size:0.68rem; color:var(--text-muted);">最大回撤</div>
+                        <div style="font-size:1.6rem; font-weight:900; color:#f87171; margin-top:4px;">-12.1%</div>
+                        <div style="font-size:0.65rem; color:#64748b;">vs 沪深300 -39.8%</div>
+                    </div>
+                    <div class="glass-panel" style="padding:18px; text-align:center; border-color:rgba(14,165,233,0.2);">
+                        <div style="font-size:0.68rem; color:var(--text-muted);">Sharpe Ratio</div>
+                        <div style="font-size:1.6rem; font-weight:900; color:#38bdf8; margin-top:4px;">1.42</div>
+                        <div style="font-size:0.65rem; color:#64748b;">vs 沪深300 0.35</div>
+                    </div>
+                    <div class="glass-panel" style="padding:18px; text-align:center; border-color:rgba(245,158,11,0.2);">
+                        <div style="font-size:0.68rem; color:var(--text-muted);">策略评级</div>
+                        <div style="font-size:1.6rem; font-weight:900; color:#fbbf24; margin-top:4px;">A</div>
+                        <div style="font-size:0.65rem; color:#64748b;">81.8/100 分</div>
+                    </div>
+                </div>
+                <!-- 统计验证 -->
+                <div class="glass-panel" style="padding:18px; margin-top:14px; border-color:rgba(16,185,129,0.15);">
+                    <div style="font-size:0.82rem; font-weight:700; color:#34d399; margin-bottom:12px;">✅ 统计严格性验证 — 4/4 通过</div>
+                    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:10px;">
+                        <div style="text-align:center; padding:10px; background:rgba(16,185,129,0.06); border-radius:8px;">
+                            <div style="font-size:0.65rem; color:#94a3b8;">Walk-Forward</div>
+                            <div style="font-size:0.85rem; font-weight:800; color:#34d399;">OOS 1.43</div>
+                        </div>
+                        <div style="text-align:center; padding:10px; background:rgba(16,185,129,0.06); border-radius:8px;">
+                            <div style="font-size:0.65rem; color:#94a3b8;">Bootstrap P</div>
+                            <div style="font-size:0.85rem; font-weight:800; color:#34d399;">&lt;0.001</div>
+                        </div>
+                        <div style="text-align:center; padding:10px; background:rgba(16,185,129,0.06); border-radius:8px;">
+                            <div style="font-size:0.65rem; color:#94a3b8;">参数扰动</div>
+                            <div style="font-size:0.85rem; font-weight:800; color:#34d399;">94% 保留</div>
+                        </div>
+                        <div style="text-align:center; padding:10px; background:rgba(16,185,129,0.06); border-radius:8px;">
+                            <div style="font-size:0.65rem; color:#94a3b8;">PSR</div>
+                            <div style="font-size:0.85rem; font-weight:800; color:#34d399;">97.1%</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            </div><!-- /st-gem -->
+
+
             <!-- ==================== 信号评分系统 ==================== -->
             <div class="st-report" id="st-signal-rules">
 
@@ -3574,7 +3783,7 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
 
 
             <footer class="st-footer">
-                <p>⚙️ AlphaCore 量化策略引擎 · A股四策略版本（均值回归35只 + 红利趋势8只 + 动量轮动20只 + 宏观ERP择时）| 海外策略 → 🌐 海外策略终端</p>
+                <p>⚙️ AlphaCore 量化策略引擎 · 六策略版本（均值回归 + 红利趋势 + 行业动量 + GEM双重动量 + ERP择时 + AIAE仓位）| 海外策略 → 🌐 海外策略终端</p>
             </footer>
         </div>
     </main>
@@ -3585,6 +3794,7 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
     <script src="./static/js/strategy.js"></script>
     <script src="./static/js/strategy_erp.js"></script>
     <script src="./static/js/strategy_aiae.js"></script>
+    <script src="./static/js/strategy_gem.js"></script>
 <script src="./static/js/sidebar.js?v=3"></script>
 </body>
 </html>

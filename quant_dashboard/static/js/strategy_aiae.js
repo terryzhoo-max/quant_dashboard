@@ -579,7 +579,7 @@ function renderAIAEMatrix(pos, cv) {
 function renderAIAEAllocs(allocs, totalPos) {
     if (!allocs) return;
     // M2: 新增 aiae_etf 第5策略配额 (金色主题)
-    const strategies = ['mr', 'div', 'mom', 'erp', 'aiae_etf'];
+    const strategies = ['mr', 'div', 'mom', 'gem', 'erp', 'aiae_etf'];
     strategies.forEach(key => {
         const a = allocs[key];
         if (!a) {
