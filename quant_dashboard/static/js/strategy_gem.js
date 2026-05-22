@@ -36,7 +36,7 @@ window.loadGemStrategy = async function(forceRefresh) {
         }
         var json = await resp.json();
         if (json.status !== 'success') {
-            _showError(status, json.message || '加载失败');
+            _showError(status, json.message || json.error || '未知错误');
             return;
         }
 
@@ -47,7 +47,10 @@ window.loadGemStrategy = async function(forceRefresh) {
         if (status) status.innerHTML = '<span style="color:#34d399;">✅ 已加载</span> · ' + now;
     } catch (e) {
         console.error('[GEM] load error:', e);
-        _showError(status, e.message);
+        var errMsg = (e.message || '').indexOf('Failed to fetch') >= 0
+            ? '无法连接服务器 · 请确认后端已启动'
+            : e.message;
+        _showError(status, errMsg);
     } finally {
         if (btn) { btn.disabled = false; btn.textContent = '⚡ 加载实时数据'; }
     }
@@ -93,6 +96,9 @@ function renderGemStrategy(json) {
 
     // ── Zone 2: 资产排行 ──
     _renderAssetTable(signals);
+
+    // ── 操作提示面板 ──
+    _renderActionPanel(ov, signals);
 }
 
 // ═══════════════════════════════════════════
@@ -150,31 +156,43 @@ function _renderV3Features(ov, signals) {
 }
 
 // ═══════════════════════════════════════════
-//  Zone 1.5: 5维评分
+//  Zone 1.5: 5维评分 (生产级可视化)
 // ═══════════════════════════════════════════
 function _renderScoreDimensions(ov) {
     var dims = ov.score_dimensions || {};
     var composite = ov.composite_score || 0;
 
-    // 各维度分数
-    var d = {
-        excess:     dims.excess_return  || {},
-        conviction: dims.conviction     || {},
-        rank:       dims.rank_quality   || {},
-        breadth:    dims.breadth        || {},
-        mdd:        dims.mdd_penalty    || {},
-    };
+    // 维度定义: [key, html_id, label, color, weight_label]
+    var dimDefs = [
+        ['excess_return', 'gem-d-excess',     '超额收益', '#38bdf8', '40%'],
+        ['conviction',    'gem-d-conviction', '置信度',   '#a78bfa', '20%'],
+        ['rank_quality',  'gem-d-rank',       '排名稳定', '#34d399', '15%'],
+        ['breadth',       'gem-d-breadth',    '市场广度', '#fbbf24', '15%'],
+        ['mdd_penalty',   'gem-d-mdd',        '路径质量', '#f87171', '10%'],
+    ];
 
-    _set('gem-d-excess',     (d.excess.score || 0).toFixed(0));
-    _set('gem-d-conviction', (d.conviction.score || 0).toFixed(0));
-    _set('gem-d-rank',       (d.rank.score || 0).toFixed(0));
-    _set('gem-d-breadth',    (d.breadth.score || 0).toFixed(0));
-    _set('gem-d-mdd',        (d.mdd.score || 0).toFixed(0));
+    for (var i = 0; i < dimDefs.length; i++) {
+        var key = dimDefs[i][0], id = dimDefs[i][1], color = dimDefs[i][3];
+        var dim = dims[key] || {};
+        var score = dim.score || 0;
+        var raw = dim.raw;
+
+        // 主分数
+        var el = document.getElementById(id);
+        if (el) {
+            el.innerHTML = '<span style="font-size:1.5rem; font-weight:900; color:' + color + ';">' +
+                score.toFixed(0) + '</span>' +
+                '<span style="font-size:0.65rem; color:#475569; margin-left:2px;">/100</span>';
+        }
+    }
 
     // 综合评分
-    _set('gem-score-value', composite.toFixed(1), _scoreColor(composite));
+    _set('gem-score-value', composite.toFixed(1) + ' / 100', _scoreColor(composite));
     var bar = document.getElementById('gem-score-bar');
-    if (bar) bar.style.width = Math.min(composite, 100) + '%';
+    if (bar) {
+        // 延迟触发动画
+        setTimeout(function() { bar.style.width = Math.min(composite, 100) + '%'; }, 100);
+    }
 }
 
 // ═══════════════════════════════════════════
@@ -222,6 +240,171 @@ function _renderAssetTable(signals) {
             '<td style="font-weight:700; color:' + (weight > 0 ? '#38bdf8' : '#475569') + ';">' + (weight > 0 ? weight.toFixed(1) + '%' : '—') + '</td>' +
         '</tr>';
     }).join('');
+}
+
+// ═══════════════════════════════════════════
+//  操作提示面板 (机构级)
+// ═══════════════════════════════════════════
+function _renderActionPanel(ov, signals) {
+    var panel = document.getElementById('gem-action-panel');
+    if (!panel) return;
+
+    var sigType = ov.signal_type || 'hold';
+    var html = '';
+
+    // ── 1. 主操作卡 ──
+    var actionCfg = _getActionConfig(sigType, ov);
+    html += '<div class="gem-action-card" style="' + actionCfg.cardStyle + '">';
+    html += '  <div class="gem-action-header">';
+    html += '    <div class="gem-action-badge" style="' + actionCfg.badgeStyle + '">' + actionCfg.badge + '</div>';
+    html += '    <div class="gem-action-title" style="color:' + actionCfg.color + ';">' + actionCfg.title + '</div>';
+    html += '    <div class="gem-action-sub">' + actionCfg.subtitle + '</div>';
+    html += '  </div>';
+
+    // 执行步骤
+    if (actionCfg.steps.length > 0) {
+        html += '  <div class="gem-action-steps">';
+        for (var i = 0; i < actionCfg.steps.length; i++) {
+            html += '    <div class="gem-action-step">';
+            html += '      <span class="gem-step-num">' + (i + 1) + '</span>';
+            html += '      <span>' + actionCfg.steps[i] + '</span>';
+            html += '    </div>';
+        }
+        html += '  </div>';
+    }
+    html += '</div>';
+
+    // ── 2. 上下文警告条 ──
+    var alerts = _collectAlerts(ov);
+    if (alerts.length > 0) {
+        html += '<div class="gem-alerts-row">';
+        for (var j = 0; j < alerts.length; j++) {
+            var a = alerts[j];
+            html += '<div class="gem-alert-chip" style="background:' + a.bg + '; border-color:' + a.border + '; color:' + a.color + ';">';
+            html += '  <span>' + a.icon + '</span> ' + a.text;
+            html += '</div>';
+        }
+        html += '</div>';
+    }
+
+    panel.innerHTML = html;
+    panel.style.display = 'block';
+}
+
+function _getActionConfig(sigType, ov) {
+    var weights = ov.target_weights || {};
+    var entries = Object.entries(weights).filter(function(e) { return e[1] > 0; });
+    var assetList = entries.map(function(e) {
+        var name = _codeName(e[0], null);
+        return name + ' ' + e[1] + '%';
+    }).join(' · ');
+
+    if (sigType === 'buy') {
+        var steps = [];
+        steps.push('确认 AIAE 主控仓位 ≤ ' + (ov.regime_cap || 70) + '% (当前 Regime: ' + (ov.regime || 'RANGE') + ')');
+        if (entries.length > 0) {
+            steps.push('按目标权重配置: <strong>' + assetList + '</strong>');
+        }
+        if (ov.vol_scale && ov.vol_scale.active) {
+            steps.push('VolTarget 触发缩放 → 实际仓位乘以 ' + ((ov.vol_scale.scale || 1) * 100).toFixed(0) + '%, 剩余配现金');
+        }
+        steps.push('设置月度定检提醒 · GEM 为月度调仓策略，避免日内追踪');
+        return {
+            badge: '📈 BUY 买入信号',
+            title: '持有 ' + (ov.selected_asset || '—'),
+            subtitle: '总仓位 ' + (ov.total_position || 0) + '% · 综合评分 ' + (ov.composite_score || 0).toFixed(1) + '/100',
+            color: '#34d399',
+            cardStyle: 'background:linear-gradient(135deg,rgba(16,185,129,0.08),rgba(20,24,34,0.6)); border-color:rgba(16,185,129,0.3);',
+            badgeStyle: 'background:rgba(16,185,129,0.15); border-color:rgba(16,185,129,0.3); color:#34d399;',
+            steps: steps,
+        };
+    } else if (sigType === 'fallthrough_6040') {
+        return {
+            badge: '🛡️ 60/40 防御信号',
+            title: '全资产负收益 · 启用 60/40 防御组合',
+            subtitle: '沪深300 60% + 黄金ETF 40%',
+            color: '#fbbf24',
+            cardStyle: 'background:linear-gradient(135deg,rgba(245,158,11,0.08),rgba(20,24,34,0.6)); border-color:rgba(245,158,11,0.3);',
+            badgeStyle: 'background:rgba(245,158,11,0.15); border-color:rgba(245,158,11,0.3); color:#fbbf24;',
+            steps: [
+                '全部权益类资产 9M 回报为负 → 触发股债双杀防御',
+                '按 60/40 配置: <strong>沪深300 60% + 黄金ETF 40%</strong>',
+                '每月复查: 待动量转正后恢复正常配置',
+            ],
+        };
+    } else {
+        // cash
+        var reason = '绝对动量未通过 (最优资产回报 ≤ 无风险利率 ' + (ov.risk_free_rate || 1.5).toFixed(1) + '%)';
+        if (ov.market_stress) reason = '全市场压力: 所有资产回报为负';
+        if (ov.aiae && ov.aiae.forced_cash) reason = ov.aiae.reason || 'AIAE R4/R5 强制防御';
+        return {
+            badge: '🔴 CASH 防御信号',
+            title: '全仓现金 · 等待动量恢复',
+            subtitle: reason,
+            color: '#f87171',
+            cardStyle: 'background:linear-gradient(135deg,rgba(239,68,68,0.08),rgba(20,24,34,0.6)); border-color:rgba(239,68,68,0.3);',
+            badgeStyle: 'background:rgba(239,68,68,0.15); border-color:rgba(239,68,68,0.3); color:#f87171;',
+            steps: [
+                '清仓所有权益类持仓 → 转入 <strong>银华日利 (511880)</strong> 或活期理财',
+                '不要抄底: 绝对动量未确认前禁止入场',
+                '每月复查: 关注 9M 回报转正 + 绝对动量通过',
+            ],
+        };
+    }
+}
+
+function _collectAlerts(ov) {
+    var alerts = [];
+
+    // Whipsaw
+    var ws = ov.whipsaw || {};
+    if (ws.active) {
+        alerts.push({icon:'⚡', text:'Whipsaw 保护: ' + (ws.message || '连续换仓, 延迟确认中'),
+            bg:'rgba(245,158,11,0.08)', border:'rgba(245,158,11,0.2)', color:'#fbbf24'});
+    }
+
+    // AIAE
+    var aiae = ov.aiae || {};
+    if (aiae.active && aiae.regime >= 4) {
+        alerts.push({icon:'🚨', text:'AIAE R' + aiae.regime + ' 强制防御: 禁止持有权益类',
+            bg:'rgba(239,68,68,0.1)', border:'rgba(239,68,68,0.25)', color:'#f87171'});
+    } else if (aiae.active && aiae.cap_applied) {
+        alerts.push({icon:'📉', text:'AIAE 仓位约束: ' + aiae.pre_cap_pos + '% → ' + (ov.total_position || 0) + '%',
+            bg:'rgba(245,158,11,0.08)', border:'rgba(245,158,11,0.2)', color:'#fbbf24'});
+    }
+
+    // VolTarget
+    var vol = ov.vol_scale || {};
+    if (vol.active) {
+        alerts.push({icon:'📊', text:'VolTarget 触发: 组合波动 ' + (vol.port_vol || 0).toFixed(1) + '% > 14% → 缩放至 ' + ((vol.scale || 1) * 100).toFixed(0) + '%',
+            bg:'rgba(14,165,233,0.08)', border:'rgba(14,165,233,0.2)', color:'#38bdf8'});
+    }
+
+    // Dual window disagreement
+    if (!ov.signals_agree && ov.signal_type === 'buy') {
+        alerts.push({icon:'⚠️', text:'双窗口分歧: 9M与7M最优资产不一致 · 信念度降至 ' + ((ov.conviction || 0) * 100).toFixed(0) + '%',
+            bg:'rgba(139,92,246,0.08)', border:'rgba(139,92,246,0.2)', color:'#a78bfa'});
+    }
+
+    // SMA filtered
+    if (ov.sma_filter_active) {
+        var filtered = ov.sma_filtered || {};
+        var failed = Object.entries(filtered).filter(function(e) { return !e[1]; });
+        if (failed.length > 0) {
+            var names = failed.map(function(e) { return _codeName(e[0], null); }).join(', ');
+            alerts.push({icon:'📉', text:'SMA-200 过滤: ' + names + ' 价格低于均线已剔除',
+                bg:'rgba(100,116,139,0.08)', border:'rgba(100,116,139,0.2)', color:'#94a3b8'});
+        }
+    }
+
+    // Regime warning
+    if (ov.regime === 'BEAR' || ov.regime === 'CRASH') {
+        var icon = ov.regime === 'CRASH' ? '💀' : '🔴';
+        alerts.push({icon:icon, text:ov.regime + ' 状态: 仓位上限 ' + (ov.regime_cap || 0) + '% · 控制风险敞口',
+            bg:'rgba(239,68,68,0.08)', border:'rgba(239,68,68,0.2)', color:'#f87171'});
+    }
+
+    return alerts;
 }
 
 // ═══════════════════════════════════════════

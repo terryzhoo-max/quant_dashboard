@@ -1,5 +1,5 @@
 """
-AlphaCore · 行业动量轮动策略引擎 V3.0
+AlphaCore · 行业动量轮动策略引擎 V3.1
 数据源：Tushare（5000积分 — 按ts_code批量获取）
 标的池：20只进攻型 + 4只防御型行业ETF · 三层环境过滤 · Regime自适应因子权重
 
@@ -9,6 +9,12 @@ V3.0 升级：
 - 6维100分制动量评分函数 calculate_momentum_score()
 - 信号评分交叉验证（温和版：技术面警告标注）
 - 止损线分状态：BULL -8% / RANGE -7% / BEAR -5%
+
+V3.1 同步（回测验证 GRADE A, Sharpe 0.541, 8.2Y）：
+- 双均线Regime快速信号（MA120 + MA20升降级）
+- 新增趋势因子 w_trend（price vs MA20偏离度）
+- 因子权重与回测引擎对齐
+- 调仓节奏建议（BULL 3天 / RANGE 10天 / BEAR 20天）
 """
 
 import pandas as pd
@@ -88,12 +94,14 @@ REGIME_PARAMS = {
         "single_cap":   30,
         "stop_loss":    -8,      # V3.0: 分状态止损
         "volatility_filter": False,
-        # V3.0: Regime自适应因子权重
+        # V3.1: 因子权重与回测引擎对齐（8.2Y验证 Sharpe 0.541）
         "w_mom_s":  0.50,       # 牛市：重短期动量（追强）
-        "w_mom_m":  0.25,
-        "w_slope":  0.15,
+        "w_mom_m":  0.10,
+        "w_slope":  0.20,
         "w_sharpe": 0.10,
+        "w_trend":  0.10,       # V3.1新增: 趋势因子
         "signal_safety_gate": 55,  # 信号安全门槛（温和）
+        "rebalance_days": 3,       # V3.1: 建议调仓频率
     },
     "RANGE": {
         "label":    "震荡",
@@ -104,11 +112,13 @@ REGIME_PARAMS = {
         "single_cap":   25,
         "stop_loss":    -7,
         "volatility_filter": True,
-        "w_mom_s":  0.35,       # 震荡：均衡配置
-        "w_mom_m":  0.30,
+        "w_mom_s":  0.40,       # V3.1: 均衡配置
+        "w_mom_m":  0.15,
         "w_slope":  0.20,
         "w_sharpe": 0.15,
+        "w_trend":  0.10,       # V3.1新增
         "signal_safety_gate": 60,
+        "rebalance_days": 10,
     },
     "BEAR": {
         "label":    "熊市",
@@ -119,11 +129,13 @@ REGIME_PARAMS = {
         "single_cap":   20,
         "stop_loss":    -5,
         "volatility_filter": True,
-        "w_mom_s":  0.15,       # 熊市：重波动调整（防守）
-        "w_mom_m":  0.25,
-        "w_slope":  0.20,
-        "w_sharpe": 0.40,
+        "w_mom_s":  0.20,       # V3.1: 熊市重波动+趋势防守
+        "w_mom_m":  0.15,
+        "w_slope":  0.15,
+        "w_sharpe": 0.35,
+        "w_trend":  0.15,       # V3.1: 熊市趋势过滤更重要
         "signal_safety_gate": 70,
+        "rebalance_days": 20,      # V3.1: 熊市减少调仓摩擦
     },
 }
 
@@ -286,6 +298,26 @@ def assess_market_environment(hs300_df, etf_data: dict) -> dict:
                     env["layer1_trend"] = "震荡偏空（跌破均线但均线走平）"
                     env["layer1_cap"] = 50
                     env["regime"] = "RANGE"
+
+        # ---- V3.1: MA20 快速升降级（回测验证关键改进） ----
+        # 解决MA120滞后2个月的问题，用MA20提供1-2周的快速信号
+        if len(close) >= 20:
+            ma20 = close.rolling(20).mean()
+            ma20_slope = ma20.diff(3)  # 3日斜率方向
+            latest_ma20 = float(ma20.iloc[-1])
+            latest_ma20_slope = float(ma20_slope.iloc[-1]) if pd.notna(ma20_slope.iloc[-1]) else 0
+
+            # BEAR→RANGE 快速升级：价格站上MA20且MA20拐头向上
+            if env["regime"] == "BEAR" and latest_close > latest_ma20 and latest_ma20_slope > 0:
+                env["regime"] = "RANGE"
+                env["layer1_cap"] = max(env["layer1_cap"], 50)  # 至少50%
+                env["layer1_trend"] += " → MA20快速升级至RANGE"
+
+            # BULL→RANGE 快速降级：价格跌破MA20且MA20拐头向下
+            elif env["regime"] == "BULL" and latest_close < latest_ma20 and latest_ma20_slope < 0:
+                env["regime"] = "RANGE"
+                env["layer1_cap"] = min(env["layer1_cap"], 70)  # 最多70%
+                env["layer1_trend"] += " → MA20快速降级至RANGE"
     else:
         env["layer1_trend"] = "数据不足，默认震荡"
 
@@ -454,20 +486,22 @@ def calculate_indicators(df) -> dict:
 
 def calculate_momentum_score(indicators: dict, regime: str) -> dict:
     """
-    动量策略6维评分体系（满分100分）——权重随 Regime 自适应调整
+    V3.1 动量策略7维评分体系（满分100分）——权重随 Regime 自适应调整
 
-    ① 短期动量 MOM_S      max 30分（BULL: max 40分）
-    ② 中期趋势 MOM_M      max 20分
-    ③ 趋势斜率 SLOPE       max 15分
-    ④ 波动调整 SHARPE      max 15分（BEAR: max 30分）
-    ⑤ 量价配合             max 10分
-    ⑥ RSI方向 + 均线偏离    max 10分
+    ① 短期动量 MOM_S      (Regime自适应)
+    ② 中期趋势 MOM_M      (Regime自适应)
+    ③ 趋势斜率 SLOPE       (Regime自适应)
+    ④ 波动调整 SHARPE      (Regime自适应)
+    ⑤ 趋势因子 TREND       V3.1新增 (price vs MA20)
+    ⑥ 量价配合             固定5分
+    ⑦ RSI方向 + 均线偏离    固定5分
     """
     params = REGIME_PARAMS.get(regime, REGIME_PARAMS["RANGE"])
     w_s  = params["w_mom_s"]
     w_m  = params["w_mom_m"]
     w_sl = params["w_slope"]
     w_sh = params["w_sharpe"]
+    w_tr = params.get("w_trend", 0.10)  # V3.1 趋势因子权重
 
     mom_s = indicators.get("momentum_pct", 0)
     mom_m = indicators.get("momentum_m", 0)
@@ -478,8 +512,8 @@ def calculate_momentum_score(indicators: dict, regime: str) -> dict:
     rsi_slope5 = indicators.get("rsi_slope5", 0)
     ma_dev = indicators.get("ma_deviation", 0)
 
-    # ① 短期动量 (0-40, 根据Regime缩放)
-    max_s1 = round(100 * w_s)  # BULL=50, RANGE=35, BEAR=15
+    # ① 短期动量 (按Regime缩放)
+    max_s1 = round(90 * w_s)  # 90分由5个因子分配，剩10分给量价+景气
     if mom_s >= 15:
         s1 = max_s1
     elif mom_s >= 8:
@@ -493,8 +527,8 @@ def calculate_momentum_score(indicators: dict, regime: str) -> dict:
     else:
         s1 = 0
 
-    # ② 中期趋势 (0-25)
-    max_s2 = round(100 * w_m)
+    # ② 中期趋势
+    max_s2 = round(90 * w_m)
     if mom_m >= 20:
         s2 = max_s2
     elif mom_m >= 10:
@@ -506,8 +540,8 @@ def calculate_momentum_score(indicators: dict, regime: str) -> dict:
     else:
         s2 = 0
 
-    # ③ 趋势斜率 (0-20)
-    max_s3 = round(100 * w_sl)
+    # ③ 趋势斜率
+    max_s3 = round(90 * w_sl)
     if slope >= 0.5:
         s3 = max_s3
     elif slope >= 0.2:
@@ -517,8 +551,8 @@ def calculate_momentum_score(indicators: dict, regime: str) -> dict:
     else:
         s3 = 0
 
-    # ④ 波动调整收益 SHARPE (0-30, BEAR时满分30)
-    max_s4 = round(100 * w_sh)
+    # ④ 波动调整收益 SHARPE
+    max_s4 = round(90 * w_sh)
     if sharpe >= 1.5:
         s4 = max_s4
     elif sharpe >= 0.8:
@@ -530,35 +564,45 @@ def calculate_momentum_score(indicators: dict, regime: str) -> dict:
     else:
         s4 = 0
 
-    # ⑤ 量价配合 (0-10)
-    s5 = 0
-    if vol_ratio >= 2.0:
-        s5 = 10
-    elif vol_ratio >= 1.5:
-        s5 = 8
-    elif vol_ratio >= 1.0:
-        s5 = 5
-    elif vol_ratio >= 0.8:
-        s5 = 2
-
-    # ⑥ 行业景气度：RSI方向 + 均线偏离 (0-10)
-    s6 = 0
-    if rsi_slope5 > 3:
-        s6 += 5
-    elif rsi_slope5 > 0:
-        s6 += 3
-    elif rsi_slope5 > -3:
-        s6 += 1
-
-    if ma_dev >= 3:
-        s6 += 5   # 站稳均线上方
+    # ⑤ V3.1新增: 趋势因子 TREND (price vs MA20 偏离度)
+    max_s5 = round(90 * w_tr)
+    if ma_dev >= 5:
+        s5 = max_s5
+    elif ma_dev >= 2:
+        s5 = round(max_s5 * 0.7)
     elif ma_dev >= 0:
-        s6 += 3
-    elif ma_dev >= -2:
-        s6 += 1
-    s6 = min(10, s6)
+        s5 = round(max_s5 * 0.4)
+    elif ma_dev >= -3:
+        s5 = round(max_s5 * 0.1)
+    else:
+        s5 = 0
 
-    total = min(100, s1 + s2 + s3 + s4 + s5 + s6)
+    # ⑥ 量价配合 (0-5)
+    s6 = 0
+    if vol_ratio >= 2.0:
+        s6 = 5
+    elif vol_ratio >= 1.5:
+        s6 = 4
+    elif vol_ratio >= 1.0:
+        s6 = 3
+    elif vol_ratio >= 0.8:
+        s6 = 1
+
+    # ⑦ 行业景气度：RSI方向 + 均线偏离 (0-5)
+    s7 = 0
+    if rsi_slope5 > 3:
+        s7 += 3
+    elif rsi_slope5 > 0:
+        s7 += 2
+    elif rsi_slope5 > -3:
+        s7 += 1
+    if ma_dev >= 3:
+        s7 += 2
+    elif ma_dev >= 0:
+        s7 += 1
+    s7 = min(5, s7)
+
+    total = min(100, s1 + s2 + s3 + s4 + s5 + s6 + s7)
 
     return {
         "total": total,
@@ -567,8 +611,9 @@ def calculate_momentum_score(indicators: dict, regime: str) -> dict:
             "mom_m":   s2,    # ② 中期趋势
             "slope":   s3,    # ③ 趋势斜率
             "sharpe":  s4,    # ④ 波动调整
-            "volume":  s5,    # ⑤ 量价配合
-            "health":  s6,    # ⑥ 行业景气
+            "trend":   s5,    # ⑤ 趋势因子 (V3.1)
+            "volume":  s6,    # ⑥ 量价配合
+            "health":  s7,    # ⑦ 行业景气
         }
     }
 
@@ -616,6 +661,73 @@ def cross_validate_signal(indicators: dict, regime: str) -> dict:
 
 
 # ====================================================================
+#  V3.1 累计浮亏止损（持仓状态追踪）
+# ====================================================================
+# 回测验证：最大Alpha来源（BULL不止损追强 / RANGE -10% / BEAR -7%）
+# 使用 cache_manager 持久化持仓入场价格
+
+_MOM_HOLDINGS_KEY = "mom_holdings"  # cache key
+
+# Regime自适应止损阈值（与回测引擎完全对齐）
+CUMULATIVE_STOP_THRESHOLDS = {
+    "BULL":  -0.99,   # 牛市不止损（追强）
+    "RANGE": -0.10,   # 震荡-10%止损
+    "BEAR":  -0.07,   # 熊市-7%止损
+}
+
+
+def _load_holdings() -> dict:
+    """从缓存加载持仓入场价格 {ts_code: {entry_price, entry_date}}"""
+    try:
+        from services.cache_service import cache_manager
+        data = cache_manager.get_json(_MOM_HOLDINGS_KEY)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_holdings(holdings: dict):
+    """保存持仓入场价格到缓存"""
+    try:
+        from services.cache_service import cache_manager
+        cache_manager.set_json(_MOM_HOLDINGS_KEY, holdings)
+    except Exception as e:
+        print(f"[动量引擎] 持仓缓存写入失败: {e}")
+
+
+def _check_cumulative_stop(ts_code: str, current_price: float, regime: str,
+                            holdings: dict) -> dict:
+    """
+    检查累计浮亏是否触发止损
+    Returns: {triggered: bool, pnl: float, threshold: float, message: str}
+    """
+    entry = holdings.get(ts_code)
+    if not entry or "entry_price" not in entry:
+        return {"triggered": False, "pnl": 0, "threshold": 0, "message": ""}
+
+    entry_price = entry["entry_price"]
+    if entry_price <= 0:
+        return {"triggered": False, "pnl": 0, "threshold": 0, "message": ""}
+
+    pnl = (current_price - entry_price) / entry_price
+    threshold = CUMULATIVE_STOP_THRESHOLDS.get(regime, -0.10)
+
+    if pnl <= threshold:
+        return {
+            "triggered": True,
+            "pnl": round(pnl * 100, 2),
+            "threshold": round(threshold * 100, 1),
+            "message": f"累计浮亏{pnl*100:.1f}%触发{regime}止损线{threshold*100:.0f}%",
+        }
+    return {
+        "triggered": False,
+        "pnl": round(pnl * 100, 2),
+        "threshold": round(threshold * 100, 1),
+        "message": "",
+    }
+
+
+# ====================================================================
 #  信号生成与分散化约束
 # ====================================================================
 
@@ -649,12 +761,13 @@ def apply_diversification(ranked_signals: list, regime_params: dict, group_cap: 
 
 def generate_signals(etf_data: dict, env: dict) -> dict:
     """
-    V3.0 信号生成流程：
+    V3.1 信号生成流程：
     1. 获取Regime对应的活跃标的池
-    2. 计算全部指标 + 6维动量评分
+    2. 计算全部指标 + 7维动量评分
     3. 按Regime自适应权重排名
     4. 温和交叉验证（标注警告）
-    5. 分散化约束
+    5. 累计浮亏止损检查（V3.1）
+    6. 分散化约束
     """
     regime = env["regime"]
     params = REGIME_PARAMS.get(regime, REGIME_PARAMS["RANGE"])
@@ -762,7 +875,31 @@ def generate_signals(etf_data: dict, env: dict) -> dict:
             r["suggested_position"] = 0
             sell_signals.append(r)
 
-    # Step 4: 分散化约束
+    # Step 4: V3.1 累计浮亏止损
+    holdings = _load_holdings()
+    stop_loss_events = []
+
+    for r in all_results:
+        ts_code = r["ts_code"]
+        current_price = r["close"]
+        stop_check = _check_cumulative_stop(ts_code, current_price, regime, holdings)
+        r["cum_pnl"] = stop_check["pnl"]
+        r["cum_stop_threshold"] = stop_check["threshold"]
+
+        if stop_check["triggered"]:
+            # 止损触发：强制卖出
+            r["signal"] = "stop_loss"
+            r["suggested_position"] = 0
+            r["stop_loss_message"] = stop_check["message"]
+            sell_signals.append(r)
+            stop_loss_events.append(r)
+            # 从buy_candidates中移除
+            buy_candidates = [c for c in buy_candidates if c["ts_code"] != ts_code]
+            # 从holdings中移除
+            holdings.pop(ts_code, None)
+            print(f"  [STOP] {r['name']}({ts_code}): {stop_check['message']}")
+
+    # Step 5: 分散化约束
     buy_signals = apply_diversification(buy_candidates, params)
 
     if len(buy_signals) < MIN_HOLDINGS and len(buy_candidates) >= MIN_HOLDINGS:
@@ -786,8 +923,27 @@ def generate_signals(etf_data: dict, env: dict) -> dict:
             r["suggested_position"] = 0
         if "signal" not in r:
             r["signal"] = "hold"
+        if "stop_loss_message" not in r:
+            r["stop_loss_message"] = ""
 
-    # V3.0 增强概览
+    # Step 7: V3.1 更新持仓入场价
+    new_holdings = {}
+    for s in buy_signals:
+        ts_code = s["ts_code"]
+        if ts_code in holdings:
+            # 已持有：保持原入场价
+            new_holdings[ts_code] = holdings[ts_code]
+        else:
+            # 新买入：记录入场价
+            new_holdings[ts_code] = {
+                "entry_price": s["close"],
+                "entry_date": s.get("date", ""),
+                "name": s["name"],
+            }
+    _save_holdings(new_holdings)
+    print(f"  [持仓] 追踪{len(new_holdings)}只, 止损{len(stop_loss_events)}只")
+
+    # V3.1 增强概览
     overview = {
         "regime":           env["regime"],
         "regime_label":     env["regime_label"],
@@ -808,13 +964,25 @@ def generate_signals(etf_data: dict, env: dict) -> dict:
         "pool_offense":     sum(1 for r in all_results if r["etf_type"] == "offense"),
         "pool_defense":     sum(1 for r in all_results if r["etf_type"] == "defense"),
         "xv_warnings":      sum(1 for r in all_results if r.get("xv_warning")),
-        # V3.0 因子权重（供前端可视化）
+        # V3.1 累计止损统计
+        "stop_loss_count":  len(stop_loss_events),
+        "cum_stop_threshold": CUMULATIVE_STOP_THRESHOLDS.get(regime, -0.10) * 100,
+        "tracked_holdings":  len(new_holdings),
+        # V3.1 因子权重（供前端可视化）
         "factor_weights": {
             "MOM_S":  int(params["w_mom_s"] * 100),
             "MOM_M":  int(params["w_mom_m"] * 100),
             "SLOPE":  int(params["w_slope"] * 100),
             "SHARPE": int(params["w_sharpe"] * 100),
+            "TREND":  int(params.get("w_trend", 0.10) * 100),
         },
+        # V3.1 调仓节奏建议
+        "rebalance_days":   params.get("rebalance_days", 10),
+        "rebalance_note": {
+            "BULL": "牛市建议3天调仓，快速捕捉行业轮动",
+            "RANGE": "震荡维持10天标准频率",
+            "BEAR": "熊市建议20天调仓，减少摩擦成本",
+        }.get(regime, "维持标准频率"),
     }
 
     return {
@@ -840,7 +1008,10 @@ def _empty_overview(env):
         "avg_momentum": 0, "buy_count": 0, "sell_count": 0,
         "total_suggested_pos": 0, "total_etfs": 0,
         "pool_offense": 0, "pool_defense": 0, "xv_warnings": 0,
-        "factor_weights": {"MOM_S": 35, "MOM_M": 30, "SLOPE": 20, "SHARPE": 15},
+        "stop_loss_count": 0, "cum_stop_threshold": -10, "tracked_holdings": 0,
+        "factor_weights": {"MOM_S": 40, "MOM_M": 15, "SLOPE": 20, "SHARPE": 15, "TREND": 10},
+        "rebalance_days": 10,
+        "rebalance_note": "",
     }
 
 
@@ -849,8 +1020,8 @@ def _empty_overview(env):
 # ====================================================================
 
 def run_momentum_strategy() -> dict:
-    """运行完整行业动量轮动策略 V3.0（Regime自适应因子引擎）"""
-    print("[动量引擎] ========= 行业动量轮动策略 V3.0 启动 =========")
+    """运行完整行业动量轮动策略 V3.1（回测验证同步版）"""
+    print("[动量引擎] ========= 行业动量轮动策略 V3.1 启动 =========")
 
     # 1. 获取ETF数据（含防御型标的）
     etf_data = fetch_etf_data(days=60)

@@ -903,6 +903,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (targetId === 'st-erp-timing') setTimeout(() => loadERPTimingData(), 100);
         if (targetId === 'st-aiae-position') setTimeout(() => loadAIAEReport(), 100);
         if (targetId === 'st-gem') setTimeout(() => { if (typeof loadGemStrategy === 'function') loadGemStrategy(); }, 100);
+        // V3.1: 动量Tab自动运行策略
+        if (targetId === 'st-momentum') setTimeout(() => autoRunMomentum(), 200);
     });
 });
 
@@ -1620,23 +1622,153 @@ function getScoreColor(score) {
     return '#94a3b8';
 }
 
-// ====== 动量轮动结果渲染 ======
+// ====== V3.1 动量Tab自动运行 ======
+let _momAutoRunning = false;
+let _momLastRunTs = 0;
+
+async function autoRunMomentum() {
+    // 防重复：60秒内不重复请求
+    if (_momAutoRunning) return;
+    if (Date.now() - _momLastRunTs < 60000) {
+        console.log('[动量] 60s内已运行，跳过自动刷新');
+        return;
+    }
+    _momAutoRunning = true;
+
+    const safelySetText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    const safelySetHTML = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+
+    // 显示加载状态
+    safelySetHTML('mom-regime-label', '<span style="animation:momPulseDot 1.5s ease infinite;display:inline-block;">⏳</span>');
+    safelySetText('mom-regime-strategy', '正在自动运行策略...');
+
+    try {
+        const resp = await fetch(`${API_URL}/api/v1/momentum_strategy`);
+        const json = await resp.json();
+        if (json.status !== 'success') throw new Error(json.message || '策略执行失败');
+
+        const timeEl = document.getElementById('st-data-time');
+        if (timeEl && json.timestamp) timeEl.textContent = `数据截至 ${json.timestamp.substring(0, 16).replace('T', ' ')}`;
+
+        renderMomentumResults(json.data, { safelySetText, safelySetHTML });
+
+        const momResults = document.getElementById('st-results-mom');
+        if (momResults) momResults.style.display = 'block';
+
+        _momLastRunTs = Date.now();
+        console.log('[动量] 自动运行完成');
+    } catch (err) {
+        safelySetText('mom-regime-strategy', `⚠️ 自动运行失败: ${err.message}`);
+        console.error('[动量] 自动运行失败:', err);
+    } finally {
+        _momAutoRunning = false;
+    }
+}
+
+// ====== 动量轮动结果渲染 V3.1 ======
 function renderMomentumResults(data, { safelySetText, safelySetHTML }) {
-    const ov = data.market_overview;
+    const ov = data.market_overview || {};
 
-    // KPI
+    // ========== V3.1 实时仪表盘 ==========
+    const regimeColors = { BULL: '#10b981', RANGE: '#fbbf24', BEAR: '#f87171' };
+    const regimeIcons  = { BULL: '🟢', RANGE: '🟡', BEAR: '🔴' };
+    const regimeLabels = { BULL: '🟢 BULL 牛市追强', RANGE: '🟡 RANGE 震荡均衡', BEAR: '🔴 BEAR 熊市防守' };
+    const regimeStrategies = { BULL: 'MOM_S主导 · 5只 · 快速轮动', RANGE: '均衡配置 · 4只 · 稳健换仓', BEAR: 'SHARPE主导 · 3只 · 防守优先' };
+    const regime = ov.regime || 'RANGE';
+    const rColor = regimeColors[regime] || '#fbbf24';
+
+    // Regime大卡
+    const regimeCard = document.getElementById('mom-regime-card');
+    if (regimeCard) {
+        regimeCard.style.borderColor = rColor + '55';
+        regimeCard.style.background = `linear-gradient(135deg, ${rColor}10, rgba(20,24,34,0.5))`;
+    }
+    safelySetHTML('mom-regime-label', regimeLabels[regime] || regime);
+    const regimeLabel = document.getElementById('mom-regime-label');
+    if (regimeLabel) regimeLabel.style.color = rColor;
+    safelySetText('mom-regime-strategy', regimeStrategies[regime] || '');
+    safelySetText('mom-regime-trend', `MA120: ${ov.layer1_trend || '—'} · L3极端: ${ov.layer3_crash ? '⚠️ 触发' : '✅ 正常'}`);
+    safelySetHTML('mom-regime-icon-bg', regimeIcons[regime] || '🟡');
+
+    // VIX
+    const vix = ov.layer2_vix;
+    if (vix !== undefined && vix !== null) {
+        const vixNum = Number(vix);
+        safelySetText('mom-vix-value', isNaN(vixNum) ? '—' : vixNum.toFixed(1));
+        const vixEl = document.getElementById('mom-vix-value');
+        if (vixEl) vixEl.style.color = vixNum >= 30 ? '#f87171' : vixNum >= 20 ? '#fbbf24' : '#a78bfa';
+        safelySetText('mom-vix-status', vixNum >= 30 ? '🔴 恐慌模式' : vixNum >= 20 ? '🟡 警惕' : '🟢 低波');
+    }
+
+    // 仓位上限
+    safelySetText('mom-cap-value', (ov.position_cap || 0) + '%');
+    const capEl = document.getElementById('mom-cap-value');
+    if (capEl) capEl.style.color = (ov.position_cap || 0) >= 60 ? '#10b981' : (ov.position_cap || 0) >= 30 ? '#fbbf24' : '#f87171';
+
+    // 调仓周期
+    const rbDays = ov.rebalance_days || '—';
+    safelySetText('mom-rebalance-days', rbDays);
+    safelySetText('mom-rebalance-note', ov.rebalance_note || '');
+
+    // 因子权重条 (V3.1 动态宽度 — 归一化到100%)
+    const fw = ov.factor_weights || {};
+    const rawFw = { mom_s: fw.MOM_S || 40, mom_m: fw.MOM_M || 15, slope: fw.SLOPE || 20, sharpe: fw.SHARPE || 15, trend: fw.TREND || 10 };
+    const fwSum = Object.values(rawFw).reduce((a, b) => a + b, 0);
+    const fwNorm = {};
+    Object.entries(rawFw).forEach(([k, v]) => { fwNorm[k] = Math.round(v / fwSum * 100); });
+    // 修正舍入误差：差值加到最大的因子上
+    const normSum = Object.values(fwNorm).reduce((a, b) => a + b, 0);
+    if (normSum !== 100) {
+        const maxKey = Object.entries(fwNorm).sort((a, b) => b[1] - a[1])[0][0];
+        fwNorm[maxKey] += (100 - normSum);
+    }
+    const fwLabels = { mom_s: 'MOM_S', mom_m: 'MM', slope: 'SLOPE', sharpe: 'SH', trend: 'TR' };
+    Object.entries(fwNorm).forEach(([key, pct]) => {
+        const el = document.getElementById('mom-fw-' + key);
+        if (el) {
+            el.style.width = pct + '%';
+            // 窄段只显示缩写
+            el.textContent = pct >= 15 ? (fwLabels[key] + ' ' + rawFw[key] + '%') : rawFw[key] + '%';
+        }
+    });
+    safelySetText('mom-fw-regime-tag', regime + ' MODE');
+    const fwTag = document.getElementById('mom-fw-regime-tag');
+    if (fwTag) { fwTag.style.color = rColor; fwTag.style.background = rColor + '15'; }
+
+    // 止损状态
+    const stopThresholds = { BULL: '不止损', RANGE: '-10%', BEAR: '-7%' };
+    safelySetText('mom-stop-threshold', stopThresholds[regime] || '—');
+    safelySetText('mom-stop-count', (ov.stop_loss_count || 0) + '只');
+    const scEl = document.getElementById('mom-stop-count');
+    if (scEl) scEl.style.color = (ov.stop_loss_count || 0) > 0 ? '#f87171' : '#10b981';
+
+    // 持仓追踪 (使用引擎实际返回的tracked_holdings，而非buyCount)
+    const totalSignals = data.signals?.length || 0;
+    const buyCount = ov.buy_count || 0;
+    const sellCount = ov.sell_count || 0;
+    const trackedCount = ov.tracked_holdings ?? buyCount;  // 兜底用buyCount
+    safelySetText('mom-tracked-count', trackedCount + '只');
+    safelySetText('mom-pool-total', (ov.total_etfs || totalSignals) + '只');
+    safelySetText('mom-pool-off', ov.pool_offense ?? 20);
+    safelySetText('mom-pool-def', ov.pool_defense ?? 0);
+
+    // 信号统计
+    safelySetText('mom-buy-n', buyCount + '只');
+    safelySetText('mom-sell-n', sellCount + '只');
+    safelySetText('mom-total-pos-v2', (ov.total_suggested_pos || 0) + '%');
+    safelySetText('mom-xv-count', (ov.xv_warnings || 0) + '只');
+
+    // ========== Legacy 兼容 (st-results-mom 执行面板) ==========
     safelySetHTML('mom-regime', ov.regime_label || '—');
-    safelySetText('mom-cap', ov.position_cap + '%');
-    safelySetHTML('mom-top1', `${ov.top1_name}<br><small style="color:var(--text-muted)">${ov.top1_momentum > 0 ? '+' : ''}${ov.top1_momentum}%</small>`);
-    safelySetText('mom-avg', (ov.avg_momentum > 0 ? '+' : '') + ov.avg_momentum + '%');
-    safelySetText('mom-buy-count', ov.buy_count + ' 只');
-    safelySetText('mom-sell-count', ov.sell_count + ' 只');
-
-    // 三层过滤详情
+    safelySetText('mom-cap', (ov.position_cap || 0) + '%');
+    safelySetHTML('mom-top1', `${ov.top1_name || '—'}<br><small style="color:var(--text-muted)">${(ov.top1_momentum || 0) > 0 ? '+' : ''}${ov.top1_momentum || 0}%</small>`);
+    safelySetText('mom-avg', ((ov.avg_momentum || 0) > 0 ? '+' : '') + (ov.avg_momentum || 0) + '%');
+    safelySetText('mom-buy-count', buyCount + ' 只');
+    safelySetText('mom-sell-count', sellCount + ' 只');
     safelySetText('mom-l1', ov.layer1_trend || '—');
-    safelySetText('mom-l2', ov.layer2_vix !== undefined ? ov.layer2_vix.toString() : '—');
+    safelySetText('mom-l2', vix !== undefined ? vix.toString() : '—');
     safelySetText('mom-l3', ov.layer3_crash ? '⚠️ 触发空仓' : '✅ 正常');
-    safelySetText('mom-total-pos', ov.total_suggested_pos + '%');
+    safelySetText('mom-total-pos', (ov.total_suggested_pos || 0) + '%');
 
     // 操作建议
     renderMomentumActionList('mom-buy-list', data.buy_signals, 'buy');
@@ -1644,7 +1776,7 @@ function renderMomentumResults(data, { safelySetText, safelySetHTML }) {
 
     // 信号表
     renderMomentumTable(data.signals);
-    safelySetText('mom-total-count', data.signals?.length || 0);
+    safelySetText('mom-total-count', totalSignals);
 
     // 错误
     const errDiv = document.getElementById('mom-errors');
@@ -1654,7 +1786,142 @@ function renderMomentumResults(data, { safelySetText, safelySetHTML }) {
             `<p style="font-size:0.82rem;color:var(--text-muted);padding:4px 0;">${e.code} ${e.name}: ${e.error}</p>`
         ).join(''));
     }
+
+    // ========== V3.1 智能警示横幅 ==========
+    renderMomSmartAlert(ov, data);
+
+    // ========== V3.1 Top行动信号卡片 ==========
+    renderMomActionCards(data.buy_signals, data.sell_signals);
 }
+
+/**
+ * 动量策略智能警示横幅
+ * 优先级: CRASH > VIX恐慌 > 止损触发 > BEAR防守 > 正常
+ */
+function renderMomSmartAlert(ov, data) {
+    const el = document.getElementById('mom-smart-alert');
+    if (!el) return;
+
+    const regime = ov.regime || 'RANGE';
+    const vix = Number(ov.layer2_vix) || 0;
+    const stopCount = ov.stop_loss_count || 0;
+    const xvCount = ov.xv_warnings || 0;
+    const buyCount = ov.buy_count || 0;
+    const cap = ov.position_cap || 0;
+
+    let level, icon, title, sub, borderColor;
+
+    if (ov.layer3_crash || regime === 'CRASH') {
+        level = 'crash'; icon = '🚨'; borderColor = '#ef4444';
+        title = '极端风险！全部空仓避险';
+        sub = 'Layer3极端风险触发或CRASH模式，所有行业ETF信号暂停，等待市场企稳后重新评估。';
+    } else if (vix >= 30) {
+        level = 'danger'; icon = '⚡'; borderColor = '#f87171';
+        title = `VIX=${vix.toFixed(1)} 恐慌模式 · 仓位上限压至${cap}%`;
+        sub = `VIX≥30触发Layer2仓位压制，当前仅允许防御型标的。${stopCount > 0 ? `已有${stopCount}只触发累计止损。` : ''}`;
+    } else if (stopCount > 0) {
+        level = 'caution'; icon = '🛡️'; borderColor = '#f59e0b';
+        title = `${stopCount}只标的触发累计止损 · 注意仓位控制`;
+        sub = `累计浮亏超过阈值的标的已被清除，建议减仓观望。当前Regime: ${regime}，仓位上限${cap}%。`;
+    } else if (regime === 'BEAR') {
+        level = 'warning'; icon = '🔻'; borderColor = '#f59e0b';
+        title = 'BEAR防守模式 · SHARPE主导 · 最多3只';
+        sub = `熊市环境下SHARPE因子权重提升至35%，优先选择低波标的。调仓周期拉长至20天，减少摩擦。${xvCount > 0 ? `${xvCount}只标的有交叉验证风险⚠️。` : ''}`;
+    } else if (regime === 'BULL' && buyCount >= 3) {
+        level = 'ok'; icon = '🚀'; borderColor = '#10b981';
+        title = `BULL追强模式 · ${buyCount}只买入信号 · 仓位上限${cap}%`;
+        sub = `MOM_S主导(50%)快速捕捉行业轮动，Top5持仓，3天调仓。${xvCount > 0 ? `注意: ${xvCount}只有均值回归交叉验证警告。` : '信号方向一致，可按评分优先级执行。'}`;
+    } else {
+        level = 'info'; icon = '📊'; borderColor = '#60a5fa';
+        title = `${regime}模式 · ${buyCount}只买入信号 · 仓位上限${cap}%`;
+        sub = `均衡配置中，按综合评分排序执行。${xvCount > 0 ? `${xvCount}只标的有交叉验证标注。` : '当前市场环境正常。'}`;
+    }
+
+    el.style.display = 'block';
+    el.innerHTML = `<div style="
+        display:flex; align-items:flex-start; gap:14px; padding:16px 20px;
+        border-radius:12px; border:1px solid ${borderColor}33;
+        background:linear-gradient(135deg, ${borderColor}08, rgba(20,24,34,0.6));
+        animation: momAlertIn 0.4s ease;
+    ">
+        <span style="font-size:1.5rem; flex-shrink:0; margin-top:2px;">${icon}</span>
+        <div style="flex:1; min-width:0;">
+            <div style="font-weight:700; color:${borderColor}; font-size:0.92rem; margin-bottom:4px;">${title}</div>
+            <div style="font-size:0.78rem; color:var(--text-muted); line-height:1.5;">${sub}</div>
+        </div>
+        <span style="flex-shrink:0; width:8px; height:8px; border-radius:50%; background:${borderColor}; margin-top:8px; animation: momPulseDot 2s ease infinite;"></span>
+    </div>`;
+}
+
+/**
+ * 动量策略Top行动信号卡片
+ * 买入Top3 + 卖出Top3
+ */
+function renderMomActionCards(buySignals, sellSignals) {
+    const panel = document.getElementById('mom-action-panel');
+    if (!panel) return;
+
+    const buys = (buySignals || []).slice(0, 4);
+    const sells = (sellSignals || []).slice(0, 4);
+
+    if (buys.length === 0 && sells.length === 0) return;
+    panel.style.display = 'block';
+
+    // 买入列表
+    const buyList = document.getElementById('mom-action-buy-list');
+    const buyCountEl = document.getElementById('mom-action-buy-count');
+    if (buyCountEl) buyCountEl.textContent = `${buys.length}只`;
+
+    if (buyList) {
+        if (buys.length === 0) {
+            buyList.innerHTML = '<div style="font-size:0.82rem; color:var(--text-muted); text-align:center; padding:16px 0;">当前无买入信号</div>';
+        } else {
+            buyList.innerHTML = buys.map((s, i) => {
+                const rankIcon = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '#' + (i + 1);
+                const momColor = (s.momentum_pct || 0) > 5 ? '#10b981' : (s.momentum_pct || 0) > 0 ? '#34d399' : '#fbbf24';
+                return `<div style="display:flex; align-items:center; gap:10px; padding:10px 12px; background:rgba(16,185,129,0.04); border:1px solid rgba(16,185,129,0.12); border-radius:10px; transition:all 0.2s;" onmouseenter="this.style.borderColor='rgba(16,185,129,0.35)'" onmouseleave="this.style.borderColor='rgba(16,185,129,0.12)'">
+                    <span style="font-size:0.85rem; width:24px; text-align:center;">${rankIcon}</span>
+                    <div style="flex:1; min-width:0;">
+                        <div style="font-weight:700; color:#e2e8f0; font-size:0.85rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${s.name}</div>
+                        <div style="font-size:0.68rem; color:var(--text-muted);">${s.code} · ${s.group || '—'}</div>
+                    </div>
+                    <div style="text-align:right; flex-shrink:0;">
+                        <div style="font-weight:800; color:${momColor}; font-size:0.88rem;">${(s.momentum_pct || 0) > 0 ? '+' : ''}${s.momentum_pct || 0}%</div>
+                        <div style="font-size:0.65rem; color:var(--text-muted);">仓位 ${s.suggested_position || 0}%</div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+    }
+
+    // 卖出列表
+    const sellList = document.getElementById('mom-action-sell-list');
+    const sellCountEl = document.getElementById('mom-action-sell-count');
+    if (sellCountEl) sellCountEl.textContent = `${sells.length}只`;
+
+    if (sellList) {
+        if (sells.length === 0) {
+            sellList.innerHTML = '<div style="font-size:0.82rem; color:var(--text-muted); text-align:center; padding:16px 0;">当前无卖出信号</div>';
+        } else {
+            sellList.innerHTML = sells.map(s => {
+                const momColor = (s.momentum_pct || 0) < -3 ? '#ef4444' : '#fbbf24';
+                const signalLabel = s.signal === 'sell' ? '卖出' : '注意';
+                const signalColor = s.signal === 'sell' ? '#ef4444' : '#f59e0b';
+                return `<div style="display:flex; align-items:center; gap:10px; padding:10px 12px; background:rgba(239,68,68,0.03); border:1px solid rgba(239,68,68,0.1); border-radius:10px; transition:all 0.2s;" onmouseenter="this.style.borderColor='rgba(239,68,68,0.3)'" onmouseleave="this.style.borderColor='rgba(239,68,68,0.1)'">
+                    <span style="display:inline-flex; align-items:center; justify-content:center; padding:2px 8px; border-radius:6px; background:${signalColor}18; color:${signalColor}; font-size:0.68rem; font-weight:700;">${signalLabel}</span>
+                    <div style="flex:1; min-width:0;">
+                        <div style="font-weight:700; color:#e2e8f0; font-size:0.85rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${s.name}</div>
+                        <div style="font-size:0.68rem; color:var(--text-muted);">${s.code} · ${s.group || '—'}</div>
+                    </div>
+                    <div style="text-align:right; flex-shrink:0;">
+                        <div style="font-weight:800; color:${momColor}; font-size:0.88rem;">${(s.momentum_pct || 0) > 0 ? '+' : ''}${s.momentum_pct || 0}%</div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+    }
+}
+
 
 function renderMomentumActionList(containerId, items, type) {
     const container = document.getElementById(containerId);

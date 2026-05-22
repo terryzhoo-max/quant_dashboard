@@ -91,7 +91,7 @@
                 <button class="st-tab" data-report="st-erp-timing">⚡ 宏观ERP择时 V2.0</button>
                 <button class="st-tab" data-report="st-mean-reversion">📐 均值回归策略 V4.2</button>
                 <button class="st-tab" data-report="st-dividend-trend">💰 红利趋势策略 V4.0</button>
-                <button class="st-tab" data-report="st-momentum">🚀 行业动量轮动 V3.0</button>
+                <button class="st-tab" data-report="st-momentum">🚀 行业动量轮动 V3.1</button>
                 <button class="st-tab" data-report="st-gem">🌐 双重动量 GEM V3.0</button>
                 <button class="st-tab" data-report="st-signal-rules">🎯 信号评分系统</button>
                 <button class="st-tab" data-report="st-execution">📊 策略执行结果</button>
@@ -1622,382 +1622,546 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
 
             </div><!-- /st-dividend-trend -->
 
-            <!-- ==================== 行业动量轮动策略 V2.0 ==================== -->
+            <!-- ==================== 行业动量轮动策略 V3.1 ==================== -->
             <div class="st-report" id="st-momentum">
 
             <!-- ==================== ZONE 0 · 策略身份 ==================== -->
             <section class="st-hero glass-panel">
-                <div class="st-hero-badge">⚙️ AlphaCore V5.0 · 动量轮动引擎</div>
-                <h2 class="st-hero-title">🚀 行业动量轮动 V3.0 · Regime自适应</h2>
-                <p class="st-hero-sub">6维动量评分体系 · 因子权重随市场自适应 · 攻防双池无缝切换 · 深度信号交叉验证</p>
+                <div class="st-hero-badge">⚙️ AlphaCore V5.0 · 动量轮动引擎 V3.1</div>
+                <h2 class="st-hero-title">🚀 行业动量轮动 V3.1 · 8Y回测验证</h2>
+                <p class="st-hero-sub">7维动量评分 · Regime自适应因子权重 · 累计浮亏止损 · 双均线快速升降级 · 攻防双池</p>
                 <div class="st-hero-stats">
                     <div class="st-hero-stat"><span class="st-hs-label">标的池</span><span class="st-hs-value st-gold">20+4只ETF</span></div>
-                    <div class="st-hero-stat"><span class="st-hs-label">评分体系</span><span class="st-hs-value">6维100分</span></div>
-                    <div class="st-hero-stat"><span class="st-hs-label">Regime模式</span><span class="st-hs-value st-green">追强·均衡·防守</span></div>
-                    <div class="st-hero-stat"><span class="st-hs-label">交叉验证</span><span class="st-hs-value st-blue">均值回归联动</span></div>
+                    <div class="st-hero-stat"><span class="st-hs-label">评分体系</span><span class="st-hs-value">7维100分</span></div>
+                    <div class="st-hero-stat"><span class="st-hs-label">8Y Sharpe</span><span class="st-hs-value st-green">0.541</span></div>
+                    <div class="st-hero-stat"><span class="st-hs-label">累计止损</span><span class="st-hs-value st-blue">Regime自适应</span></div>
                 </div>
             </section>
 
-            <!-- ZONE divider: ZONE 1 · 市场状态 -->
+            <!-- ==================== ZONE 1 · 实时状态仪表盘 ==================== -->
             <div class="st-zone-header" style="--zone-color:#f59e0b">
                 <span class="zone-icon">⚡</span>
                 <div>
-                    <div class="zone-title">ZONE 1 · 市场状态</div>
-                    <div class="zone-sub">每周五开盘第一件事：确认 Regime 并读取自适应因子权重</div>
+                    <div class="zone-title">ZONE 1 · 实时状态仪表盘</div>
+                    <div class="zone-sub">运行策略后自动填充 · Regime + VIX + 仓位 + 止损 + 因子权重</div>
                 </div>
             </div>
 
             <section class="st-section">
-                <h3>⚡ V3.0 · Regime自适应因子权重</h3>
-                <div style="font-size:0.78rem; color:var(--text-muted); margin:-8px 0 16px;">核心升级：不同市场打不同的仗 — 牛市追强,震荡均衡,熊市防守</div>
+                <!-- 智能警示横幅 (JS动态渲染) -->
+                <div id="mom-smart-alert" style="display:none; margin-bottom:18px;"></div>
 
-                <!-- 三态参数对比表 -->
-                <div class="glass-panel" style="padding:20px; border-color:rgba(245,158,11,0.2); overflow-x:auto;">
-                    <table class="st-table" style="width:100%; font-size:0.82rem;">
-                        <thead><tr>
-                            <th style="width:100px;">参数</th>
-                            <th style="text-align:center;"><span style="color:#10b981;">🟢 BULL 追强</span></th>
-                            <th style="text-align:center;"><span style="color:#fbbf24;">🟡 RANGE 均衡</span></th>
-                            <th style="text-align:center;"><span style="color:#f87171;">🔴 BEAR 防守</span></th>
-                        </tr></thead>
-                        <tbody>
-                            <tr><td style="font-weight:600;">MOM_S 短期动量</td>
-                                <td style="text-align:center; color:#10b981; font-weight:800; font-size:1rem;">50%</td>
-                                <td style="text-align:center; color:#fbbf24;">35%</td>
-                                <td style="text-align:center; color:var(--text-muted);">15%</td></tr>
-                            <tr><td style="font-weight:600;">MOM_M 中期趋势</td>
-                                <td style="text-align:center;">25%</td>
-                                <td style="text-align:center; color:#fbbf24;">30%</td>
-                                <td style="text-align:center;">25%</td></tr>
-                            <tr><td style="font-weight:600;">SLOPE 趋势斜率</td>
-                                <td style="text-align:center;">15%</td>
-                                <td style="text-align:center;">20%</td>
-                                <td style="text-align:center;">20%</td></tr>
-                            <tr><td style="font-weight:600;">SHARPE 波动调整</td>
-                                <td style="text-align:center; color:var(--text-muted);">10%</td>
-                                <td style="text-align:center;">15%</td>
-                                <td style="text-align:center; color:#f87171; font-weight:800; font-size:1rem;">40%</td></tr>
-                            <tr style="border-top:2px solid rgba(255,255,255,0.1);">
-                                <td style="font-weight:700;">Top N</td>
-                                <td style="text-align:center; color:#10b981; font-weight:700;">5只</td>
-                                <td style="text-align:center; color:#fbbf24; font-weight:700;">4只</td>
-                                <td style="text-align:center; color:#f87171; font-weight:700;">3只</td></tr>
-                            <tr><td style="font-weight:700;">仓位上限</td>
-                                <td style="text-align:center; color:#10b981; font-weight:700;">85%</td>
-                                <td style="text-align:center; color:#fbbf24; font-weight:700;">60%</td>
-                                <td style="text-align:center; color:#f87171; font-weight:700;">35%</td></tr>
-                            <tr><td style="font-weight:700;">止损线</td>
-                                <td style="text-align:center;">-8%</td>
-                                <td style="text-align:center;">-7%</td>
-                                <td style="text-align:center; color:#f87171; font-weight:700;">-5%</td></tr>
-                            <tr><td style="font-weight:700;">标的池</td>
-                                <td style="text-align:center;">20只进攻</td>
-                                <td style="text-align:center; color:#fbbf24;">20+4只</td>
-                                <td style="text-align:center; color:#f87171;">20+4只</td></tr>
-                        </tbody>
-                    </table>
+                <!-- 状态卡片行 -->
+                <div style="display:grid; grid-template-columns:1.2fr 1fr 1fr 1fr; gap:16px; margin-bottom:20px;">
+
+                    <!-- Regime 大卡 -->
+                    <div id="mom-regime-card" class="glass-panel" style="padding:22px; border-color:rgba(251,191,36,0.3); background:linear-gradient(135deg,rgba(251,191,36,0.06),rgba(20,24,34,0.5)); position:relative; overflow:hidden;">
+                        <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:1px;">Market Regime</div>
+                        <div id="mom-regime-label" style="font-size:1.6rem; font-weight:900; color:#fbbf24; margin-bottom:4px;">⏳</div>
+                        <div id="mom-regime-strategy" style="font-size:0.82rem; color:var(--text-muted);">切换Tab后自动运行</div>
+                        <div id="mom-regime-trend" style="font-size:0.72rem; color:var(--text-muted); margin-top:8px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.06);">—</div>
+                        <!-- 背景装饰 -->
+                        <div style="position:absolute; top:-20px; right:-20px; font-size:4rem; opacity:0.05; pointer-events:none;" id="mom-regime-icon-bg">🟡</div>
+                    </div>
+
+                    <!-- VIX -->
+                    <div class="glass-panel" style="padding:22px; border-color:rgba(99,102,241,0.2); text-align:center;">
+                        <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:8px;">CBOE VIX</div>
+                        <div id="mom-vix-value" style="font-size:2rem; font-weight:900; color:#a78bfa;">—</div>
+                        <div id="mom-vix-status" style="font-size:0.72rem; color:var(--text-muted); margin-top:4px;">—</div>
+                    </div>
+
+                    <!-- 仓位上限 -->
+                    <div class="glass-panel" style="padding:22px; border-color:rgba(16,185,129,0.2); text-align:center;">
+                        <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:8px;">仓位上限</div>
+                        <div id="mom-cap-value" style="font-size:2rem; font-weight:900; color:#10b981;">—</div>
+                        <div id="mom-cap-detail" style="font-size:0.72rem; color:var(--text-muted); margin-top:4px;">三层取最严</div>
+                    </div>
+
+                    <!-- 调仓周期 -->
+                    <div class="glass-panel" style="padding:22px; border-color:rgba(59,130,246,0.2); text-align:center;">
+                        <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:8px;">调仓周期</div>
+                        <div style="display:flex; align-items:baseline; justify-content:center; gap:4px;">
+                            <span id="mom-rebalance-days" style="font-size:2rem; font-weight:900; color:#60a5fa;">—</span>
+                            <span style="font-size:0.85rem; color:var(--text-muted);">天</span>
+                        </div>
+                        <div id="mom-rebalance-note" style="font-size:0.72rem; color:var(--text-muted); margin-top:4px;">—</div>
+                    </div>
                 </div>
 
-                <!-- 权重可视化条 -->
-                <div class="glass-panel" style="padding:18px 24px; margin-top:16px; border-color:rgba(245,158,11,0.15);">
-                    <div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:12px;">
-                        <span style="color:#fcd34d; font-weight:700;">因子权重可视化</span> — 颜色深浅 = 该因子在当前Regime的重要性
+                <!-- 因子权重可视化条 (动态) -->
+                <div class="glass-panel" style="padding:18px 24px; margin-bottom:20px; border-color:rgba(245,158,11,0.15);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                        <div style="font-size:0.78rem; color:var(--text-muted);">
+                            <span style="color:#fcd34d; font-weight:700;">7维因子权重</span> — 宽度随当前Regime动态调整
+                        </div>
+                        <div id="mom-fw-regime-tag" style="font-size:0.68rem; padding:3px 10px; border-radius:20px; background:rgba(251,191,36,0.1); color:#fbbf24; font-weight:600;">—</div>
                     </div>
-                    <!-- BULL -->
-                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-                        <span style="font-size:0.7rem; color:#10b981; min-width:70px; font-weight:600;">🟢 BULL</span>
-                        <div style="flex:1; display:flex; height:22px; border-radius:6px; overflow:hidden;">
-                            <div style="width:50%; background:#fcd34d; display:flex; align-items:center; justify-content:center; font-size:0.6rem; font-weight:800; color:#000;">MOM_S 50%</div>
-                            <div style="width:25%; background:#a78bfa; display:flex; align-items:center; justify-content:center; font-size:0.6rem; font-weight:700; color:#fff;">MOM_M</div>
-                            <div style="width:15%; background:#6ee7b7; display:flex; align-items:center; justify-content:center; font-size:0.55rem; color:#000;">SLOPE</div>
-                            <div style="width:10%; background:#93c5fd; display:flex; align-items:center; justify-content:center; font-size:0.55rem; color:#000;">SH</div>
+                    <div style="display:flex; height:28px; border-radius:8px; overflow:hidden; gap:2px;" id="mom-factor-bar">
+                        <div id="mom-fw-mom_s" style="width:40%; background:#fcd34d; display:flex; align-items:center; justify-content:center; font-size:0.65rem; font-weight:800; color:#000; transition:width 0.5s ease; border-radius:6px 0 0 6px;">MOM_S</div>
+                        <div id="mom-fw-mom_m" style="width:15%; background:#a78bfa; display:flex; align-items:center; justify-content:center; font-size:0.6rem; font-weight:600; color:#fff; transition:width 0.5s ease;">MM</div>
+                        <div id="mom-fw-slope" style="width:20%; background:#6ee7b7; display:flex; align-items:center; justify-content:center; font-size:0.6rem; font-weight:600; color:#000; transition:width 0.5s ease;">SLOPE</div>
+                        <div id="mom-fw-sharpe" style="width:15%; background:#93c5fd; display:flex; align-items:center; justify-content:center; font-size:0.6rem; font-weight:600; color:#000; transition:width 0.5s ease;">SH</div>
+                        <div id="mom-fw-trend" style="width:10%; background:#60a5fa; display:flex; align-items:center; justify-content:center; font-size:0.6rem; font-weight:700; color:#fff; transition:width 0.5s ease; border-radius:0 6px 6px 0;">TR</div>
+                    </div>
+                </div>
+
+                <!-- 止损 + 持仓追踪 + 信号统计 -->
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px;">
+                    <!-- 累计止损 -->
+                    <div class="glass-panel" style="padding:18px; border-color:rgba(239,68,68,0.15);">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+                            <span style="font-size:1.1rem;">🛡️</span>
+                            <span style="font-weight:700; color:#f87171; font-size:0.85rem;">累计浮亏止损</span>
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                            <div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:10px; text-align:center;">
+                                <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:3px;">止损阈值</div>
+                                <div id="mom-stop-threshold" style="font-size:1.1rem; font-weight:800; color:#f87171;">—</div>
+                            </div>
+                            <div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:10px; text-align:center;">
+                                <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:3px;">止损触发</div>
+                                <div id="mom-stop-count" style="font-size:1.1rem; font-weight:800; color:#10b981;">—</div>
+                            </div>
+                        </div>
+                        <div style="font-size:0.68rem; color:var(--text-muted); margin-top:10px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.05);">
+                            BULL不止损 · RANGE -10% · BEAR -7%
                         </div>
                     </div>
-                    <!-- RANGE -->
-                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-                        <span style="font-size:0.7rem; color:#fbbf24; min-width:70px; font-weight:600;">🟡 RANGE</span>
-                        <div style="flex:1; display:flex; height:22px; border-radius:6px; overflow:hidden;">
-                            <div style="width:35%; background:#fcd34d; display:flex; align-items:center; justify-content:center; font-size:0.6rem; font-weight:700; color:#000;">MOM_S 35%</div>
-                            <div style="width:30%; background:#a78bfa; display:flex; align-items:center; justify-content:center; font-size:0.6rem; font-weight:700; color:#fff;">MOM_M 30%</div>
-                            <div style="width:20%; background:#6ee7b7; display:flex; align-items:center; justify-content:center; font-size:0.55rem; color:#000;">SLOPE</div>
-                            <div style="width:15%; background:#93c5fd; display:flex; align-items:center; justify-content:center; font-size:0.55rem; color:#000;">SHARPE</div>
+
+                    <!-- 持仓追踪 -->
+                    <div class="glass-panel" style="padding:18px; border-color:rgba(16,185,129,0.15);">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+                            <span style="font-size:1.1rem;">📦</span>
+                            <span style="font-weight:700; color:#10b981; font-size:0.85rem;">持仓追踪</span>
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                            <div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:10px; text-align:center;">
+                                <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:3px;">追踪中</div>
+                                <div id="mom-tracked-count" style="font-size:1.1rem; font-weight:800; color:#10b981;">—</div>
+                            </div>
+                            <div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:10px; text-align:center;">
+                                <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:3px;">总标的</div>
+                                <div id="mom-pool-total" style="font-size:1.1rem; font-weight:800; color:var(--text-muted);">—</div>
+                            </div>
+                        </div>
+                        <div style="font-size:0.68rem; color:var(--text-muted); margin-top:10px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.05);">
+                            进攻<span id="mom-pool-off" style="color:#fcd34d; font-weight:600;">—</span>只 + 防御<span id="mom-pool-def" style="color:#10b981; font-weight:600;">—</span>只
                         </div>
                     </div>
-                    <!-- BEAR -->
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <span style="font-size:0.7rem; color:#f87171; min-width:70px; font-weight:600;">🔴 BEAR</span>
-                        <div style="flex:1; display:flex; height:22px; border-radius:6px; overflow:hidden;">
-                            <div style="width:15%; background:rgba(252,211,77,0.4); display:flex; align-items:center; justify-content:center; font-size:0.55rem; color:#000;">MS</div>
-                            <div style="width:25%; background:#a78bfa; display:flex; align-items:center; justify-content:center; font-size:0.6rem; font-weight:700; color:#fff;">MOM_M</div>
-                            <div style="width:20%; background:#6ee7b7; display:flex; align-items:center; justify-content:center; font-size:0.55rem; color:#000;">SLOPE</div>
-                            <div style="width:40%; background:#93c5fd; display:flex; align-items:center; justify-content:center; font-size:0.6rem; font-weight:800; color:#000;">SHARPE 40%</div>
+
+                    <!-- 信号统计 -->
+                    <div class="glass-panel" style="padding:18px; border-color:rgba(59,130,246,0.15);">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+                            <span style="font-size:1.1rem;">📊</span>
+                            <span style="font-weight:700; color:#60a5fa; font-size:0.85rem;">信号统计</span>
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                            <div style="background:rgba(16,185,129,0.06); border-radius:8px; padding:10px; text-align:center;">
+                                <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:3px;">买入信号</div>
+                                <div id="mom-buy-n" style="font-size:1.1rem; font-weight:800; color:#10b981;">—</div>
+                            </div>
+                            <div style="background:rgba(239,68,68,0.06); border-radius:8px; padding:10px; text-align:center;">
+                                <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:3px;">卖出信号</div>
+                                <div id="mom-sell-n" style="font-size:1.1rem; font-weight:800; color:#f87171;">—</div>
+                            </div>
+                        </div>
+                        <div style="font-size:0.68rem; color:var(--text-muted); margin-top:10px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.05);">
+                            建议总仓位: <span id="mom-total-pos-v2" style="color:#fbbf24; font-weight:700;">—</span> · 交叉验证⚠️: <span id="mom-xv-count" style="color:#fbbf24; font-weight:600;">—</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Top 行动信号 (JS动态渲染) -->
+                <div id="mom-action-panel" style="display:none; margin-top:20px;">
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                        <!-- 买入信号 -->
+                        <div class="glass-panel" style="padding:18px; border-color:rgba(16,185,129,0.25); background:linear-gradient(135deg,rgba(16,185,129,0.04),rgba(20,24,34,0.5));">
+                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+                                <span style="display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; background:rgba(16,185,129,0.15); font-size:0.75rem;">▲</span>
+                                <span style="font-weight:700; color:#10b981; font-size:0.88rem;">买入 · Top行业</span>
+                                <span id="mom-action-buy-count" style="font-size:0.68rem; color:var(--text-muted); margin-left:auto;">—</span>
+                            </div>
+                            <div id="mom-action-buy-list" style="display:flex; flex-direction:column; gap:8px;">
+                                <div style="font-size:0.82rem; color:var(--text-muted); text-align:center; padding:16px 0;">等待运行策略</div>
+                            </div>
+                        </div>
+                        <!-- 卖出/注意信号 -->
+                        <div class="glass-panel" style="padding:18px; border-color:rgba(239,68,68,0.2); background:linear-gradient(135deg,rgba(239,68,68,0.03),rgba(20,24,34,0.5));">
+                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+                                <span style="display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; background:rgba(239,68,68,0.15); font-size:0.75rem;">▼</span>
+                                <span style="font-weight:700; color:#f87171; font-size:0.88rem;">卖出 · 风险标的</span>
+                                <span id="mom-action-sell-count" style="font-size:0.68rem; color:var(--text-muted); margin-left:auto;">—</span>
+                            </div>
+                            <div id="mom-action-sell-list" style="display:flex; flex-direction:column; gap:8px;">
+                                <div style="font-size:0.82rem; color:var(--text-muted); text-align:center; padding:16px 0;">等待运行策略</div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </section>
 
 
-            <!-- ZONE divider: ZONE 2 · 6维评分体系 -->
-            <div class="st-zone-header" style="--zone-color:#a78bfa">
-                <span class="zone-icon">🧬</span>
+            <!-- ==================== 操作手册 · 快速决策指引 ==================== -->
+            <section class="st-section" style="padding:0; margin-top:8px;">
+                <div class="st-accordion-trigger open" onclick="toggleAccordion(this)" style="border-color:rgba(96,165,250,0.25); background:linear-gradient(135deg,rgba(96,165,250,0.04),rgba(20,24,34,0.4));">
+                    <span class="acc-icon">📋</span>
+                    <span class="acc-title" style="color:#60a5fa">📋 操作手册 · 6步决策流程 (V3.1)</span>
+                    <span class="acc-arrow">›</span>
+                </div>
+                <div style="display:block; padding-top:14px;">
+
+                    <!-- Step流程 -->
+                    <div class="glass-panel" style="padding:24px; border-color:rgba(96,165,250,0.15); margin-bottom:16px;">
+                        <div style="font-size:0.85rem; font-weight:800; color:#60a5fa; margin-bottom:16px; display:flex; align-items:center; gap:8px;">
+                            <span style="font-size:1.1rem;">🎯</span> 每周五开盘决策流程
+                        </div>
+
+                        <!-- 6步流程 -->
+                        <div style="display:grid; grid-template-columns:repeat(6,1fr); gap:8px; margin-bottom:20px;">
+                            <!-- Step 1 -->
+                            <div style="text-align:center; padding:14px 8px; background:rgba(239,68,68,0.05); border:1px solid rgba(239,68,68,0.15); border-radius:10px;">
+                                <div style="width:28px; height:28px; border-radius:50%; background:rgba(239,68,68,0.15); color:#f87171; font-weight:900; font-size:0.78rem; display:inline-flex; align-items:center; justify-content:center; margin-bottom:8px;">1</div>
+                                <div style="font-size:0.72rem; font-weight:700; color:#f87171; margin-bottom:4px;">读警示</div>
+                                <div style="font-size:0.62rem; color:var(--text-muted); line-height:1.4;">顶部横幅<br>红=停手</div>
+                            </div>
+                            <!-- Step 2 -->
+                            <div style="text-align:center; padding:14px 8px; background:rgba(251,191,36,0.04); border:1px solid rgba(251,191,36,0.15); border-radius:10px;">
+                                <div style="width:28px; height:28px; border-radius:50%; background:rgba(251,191,36,0.12); color:#fbbf24; font-weight:900; font-size:0.78rem; display:inline-flex; align-items:center; justify-content:center; margin-bottom:8px;">2</div>
+                                <div style="font-size:0.72rem; font-weight:700; color:#fbbf24; margin-bottom:4px;">看Regime</div>
+                                <div style="font-size:0.62rem; color:var(--text-muted); line-height:1.4;">确认市况<br>BULL/RANGE/BEAR</div>
+                            </div>
+                            <!-- Step 3 -->
+                            <div style="text-align:center; padding:14px 8px; background:rgba(167,139,250,0.04); border:1px solid rgba(167,139,250,0.15); border-radius:10px;">
+                                <div style="width:28px; height:28px; border-radius:50%; background:rgba(167,139,250,0.12); color:#a78bfa; font-weight:900; font-size:0.78rem; display:inline-flex; align-items:center; justify-content:center; margin-bottom:8px;">3</div>
+                                <div style="font-size:0.72rem; font-weight:700; color:#a78bfa; margin-bottom:4px;">查VIX</div>
+                                <div style="font-size:0.62rem; color:var(--text-muted); line-height:1.4;">≥30恐慌<br>仓位压制</div>
+                            </div>
+                            <!-- Step 4 -->
+                            <div style="text-align:center; padding:14px 8px; background:rgba(16,185,129,0.04); border:1px solid rgba(16,185,129,0.15); border-radius:10px;">
+                                <div style="width:28px; height:28px; border-radius:50%; background:rgba(16,185,129,0.12); color:#10b981; font-weight:900; font-size:0.78rem; display:inline-flex; align-items:center; justify-content:center; margin-bottom:8px;">4</div>
+                                <div style="font-size:0.72rem; font-weight:700; color:#10b981; margin-bottom:4px;">读权重</div>
+                                <div style="font-size:0.62rem; color:var(--text-muted); line-height:1.4;">因子条宽度<br>确认主导因子</div>
+                            </div>
+                            <!-- Step 5 -->
+                            <div style="text-align:center; padding:14px 8px; background:rgba(59,130,246,0.04); border:1px solid rgba(59,130,246,0.15); border-radius:10px;">
+                                <div style="width:28px; height:28px; border-radius:50%; background:rgba(59,130,246,0.12); color:#60a5fa; font-weight:900; font-size:0.78rem; display:inline-flex; align-items:center; justify-content:center; margin-bottom:8px;">5</div>
+                                <div style="font-size:0.72rem; font-weight:700; color:#60a5fa; margin-bottom:4px;">执行信号</div>
+                                <div style="font-size:0.62rem; color:var(--text-muted); line-height:1.4;">按Top行业<br>买入/卖出</div>
+                            </div>
+                            <!-- Step 6 -->
+                            <div style="text-align:center; padding:14px 8px; background:rgba(236,72,153,0.04); border:1px solid rgba(236,72,153,0.15); border-radius:10px;">
+                                <div style="width:28px; height:28px; border-radius:50%; background:rgba(236,72,153,0.12); color:#ec4899; font-weight:900; font-size:0.78rem; display:inline-flex; align-items:center; justify-content:center; margin-bottom:8px;">6</div>
+                                <div style="font-size:0.72rem; font-weight:700; color:#ec4899; margin-bottom:4px;">检止损</div>
+                                <div style="font-size:0.62rem; color:var(--text-muted); line-height:1.4;">累计浮亏<br>超阈值清仓</div>
+                            </div>
+                        </div>
+
+                        <!-- 连接线提示 -->
+                        <div style="font-size:0.7rem; color:var(--text-muted); text-align:center; margin-bottom:20px; padding:8px 16px; background:rgba(255,255,255,0.02); border-radius:8px;">
+                            ❶ → ❷ → ❸ → ❹ → ❺ → ❻ · 每步有异常即<span style="color:#f87171; font-weight:700;">停止后续</span>，等待下一调仓窗口
+                        </div>
+
+                        <!-- Regime决策矩阵 -->
+                        <div style="font-size:0.82rem; font-weight:700; color:#fcd34d; margin-bottom:12px; display:flex; align-items:center; gap:8px;">
+                            <span style="font-size:1rem;">⚡</span> Regime决策速查表
+                        </div>
+                        <div style="overflow-x:auto;">
+                            <table class="st-table" style="width:100%; font-size:0.78rem;">
+                                <thead><tr>
+                                    <th style="width:80px;">项目</th>
+                                    <th style="text-align:center;"><span style="color:#10b981;">🟢 BULL</span></th>
+                                    <th style="text-align:center;"><span style="color:#fbbf24;">🟡 RANGE</span></th>
+                                    <th style="text-align:center;"><span style="color:#f87171;">🔴 BEAR</span></th>
+                                    <th style="text-align:center;"><span style="color:#ef4444;">🚨 CRASH</span></th>
+                                </tr></thead>
+                                <tbody>
+                                    <tr><td style="font-weight:600;">操作策略</td>
+                                        <td style="text-align:center; color:#10b981; font-weight:700;">积极进攻</td>
+                                        <td style="text-align:center; color:#fbbf24;">稳健均衡</td>
+                                        <td style="text-align:center; color:#f87171;">防守收缩</td>
+                                        <td style="text-align:center; color:#ef4444; font-weight:700;">全部空仓</td></tr>
+                                    <tr><td style="font-weight:600;">主导因子</td>
+                                        <td style="text-align:center;">MOM_S 50%</td>
+                                        <td style="text-align:center;">均衡配置</td>
+                                        <td style="text-align:center;">SHARPE 35%</td>
+                                        <td style="text-align:center;">—</td></tr>
+                                    <tr><td style="font-weight:600;">持仓数量</td>
+                                        <td style="text-align:center; color:#10b981; font-weight:700;">≤5只</td>
+                                        <td style="text-align:center; color:#fbbf24;">≤4只</td>
+                                        <td style="text-align:center; color:#f87171;">≤3只</td>
+                                        <td style="text-align:center;">0</td></tr>
+                                    <tr><td style="font-weight:600;">调仓频率</td>
+                                        <td style="text-align:center;">3天/次</td>
+                                        <td style="text-align:center;">10天/次</td>
+                                        <td style="text-align:center;">20天/次</td>
+                                        <td style="text-align:center;">—</td></tr>
+                                    <tr><td style="font-weight:600;">止损阈值</td>
+                                        <td style="text-align:center; color:#10b981;">不止损</td>
+                                        <td style="text-align:center; color:#fbbf24;">-10%</td>
+                                        <td style="text-align:center; color:#f87171; font-weight:700;">-7%</td>
+                                        <td style="text-align:center;">立即清仓</td></tr>
+                                    <tr><td style="font-weight:600;">标的池</td>
+                                        <td style="text-align:center;">仅进攻20只</td>
+                                        <td style="text-align:center;">进攻+防御</td>
+                                        <td style="text-align:center;">进攻+防御</td>
+                                        <td style="text-align:center;">—</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- 面板读法 + 风控红线 两栏 -->
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+
+                        <!-- 面板读法 -->
+                        <div class="glass-panel" style="padding:20px; border-color:rgba(96,165,250,0.12);">
+                            <div style="font-size:0.82rem; font-weight:700; color:#60a5fa; margin-bottom:14px; display:flex; align-items:center; gap:8px;">
+                                <span style="font-size:1rem;">🖥️</span> 仪表盘读法
+                            </div>
+                            <div style="display:flex; flex-direction:column; gap:10px; font-size:0.75rem;">
+                                <div style="display:flex; align-items:flex-start; gap:10px; padding:8px 10px; background:rgba(255,255,255,0.02); border-radius:8px;">
+                                    <span style="color:#fbbf24; font-weight:800; flex-shrink:0;">警示横幅</span>
+                                    <span style="color:var(--text-muted); line-height:1.5;">最顶部。红色=停手，黄色=谨慎，绿色=可执行。右侧脉冲点表示实时状态。</span>
+                                </div>
+                                <div style="display:flex; align-items:flex-start; gap:10px; padding:8px 10px; background:rgba(255,255,255,0.02); border-radius:8px;">
+                                    <span style="color:#fbbf24; font-weight:800; flex-shrink:0;">Regime卡</span>
+                                    <span style="color:var(--text-muted); line-height:1.5;">左上角最大卡片。颜色=市况，下方文字=当前策略模式+趋势确认。</span>
+                                </div>
+                                <div style="display:flex; align-items:flex-start; gap:10px; padding:8px 10px; background:rgba(255,255,255,0.02); border-radius:8px;">
+                                    <span style="color:#fbbf24; font-weight:800; flex-shrink:0;">权重条</span>
+                                    <span style="color:var(--text-muted); line-height:1.5;">5段彩色条。宽度=当前因子权重。BULL时MOM_S最宽，BEAR时SHARPE最宽。</span>
+                                </div>
+                                <div style="display:flex; align-items:flex-start; gap:10px; padding:8px 10px; background:rgba(255,255,255,0.02); border-radius:8px;">
+                                    <span style="color:#fbbf24; font-weight:800; flex-shrink:0;">行动卡</span>
+                                    <span style="color:var(--text-muted); line-height:1.5;">底部双栏。左=买入Top行业（按评分排序），右=卖出/注意标的。直接执行。</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 风控红线 -->
+                        <div class="glass-panel" style="padding:20px; border-color:rgba(239,68,68,0.15);">
+                            <div style="font-size:0.82rem; font-weight:700; color:#f87171; margin-bottom:14px; display:flex; align-items:center; gap:8px;">
+                                <span style="font-size:1rem;">🚫</span> 风控红线 · 不可违反
+                            </div>
+                            <div style="display:flex; flex-direction:column; gap:8px; font-size:0.75rem;">
+                                <div style="display:flex; align-items:center; gap:10px; padding:10px 12px; background:rgba(239,68,68,0.04); border:1px solid rgba(239,68,68,0.1); border-radius:8px;">
+                                    <span style="color:#ef4444; font-weight:900; font-size:0.85rem;">①</span>
+                                    <span style="color:#e2e8f0; line-height:1.5;"><strong style="color:#f87171;">单只ETF仓位</strong>不超过总仓 <strong style="color:#fbbf24;">20-30%</strong></span>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:10px; padding:10px 12px; background:rgba(239,68,68,0.04); border:1px solid rgba(239,68,68,0.1); border-radius:8px;">
+                                    <span style="color:#ef4444; font-weight:900; font-size:0.85rem;">②</span>
+                                    <span style="color:#e2e8f0; line-height:1.5;"><strong style="color:#f87171;">同行业组</strong>不超过总仓 <strong style="color:#fbbf24;">40%</strong>（科技AI 6只不可全买）</span>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:10px; padding:10px 12px; background:rgba(239,68,68,0.04); border:1px solid rgba(239,68,68,0.1); border-radius:8px;">
+                                    <span style="color:#ef4444; font-weight:900; font-size:0.85rem;">③</span>
+                                    <span style="color:#e2e8f0; line-height:1.5;"><strong style="color:#f87171;">累计浮亏</strong>超阈值→该标的<strong style="color:#fbbf24;">立即清仓</strong>，不加仓摊薄</span>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:10px; padding:10px 12px; background:rgba(239,68,68,0.04); border:1px solid rgba(239,68,68,0.1); border-radius:8px;">
+                                    <span style="color:#ef4444; font-weight:900; font-size:0.85rem;">④</span>
+                                    <span style="color:#e2e8f0; line-height:1.5;"><strong style="color:#f87171;">CRASH/VIX≥30</strong>时警示横幅为红色→<strong style="color:#fbbf24;">禁止开新仓</strong></span>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:10px; padding:10px 12px; background:rgba(239,68,68,0.04); border:1px solid rgba(239,68,68,0.1); border-radius:8px;">
+                                    <span style="color:#ef4444; font-weight:900; font-size:0.85rem;">⑤</span>
+                                    <span style="color:#e2e8f0; line-height:1.5;"><strong style="color:#f87171;">最少持仓≥3只</strong>，保持分散。交叉验证⚠️标的<strong style="color:#fbbf24;">减半仓位</strong></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+
+            <!-- ==================== ZONE 2 · 策略参数百科 (折叠) ==================== -->
+            <div class="st-zone-header" style="--zone-color:#6b7280">
+                <span class="zone-icon">📖</span>
                 <div>
-                    <div class="zone-title">ZONE 2 · 6维评分体系</div>
-                    <div class="zone-sub">满分100分 · 权重随Regime自动调整 · 含信号交叉验证</div>
+                    <div class="zone-title">ZONE 2 · 策略参数百科</div>
+                    <div class="zone-sub">三态参数 · 7维评分 · 标的池详情 · 点击展开</div>
                 </div>
             </div>
 
-            <section class="st-section">
-                <h3>🧬 V3.0 · 6维动量评分体系（满分100分）</h3>
-                <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:14px;">
-                    <!-- ① 短期动量 -->
-                    <div class="glass-panel" style="padding:18px; border-color:rgba(245,158,11,0.2); text-align:center;">
-                        <div style="font-size:1.5rem; margin-bottom:6px;">🚀</div>
-                        <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:3px;">① SHORT MOMENTUM</div>
-                        <div style="font-weight:700; color:#fcd34d; font-size:0.95rem;">短期动量 MOM_S</div>
-                        <div style="font-size:0.75rem; color:var(--text-muted); margin-top:6px; line-height:1.4;">20日价格收益率<br><span style="color:#fcd34d;">BULL→50% · BEAR→15%</span></div>
-                    </div>
-                    <!-- ② 中期趋势 -->
-                    <div class="glass-panel" style="padding:18px; border-color:rgba(99,102,241,0.2); text-align:center;">
-                        <div style="font-size:1.5rem; margin-bottom:6px;">📈</div>
-                        <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:3px;">② MID MOMENTUM</div>
-                        <div style="font-weight:700; color:#a78bfa; font-size:0.95rem;">中期趋势 MOM_M</div>
-                        <div style="font-size:0.75rem; color:var(--text-muted); margin-top:6px; line-height:1.4;">60日价格收益率<br>确认趋势持续性</div>
-                    </div>
-                    <!-- ③ 趋势斜率 -->
-                    <div class="glass-panel" style="padding:18px; border-color:rgba(16,185,129,0.2); text-align:center;">
-                        <div style="font-size:1.5rem; margin-bottom:6px;">📐</div>
-                        <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:3px;">③ TREND SLOPE</div>
-                        <div style="font-weight:700; color:#6ee7b7; font-size:0.95rem;">趋势斜率 SLOPE</div>
-                        <div style="font-size:0.75rem; color:var(--text-muted); margin-top:6px; line-height:1.4;">20日线性回归斜率<br>过滤横盘震荡标的</div>
-                    </div>
-                    <!-- ④ 波动调整 -->
-                    <div class="glass-panel" style="padding:18px; border-color:rgba(59,130,246,0.2); text-align:center;">
-                        <div style="font-size:1.5rem; margin-bottom:6px;">⚖️</div>
-                        <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:3px;">④ VOL-ADJ SHARPE</div>
-                        <div style="font-weight:700; color:#93c5fd; font-size:0.95rem;">波动调整收益</div>
-                        <div style="font-size:0.75rem; color:var(--text-muted); margin-top:6px; line-height:1.4;">MOM_S ÷ 历史波动率<br><span style="color:#93c5fd;">BEAR→40% 核心防守</span></div>
-                    </div>
-                    <!-- ⑤ 量价配合 -->
-                    <div class="glass-panel" style="padding:18px; border-color:rgba(251,191,36,0.15); text-align:center;">
-                        <div style="font-size:1.5rem; margin-bottom:6px;">📊</div>
-                        <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:3px;">⑤ VOLUME CONFIRM</div>
-                        <div style="font-weight:700; color:#fbbf24; font-size:0.95rem;">量价配合</div>
-                        <div style="font-size:0.75rem; color:var(--text-muted); margin-top:6px; line-height:1.4;">当日量比 vs 20日均量<br>固定10分 · 有量验证</div>
-                    </div>
-                    <!-- ⑥ 行业景气 -->
-                    <div class="glass-panel" style="padding:18px; border-color:rgba(236,72,153,0.15); text-align:center;">
-                        <div style="font-size:1.5rem; margin-bottom:6px;">🌡️</div>
-                        <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:3px;">⑥ SECTOR HEALTH</div>
-                        <div style="font-weight:700; color:#f472b6; font-size:0.95rem;">行业景气度</div>
-                        <div style="font-size:0.75rem; color:var(--text-muted); margin-top:6px; line-height:1.4;">RSI方向 + 均线偏离<br>固定10分 · 综合健康</div>
-                    </div>
+            <!-- 三态参数表 accordion -->
+            <section class="st-section" style="padding:0;">
+                <div class="st-accordion-trigger" onclick="toggleAccordion(this)" style="border-color:rgba(245,158,11,0.2)">
+                    <span class="acc-icon">⚡</span>
+                    <span class="acc-title" style="color:#fcd34d">⚡ 三态参数对比表 (BULL / RANGE / BEAR)</span>
+                    <span class="acc-arrow">›</span>
                 </div>
-                <!-- 交叉验证说明 -->
-                <div class="glass-panel" style="padding:14px 20px; margin-top:14px; border-color:rgba(99,102,241,0.2); display:flex; align-items:center; gap:12px;">
-                    <span style="font-size:1.3rem;">🔗</span>
-                    <div style="font-size:0.8rem; color:var(--text-muted); line-height:1.5;">
-                        <span style="color:#a78bfa; font-weight:700;">信号交叉验证（温和版）：</span>
-                        Top N 候选自动调用均值回归评分引擎做技术面检查。若RSI/BIAS/布林带评分 < 安全门槛（BULL≥55 / RANGE≥60 / BEAR≥70），仅标注 ⚠️ 警告，不改变排名结果。
+                <div style="display:none; padding-top:12px;">
+                    <div class="glass-panel" style="padding:20px; border-color:rgba(245,158,11,0.2); overflow-x:auto;">
+                        <table class="st-table" style="width:100%; font-size:0.82rem;">
+                            <thead><tr>
+                                <th style="width:100px;">参数</th>
+                                <th style="text-align:center;"><span style="color:#10b981;">🟢 BULL 追强</span></th>
+                                <th style="text-align:center;"><span style="color:#fbbf24;">🟡 RANGE 均衡</span></th>
+                                <th style="text-align:center;"><span style="color:#f87171;">🔴 BEAR 防守</span></th>
+                            </tr></thead>
+                            <tbody>
+                                <tr><td style="font-weight:600;">MOM_S 短期动量</td>
+                                    <td style="text-align:center; color:#10b981; font-weight:800;">50%</td>
+                                    <td style="text-align:center; color:#fbbf24;">40%</td>
+                                    <td style="text-align:center;">20%</td></tr>
+                                <tr><td style="font-weight:600;">MOM_M 中期趋势</td>
+                                    <td style="text-align:center;">10%</td>
+                                    <td style="text-align:center;">15%</td>
+                                    <td style="text-align:center;">15%</td></tr>
+                                <tr><td style="font-weight:600;">SLOPE 趋势斜率</td>
+                                    <td style="text-align:center;">20%</td>
+                                    <td style="text-align:center;">20%</td>
+                                    <td style="text-align:center;">15%</td></tr>
+                                <tr><td style="font-weight:600;">SHARPE 波动调整</td>
+                                    <td style="text-align:center;">10%</td>
+                                    <td style="text-align:center;">15%</td>
+                                    <td style="text-align:center; color:#f87171; font-weight:800;">35%</td></tr>
+                                <tr><td style="font-weight:600; color:#60a5fa;">🆕 TREND 趋势因子</td>
+                                    <td style="text-align:center; color:#60a5fa;">10%</td>
+                                    <td style="text-align:center; color:#60a5fa;">10%</td>
+                                    <td style="text-align:center; color:#60a5fa; font-weight:700;">15%</td></tr>
+                                <tr style="border-top:2px solid rgba(255,255,255,0.1);">
+                                    <td style="font-weight:700;">Top N</td>
+                                    <td style="text-align:center; color:#10b981; font-weight:700;">5只</td>
+                                    <td style="text-align:center; color:#fbbf24; font-weight:700;">4只</td>
+                                    <td style="text-align:center; color:#f87171; font-weight:700;">3只</td></tr>
+                                <tr><td style="font-weight:700;">累计止损</td>
+                                    <td style="text-align:center; color:#10b981;">不止损（追强）</td>
+                                    <td style="text-align:center; color:#fbbf24;">-10%</td>
+                                    <td style="text-align:center; color:#f87171; font-weight:700;">-7%</td></tr>
+                                <tr><td style="font-weight:700;">调仓周期</td>
+                                    <td style="text-align:center; color:#10b981; font-weight:700;">3天</td>
+                                    <td style="text-align:center; color:#fbbf24; font-weight:700;">10天</td>
+                                    <td style="text-align:center; color:#f87171; font-weight:700;">20天</td></tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </section>
 
-
-            <!-- ZONE divider: ZONE 3 · 标的筛选 -->
-            <div class="st-zone-header" style="--zone-color:#10b981">
-                <span class="zone-icon">🎯</span>
-                <div>
-                    <div class="zone-title">ZONE 3 · 标的筛选</div>
-                    <div class="zone-sub">进攻20只 + 防御4只 · BEAR/RANGE自动激活防御池</div>
+            <!-- 7维评分体系 accordion -->
+            <section class="st-section" style="padding:0; margin-top:12px;">
+                <div class="st-accordion-trigger" onclick="toggleAccordion(this)" style="border-color:rgba(167,139,250,0.2)">
+                    <span class="acc-icon">🧬</span>
+                    <span class="acc-title" style="color:#a78bfa">🧬 7维动量评分体系 (满分100分)</span>
+                    <span class="acc-arrow">›</span>
                 </div>
-            </div>
-
-            <section class="st-section">
-                <h3>🎯 标的池构成（24只ETF · 攻防双池）</h3>
-                <div class="glass-panel" style="padding:24px;">
-                    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:16px;">
-
-                        <!-- 科技AI -->
-                        <div style="background:rgba(245,158,11,0.04); border:1px solid rgba(245,158,11,0.2); border-radius:12px; padding:18px;">
-                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
-                                <span style="font-size:1.1rem;">💡</span>
-                                <span style="font-weight:700; color:#fcd34d; font-size:0.9rem;">科技 / AI</span>
-                                <span style="margin-left:auto; font-size:0.7rem; color:var(--text-muted); background:rgba(245,158,11,0.12); padding:2px 8px; border-radius:20px;">6只</span>
-                            </div>
-                            <div style="display:flex; flex-direction:column; gap:7px;">
-                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
-                                    <div><span style="font-size:0.7rem; color:#fcd34d; font-weight:700; margin-right:6px;">512480</span><span style="font-size:0.8rem; color:#e2e8f0;">半导体ETF</span></div>
-                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤25%</span>
-                                </div>
-                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
-                                    <div><span style="font-size:0.7rem; color:#fcd34d; font-weight:700; margin-right:6px;">588200</span><span style="font-size:0.8rem; color:#e2e8f0;">科创芯片ETF</span></div>
-                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤20%</span>
-                                </div>
-                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
-                                    <div><span style="font-size:0.7rem; color:#fcd34d; font-weight:700; margin-right:6px;">159995</span><span style="font-size:0.8rem; color:#e2e8f0;">芯片ETF</span></div>
-                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤20%</span>
-                                </div>
-                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
-                                    <div><span style="font-size:0.7rem; color:#fcd34d; font-weight:700; margin-right:6px;">515070</span><span style="font-size:0.8rem; color:#e2e8f0;">人工智能AIETF</span></div>
-                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤20%</span>
-                                </div>
-                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
-                                    <div><span style="font-size:0.7rem; color:#fcd34d; font-weight:700; margin-right:6px;">159819</span><span style="font-size:0.8rem; color:#e2e8f0;">人工智能ETF易方达</span></div>
-                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤20%</span>
-                                </div>
-                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
-                                    <div><span style="font-size:0.7rem; color:#fcd34d; font-weight:700; margin-right:6px;">515880</span><span style="font-size:0.8rem; color:#e2e8f0;">通信ETF国泰</span></div>
-                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤20%</span>
-                                </div>
-                            </div>
+                <div style="display:none; padding-top:12px;">
+                    <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:12px;">
+                        <div class="glass-panel" style="padding:14px; border-color:rgba(245,158,11,0.2); text-align:center;">
+                            <div style="font-size:1.2rem;">🚀</div>
+                            <div style="font-weight:700; color:#fcd34d; font-size:0.85rem;">MOM_S</div>
+                            <div style="font-size:0.7rem; color:var(--text-muted); margin-top:4px;">20日收益率<br>BULL→50%</div>
                         </div>
-
-                        <!-- 新能源周期 -->
-                        <div style="background:rgba(16,185,129,0.04); border:1px solid rgba(16,185,129,0.2); border-radius:12px; padding:18px;">
-                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
-                                <span style="font-size:1.1rem;">⚡</span>
-                                <span style="font-weight:700; color:#10b981; font-size:0.9rem;">新能源 / 周期</span>
-                                <span style="margin-left:auto; font-size:0.7rem; color:var(--text-muted); background:rgba(16,185,129,0.12); padding:2px 8px; border-radius:20px;">5只</span>
-                            </div>
-                            <div style="display:flex; flex-direction:column; gap:7px;">
-                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
-                                    <div><span style="font-size:0.7rem; color:#10b981; font-weight:700; margin-right:6px;">516160</span><span style="font-size:0.8rem; color:#e2e8f0;">新能源ETF</span></div>
-                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤22%</span>
-                                </div>
-                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
-                                    <div><span style="font-size:0.7rem; color:#10b981; font-weight:700; margin-right:6px;">515790</span><span style="font-size:0.8rem; color:#e2e8f0;">光伏ETF</span></div>
-                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤22%</span>
-                                </div>
-                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
-                                    <div><span style="font-size:0.7rem; color:#10b981; font-weight:700; margin-right:6px;">512400</span><span style="font-size:0.8rem; color:#e2e8f0;">有色金属ETF</span></div>
-                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤22%</span>
-                                </div>
-                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
-                                    <div><span style="font-size:0.7rem; color:#10b981; font-weight:700; margin-right:6px;">159870</span><span style="font-size:0.8rem; color:#e2e8f0;">化工ETF</span></div>
-                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤18%</span>
-                                </div>
-                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
-                                    <div><span style="font-size:0.7rem; color:#10b981; font-weight:700; margin-right:6px;">562550</span><span style="font-size:0.8rem; color:#e2e8f0;">绿电ETF</span></div>
-                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤18%</span>
-                                </div>
-                            </div>
+                        <div class="glass-panel" style="padding:14px; border-color:rgba(99,102,241,0.2); text-align:center;">
+                            <div style="font-size:1.2rem;">📈</div>
+                            <div style="font-weight:700; color:#a78bfa; font-size:0.85rem;">MOM_M</div>
+                            <div style="font-size:0.7rem; color:var(--text-muted); margin-top:4px;">60日趋势<br>确认持续性</div>
                         </div>
-
-                        <!-- 军工制造 -->
-                        <div style="background:rgba(99,102,241,0.04); border:1px solid rgba(99,102,241,0.22); border-radius:12px; padding:18px;">
-                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
-                                <span style="font-size:1.1rem;">🛡️</span>
-                                <span style="font-weight:700; color:#a78bfa; font-size:0.9rem;">军工 / 制造</span>
-                                <span style="margin-left:auto; font-size:0.7rem; color:var(--text-muted); background:rgba(99,102,241,0.12); padding:2px 8px; border-radius:20px;">5只</span>
-                            </div>
-                            <div style="display:flex; flex-direction:column; gap:7px;">
-                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
-                                    <div><span style="font-size:0.7rem; color:#a78bfa; font-weight:700; margin-right:6px;">512560</span><span style="font-size:0.8rem; color:#e2e8f0;">军工ETF</span></div>
-                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤22%</span>
-                                </div>
-                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
-                                    <div><span style="font-size:0.7rem; color:#a78bfa; font-weight:700; margin-right:6px;">159218</span><span style="font-size:0.8rem; color:#e2e8f0;">卫星ETF招商</span></div>
-                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤18%</span>
-                                </div>
-                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
-                                    <div><span style="font-size:0.7rem; color:#a78bfa; font-weight:700; margin-right:6px;">562500</span><span style="font-size:0.8rem; color:#e2e8f0;">机器人ETF</span></div>
-                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤20%</span>
-                                </div>
-                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
-                                    <div><span style="font-size:0.7rem; color:#a78bfa; font-weight:700; margin-right:6px;">159326</span><span style="font-size:0.8rem; color:#e2e8f0;">电网设备ETF</span></div>
-                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤18%</span>
-                                </div>
-                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
-                                    <div><span style="font-size:0.7rem; color:#a78bfa; font-weight:700; margin-right:6px;">159851</span><span style="font-size:0.8rem; color:#e2e8f0;">金融科技ETF</span></div>
-                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤18%</span>
-                                </div>
-                            </div>
+                        <div class="glass-panel" style="padding:14px; border-color:rgba(16,185,129,0.2); text-align:center;">
+                            <div style="font-size:1.2rem;">📐</div>
+                            <div style="font-weight:700; color:#6ee7b7; font-size:0.85rem;">SLOPE</div>
+                            <div style="font-size:0.7rem; color:var(--text-muted); margin-top:4px;">线性回归<br>过滤震荡</div>
                         </div>
-
-                        <!-- 港股消费成长 -->
-                        <div style="background:rgba(239,68,68,0.04); border:1px solid rgba(239,68,68,0.18); border-radius:12px; padding:18px;">
-                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
-                                <span style="font-size:1.1rem;">🌏</span>
-                                <span style="font-weight:700; color:#f87171; font-size:0.9rem;">港股 / 消费 / 成长</span>
-                                <span style="margin-left:auto; font-size:0.7rem; color:var(--text-muted); background:rgba(239,68,68,0.12); padding:2px 8px; border-radius:20px;">4只</span>
-                            </div>
-                            <div style="display:flex; flex-direction:column; gap:7px;">
-                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
-                                    <div><span style="font-size:0.7rem; color:#f87171; font-weight:700; margin-right:6px;">513130</span><span style="font-size:0.8rem; color:#e2e8f0;">恒生科技ETF</span></div>
-                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤22%</span>
-                                </div>
-                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
-                                    <div><span style="font-size:0.7rem; color:#f87171; font-weight:700; margin-right:6px;">513120</span><span style="font-size:0.8rem; color:#e2e8f0;">港股创新药ETF</span></div>
-                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤18%</span>
-                                </div>
-                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
-                                    <div><span style="font-size:0.7rem; color:#f87171; font-weight:700; margin-right:6px;">159869</span><span style="font-size:0.8rem; color:#e2e8f0;">游戏ETF</span></div>
-                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤18%</span>
-                                </div>
-                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border-radius:7px; padding:7px 10px;">
-                                    <div><span style="font-size:0.7rem; color:#f87171; font-weight:700; margin-right:6px;">588220</span><span style="font-size:0.8rem; color:#e2e8f0;">科创100ETF鹏华</span></div>
-                                    <span style="font-size:0.68rem; color:var(--text-muted);">≤20%</span>
-                                </div>
-                            </div>
+                        <div class="glass-panel" style="padding:14px; border-color:rgba(59,130,246,0.2); text-align:center;">
+                            <div style="font-size:1.2rem;">⚖️</div>
+                            <div style="font-weight:700; color:#93c5fd; font-size:0.85rem;">SHARPE</div>
+                            <div style="font-size:0.7rem; color:var(--text-muted); margin-top:4px;">波动调整<br>BEAR→35%</div>
                         </div>
-
-                    </div>
-
-                    <!-- 底部约束提示 -->
-                    <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:16px;">
-                        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:8px; padding:12px; text-align:center;">
-                            <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:4px;">单行业组合计上限</div>
-                            <div style="font-weight:700; color:#fcd34d; font-size:1rem;">≤ 40%</div>
+                        <div class="glass-panel" style="padding:14px; border-color:rgba(96,165,250,0.3); text-align:center; background:linear-gradient(135deg,rgba(96,165,250,0.06),rgba(20,24,34,0.4));">
+                            <div style="font-size:1.2rem;">🆕</div>
+                            <div style="font-weight:700; color:#60a5fa; font-size:0.85rem;">TREND</div>
+                            <div style="font-size:0.7rem; color:var(--text-muted); margin-top:4px;">MA20偏离<br>V3.1新增</div>
                         </div>
-                        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:8px; padding:12px; text-align:center;">
-                            <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:4px;">最少同时持有</div>
-                            <div style="font-weight:700; color:#10b981; font-size:1rem;">≥ 3 只</div>
+                        <div class="glass-panel" style="padding:14px; border-color:rgba(251,191,36,0.15); text-align:center;">
+                            <div style="font-size:1.2rem;">📊</div>
+                            <div style="font-weight:700; color:#fbbf24; font-size:0.85rem;">VOLUME</div>
+                            <div style="font-size:0.7rem; color:var(--text-muted); margin-top:4px;">量价配合<br>固定5分</div>
                         </div>
-                        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:8px; padding:12px; text-align:center;">
-                            <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:4px;">止损(分状态)</div>
-                            <div style="font-weight:700; color:#f87171; font-size:1rem;">-5%~-8%</div>
+                        <div class="glass-panel" style="padding:14px; border-color:rgba(236,72,153,0.15); text-align:center;">
+                            <div style="font-size:1.2rem;">🌡️</div>
+                            <div style="font-weight:700; color:#f472b6; font-size:0.85rem;">HEALTH</div>
+                            <div style="font-size:0.7rem; color:var(--text-muted); margin-top:4px;">行业景气<br>固定5分</div>
                         </div>
-                    </div>
-                </div>
-
-                <!-- V3.0 防御型标的池 -->
-                <div style="margin-top:20px; border-top:2px solid rgba(16,185,129,0.15); padding-top:20px;">
-                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
-                        <span style="font-size:1.1rem;">🛡️</span>
-                        <span style="font-weight:700; color:#10b981; font-size:0.95rem;">防御型标的池</span>
-                        <span style="font-size:0.7rem; color:var(--text-muted); background:rgba(16,185,129,0.12); padding:2px 10px; border-radius:20px;">4只 · RANGE/BEAR激活</span>
-                    </div>
-                    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:12px;">
-                        <div style="background:rgba(16,185,129,0.04); border:1px solid rgba(16,185,129,0.2); border-radius:10px; padding:14px; text-align:center;">
-                            <div style="font-size:0.7rem; color:#10b981; font-weight:700;">515100</div>
-                            <div style="font-size:0.82rem; color:#e2e8f0; margin-top:3px;">红利低波100ETF</div>
-                            <div style="font-size:0.68rem; color:var(--text-muted); margin-top:4px;">防御红利 · ≤20%</div>
-                        </div>
-                        <div style="background:rgba(16,185,129,0.04); border:1px solid rgba(16,185,129,0.2); border-radius:10px; padding:14px; text-align:center;">
-                            <div style="font-size:0.7rem; color:#10b981; font-weight:700;">510880</div>
-                            <div style="font-size:0.82rem; color:#e2e8f0; margin-top:3px;">红利ETF</div>
-                            <div style="font-size:0.68rem; color:var(--text-muted); margin-top:4px;">防御红利 · ≤18%</div>
-                        </div>
-                        <div style="background:rgba(16,185,129,0.04); border:1px solid rgba(16,185,129,0.2); border-radius:10px; padding:14px; text-align:center;">
-                            <div style="font-size:0.7rem; color:#10b981; font-weight:700;">512010</div>
-                            <div style="font-size:0.82rem; color:#e2e8f0; margin-top:3px;">医药ETF</div>
-                            <div style="font-size:0.68rem; color:var(--text-muted); margin-top:4px;">防御消费 · ≤18%</div>
-                        </div>
-                        <div style="background:rgba(16,185,129,0.04); border:1px solid rgba(16,185,129,0.2); border-radius:10px; padding:14px; text-align:center;">
-                            <div style="font-size:0.7rem; color:#10b981; font-weight:700;">159928</div>
-                            <div style="font-size:0.82rem; color:#e2e8f0; margin-top:3px;">消费ETF</div>
-                            <div style="font-size:0.68rem; color:var(--text-muted); margin-top:4px;">防御消费 · ≤18%</div>
+                        <div class="glass-panel" style="padding:14px; border-color:rgba(99,102,241,0.15); text-align:center;">
+                            <div style="font-size:1.2rem;">🔗</div>
+                            <div style="font-weight:700; color:#a78bfa; font-size:0.85rem;">交叉验证</div>
+                            <div style="font-size:0.7rem; color:var(--text-muted); margin-top:4px;">均值回归<br>温和标注</div>
                         </div>
                     </div>
                 </div>
             </section>
 
+            <!-- 标的池 accordion -->
+            <section class="st-section" style="padding:0; margin-top:12px;">
+                <div class="st-accordion-trigger" onclick="toggleAccordion(this)" style="border-color:rgba(16,185,129,0.2)">
+                    <span class="acc-icon">🎯</span>
+                    <span class="acc-title" style="color:#10b981">🎯 标的池详情 (20只进攻 + 4只防御)</span>
+                    <span class="acc-arrow">›</span>
+                </div>
+                <div style="display:none; padding-top:12px;">
+                    <div class="glass-panel" style="padding:20px;">
+                        <!-- 紧凑标的列表 -->
+                        <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:16px;">
+                            <!-- 进攻池 -->
+                            <div>
+                                <div style="font-size:0.82rem; font-weight:700; color:#fcd34d; margin-bottom:10px;">⚔️ 进攻池 (20只 · 全市况)</div>
+                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:0.75rem;">
+                                    <div style="background:rgba(255,255,255,0.03); border-radius:6px; padding:6px 10px;"><span style="color:#fcd34d; font-weight:700;">💡 科技AI</span> 6只</div>
+                                    <div style="color:var(--text-muted); padding:6px 10px;">半导体·科创芯片·芯片·AI×2·通信</div>
+                                    <div style="background:rgba(255,255,255,0.03); border-radius:6px; padding:6px 10px;"><span style="color:#10b981; font-weight:700;">⚡ 新能源</span> 5只</div>
+                                    <div style="color:var(--text-muted); padding:6px 10px;">新能源·光伏·有色·化工·绿电</div>
+                                    <div style="background:rgba(255,255,255,0.03); border-radius:6px; padding:6px 10px;"><span style="color:#a78bfa; font-weight:700;">🛡️ 军工</span> 5只</div>
+                                    <div style="color:var(--text-muted); padding:6px 10px;">军工·卫星·机器人·电网·金融科技</div>
+                                    <div style="background:rgba(255,255,255,0.03); border-radius:6px; padding:6px 10px;"><span style="color:#f87171; font-weight:700;">🌏 港股</span> 4只</div>
+                                    <div style="color:var(--text-muted); padding:6px 10px;">恒生科技·创新药·游戏·科创100</div>
+                                </div>
+                            </div>
+                            <!-- 防御池 -->
+                            <div>
+                                <div style="font-size:0.82rem; font-weight:700; color:#10b981; margin-bottom:10px;">🛡️ 防御池 (4只 · RANGE/BEAR激活)</div>
+                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                                    <div style="background:rgba(16,185,129,0.04); border:1px solid rgba(16,185,129,0.15); border-radius:8px; padding:10px; text-align:center;">
+                                        <div style="font-size:0.7rem; color:#10b981; font-weight:700;">515100</div>
+                                        <div style="font-size:0.78rem; color:#e2e8f0;">红利低波100</div>
+                                    </div>
+                                    <div style="background:rgba(16,185,129,0.04); border:1px solid rgba(16,185,129,0.15); border-radius:8px; padding:10px; text-align:center;">
+                                        <div style="font-size:0.7rem; color:#10b981; font-weight:700;">510880</div>
+                                        <div style="font-size:0.78rem; color:#e2e8f0;">红利ETF</div>
+                                    </div>
+                                    <div style="background:rgba(16,185,129,0.04); border:1px solid rgba(16,185,129,0.15); border-radius:8px; padding:10px; text-align:center;">
+                                        <div style="font-size:0.7rem; color:#10b981; font-weight:700;">512010</div>
+                                        <div style="font-size:0.78rem; color:#e2e8f0;">医药ETF</div>
+                                    </div>
+                                    <div style="background:rgba(16,185,129,0.04); border:1px solid rgba(16,185,129,0.15); border-radius:8px; padding:10px; text-align:center;">
+                                        <div style="font-size:0.7rem; color:#10b981; font-weight:700;">159928</div>
+                                        <div style="font-size:0.78rem; color:#e2e8f0;">消费ETF</div>
+                                    </div>
+                                </div>
+                                <!-- 约束 -->
+                                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:14px;">
+                                    <div style="background:rgba(255,255,255,0.03); border-radius:6px; padding:8px; text-align:center;">
+                                        <div style="font-size:0.62rem; color:var(--text-muted);">行业组上限</div>
+                                        <div style="font-weight:700; color:#fcd34d; font-size:0.9rem;">≤40%</div>
+                                    </div>
+                                    <div style="background:rgba(255,255,255,0.03); border-radius:6px; padding:8px; text-align:center;">
+                                        <div style="font-size:0.62rem; color:var(--text-muted);">最少持仓</div>
+                                        <div style="font-weight:700; color:#10b981; font-size:0.9rem;">≥3只</div>
+                                    </div>
+                                    <div style="background:rgba(255,255,255,0.03); border-radius:6px; padding:8px; text-align:center;">
+                                        <div style="font-size:0.62rem; color:var(--text-muted);">单只上限</div>
+                                        <div style="font-weight:700; color:#60a5fa; font-size:0.9rem;">20-30%</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
 
-            <!-- ZONE divider: ZONE 4 · 研究与实操归档 -->
+            <!-- ZONE divider: ZONE 3 · 研究与实操归档 -->
             <div class="st-zone-header" style="--zone-color:#6b7280">
                 <span class="zone-icon">📚</span>
                 <div>
-                    <div class="zone-title">ZONE 4 · 研究与实操归档</div>
+                    <div class="zone-title">ZONE 3 · 研究与实操归档</div>
                     <div class="zone-sub">回测控制台 · 5步SOP手册 · 参数优化 · 点击展开</div>
                 </div>
             </div>
@@ -2210,14 +2374,14 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
             <section class="st-section" style="padding:0; margin-top:12px;">
                 <div class="st-accordion-trigger" onclick="toggleAccordion(this)" style="border-color:rgba(59,130,246,0.2)">
                     <span class="acc-icon">📋</span>
-                    <span class="acc-title" style="color:#3b82f6">📋 实盘作战手册 V3.0 · 5步SOP</span>
+                    <span class="acc-title" style="color:#3b82f6">📋 实盘作战手册 V3.1 · 5步SOP</span>
                     <span class="acc-arrow">›</span>
                 </div>
                 <div style="display:none; padding-top:12px;">
 
             <!-- 策略作战手册 -->
             <section class="st-section">
-                <h3>📋 实盘作战手册 (V3.0 · Regime自适应版)</h3>
+                <h3>📋 实盘作战手册 (V3.1 · Regime自适应版)</h3>
                 <div class="st-two-col">
                     <div class="glass-panel" style="padding:24px;">
                         <h4 style="font-size:0.95rem; color:#fcd34d; margin-bottom:16px;">⚙️ 推荐参数配置</h4>
@@ -2399,6 +2563,9 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                     <span id="gem-load-status" style="font-size:0.75rem; color:#64748b;"></span>
                 </div>
             </section>
+
+            <!-- 操作提示面板 (JS 动态渲染) -->
+            <div id="gem-action-panel" style="display:none;"></div>
 
             <!-- ZONE 1 · 信号仪表板 -->
             <div class="st-zone-header" style="--zone-color:#0ea5e9">
@@ -2660,6 +2827,254 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                         <div style="text-align:center; padding:10px; background:rgba(16,185,129,0.06); border-radius:8px;">
                             <div style="font-size:0.62rem; color:#94a3b8;">PSR</div>
                             <div style="font-size:0.82rem; font-weight:800; color:#34d399;">97.1%</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ZONE 4.5 · 操作手册 -->
+            <div class="st-zone-header" style="--zone-color:#f59e0b">
+                <span class="zone-icon">📋</span>
+                <div>
+                    <div class="zone-title">ZONE 4.5 · 操作手册</div>
+                    <div class="zone-sub">交易节奏 · 信号执行 · 月度检查清单 · 纪律守则</div>
+                </div>
+            </div>
+            <section class="st-section">
+
+                <!-- 4.5.1 交易节奏 -->
+                <div class="glass-panel" style="padding:24px; margin-bottom:16px;">
+                    <h4 style="margin:0 0 16px 0; font-size:0.88rem; color:#fbbf24;">⏱️ 交易节奏 — 「每月看一眼，每季操作一次」</h4>
+                    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:18px;">
+                        <div style="text-align:center; padding:16px 10px; background:rgba(14,165,233,0.06); border:1px solid rgba(14,165,233,0.15); border-radius:10px;">
+                            <div style="font-size:1.5rem; margin-bottom:4px;">📅</div>
+                            <div style="font-size:1.2rem; font-weight:900; color:#38bdf8;">月度</div>
+                            <div style="font-size:0.65rem; color:#94a3b8;">检查频率</div>
+                        </div>
+                        <div style="text-align:center; padding:16px 10px; background:rgba(16,185,129,0.06); border:1px solid rgba(16,185,129,0.15); border-radius:10px;">
+                            <div style="font-size:1.5rem; margin-bottom:4px;">🔄</div>
+                            <div style="font-size:1.2rem; font-weight:900; color:#34d399;">3-4次/年</div>
+                            <div style="font-size:0.65rem; color:#94a3b8;">年均换仓</div>
+                        </div>
+                        <div style="text-align:center; padding:16px 10px; background:rgba(139,92,246,0.06); border:1px solid rgba(139,92,246,0.15); border-radius:10px;">
+                            <div style="font-size:1.5rem; margin-bottom:4px;">⏳</div>
+                            <div style="font-size:1.2rem; font-weight:900; color:#a78bfa;">3-6个月</div>
+                            <div style="font-size:0.65rem; color:#94a3b8;">平均持仓周期</div>
+                        </div>
+                        <div style="text-align:center; padding:16px 10px; background:rgba(245,158,11,0.06); border:1px solid rgba(245,158,11,0.15); border-radius:10px;">
+                            <div style="font-size:1.5rem; margin-bottom:4px;">🛡️</div>
+                            <div style="font-size:1.2rem; font-weight:900; color:#fbbf24;">≥2个月</div>
+                            <div style="font-size:0.65rem; color:#94a3b8;">最低持仓期</div>
+                        </div>
+                    </div>
+                    <!-- 时间线 -->
+                    <div style="padding:14px 18px; background:rgba(0,0,0,0.2); border-radius:10px;">
+                        <div style="font-size:0.72rem; font-weight:700; color:#e2e8f0; margin-bottom:10px;">📆 典型年度节奏</div>
+                        <div style="display:flex; gap:3px; align-items:stretch;">
+                            <div style="flex:3; text-align:center; padding:8px 4px; background:rgba(16,185,129,0.12); border-radius:6px 0 0 6px; border:1px solid rgba(16,185,129,0.2);">
+                                <div style="font-size:0.58rem; color:#34d399; font-weight:700;">1-3月 持仓A</div>
+                            </div>
+                            <div style="flex:0.5; text-align:center; padding:8px 2px; background:rgba(245,158,11,0.2); border:1px solid rgba(245,158,11,0.3);">
+                                <div style="font-size:0.55rem; color:#fbbf24;">🔄</div>
+                            </div>
+                            <div style="flex:4; text-align:center; padding:8px 4px; background:rgba(14,165,233,0.12); border:1px solid rgba(14,165,233,0.2);">
+                                <div style="font-size:0.58rem; color:#38bdf8; font-weight:700;">4-7月 持仓B</div>
+                            </div>
+                            <div style="flex:0.5; text-align:center; padding:8px 2px; background:rgba(245,158,11,0.2); border:1px solid rgba(245,158,11,0.3);">
+                                <div style="font-size:0.55rem; color:#fbbf24;">🔄</div>
+                            </div>
+                            <div style="flex:2; text-align:center; padding:8px 4px; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.2);">
+                                <div style="font-size:0.58rem; color:#f87171; font-weight:700;">8-9月 现金</div>
+                            </div>
+                            <div style="flex:0.5; text-align:center; padding:8px 2px; background:rgba(245,158,11,0.2); border:1px solid rgba(245,158,11,0.3);">
+                                <div style="font-size:0.55rem; color:#fbbf24;">🔄</div>
+                            </div>
+                            <div style="flex:3; text-align:center; padding:8px 4px; background:rgba(16,185,129,0.12); border-radius:0 6px 6px 0; border:1px solid rgba(16,185,129,0.2);">
+                                <div style="font-size:0.58rem; color:#34d399; font-weight:700;">10-12月 持仓C</div>
+                            </div>
+                        </div>
+                        <div style="font-size:0.6rem; color:#475569; margin-top:8px; text-align:center;">▲ 典型场景: 年均3次换仓 · 大部分月份无操作</div>
+                    </div>
+                </div>
+
+                <!-- 4.5.2 三种信号执行指南 -->
+                <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:16px;">
+                    <!-- BUY -->
+                    <div class="glass-panel" style="padding:20px; border-color:rgba(16,185,129,0.25);">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+                            <span style="font-size:1.3rem;">📈</span>
+                            <span style="font-size:0.85rem; font-weight:800; color:#34d399;">BUY 买入信号</span>
+                        </div>
+                        <div class="gem-manual-steps">
+                            <div class="gem-manual-step">
+                                <span class="gem-ms-num" style="background:rgba(16,185,129,0.15); color:#34d399;">1</span>
+                                <span>确认面板顶部显示 <strong style="color:#34d399;">📈 BUY</strong></span>
+                            </div>
+                            <div class="gem-manual-step">
+                                <span class="gem-ms-num" style="background:rgba(16,185,129,0.15); color:#34d399;">2</span>
+                                <span>查看「目标权重」栏，记录各 ETF 配比</span>
+                            </div>
+                            <div class="gem-manual-step">
+                                <span class="gem-ms-num" style="background:rgba(16,185,129,0.15); color:#34d399;">3</span>
+                                <span>检查警告条: VolTarget 缩放? 双窗口分歧?</span>
+                            </div>
+                            <div class="gem-manual-step">
+                                <span class="gem-ms-num" style="background:rgba(16,185,129,0.15); color:#34d399;">4</span>
+                                <span>按权重一次性买入, <strong>不做日内拆单</strong></span>
+                            </div>
+                            <div class="gem-manual-step">
+                                <span class="gem-ms-num" style="background:rgba(16,185,129,0.15); color:#34d399;">5</span>
+                                <span>设置下月末提醒, 中间<strong>不看不动</strong></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CASH -->
+                    <div class="glass-panel" style="padding:20px; border-color:rgba(239,68,68,0.25);">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+                            <span style="font-size:1.3rem;">🔴</span>
+                            <span style="font-size:0.85rem; font-weight:800; color:#f87171;">CASH 防御信号</span>
+                        </div>
+                        <div class="gem-manual-steps">
+                            <div class="gem-manual-step">
+                                <span class="gem-ms-num" style="background:rgba(239,68,68,0.15); color:#f87171;">1</span>
+                                <span>确认面板顶部显示 <strong style="color:#f87171;">🔴 CASH</strong></span>
+                            </div>
+                            <div class="gem-manual-step">
+                                <span class="gem-ms-num" style="background:rgba(239,68,68,0.15); color:#f87171;">2</span>
+                                <span><strong>清仓全部权益类 ETF</strong>, 不留侥幸仓</span>
+                            </div>
+                            <div class="gem-manual-step">
+                                <span class="gem-ms-num" style="background:rgba(239,68,68,0.15); color:#f87171;">3</span>
+                                <span>资金转入 <strong>银华日利 (511880)</strong> 或活期理财</span>
+                            </div>
+                            <div class="gem-manual-step">
+                                <span class="gem-ms-num" style="background:rgba(239,68,68,0.15); color:#f87171;">4</span>
+                                <span>⚠️ <strong>绝对禁止抄底</strong>: 动量未转正前不入场</span>
+                            </div>
+                            <div class="gem-manual-step">
+                                <span class="gem-ms-num" style="background:rgba(239,68,68,0.15); color:#f87171;">5</span>
+                                <span>每月复查信号, 等待 BUY 信号才重新入场</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 60/40 -->
+                    <div class="glass-panel" style="padding:20px; border-color:rgba(245,158,11,0.25);">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+                            <span style="font-size:1.3rem;">🛡️</span>
+                            <span style="font-size:0.85rem; font-weight:800; color:#fbbf24;">60/40 防御信号</span>
+                        </div>
+                        <div class="gem-manual-steps">
+                            <div class="gem-manual-step">
+                                <span class="gem-ms-num" style="background:rgba(245,158,11,0.15); color:#fbbf24;">1</span>
+                                <span>触发条件: <strong>全部资产 9M 回报为负</strong></span>
+                            </div>
+                            <div class="gem-manual-step">
+                                <span class="gem-ms-num" style="background:rgba(245,158,11,0.15); color:#fbbf24;">2</span>
+                                <span>配置: <strong>沪深300 60% + 黄金ETF 40%</strong></span>
+                            </div>
+                            <div class="gem-manual-step">
+                                <span class="gem-ms-num" style="background:rgba(245,158,11,0.15); color:#fbbf24;">3</span>
+                                <span>此为最后防线, 极端市场环境下的保底方案</span>
+                            </div>
+                            <div class="gem-manual-step">
+                                <span class="gem-ms-num" style="background:rgba(245,158,11,0.15); color:#fbbf24;">4</span>
+                                <span>每月复查: 待任一资产动量转正后切回 BUY</span>
+                            </div>
+                            <div class="gem-manual-step">
+                                <span class="gem-ms-num" style="background:rgba(245,158,11,0.15); color:#fbbf24;">5</span>
+                                <span>10年回测中触发次数: <strong>约 2-3 次</strong></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4.5.3 月度检查清单 + 纪律守则 -->
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                    <!-- 左: 月度清单 -->
+                    <div class="glass-panel" style="padding:22px;">
+                        <h4 style="margin:0 0 14px 0; font-size:0.88rem; color:#38bdf8;">✅ 月末检查清单</h4>
+                        <div class="gem-manual-steps">
+                            <div class="gem-manual-step">
+                                <span class="gem-ms-check">☐</span>
+                                <span>登录 AlphaCore → 策略中心 → 🌐 GEM V3.0</span>
+                            </div>
+                            <div class="gem-manual-step">
+                                <span class="gem-ms-check">☐</span>
+                                <span>点击 「⚡ 加载实时数据」获取最新信号</span>
+                            </div>
+                            <div class="gem-manual-step">
+                                <span class="gem-ms-check">☐</span>
+                                <span>阅读<strong>操作提示面板</strong>: BUY / CASH / 60-40?</span>
+                            </div>
+                            <div class="gem-manual-step">
+                                <span class="gem-ms-check">☐</span>
+                                <span>检查<strong>警告条</strong>: 有无 Whipsaw / AIAE / VolTarget</span>
+                            </div>
+                            <div class="gem-manual-step">
+                                <span class="gem-ms-check">☐</span>
+                                <span>对比当前持仓 vs 目标权重, 判断是否需要调仓</span>
+                            </div>
+                            <div class="gem-manual-step">
+                                <span class="gem-ms-check">☐</span>
+                                <span>如需调仓: 按权重<strong>一次性执行</strong>, 记录成交价格</span>
+                            </div>
+                            <div class="gem-manual-step">
+                                <span class="gem-ms-check">☐</span>
+                                <span>设置下月末日历提醒, 然后<strong>关闭页面</strong></span>
+                            </div>
+                        </div>
+                        <div style="margin-top:14px; padding:10px 14px; background:rgba(14,165,233,0.06); border-radius:8px; border-left:3px solid #38bdf8;">
+                            <div style="font-size:0.68rem; color:#94a3b8;">💡 80%的月份检查结果是「无需操作」· 这是正常的</div>
+                        </div>
+                    </div>
+
+                    <!-- 右: 纪律守则 -->
+                    <div class="glass-panel" style="padding:22px;">
+                        <h4 style="margin:0 0 14px 0; font-size:0.88rem; color:#f87171;">🚫 纪律守则</h4>
+                        <div style="display:flex; flex-direction:column; gap:8px;">
+                            <div style="padding:10px 14px; background:rgba(239,68,68,0.06); border-radius:8px; border-left:3px solid #f87171;">
+                                <div style="font-size:0.72rem; font-weight:700; color:#f87171;">❌ 禁止日内追踪</div>
+                                <div style="font-size:0.62rem; color:#94a3b8;">GEM 是月度策略, 每日查看会导致情绪化操作</div>
+                            </div>
+                            <div style="padding:10px 14px; background:rgba(239,68,68,0.06); border-radius:8px; border-left:3px solid #f87171;">
+                                <div style="font-size:0.72rem; font-weight:700; color:#f87171;">❌ 禁止 CASH 期间抄底</div>
+                                <div style="font-size:0.62rem; color:#94a3b8;">绝对动量未通过 = 趋势未确认, 抄底是赌博</div>
+                            </div>
+                            <div style="padding:10px 14px; background:rgba(239,68,68,0.06); border-radius:8px; border-left:3px solid #f87171;">
+                                <div style="font-size:0.72rem; font-weight:700; color:#f87171;">❌ 禁止手动覆盖信号</div>
+                                <div style="font-size:0.62rem; color:#94a3b8;">主观判断会破坏系统性, 信号说什么就做什么</div>
+                            </div>
+                            <div style="padding:10px 14px; background:rgba(16,185,129,0.06); border-radius:8px; border-left:3px solid #34d399;">
+                                <div style="font-size:0.72rem; font-weight:700; color:#34d399;">✅ 坚持月末定期检查</div>
+                                <div style="font-size:0.62rem; color:#94a3b8;">不早不晚, 每月最后一个交易日执行</div>
+                            </div>
+                            <div style="padding:10px 14px; background:rgba(16,185,129,0.06); border-radius:8px; border-left:3px solid #34d399;">
+                                <div style="font-size:0.72rem; font-weight:700; color:#34d399;">✅ 一次性执行, 不分批</div>
+                                <div style="font-size:0.62rem; color:#94a3b8;">动量策略不需要择时, 按权重直接操作</div>
+                            </div>
+                            <div style="padding:10px 14px; background:rgba(16,185,129,0.06); border-radius:8px; border-left:3px solid #34d399;">
+                                <div style="font-size:0.72rem; font-weight:700; color:#34d399;">✅ 信任系统, 忽略噪音</div>
+                                <div style="font-size:0.62rem; color:#94a3b8;">回测 Sharpe 1.42 来自纪律执行, 不是择时能力</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- QDII 特别提醒 -->
+                <div class="glass-panel" style="padding:16px 20px; margin-top:14px; border-color:rgba(245,158,11,0.2);">
+                    <div style="display:flex; align-items:flex-start; gap:12px;">
+                        <span style="font-size:1.3rem; flex-shrink:0;">⚠️</span>
+                        <div>
+                            <div style="font-size:0.78rem; font-weight:700; color:#fbbf24; margin-bottom:4px;">QDII 跨境 ETF 操作提醒</div>
+                            <div style="font-size:0.68rem; color:#94a3b8; line-height:1.7;">
+                                标普500 (513500) / 纳指 (159941) / 日经 (513000) 为 QDII 基金:
+                                <strong style="color:#cbd5e1;">① 存在溢价风险</strong> — 场内价格可能高于净值 3-8%, 系统已通过 QDII 溢价扣除补偿 ·
+                                <strong style="color:#cbd5e1;">② 申赎限制</strong> — 额度不足时可能无法买入, 需提前关注额度公告 ·
+                                <strong style="color:#cbd5e1;">③ 汇率风险</strong> — 人民币升值会侵蚀美元资产收益 ·
+                                <strong style="color:#cbd5e1;">④ 时差注意</strong> — 美股/日股 T+0 成交, 但 QDII 基金 T+2 确认
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -3274,7 +3689,7 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                                 <option value="run-all">🎯 全量运行 (推荐)</option>
                                 <option value="mean-reversion">📐 均值回归策略 V4.2</option>
                                 <option value="dividend-trend">💰 红利趋势策略 V4.0</option>
-                                <option value="momentum">🚀 行业动量轮动 V3.0</option>
+                                <option value="momentum">🚀 行业动量轮动 V3.1</option>
                             </select>
                             <span class="st-data-time" id="st-data-time">等待运行...</span>
                             <button class="st-run-btn" id="st-run-btn" onclick="runStrategy()">🚀 运行策略</button>
@@ -3518,7 +3933,7 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                             <!-- 行业动量 -->
                             <details class="exec-encyclopedia-item glass-panel">
                                 <summary style="padding:14px 20px; cursor:pointer; font-weight:600; color:#fff; font-size:0.9rem; list-style:none; display:flex; align-items:center; justify-content:space-between;">
-                                    <span>🚀 行业动量轮动 V3.0</span>
+                                    <span>🚀 行业动量轮动 V3.1</span>
                                     <span style="font-size:0.75rem; color:var(--text-muted);">三层过滤 · 趋势跟随 ▸</span>
                                 </summary>
                                 <div style="padding:0 20px 20px; display:grid; grid-template-columns:1fr 1fr; gap:16px;">
