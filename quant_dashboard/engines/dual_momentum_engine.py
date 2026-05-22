@@ -818,14 +818,26 @@ def compute_gem_signal(etf_data: dict, risk_free_rate: float = None) -> dict:
                     whipsaw["override"] = False
                     whipsaw["message"] = "延迟确认中, 维持上期信号"
 
-    # ── Step 7: AIAE 约束穿透 ──
+    # ── Step 7: AIAE 约束穿透 V3.1 (R4 比例限仓 / R5 清仓) ──
     aiae_info = {"active": False, "regime": None, "cap": None}
     try:
         from services.cache_service import cache_manager
-        from aiae_params import SUB_STRATEGY_ALLOC
+        from aiae_params import SUB_STRATEGY_ALLOC, REGIME_THRESHOLDS
         aiae_ctx = cache_manager.get_json("aiae_ctx")
         if aiae_ctx and aiae_ctx.get("regime"):
             aiae_regime = aiae_ctx.get("regime", 3)
+            # V3.1 P2-7: 缓存新鲜度保护 (>24h 降级为 R3 中性)
+            try:
+                _ctx_ts = aiae_ctx.get("updated_at") or aiae_ctx.get("ts")
+                if _ctx_ts:
+                    _ctx_age = (time.time() - datetime.fromisoformat(
+                        str(_ctx_ts)).timestamp()) / 3600
+                    if _ctx_age > 24:
+                        logger.warning(
+                            f"aiae_ctx 缓存过期 ({_ctx_age:.0f}h), 降级为 R3")
+                        aiae_regime = 3
+            except Exception:
+                pass
             matrix_pos  = aiae_ctx.get("cap", 55)
             gem_alloc_pct = SUB_STRATEGY_ALLOC.get(aiae_regime, {}).get("gem", 15) / 100.0
             aiae_gem_cap  = int(matrix_pos * gem_alloc_pct)
@@ -835,20 +847,44 @@ def compute_gem_signal(etf_data: dict, risk_free_rate: float = None) -> dict:
                 "matrix_pos": matrix_pos,
                 "gem_alloc": round(gem_alloc_pct * 100),
                 "gem_cap":   aiae_gem_cap,
+                # V3.1: 传递实时观测值供前端操作指引
+                "aiae_v1":       aiae_ctx.get("aiae_v1"),
+                "regime_cn":     aiae_ctx.get("regime_cn", ""),
+                "margin_heat":   aiae_ctx.get("margin_heat"),
+                "slope":         aiae_ctx.get("slope", 0),
+                "slope_dir":     aiae_ctx.get("slope_direction", "flat"),
+                "r4_threshold":  REGIME_THRESHOLDS[2],  # 23
+                "r5_threshold":  REGIME_THRESHOLDS[3],  # 30
             }
 
-            # Ⅳ/Ⅴ级强制防御: 禁止持有权益类
-            if aiae_regime >= 4 and signal_type == "buy":
+            # ── R5 极度过热: 强制清仓权益类 (保留避险资产穿透) ──
+            if aiae_regime >= 5 and signal_type == "buy":
                 if best_primary.get("asset_type") == "equity":
                     selected_code  = GEM_CASH_PROXY["code"]
                     selected_name  = GEM_CASH_PROXY["name"]
                     selected_class = GEM_CASH_PROXY["class"]
                     signal_type    = "cash"
                     adjusted_position = 0
+                    target_weights = {GEM_CASH_PROXY["code"]: 1.0}
                     aiae_info["forced_cash"] = True
-                    aiae_info["reason"] = f"AIAE R{aiae_regime} 强制防御: 禁止持有权益类"
-            # AIAE 仓位约束
-            if adjusted_position > aiae_gem_cap:
+                    aiae_info["reason"] = "AIAE R5 极度过热: 强制清仓权益类"
+                    logger.warning(f"  [AIAE R5] 强制清仓: 权益类 → 银华日利")
+
+            # ── R4 偏热: 比例限仓 (保留持仓但严格压缩) ──
+            elif aiae_regime == 4 and signal_type == "buy":
+                pre_cap_pos = adjusted_position
+                if adjusted_position > aiae_gem_cap:
+                    adjusted_position = aiae_gem_cap
+                    aiae_info["r4_capped"] = True
+                    aiae_info["cap_applied"] = True
+                    aiae_info["pre_cap_pos"] = pre_cap_pos
+                    aiae_info["reason"] = f"AIAE R4 比例限仓: {pre_cap_pos}% → {aiae_gem_cap}%"
+                    logger.info(
+                        f"  [AIAE R4] 比例限仓: {pre_cap_pos}% → {aiae_gem_cap}% "
+                        f"(matrix={matrix_pos}% × gem={round(gem_alloc_pct*100)}%)")
+
+            # ── R1-R3: 正常仓位约束 ──
+            elif adjusted_position > aiae_gem_cap:
                 aiae_info["cap_applied"] = True
                 aiae_info["pre_cap_pos"] = adjusted_position
                 adjusted_position = aiae_gem_cap
@@ -872,6 +908,17 @@ def compute_gem_signal(etf_data: dict, risk_free_rate: float = None) -> dict:
     pre_regime_pos = adjusted_position
     if adjusted_position > regime_cap:
         adjusted_position = regime_cap
+
+    # V3.1 P0-2: 仓位归零安全兜底 (防止 position=0 + signal=buy 矛盾)
+    if adjusted_position <= 0 and signal_type == "buy":
+        signal_type = "cash"
+        selected_code = GEM_CASH_PROXY["code"]
+        selected_name = GEM_CASH_PROXY["name"]
+        selected_class = GEM_CASH_PROXY["class"]
+        target_weights = {GEM_CASH_PROXY["code"]: 1.0}
+        if not aiae_info.get("reason"):
+            aiae_info["reason"] = "仓位归零安全兜底: 自动转为现金"
+        logger.info("  [安全兜底] position=0 → 强制 signal=cash")
 
     # ── Step 9: 多维综合评分 (P6) ──
     score_detail = _compute_composite_score(
@@ -901,6 +948,9 @@ def compute_gem_signal(etf_data: dict, risk_free_rate: float = None) -> dict:
         "whipsaw_mode":   whipsaw["mode"],
         "regime":         regime,
         "market_stress":  market_stress,
+        # V3.1 P2-8: AIAE 审计追踪
+        "aiae_regime":    aiae_info.get("regime"),
+        "aiae_override":  aiae_info.get("reason", ""),
     }
 
     current_month = new_entry["month"]
@@ -967,7 +1017,7 @@ def compute_gem_signal(etf_data: dict, risk_free_rate: float = None) -> dict:
         "selected_code":     selected_code,
         "selected_class":    selected_class,
         "signal_type":       signal_type,
-        "signal_label":      "Top-N持仓" if signal_type == "buy" else ("60/40防御" if signal_type == "fallthrough_6040" else ("股债双杀·全仓现金" if market_stress else "全仓现金")),
+        "signal_label":      (f"R4限仓·{adjusted_position}%" if aiae_info.get("r4_capped") else "Top-N持仓") if signal_type == "buy" else ("60/40防御" if signal_type == "fallthrough_6040" else ("股债双杀·全仓现金" if market_stress else "全仓现金")),
         "total_position":    adjusted_position,
         "target_weights":    {k: round(v * 100, 1) for k, v in target_weights.items()},
         # ── 动量分析 (API 字段保留 12m/6m 命名以兼容前端) ──

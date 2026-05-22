@@ -1615,6 +1615,43 @@ async function fetchAndRenderIntelligenceFeed() {
             if (impact >= 7) impactColor = '#ef4444';
             else if (impact >= 5) impactColor = '#f59e0b';
 
+            // ── V9.1: 智能操作信号推导 ──
+            const text = (ev.title || '') + (ev.summary || '');
+            const scenario = ev.scenario_hint || '';
+            let actionSignal = null; // { icon, label, color, bgColor, borderColor }
+
+            // 1. 风险警示 (最高优先级)
+            if (ev.category === 'risk' || /暴雷|违约|制裁|黑天鹅|暴跌|跌停|熔断|退市|爆仓|危机/.test(text)) {
+                actionSignal = { icon: '🚨', label: '风险警示', color: '#fca5a5', bgColor: 'rgba(239,68,68,0.12)', borderColor: 'rgba(239,68,68,0.25)' };
+            }
+            // 2. 利空回避
+            else if (/减持|下滑|亏损|问询|澄清|负面|大跌|业绩不及|下调|警告/.test(text) && impact >= 5) {
+                actionSignal = { icon: '📉', label: '利空回避', color: '#fb923c', bgColor: 'rgba(249,115,22,0.1)', borderColor: 'rgba(249,115,22,0.2)' };
+            }
+            // 3. 买入信号 (场景匹配)
+            else if (/golden_cross|erp_extreme/.test(scenario)) {
+                actionSignal = { icon: '📈', label: '买入信号', color: '#34d399', bgColor: 'rgba(16,185,129,0.12)', borderColor: 'rgba(16,185,129,0.25)' };
+            }
+            // 4. 利好关注
+            else if (/增持|回购|突破|利好|大涨|涨停|分红|创新高|超预期/.test(text)) {
+                actionSignal = { icon: '🟢', label: '利好关注', color: '#6ee7b7', bgColor: 'rgba(16,185,129,0.08)', borderColor: 'rgba(16,185,129,0.15)' };
+            }
+            // 5. 宏观提示
+            else if (ev.category === 'macro' && impact >= 6) {
+                actionSignal = { icon: '📊', label: '宏观关注', color: '#93c5fd', bgColor: 'rgba(59,130,246,0.08)', borderColor: 'rgba(59,130,246,0.15)' };
+            }
+            // 6. 行业轮动
+            else if (ev.category === 'industry' && /布局|转型|政策|补贴|扶持/.test(text)) {
+                actionSignal = { icon: '🔄', label: '行业轮动', color: '#c4b5fd', bgColor: 'rgba(139,92,246,0.08)', borderColor: 'rgba(139,92,246,0.15)' };
+            }
+
+            const signalHtml = actionSignal
+                ? `<div class="intel-action-signal" style="background:${actionSignal.bgColor}; border-color:${actionSignal.borderColor}; color:${actionSignal.color};">
+                       <span class="intel-signal-icon">${actionSignal.icon}</span>
+                       <span class="intel-signal-label">${actionSignal.label}</span>
+                   </div>`
+                : '';
+
             // 受影响资产标签
             const assets = (ev.affected_assets || []).slice(0, 3);
             const assetHtml = assets.length > 0
@@ -1624,6 +1661,7 @@ async function fetchAndRenderIntelligenceFeed() {
             return `<div class="intel-card ${isCritical ? 'intel-critical' : ''} ${cat.cls}">
                 <div class="intel-card-header">
                     <span class="intel-category ${cat.cls}">${cat.label}</span>
+                    ${signalHtml}
                     <div class="intel-impact-bar">
                         <div class="intel-impact-track"><div class="intel-impact-fill" style="width:${impactPct}%;background:${impactColor}"></div></div>
                         <span class="intel-impact-val" style="color:${impactColor}">${impact}</span>

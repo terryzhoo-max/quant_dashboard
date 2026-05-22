@@ -621,21 +621,31 @@ class AIAEEngine:
 
     # ========== 五档判定层 ==========
 
-    def classify_regime(self, aiae_value: float) -> int:
+    def classify_regime(self, aiae_value: float, prev_regime: int = None) -> int:
         """AIAE值 → 五档状态 (1-5)
         V3.0: 分界线从 aiae_params.REGIME_THRESHOLDS 读取
+        V3.1: 支持迟滞 (prev_regime 非 None 时启用, 防止边界跳变)
         """
-        t = AP.REGIME_THRESHOLDS  # [13, 17, 23, 30]
-        if aiae_value < t[0]:
-            return 1
-        elif aiae_value < t[1]:
-            return 2
-        elif aiae_value < t[2]:
-            return 3
-        elif aiae_value < t[3]:
-            return 4
-        else:
-            return 5
+        t = AP.REGIME_THRESHOLDS  # [12.5, 17, 23, 30]
+        H = getattr(AP, 'REGIME_HYSTERESIS', 0.5)
+
+        # 冷启动 / 首次调用: 直接判定
+        if prev_regime is None:
+            if aiae_value < t[0]: return 1
+            elif aiae_value < t[1]: return 2
+            elif aiae_value < t[2]: return 3
+            elif aiae_value < t[3]: return 4
+            else: return 5
+
+        # 迟滞判定: 升级需 threshold+H, 降级需 threshold-H
+        regime = prev_regime
+        boundaries = [(t[0], 1, 2), (t[1], 2, 3), (t[2], 3, 4), (t[3], 4, 5)]
+        for thresh, lower, upper in boundaries:
+            if regime == lower and aiae_value >= thresh + H:
+                regime = upper
+            elif regime == upper and aiae_value < thresh - H:
+                regime = lower
+        return regime
 
     def compute_slope(self, current: float, previous: float) -> Dict:
         """月环比斜率"""
@@ -1009,8 +1019,18 @@ class AIAEEngine:
             margin_heat = self.compute_margin_heat(margin_data, total_mv)
             aiae_v1 = self.compute_aiae_v1(aiae_simple, self._fund_position, margin_heat)
 
-            # 3. 五档判定
-            regime = self.classify_regime(aiae_v1)
+            # 3. 五档判定 (V3.1: 从月度历史读取 prev_regime 启用迟滞)
+            prev_regime = None
+            try:
+                _hist = self._load_monthly_history()
+                _cur_m = datetime.now().strftime("%Y-%m")
+                for _e in reversed(_hist):
+                    if _e.get("month") != _cur_m and not _e.get("is_seed"):
+                        prev_regime = _e.get("regime")
+                        break
+            except Exception:
+                pass
+            regime = self.classify_regime(aiae_v1, prev_regime)
             regime_info = REGIMES[regime]
 
             # V2.1: 月度历史冷启动修复

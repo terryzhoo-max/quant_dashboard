@@ -63,6 +63,10 @@ REGIME_THRESHOLDS = [12.5, 17, 23, 30]  # [Ⅰ/Ⅱ, Ⅱ/Ⅲ, Ⅲ/Ⅳ, Ⅳ/Ⅴ]
 # 前提约束: BUFFER < min(相邻分界线间距) / 2, 否则缓冲带重叠
 REGIME_SMOOTH_BUFFER = 1.5  # AIAE 百分点
 
+# V3.1: Regime 判定迟滞带 (防止边界微幅波动导致 R3⇌R4 反复跳变)
+# 上行跨越需 threshold + H, 下行回落需 threshold - H
+REGIME_HYSTERESIS = 0.5  # AIAE 百分点
+
 _min_gap = min(REGIME_THRESHOLDS[i+1] - REGIME_THRESHOLDS[i] for i in range(len(REGIME_THRESHOLDS)-1))
 assert REGIME_SMOOTH_BUFFER < _min_gap / 2, \
     f"REGIME_SMOOTH_BUFFER({REGIME_SMOOTH_BUFFER}) 必须 < 最小分界线间距({_min_gap})/2={_min_gap/2}"

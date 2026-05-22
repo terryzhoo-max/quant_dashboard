@@ -3996,6 +3996,31 @@ body.industry-scope .badge-beta {
     align-items: center;
     gap: 8px;
 }
+
+/* V9.1: 操作信号 Badge */
+.intel-action-signal {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 8px;
+    border-radius: var(--radius-pill);
+    border: 1px solid;
+    font-size: 0.58rem;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+    animation: intel-signal-fadein 0.4s ease-out;
+}
+.intel-signal-icon {
+    font-size: 0.62rem;
+}
+.intel-signal-label {
+    font-size: 0.58rem;
+}
+@keyframes intel-signal-fadein {
+    from { opacity: 0; transform: scale(0.85); }
+    to   { opacity: 1; transform: scale(1); }
+}
 /* V9: 分类 badge 胶囊化 */
 .intel-category {
     font-size: 0.58rem;

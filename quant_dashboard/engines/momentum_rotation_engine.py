@@ -361,6 +361,18 @@ def assess_market_environment(hs300_df, etf_data: dict) -> dict:
         aiae_ctx = cache_manager.get_json("aiae_ctx")
         if aiae_ctx and aiae_ctx.get("regime"):
             aiae_regime = aiae_ctx.get("regime", 3)
+            # V3.1 P2-B: 缓存新鲜度保护 (>24h 降级为 R3 中性)
+            try:
+                import time as _time
+                _ts = aiae_ctx.get("updated_at") or aiae_ctx.get("ts")
+                if _ts:
+                    _age = (_time.time() - datetime.fromisoformat(
+                        str(_ts)).timestamp()) / 3600
+                    if _age > 24:
+                        print(f"[动量引擎] aiae_ctx 缓存过期 ({_age:.0f}h), 降级为 R3")
+                        aiae_regime = 3
+            except Exception:
+                pass
             matrix_pos = aiae_ctx.get("cap", 55)
             mom_alloc_pct = SUB_STRATEGY_ALLOC.get(aiae_regime, {}).get("mom", 25) / 100.0
             aiae_mom_cap = int(matrix_pos * mom_alloc_pct)

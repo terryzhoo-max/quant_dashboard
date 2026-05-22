@@ -364,17 +364,46 @@ function _getActionConfig(sigType, ov) {
         var name = _codeName(e[0], null);
         return name + ' ' + e[1] + '%';
     }).join(' · ');
+    var aiae = ov.aiae || {};
+    var rfRate = (ov.risk_free_rate || 1.5).toFixed(1);
+    var bestRet = (ov.best_12m_return || 0).toFixed(1);
+    var aiaeV1 = aiae.aiae_v1 != null ? Number(aiae.aiae_v1).toFixed(1) : '?';
+    var marginHeat = aiae.margin_heat != null ? Number(aiae.margin_heat).toFixed(1) : '?';
+    var r4Thresh = aiae.r4_threshold || 23;
+    var r5Thresh = aiae.r5_threshold || 30;
 
+    // ── R4 比例限仓信号 ──
+    if (sigType === 'buy' && aiae.r4_capped) {
+        var gemCap = aiae.gem_cap || 0;
+        var preCap = aiae.pre_cap_pos || 0;
+        return {
+            badge: '⚠️ R4 限仓信号',
+            title: '持有 ' + (ov.selected_asset || '—') + ' · 仓位压缩至 ' + gemCap + '%',
+            subtitle: 'AIAE R4 偏热 (V1=' + aiaeV1 + '%): 矩阵仓位 ' + (aiae.matrix_pos || 0) + '% × GEM配额 ' + (aiae.gem_alloc || 0) + '% = 上限 ' + gemCap + '%',
+            color: '#fb923c',
+            cardStyle: 'background:linear-gradient(135deg,rgba(249,115,22,0.08),rgba(20,24,34,0.6)); border-color:rgba(249,115,22,0.3);',
+            badgeStyle: 'background:rgba(249,115,22,0.15); border-color:rgba(249,115,22,0.3); color:#fb923c;',
+            steps: [
+                'AIAE R4 比例限仓: 建议仓位 ' + preCap + '% → 压缩至 <strong>' + gemCap + '%</strong>，剩余资金转入银华日利 (511880)',
+                '按目标权重配置: <strong>' + (assetList || '待确认') + '</strong>，严禁超配',
+                '降温触发: AIAE 回落至 <strong>' + (r4Thresh - 2) + '%</strong> 以下 → 解除限仓；升至 <strong>' + r5Thresh + '%+</strong> → 触发 R5 清仓',
+                '月度复查清单: · AIAE 环比斜率 > +1.5pt 需立即减仓 · 融资占比 > 3.0% 需提高警觉 · 当前融资占比: ' + marginHeat + '%',
+            ],
+        };
+    }
+
+    // ── 正常 BUY 信号 (增强版) ──
     if (sigType === 'buy') {
         var steps = [];
-        steps.push('确认 AIAE 主控仓位 ≤ ' + (ov.regime_cap || 70) + '% (当前 Regime: ' + (ov.regime || 'RANGE') + ')');
+        steps.push('确认 AIAE 主控仓位 ≤ ' + (ov.regime_cap || 70) + '% (当前 Regime: ' + (ov.regime || 'RANGE') + ', AIAE R' + (aiae.regime || '?') + ' = ' + aiaeV1 + '%)');
         if (entries.length > 0) {
             steps.push('按目标权重配置: <strong>' + assetList + '</strong>');
         }
         if (ov.vol_scale && ov.vol_scale.active) {
             steps.push('VolTarget 触发缩放 → 实际仓位乘以 ' + ((ov.vol_scale.scale || 1) * 100).toFixed(0) + '%, 剩余配现金');
         }
-        steps.push('设置月度定检提醒 · GEM 为月度调仓策略，避免日内追踪');
+        steps.push('止盈纪律: 9M 回报 > 30% 时考虑部分获利了结，追踪 AIAE 斜率变化');
+        steps.push('月度定检: GEM 为月度调仓策略，每月 1 号复查信号，避免日内追踪');
         return {
             badge: '📈 BUY 买入信号',
             title: '持有 ' + (ov.selected_asset || '—'),
@@ -395,14 +424,52 @@ function _getActionConfig(sigType, ov) {
             steps: [
                 '全部权益类资产 9M 回报为负 → 触发股债双杀防御',
                 '按 60/40 配置: <strong>沪深300 60% + 黄金ETF 40%</strong>',
-                '每月复查: 待动量转正后恢复正常配置',
+                '复查清单: · 9M 最优资产回报转正 · 沪深300 站稳 SMA200 · 跳出条件满足 2 项以上方可恢复正常配置',
             ],
         };
     } else {
-        // cash
-        var reason = '绝对动量未通过 (最优资产回报 ≤ 无风险利率 ' + (ov.risk_free_rate || 1.5).toFixed(1) + '%)';
-        if (ov.market_stress) reason = '全市场压力: 所有资产回报为负';
-        if (ov.aiae && ov.aiae.forced_cash) reason = ov.aiae.reason || 'AIAE R4/R5 强制防御';
+        // ── CASH 信号 (增强版: 区分触发原因, 提供可观察复查清单) ──
+        var reason, stepsArr;
+
+        if (aiae.forced_cash) {
+            // R5 强制现金
+            reason = aiae.reason || 'AIAE R5 极端过热: 强制清仓权益类';
+            stepsArr = [
+                '清仓所有权益类持仓 → 转入 <strong>银华日利 (511880)</strong> 或活期理财',
+                '严禁抄底: AIAE > ' + r5Thresh + '% 且绝对动量未确认前禁止入场',
+                '复查清单 (至少满足 3 项方可入场): '
+                    + '<br>　① AIAE 月度值回落至 <strong>' + r4Thresh + '%</strong> 以下 (当前: ' + aiaeV1 + '%)'
+                    + '<br>　② 沪深300 价格站稳 200日均线 (SMA200)'
+                    + '<br>　③ 9M 最优资产回报 > Shibor 1Y ' + rfRate + '% (当前: ' + bestRet + '%)'
+                    + '<br>　④ 融资占比回落至 2.0% 以下 (当前: ' + marginHeat + '%)',
+                '操作纪律: 连续 <strong>2 个月</strong>满足上述条件中的 3 项以上再入场，单月触发不作数',
+            ];
+        } else if (ov.market_stress) {
+            // 全市场压力
+            reason = '全市场压力: 所有资产 9M 回报均为负';
+            stepsArr = [
+                '清仓所有权益类持仓 → 转入 <strong>银华日利 (511880)</strong>',
+                '股债双杀环境下严禁抄底，等待市场出清',
+                '复查清单: '
+                    + '<br>　① 9M 最优资产回报转正 (当前: ' + bestRet + '%)'
+                    + '<br>　② 7M 确认窗口回报同步转正'
+                    + '<br>　③ 沪深300 站稳 SMA200 均线',
+                '操作纪律: 连续 2 月绝对动量通过 + 双窗口一致方可入场',
+            ];
+        } else {
+            // 绝对动量未通过
+            reason = '绝对动量未通过 (最优资产 9M 回报 ' + bestRet + '% ≤ Shibor 1Y ' + rfRate + '%)';
+            stepsArr = [
+                '清仓所有权益类持仓 → 转入 <strong>银华日利 (511880)</strong> 或活期理财',
+                '不要抄底: 绝对动量未确认前禁止入场',
+                '复查清单: '
+                    + '<br>　① 9M 最优资产回报 > Shibor 1Y ' + rfRate + '% (当前: ' + bestRet + '%)'
+                    + '<br>　② 7M 确认窗口回报同步转正'
+                    + '<br>　③ 沪深300 站稳 SMA200 均线',
+                '操作纪律: 连续 <strong>2 个月</strong>绝对动量通过 + 双窗口一致方可入场',
+            ];
+        }
+
         return {
             badge: '🔴 CASH 防御信号',
             title: '全仓现金 · 等待动量恢复',
@@ -410,11 +477,7 @@ function _getActionConfig(sigType, ov) {
             color: '#f87171',
             cardStyle: 'background:linear-gradient(135deg,rgba(239,68,68,0.08),rgba(20,24,34,0.6)); border-color:rgba(239,68,68,0.3);',
             badgeStyle: 'background:rgba(239,68,68,0.15); border-color:rgba(239,68,68,0.3); color:#f87171;',
-            steps: [
-                '清仓所有权益类持仓 → 转入 <strong>银华日利 (511880)</strong> 或活期理财',
-                '不要抄底: 绝对动量未确认前禁止入场',
-                '每月复查: 关注 9M 回报转正 + 绝对动量通过',
-            ],
+            steps: stepsArr,
         };
     }
 }
