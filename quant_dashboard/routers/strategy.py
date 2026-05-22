@@ -146,38 +146,54 @@ async def signal_compare():
 
 @router.get("/strategy")
 async def get_strategy():
-    """均值回归策略详情 — V4.2 包装层"""
+    """均值回归策略详情 — V4.2 含缓存优化"""
     from dashboard_modules.run_strategies import wrap_mr_results
-    if cache_manager.get_json("strategy_results", {}).get("mr"):
-        cached = cache_manager.get_json("strategy_results", {}).get("mr")
+    cached = cache_manager.get_json("strategy_results", {}).get("mr")
+    if cached:
         if isinstance(cached, dict) and "status" in cached:
             return cached
         return wrap_mr_results(cached)
     raw = await asyncio.get_running_loop().run_in_executor(executor, run_strategy)
     wrapped = wrap_mr_results(raw)
-    _sr = cache_manager.get_json("strategy_results", {}); _sr["mr"] = wrapped; cache_manager.set_json("strategy_results", _sr)
+    with _STRATEGY_LOCK:
+        _sr = cache_manager.get_json("strategy_results", {})
+        _sr["mr"] = wrapped
+        cache_manager.set_json("strategy_results", _sr, ttl_seconds=86400)
     return wrapped
 
 
 @router.get("/dividend_strategy")
 async def get_dividend_strategy(regime: str = None):
-    """红利增强策略详情 V3.1 · 支持市场状态参数"""
-    if not regime and cache_manager.get_json("strategy_results", {}).get("div"):
-        return cache_manager.get_json("strategy_results", {}).get("div")
+    """红利增强策略详情 V3.1 · 含缓存优化"""
+    if not regime:
+        cached = cache_manager.get_json("strategy_results", {}).get("div")
+        if cached:
+            return cached
     result = await asyncio.get_running_loop().run_in_executor(
         executor, lambda: run_dividend_strategy(regime=regime)
     )
-    if not regime:
-        _sr = cache_manager.get_json("strategy_results", {}); _sr["div"] = result; cache_manager.set_json("strategy_results", _sr)
+    if not regime and isinstance(result, dict) and result.get("status") == "success":
+        with _STRATEGY_LOCK:
+            _sr = cache_manager.get_json("strategy_results", {})
+            _sr["div"] = result
+            cache_manager.set_json("strategy_results", _sr, ttl_seconds=86400)
     return result
 
 
 @router.get("/momentum_strategy")
 async def get_momentum_strategy():
-    """行业动量策略详情"""
-    if cache_manager.get_json("strategy_results", {}).get("mom"):
-        return cache_manager.get_json("strategy_results", {}).get("mom")
-    return await asyncio.get_running_loop().run_in_executor(executor, run_momentum_strategy)
+    """行业动量策略详情 — V3.1 含缓存写回"""
+    cached = cache_manager.get_json("strategy_results", {}).get("mom")
+    if cached:
+        return cached
+    result = await asyncio.get_running_loop().run_in_executor(executor, run_momentum_strategy)
+    # V3.1: 写回缓存，供页面自动加载和后续请求复用
+    if isinstance(result, dict) and result.get("status") == "success":
+        with _STRATEGY_LOCK:
+            _sr = cache_manager.get_json("strategy_results", {})
+            _sr["mom"] = result
+            cache_manager.set_json("strategy_results", _sr, ttl_seconds=86400)
+    return result
 
 
 # ─────────────────────────────────────────────
@@ -196,7 +212,7 @@ def _run_gem_strategy() -> dict:
         with _STRATEGY_LOCK:
             _sr = cache_manager.get_json("strategy_results", {})
             _sr["gem"] = result
-            cache_manager.set_json("strategy_results", _sr)
+            cache_manager.set_json("strategy_results", _sr, ttl_seconds=86400)
         return result
     except Exception as e:
         logger.error(f"GEM Strategy Error: {e}", exc_info=True)
@@ -220,7 +236,7 @@ async def get_gem_strategy_api(refresh: int = 0):
         with _STRATEGY_LOCK:
             _sr = cache_manager.get_json("strategy_results", {})
             _sr.pop("gem", None)
-            cache_manager.set_json("strategy_results", _sr)
+            cache_manager.set_json("strategy_results", _sr, ttl_seconds=86400)
 
     # 优先检查 strategy_results 缓存 (run-all 写入的)
     cached = cache_manager.get_json("strategy_results", {}).get("gem")
@@ -504,8 +520,10 @@ async def run_all_strategies_api(override_cap: int = None):
 
         with _STRATEGY_LOCK:
             _sr = cache_manager.get_json("strategy_results", {})
-            _sr["mr"] = mr_result; _sr["div"] = div_result; _sr["mom"] = mom_result; _sr["gem"] = gem_result
-            cache_manager.set_json("strategy_results", _sr)
+            _sr["mr"] = mr_result; _sr["div"] = div_result; _sr["mom"] = mom_result
+            _sr["gem"] = gem_result; _sr["erp"] = erp_result; _sr["aiae"] = aiae_result
+            _sr["_cached_at"] = _dt.now().isoformat()
+            cache_manager.set_json("strategy_results", _sr, ttl_seconds=86400)  # 24h TTL
 
         # 提取标准化信号
         mr_signals   = _extract_signals_normalized("mr", mr_result)

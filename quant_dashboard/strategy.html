@@ -1657,8 +1657,8 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                     <!-- Regime 大卡 -->
                     <div id="mom-regime-card" class="glass-panel" style="padding:22px; border-color:rgba(251,191,36,0.3); background:linear-gradient(135deg,rgba(251,191,36,0.06),rgba(20,24,34,0.5)); position:relative; overflow:hidden;">
                         <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:1px;">Market Regime</div>
-                        <div id="mom-regime-label" style="font-size:1.6rem; font-weight:900; color:#fbbf24; margin-bottom:4px;">⏳</div>
-                        <div id="mom-regime-strategy" style="font-size:0.82rem; color:var(--text-muted);">切换Tab后自动运行</div>
+                        <div id="mom-regime-label" style="font-size:1.6rem; font-weight:900; color:#fbbf24; margin-bottom:4px;">—</div>
+                        <div id="mom-regime-strategy" style="font-size:0.82rem; color:var(--text-muted);">等待运行</div>
                         <div id="mom-regime-trend" style="font-size:0.72rem; color:var(--text-muted); margin-top:8px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.06);">—</div>
                         <!-- 背景装饰 -->
                         <div style="position:absolute; top:-20px; right:-20px; font-size:4rem; opacity:0.05; pointer-events:none;" id="mom-regime-icon-bg">🟡</div>
@@ -2162,7 +2162,7 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                 <span class="zone-icon">📚</span>
                 <div>
                     <div class="zone-title">ZONE 3 · 研究与实操归档</div>
-                    <div class="zone-sub">回测控制台 · 5步SOP手册 · 参数优化 · 点击展开</div>
+                    <div class="zone-sub">回测控制台 · 参数优化 · 自选扩池 · 点击展开</div>
                 </div>
             </div>
 
@@ -2368,82 +2368,6 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
             </section>
 
                 </div><!-- /accordion: optimizer -->
-            </section>
-
-            <!-- SOP accordion -->
-            <section class="st-section" style="padding:0; margin-top:12px;">
-                <div class="st-accordion-trigger" onclick="toggleAccordion(this)" style="border-color:rgba(59,130,246,0.2)">
-                    <span class="acc-icon">📋</span>
-                    <span class="acc-title" style="color:#3b82f6">📋 实盘作战手册 V3.1 · 5步SOP</span>
-                    <span class="acc-arrow">›</span>
-                </div>
-                <div style="display:none; padding-top:12px;">
-
-            <!-- 策略作战手册 -->
-            <section class="st-section">
-                <h3>📋 实盘作战手册 (V3.1 · Regime自适应版)</h3>
-                <div class="st-two-col">
-                    <div class="glass-panel" style="padding:24px;">
-                        <h4 style="font-size:0.95rem; color:#fcd34d; margin-bottom:16px;">⚙️ 推荐参数配置</h4>
-                        <table class="st-table">
-                            <thead><tr><th>参数</th><th>推荐值</th><th>依据</th></tr></thead>
-                            <tbody>
-                                <tr><td>Top N 选取</td><td style="color:#fcd34d; font-weight:700;">3 只</td><td style="font-size:0.75rem">576组网格搜索最优（Score #1）</td></tr>
-                                <tr><td>调仓周期</td><td style="color:#fcd34d; font-weight:700;">5 交易日（周频）</td><td style="font-size:0.75rem">信号捕捉效率最高</td></tr>
-                                <tr><td>动量窗口</td><td style="color:#fcd34d; font-weight:700;">30 日</td><td style="font-size:0.75rem">跨越单月噪声，捕捉趋势</td></tr>
-                                <tr><td>止损线</td><td style="color:#f87171; font-weight:700;">-8%</td><td style="font-size:0.75rem">控单次亏损，回撤优化</td></tr>
-                                <tr><td>权重_短期MOM</td><td style="color:#10b981; font-weight:700;">40%</td><td style="font-size:0.75rem">4因子中权重最高</td></tr>
-                                <tr><td>仓位上限</td><td style="color:#60a5fa; font-weight:700;">85%（牛） / 60%（震荡） / 35%（熊）</td><td style="font-size:0.75rem">三层滤波 + AIAE穿透自适应</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    <div class="glass-panel" style="padding:24px;">
-                        <h4 style="font-size:0.95rem; color:#fcd34d; margin-bottom:16px;">🚦 每周五 15:30 操作 SOP</h4>
-                        <div class="st-risk-list">
-                            <div class="st-risk-item">
-                                <span class="st-risk-icon">1️⃣</span>
-                                <div><strong>市场状态自动识别</strong><p>策略中心→信号评分系统→查看「市场环境实时识别」面板，确认当前BULL/RANGE/BEAR状态及自动匹配参数。</p></div>
-                            </div>
-                            <div class="st-risk-item">
-                                <span class="st-risk-icon">2️⃣</span>
-                                <div><strong>持仓硬止损扫描</strong><p>任何持仓浮亏达止损线？BULL/RANGE→-8%立清；BEAR→-6%立清；不等调仓日。</p></div>
-                            </div>
-                            <div class="st-risk-item">
-                                <span class="st-risk-icon">3️⃣</span>
-                                <div><strong>运行动量评分引擎</strong><p>策略执行结果→行业动量轮动V2.0→获取最新Top3复合因子排名及评分。</p></div>
-                            </div>
-                            <div class="st-risk-item">
-                                <span class="st-risk-icon">4️⃣</span>
-                                <div><strong>信号评分验证</strong><p>将Top候选填入信号评分计算器，确认综合评分≥当前状态门槛（BULL≥65/RANGE≥68/BEAR≥75）。</p></div>
-                            </div>
-                            <div class="st-risk-item">
-                                <span class="st-risk-icon">5️⃣</span>
-                                <div><strong>次周一挂单执行</strong><p>9:25集合竞价结束后限价单换仓，误差≤0.2%。记录：状态快照+评分+执行价。</p></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <!-- 三层过滤 -->
-                <div class="glass-panel" style="padding:24px; margin-top:16px;">
-                    <h4 style="font-size:0.95rem; color:#fff; margin-bottom:16px;">🛡️ 三层市场过滤 · 自适应仓位系数</h4>
-                    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:20px;">
-                        <div style="background:rgba(16,185,129,0.05); border:1px solid rgba(16,185,129,0.2); border-radius:10px; padding:16px;">
-                            <div style="font-weight:700; color:#10b981; margin-bottom:8px;">🟢 BULL 牛市 (系数×1.0)</div>
-                            <div style="font-size:0.78rem; color:var(--text-muted); line-height:1.6;">CSI300 站上MA120 且 MA120向上 → 仓位上限85%（受AIAE总量约束）</div>
-                        </div>
-                        <div style="background:rgba(251,191,36,0.05); border:1px solid rgba(251,191,36,0.2); border-radius:10px; padding:16px;">
-                            <div style="font-weight:700; color:#fbbf24; margin-bottom:8px;">🟡 RANGE 震荡 (系数×0.7)</div>
-                            <div style="font-size:0.78rem; color:var(--text-muted); line-height:1.6;">站上均线但MA120走平/下行 → 仓位压缩至60%</div>
-                        </div>
-                        <div style="background:rgba(239,68,68,0.05); border:1px solid rgba(239,68,68,0.2); border-radius:10px; padding:16px;">
-                            <div style="font-weight:700; color:#f87171; margin-bottom:8px;">🔴 BEAR 熊市 (系数×0.5)</div>
-                            <div style="font-size:0.78rem; color:var(--text-muted); line-height:1.6;">跌破MA120 → 仓位压缩至35%，优先防守</div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-                </div><!-- /accordion: SOP -->
             </section>
 
             <!-- Custom Pool accordion -->

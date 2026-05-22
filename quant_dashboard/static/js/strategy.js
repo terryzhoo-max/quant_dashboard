@@ -903,8 +903,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (targetId === 'st-erp-timing') setTimeout(() => loadERPTimingData(), 100);
         if (targetId === 'st-aiae-position') setTimeout(() => loadAIAEReport(), 100);
         if (targetId === 'st-gem') setTimeout(() => { if (typeof loadGemStrategy === 'function') loadGemStrategy(); }, 100);
-        // V3.1: 动量Tab自动运行策略
-        if (targetId === 'st-momentum') setTimeout(() => autoRunMomentum(), 200);
     });
 });
 
@@ -1159,6 +1157,16 @@ function renderExecutionDashboard(data, helpers) {
     // --- Zone 6: 规则百科 ---
     const zone6 = document.getElementById('exec-zone6');
     if (zone6) zone6.style.display = 'block';
+
+    // --- V3.1: 联动填充 ZONE 1 动量仪表盘 ---
+    if (data.strategies?.mom) {
+        try {
+            renderMomentumResults(data.strategies.mom, helpers);
+            console.log('[run-all] ZONE 1 动量仪表盘已联动填充');
+        } catch (e) {
+            console.warn('[run-all] 动量仪表盘联动失败:', e);
+        }
+    }
 }
 
 // ====== 仪表盘渲染 ======
@@ -1620,49 +1628,6 @@ function getScoreColor(score) {
     if (score >= 75) return '#3b82f6';
     if (score >= 60) return '#f59e0b';
     return '#94a3b8';
-}
-
-// ====== V3.1 动量Tab自动运行 ======
-let _momAutoRunning = false;
-let _momLastRunTs = 0;
-
-async function autoRunMomentum() {
-    // 防重复：60秒内不重复请求
-    if (_momAutoRunning) return;
-    if (Date.now() - _momLastRunTs < 60000) {
-        console.log('[动量] 60s内已运行，跳过自动刷新');
-        return;
-    }
-    _momAutoRunning = true;
-
-    const safelySetText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
-    const safelySetHTML = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
-
-    // 显示加载状态
-    safelySetHTML('mom-regime-label', '<span style="animation:momPulseDot 1.5s ease infinite;display:inline-block;">⏳</span>');
-    safelySetText('mom-regime-strategy', '正在自动运行策略...');
-
-    try {
-        const resp = await fetch(`${API_URL}/api/v1/momentum_strategy`);
-        const json = await resp.json();
-        if (json.status !== 'success') throw new Error(json.message || '策略执行失败');
-
-        const timeEl = document.getElementById('st-data-time');
-        if (timeEl && json.timestamp) timeEl.textContent = `数据截至 ${json.timestamp.substring(0, 16).replace('T', ' ')}`;
-
-        renderMomentumResults(json.data, { safelySetText, safelySetHTML });
-
-        const momResults = document.getElementById('st-results-mom');
-        if (momResults) momResults.style.display = 'block';
-
-        _momLastRunTs = Date.now();
-        console.log('[动量] 自动运行完成');
-    } catch (err) {
-        safelySetText('mom-regime-strategy', `⚠️ 自动运行失败: ${err.message}`);
-        console.error('[动量] 自动运行失败:', err);
-    } finally {
-        _momAutoRunning = false;
-    }
 }
 
 // ====== 动量轮动结果渲染 V3.1 ======
@@ -2412,7 +2377,31 @@ function updateAssetRules() {
 }
 
 // 页面加载时初始化
-document.addEventListener('DOMContentLoaded', () => { updateAssetRules(); });
+document.addEventListener('DOMContentLoaded', () => {
+    updateAssetRules();
+
+    // V3.1: 页面打开自动加载动量仪表盘 (读取后端缓存, 有则秒返回)
+    (async function autoLoadMomDashboard() {
+        try {
+            const resp = await fetch(`${API_URL}/api/v1/momentum_strategy`);
+            const json = await resp.json();
+            if (json.status === 'success' && json.data) {
+                const safelySetText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+                const safelySetHTML = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+                renderMomentumResults(json.data, { safelySetText, safelySetHTML });
+                // 更新时间戳
+                const timeEl = document.getElementById('st-data-time');
+                if (timeEl && json.timestamp) {
+                    timeEl.textContent = `数据截至 ${json.timestamp.substring(0, 16).replace('T', ' ')} (缓存)`;
+                }
+                console.log('[auto-load] ZONE 1 动量仪表盘已从缓存填充');
+            }
+        } catch (e) {
+            // 静默失败 — 首次无缓存时不干扰用户
+            console.log('[auto-load] 无缓存数据, 等待手动运行策略');
+        }
+    })();
+});
 
 // ====== ERP择时引擎 V2.0 · 前端渲染模块 ======
 
