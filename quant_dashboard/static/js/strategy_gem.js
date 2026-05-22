@@ -203,42 +203,108 @@ function _renderAssetTable(signals) {
     if (!tbody) return;
 
     if (!signals.length) {
-        tbody.innerHTML = '<tr><td colspan="12" style="text-align:center; color:#64748b;">无数据</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; color:#64748b;">无数据</td></tr>';
         return;
     }
 
+    // 找到入选/未入选分界 (有权重的资产)
+    var selectedCount = signals.filter(function(s) { return (s.target_weight || 0) > 0 || s.signal === 'buy'; }).length;
+
     tbody.innerHTML = signals.map(function(s, i) {
         var isBuy = s.signal === 'buy';
-        var rowBg = isBuy ? 'background:rgba(16,185,129,0.04);' : '';
-        var rankColor = i < 2 ? '#fbbf24' : '#64748b';
-
-        var sigBadge = isBuy
-            ? '<span class="st-signal-tag st-tag-buy">● BUY</span>'
-            : (s.signal === 'cash'
-                ? '<span class="st-signal-tag st-tag-sell">◆ CASH</span>'
-                : '<span class="st-signal-tag st-tag-hold">○ HOLD</span>');
-
-        var mkt = s.market === 'CN' ? '🇨🇳' : (s.market === 'US' ? '🇺🇸' : (s.market === 'JP' ? '🇯🇵' : '🏳️'));
-        var ret9m = (s.return_12m || 0);
-        var ret7m = s.return_6m != null ? s.return_6m : 0;
-        var retColor = function(v) { return v > 0 ? '#34d399' : (v < 0 ? '#f87171' : '#94a3b8'); };
-        var haircut = s.qdii_haircut || 0;
+        var isCash = s.signal === 'cash';
         var weight = s.target_weight || 0;
+        var isSelected = weight > 0 || isBuy;
 
-        return '<tr style="' + rowBg + '">' +
-            '<td style="font-weight:800; color:' + rankColor + ';">' + (i + 1) + '</td>' +
-            '<td style="font-family:\'Outfit\',monospace; font-size:0.75rem; color:#94a3b8;">' + ((s.ts_code || '').split('.')[0]) + '</td>' +
-            '<td style="font-weight:600; color:#e2e8f0;">' + (s.name || '') + '</td>' +
-            '<td style="font-size:0.75rem;">' + mkt + '</td>' +
-            '<td style="color:' + retColor(ret9m) + '; font-weight:700;">' + ret9m.toFixed(1) + '%</td>' +
-            '<td style="color:' + retColor(ret7m) + '; font-size:0.78rem;">' + ret7m.toFixed(1) + '%</td>' +
-            '<td style="color:#38bdf8; font-weight:600;">' + (s.sharpe || 0).toFixed(2) + '</td>' +
-            '<td style="color:#94a3b8;">' + (s.vol_ann || 0).toFixed(1) + '%</td>' +
-            '<td style="color:#f87171;">' + (s.mdd || 0).toFixed(1) + '%</td>' +
-            '<td style="color:' + (haircut > 0 ? '#fb923c' : '#475569') + '; font-size:0.75rem;">' + (haircut > 0 ? '-' + haircut.toFixed(1) + '%' : '—') + '</td>' +
-            '<td>' + sigBadge + '</td>' +
-            '<td style="font-weight:700; color:' + (weight > 0 ? '#38bdf8' : '#475569') + ';">' + (weight > 0 ? weight.toFixed(1) + '%' : '—') + '</td>' +
-        '</tr>';
+        // 行样式: 入选资产发光, 现金信号高亮, 候选资产暗淡
+        var rowStyle = '';
+        if (isBuy && weight > 0) {
+            rowStyle = 'background:linear-gradient(90deg,rgba(16,185,129,0.08),rgba(16,185,129,0.02)); border-left:3px solid #10b981;';
+        } else if (isBuy) {
+            rowStyle = 'background:rgba(16,185,129,0.04);';
+        } else if (isCash) {
+            rowStyle = 'background:rgba(239,68,68,0.03);';
+        }
+
+        // 排名: 金牌前2, 银色其余
+        var rankColor = i < 2 ? '#fbbf24' : '#64748b';
+        var rankIcon = i === 0 ? '🥇' : (i === 1 ? '🥈' : (i + 1));
+
+        // 标的列: 合并 名称 + 代码 + 国旗
+        var code = (s.ts_code || '').split('.')[0];
+        var mktFlag = s.market === 'CN' ? '🇨🇳' : (s.market === 'US' ? '🇺🇸' : (s.market === 'JP' ? '🇯🇵' : '🏳️'));
+        var nameCell = '<div style="display:flex; align-items:center; gap:8px;">' +
+            '<span style="font-size:0.85rem;">' + mktFlag + '</span>' +
+            '<div>' +
+                '<div style="font-weight:600; color:' + (isSelected ? '#f0f4f8' : '#94a3b8') + '; font-size:0.82rem; line-height:1.3;">' + (s.name || '') + '</div>' +
+                '<div style="font-family:\'Outfit\',monospace; font-size:0.68rem; color:#64748b;">' + code + '</div>' +
+            '</div>' +
+        '</div>';
+
+        // 回报: 条件着色
+        var ret9m = s.return_12m || 0;
+        var ret7m = s.return_6m != null ? s.return_6m : 0;
+        var retColor = function(v) { return v > 5 ? '#34d399' : (v > 0 ? '#6ee7b7' : (v < -5 ? '#f87171' : (v < 0 ? '#fca5a5' : '#94a3b8'))); };
+
+        // Sharpe: 条件着色
+        var sharpe = s.sharpe || 0;
+        var sharpeColor = sharpe >= 1.5 ? '#34d399' : (sharpe >= 0.8 ? '#38bdf8' : (sharpe >= 0.3 ? '#fbbf24' : '#f87171'));
+
+        // 波动率: 高波动警告
+        var vol = s.vol_ann || 0;
+        var volColor = vol > 30 ? '#f87171' : (vol > 20 ? '#fbbf24' : '#94a3b8');
+
+        // MDD: 梯度着色
+        var mdd = s.mdd || 0;
+        var mddColor = mdd < -20 ? '#ef4444' : (mdd < -10 ? '#f87171' : (mdd < -5 ? '#fbbf24' : '#94a3b8'));
+
+        // QDII
+        var haircut = s.qdii_haircut || 0;
+        var qdiiCell = haircut > 0
+            ? '<span style="color:#fb923c; font-weight:600;">-' + haircut.toFixed(1) + '%</span>'
+            : '<span style="color:#475569;">—</span>';
+
+        // 信号: 增强视觉
+        var sigBadge;
+        if (isBuy) {
+            sigBadge = '<span style="display:inline-flex; align-items:center; gap:3px; padding:3px 10px; border-radius:20px; background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.3); color:#34d399; font-weight:800; font-size:0.72rem; letter-spacing:0.5px;">● BUY</span>';
+        } else if (isCash) {
+            sigBadge = '<span style="display:inline-flex; align-items:center; gap:3px; padding:3px 10px; border-radius:20px; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.25); color:#f87171; font-weight:700; font-size:0.72rem;">◆ CASH</span>';
+        } else {
+            sigBadge = '<span style="display:inline-flex; align-items:center; gap:3px; padding:3px 10px; border-radius:20px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); color:#64748b; font-size:0.72rem;">○ HOLD</span>';
+        }
+
+        // 权重: 有权重显示mini bar
+        var weightCell;
+        if (weight > 0) {
+            weightCell = '<div style="display:flex; align-items:center; gap:6px; justify-content:center;">' +
+                '<div style="width:40px; height:6px; background:rgba(255,255,255,0.06); border-radius:3px; overflow:hidden;">' +
+                    '<div style="height:100%; width:' + Math.min(weight * 2, 100) + '%; background:linear-gradient(90deg,#38bdf8,#6366f1); border-radius:3px;"></div>' +
+                '</div>' +
+                '<span style="font-weight:800; color:#38bdf8; font-size:0.82rem;">' + weight.toFixed(1) + '%</span>' +
+            '</div>';
+        } else {
+            weightCell = '<span style="color:#475569;">—</span>';
+        }
+
+        // 分隔线: 入选资产和候选资产之间
+        var separator = '';
+        if (selectedCount > 0 && i === selectedCount - 1 && i < signals.length - 1) {
+            separator = '<tr><td colspan="10" style="padding:0; height:2px; background:linear-gradient(90deg,transparent,rgba(99,102,241,0.3),transparent);"></td></tr>';
+        }
+
+        return '<tr style="' + rowStyle + '">' +
+            '<td style="text-align:center; font-weight:800; color:' + rankColor + '; font-size:0.85rem;">' + rankIcon + '</td>' +
+            '<td>' + nameCell + '</td>' +
+            '<td style="text-align:center; color:' + retColor(ret9m) + '; font-weight:700;">' + ret9m.toFixed(1) + '%</td>' +
+            '<td style="text-align:center; color:' + retColor(ret7m) + '; font-size:0.82rem;">' + ret7m.toFixed(1) + '%</td>' +
+            '<td style="text-align:center; color:' + sharpeColor + '; font-weight:700;">' + sharpe.toFixed(2) + '</td>' +
+            '<td style="text-align:center; color:' + volColor + ';">' + vol.toFixed(1) + '%</td>' +
+            '<td style="text-align:center; color:' + mddColor + ';">' + mdd.toFixed(1) + '%</td>' +
+            '<td style="text-align:center; font-size:0.78rem;">' + qdiiCell + '</td>' +
+            '<td style="text-align:center;">' + sigBadge + '</td>' +
+            '<td style="text-align:center;">' + weightCell + '</td>' +
+        '</tr>' + separator;
     }).join('');
 }
 

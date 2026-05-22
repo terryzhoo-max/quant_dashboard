@@ -85,16 +85,23 @@
 
         <div class="content pf-content">
 
-            <!-- 标签切换 -->
             <div class="st-tab-bar">
-                <button class="st-tab active" data-report="st-aiae-position">🌡️ AIAE宏观仓位 V3.0</button>
-                <button class="st-tab" data-report="st-erp-timing">⚡ 宏观ERP择时 V2.0</button>
-                <button class="st-tab" data-report="st-mean-reversion">📐 均值回归策略 V4.2</button>
-                <button class="st-tab" data-report="st-dividend-trend">💰 红利趋势策略 V4.0</button>
-                <button class="st-tab" data-report="st-momentum">🚀 行业动量轮动 V3.1</button>
-                <button class="st-tab" data-report="st-gem">🌐 双重动量 GEM V3.0</button>
-                <button class="st-tab" data-report="st-signal-rules">🎯 信号评分系统</button>
-                <button class="st-tab" data-report="st-execution">📊 策略执行结果</button>
+                <!-- 第1行: 宏观决策层 -->
+                <div class="st-tab-group">
+                    <span class="st-tab-group-label">宏观</span>
+                    <button class="st-tab active" data-report="st-aiae-position" data-color="amber">🌡️ AIAE 仓位管控</button>
+                    <button class="st-tab" data-report="st-erp-timing" data-color="violet">⚡ ERP 宏观择时</button>
+                    <button class="st-tab" data-report="st-execution" data-color="blue">📊 策略执行总览</button>
+                </div>
+                <!-- 第2行: 策略执行层 -->
+                <div class="st-tab-group">
+                    <span class="st-tab-group-label">策略</span>
+                    <button class="st-tab" data-report="st-mean-reversion" data-color="green">📐 均值回归</button>
+                    <button class="st-tab" data-report="st-dividend-trend" data-color="rose">💰 红利趋势</button>
+                    <button class="st-tab" data-report="st-momentum" data-color="gold">🚀 动量轮动</button>
+                    <button class="st-tab" data-report="st-gem" data-color="cyan">🌐 GEM 双重动量</button>
+                    <button class="st-tab" data-report="st-signal-rules" data-color="slate">🎯 信号评分</button>
+                </div>
             </div>
 
             <!-- ==================== AIAE 宏观仓位管控 V2.0 ==================== -->
@@ -2637,26 +2644,24 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                 </div>
             </div>
             <section class="st-section">
-                <div class="glass-panel" style="padding:20px;">
-                    <table class="st-table st-full-table" id="gem-asset-table">
+                <div class="glass-panel" style="padding:20px; overflow-x:auto;">
+                    <table class="st-table st-full-table" id="gem-asset-table" style="min-width:720px;">
                         <thead>
                             <tr>
-                                <th>#</th>
-                                <th>代码</th>
-                                <th>名称</th>
-                                <th>市场</th>
-                                <th>9M回报</th>
-                                <th>7M确认</th>
-                                <th>Sharpe</th>
-                                <th>年化波动</th>
-                                <th>MDD</th>
-                                <th>QDII扣除</th>
-                                <th>信号</th>
-                                <th>权重</th>
+                                <th style="width:36px; text-align:center;">#</th>
+                                <th style="min-width:120px;">标的</th>
+                                <th style="text-align:center; color:#34d399;">9M回报</th>
+                                <th style="text-align:center; color:#6ee7b7;">7M确认</th>
+                                <th style="text-align:center; color:#38bdf8;">Sharpe</th>
+                                <th style="text-align:center; color:#94a3b8;">波动率</th>
+                                <th style="text-align:center; color:#f87171;">MDD</th>
+                                <th style="text-align:center; color:#fb923c;">QDII</th>
+                                <th style="text-align:center; min-width:70px;">信号</th>
+                                <th style="text-align:center; min-width:60px; color:#38bdf8;">权重</th>
                             </tr>
                         </thead>
                         <tbody id="gem-asset-tbody">
-                            <tr><td colspan="12" style="text-align:center; color:#64748b;">点击「加载实时数据」查看</td></tr>
+                            <tr><td colspan="10" style="text-align:center; color:#64748b;">点击「加载实时数据」查看</td></tr>
                         </tbody>
                     </table>
                 </div>

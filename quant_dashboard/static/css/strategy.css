@@ -2,43 +2,89 @@
    AlphaCore · 策略中心页面专用样式
    ================================================ */
 
-/* ====== 策略标签切换（复用portfolio框架） ====== */
+/* ====== 策略标签切换 · 双行分组架构 ====== */
 .st-tab-bar {
     display: flex;
-    gap: 8px;
-    padding: 4px;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
     background: rgba(0, 0, 0, 0.3);
     border-radius: 14px;
     border: 1px solid rgba(255, 255, 255, 0.06);
-    margin-bottom: 8px;
+    margin-bottom: 10px;
+}
+
+.st-tab-group {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.st-tab-group-label {
+    font-size: 0.62rem;
+    font-weight: 700;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    padding: 0 8px;
+    white-space: nowrap;
+    min-width: 52px;
+    text-align: center;
+    user-select: none;
 }
 
 .st-tab {
     flex: 1;
-    padding: 14px 20px;
+    padding: 10px 14px;
     background: transparent;
     border: none;
-    border-radius: 10px;
+    border-left: 3px solid transparent;
+    border-radius: 8px;
     color: var(--text-muted);
-    font-size: 0.92rem;
+    font-size: 0.82rem;
     font-weight: 600;
     font-family: inherit;
     cursor: pointer;
     transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     white-space: nowrap;
+    position: relative;
 }
 
 .st-tab:hover {
     color: #e2e8f0;
-    background: rgba(255, 255, 255, 0.04);
+    background: rgba(255, 255, 255, 0.05);
+    transform: translateY(-1px);
 }
 
 .st-tab.active {
-    background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(59, 130, 246, 0.12));
     color: #fff;
-    box-shadow: 0 4px 16px rgba(16, 185, 129, 0.15);
-    border: 1px solid rgba(16, 185, 129, 0.2);
+    font-weight: 700;
 }
+
+/* ── 品牌色系统: hover + active ── */
+.st-tab[data-color="amber"]:hover    { border-left-color: rgba(245,158,11,0.4); }
+.st-tab[data-color="amber"].active   { border-left-color: #f59e0b; background: linear-gradient(90deg,rgba(245,158,11,0.12),transparent); box-shadow: 0 4px 16px rgba(245,158,11,0.1); }
+
+.st-tab[data-color="violet"]:hover   { border-left-color: rgba(139,92,246,0.4); }
+.st-tab[data-color="violet"].active  { border-left-color: #8b5cf6; background: linear-gradient(90deg,rgba(139,92,246,0.12),transparent); box-shadow: 0 4px 16px rgba(139,92,246,0.1); }
+
+.st-tab[data-color="blue"]:hover     { border-left-color: rgba(59,130,246,0.4); }
+.st-tab[data-color="blue"].active    { border-left-color: #3b82f6; background: linear-gradient(90deg,rgba(59,130,246,0.12),transparent); box-shadow: 0 4px 16px rgba(59,130,246,0.1); }
+
+.st-tab[data-color="green"]:hover    { border-left-color: rgba(16,185,129,0.4); }
+.st-tab[data-color="green"].active   { border-left-color: #10b981; background: linear-gradient(90deg,rgba(16,185,129,0.12),transparent); box-shadow: 0 4px 16px rgba(16,185,129,0.1); }
+
+.st-tab[data-color="rose"]:hover     { border-left-color: rgba(244,63,94,0.4); }
+.st-tab[data-color="rose"].active    { border-left-color: #f43f5e; background: linear-gradient(90deg,rgba(244,63,94,0.12),transparent); box-shadow: 0 4px 16px rgba(244,63,94,0.1); }
+
+.st-tab[data-color="gold"]:hover     { border-left-color: rgba(251,191,36,0.4); }
+.st-tab[data-color="gold"].active    { border-left-color: #fbbf24; background: linear-gradient(90deg,rgba(251,191,36,0.12),transparent); box-shadow: 0 4px 16px rgba(251,191,36,0.1); }
+
+.st-tab[data-color="cyan"]:hover     { border-left-color: rgba(6,182,212,0.4); }
+.st-tab[data-color="cyan"].active    { border-left-color: #06b6d4; background: linear-gradient(90deg,rgba(6,182,212,0.12),transparent); box-shadow: 0 4px 16px rgba(6,182,212,0.1); }
+
+.st-tab[data-color="slate"]:hover    { border-left-color: rgba(148,163,184,0.4); }
+.st-tab[data-color="slate"].active   { border-left-color: #94a3b8; background: linear-gradient(90deg,rgba(148,163,184,0.1),transparent); box-shadow: 0 4px 16px rgba(148,163,184,0.08); }
 
 .st-report {
     display: none;
@@ -899,14 +945,10 @@
     border-bottom: none;
 }
 
-/* ── Tab hover 微光 ── */
-.st-tab:hover {
-    background: rgba(255,255,255,0.06) !important;
-    transform: translateY(-1px);
-}
-.st-tab.active {
-    background: linear-gradient(135deg, rgba(16,185,129,0.22), rgba(59,130,246,0.14)) !important;
-    box-shadow: 0 4px 20px rgba(16,185,129,0.18) !important;
+/* ── Tab 分组行分隔线 ── */
+.st-tab-group + .st-tab-group {
+    border-top: 1px solid rgba(255,255,255,0.04);
+    padding-top: 6px;
 }
 
 /* ── glass-panel 深度感增强 ── */
