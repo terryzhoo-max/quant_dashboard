@@ -210,6 +210,12 @@ function _renderAssetTable(signals) {
     // 找到入选/未入选分界 (有权重的资产)
     var selectedCount = signals.filter(function(s) { return (s.target_weight || 0) > 0 || s.signal === 'buy'; }).length;
 
+    // T+天数: 预计算 (所有 BUY/CASH 行共享同一组合级 T+天数)
+    var _ov = (_gemCache && _gemCache.data && _gemCache.data.market_overview) || {};
+    var _sigDays = _ov.signal_days;
+    var _sigStartDate = _ov.signal_start_date;
+    var _hasDuration = _sigStartDate != null && _sigDays != null;
+
     tbody.innerHTML = signals.map(function(s, i) {
         var isBuy = s.signal === 'buy';
         var isCash = s.signal === 'cash';
@@ -264,12 +270,25 @@ function _renderAssetTable(signals) {
             ? '<span style="color:#fb923c; font-weight:600;">-' + haircut.toFixed(1) + '%</span>'
             : '<span style="color:#475569;">—</span>';
 
-        // 信号: 增强视觉
+        // 信号: 增强视觉 (含 T+天数)
         var sigBadge;
         if (isBuy) {
-            sigBadge = '<span style="display:inline-flex; align-items:center; gap:3px; padding:3px 10px; border-radius:20px; background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.3); color:#34d399; font-weight:800; font-size:0.72rem; letter-spacing:0.5px;">● BUY</span>';
+            // T+天数: 分档着色 — 新信号白, 确认期绿, 成熟期黄, 长期橙
+            var tLabel = '';
+            if (_hasDuration) {
+                var tColor = _sigDays <= 30 ? '#e2e8f0'
+                           : _sigDays <= 90 ? '#34d399'
+                           : _sigDays <= 180 ? '#fbbf24' : '#fb923c';
+                tLabel = ' <span style="color:' + tColor + '; font-weight:600; font-size:0.65rem; margin-left:2px;">T+' + _sigDays + '</span>';
+            }
+            sigBadge = '<span style="display:inline-flex; align-items:center; gap:3px; padding:3px 10px; border-radius:20px; background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.3); color:#34d399; font-weight:800; font-size:0.72rem; letter-spacing:0.5px;">● BUY' + tLabel + '</span>';
         } else if (isCash) {
-            sigBadge = '<span style="display:inline-flex; align-items:center; gap:3px; padding:3px 10px; border-radius:20px; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.25); color:#f87171; font-weight:700; font-size:0.72rem;">◆ CASH</span>';
+            // CASH 也显示防御持续天数
+            var cashTLabel = '';
+            if (_hasDuration && _ov.signal_type === 'cash') {
+                cashTLabel = ' <span style="color:#fca5a5; font-weight:600; font-size:0.65rem; margin-left:2px;">T+' + _sigDays + '</span>';
+            }
+            sigBadge = '<span style="display:inline-flex; align-items:center; gap:3px; padding:3px 10px; border-radius:20px; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.25); color:#f87171; font-weight:700; font-size:0.72rem;">◆ CASH' + cashTLabel + '</span>';
         } else {
             sigBadge = '<span style="display:inline-flex; align-items:center; gap:3px; padding:3px 10px; border-radius:20px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); color:#64748b; font-size:0.72rem;">○ HOLD</span>';
         }
@@ -376,10 +395,14 @@ function _getActionConfig(sigType, ov) {
     if (sigType === 'buy' && aiae.r4_capped) {
         var gemCap = aiae.gem_cap || 0;
         var preCap = aiae.pre_cap_pos || 0;
+        var r4DaysInfo = '';
+        if ((ov.signal_days || 0) > 0 && ov.signal_start_date) {
+            r4DaysInfo = ' · T+' + ov.signal_days + '天 (自' + ov.signal_start_date + ')';
+        }
         return {
             badge: '⚠️ R4 限仓信号',
             title: '持有 ' + (ov.selected_asset || '—') + ' · 仓位压缩至 ' + gemCap + '%',
-            subtitle: 'AIAE R4 偏热 (V1=' + aiaeV1 + '%): 矩阵仓位 ' + (aiae.matrix_pos || 0) + '% × GEM配额 ' + (aiae.gem_alloc || 0) + '% = 上限 ' + gemCap + '%',
+            subtitle: 'AIAE R4 偏热 (V1=' + aiaeV1 + '%): 矩阵仓位 ' + (aiae.matrix_pos || 0) + '% × GEM配额 ' + (aiae.gem_alloc || 0) + '% = 上限 ' + gemCap + '%' + r4DaysInfo,
             color: '#fb923c',
             cardStyle: 'background:linear-gradient(135deg,rgba(249,115,22,0.08),rgba(20,24,34,0.6)); border-color:rgba(249,115,22,0.3);',
             badgeStyle: 'background:rgba(249,115,22,0.15); border-color:rgba(249,115,22,0.3); color:#fb923c;',
@@ -404,10 +427,15 @@ function _getActionConfig(sigType, ov) {
         }
         steps.push('止盈纪律: 9M 回报 > 30% 时考虑部分获利了结，追踪 AIAE 斜率变化');
         steps.push('月度定检: GEM 为月度调仓策略，每月 1 号复查信号，避免日内追踪');
+        var sigDaysInfo = '';
+        if (ov.signal_start_date != null && ov.signal_days != null) {
+            sigDaysInfo = ' · 信号持续 T+' + ov.signal_days + '天';
+            if (ov.signal_start_date) sigDaysInfo += ' (自' + ov.signal_start_date + ')';
+        }
         return {
             badge: '📈 BUY 买入信号',
             title: '持有 ' + (ov.selected_asset || '—'),
-            subtitle: '总仓位 ' + (ov.total_position || 0) + '% · 综合评分 ' + (ov.composite_score || 0).toFixed(1) + '/100',
+            subtitle: '总仓位 ' + (ov.total_position || 0) + '% · 综合评分 ' + (ov.composite_score || 0).toFixed(1) + '/100' + sigDaysInfo,
             color: '#34d399',
             cardStyle: 'background:linear-gradient(135deg,rgba(16,185,129,0.08),rgba(20,24,34,0.6)); border-color:rgba(16,185,129,0.3);',
             badgeStyle: 'background:rgba(16,185,129,0.15); border-color:rgba(16,185,129,0.3); color:#34d399;',
@@ -470,10 +498,15 @@ function _getActionConfig(sigType, ov) {
             ];
         }
 
+        var cashDaysInfo = '';
+        if (ov.signal_start_date != null && ov.signal_days != null) {
+            cashDaysInfo = ' · 已防御 T+' + ov.signal_days + '天 (自' + ov.signal_start_date + ')';
+        }
+
         return {
             badge: '🔴 CASH 防御信号',
             title: '全仓现金 · 等待动量恢复',
-            subtitle: reason,
+            subtitle: reason + cashDaysInfo,
             color: '#f87171',
             cardStyle: 'background:linear-gradient(135deg,rgba(239,68,68,0.08),rgba(20,24,34,0.6)); border-color:rgba(239,68,68,0.3);',
             badgeStyle: 'background:rgba(239,68,68,0.15); border-color:rgba(239,68,68,0.3); color:#f87171;',

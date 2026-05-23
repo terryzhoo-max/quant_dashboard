@@ -601,6 +601,34 @@ def _detect_whipsaw(history: list) -> dict:
     return {"active": False, "consecutive_changes": changes, "mode": "normal"}
 
 
+def _calc_signal_duration(history: list, current_signal_type: str) -> dict:
+    """计算当前信号的连续持续天数
+
+    回溯 signal_history, 找到最早连续 signal_type 相同的记录,
+    用其 date 计算到今天的自然日天数。
+
+    Returns: {"signal_days": int, "signal_start_date": str|None}
+    """
+    if not history or current_signal_type not in ("buy", "cash", "fallthrough_6040"):
+        return {"signal_days": 0, "signal_start_date": None}
+
+    start_date_str = None
+    for entry in reversed(history):
+        if entry.get("signal_type") == current_signal_type:
+            start_date_str = entry.get("date")
+        else:
+            break
+
+    if start_date_str:
+        try:
+            start_dt = datetime.strptime(start_date_str, "%Y-%m-%d")
+            days = (datetime.now() - start_dt).days
+            return {"signal_days": max(0, days), "signal_start_date": start_date_str}
+        except Exception:
+            pass
+    return {"signal_days": 0, "signal_start_date": None}
+
+
 def compute_gem_signal(etf_data: dict, risk_free_rate: float = None) -> dict:
     """GEM V3.0 核心信号计算
 
@@ -1056,6 +1084,8 @@ def compute_gem_signal(etf_data: dict, risk_free_rate: float = None) -> dict:
         "total_assets":      len(GEM_ASSET_POOL),
         # ── 历史 ──
         "signal_history":    history[-12:],
+        # ── 信号持续天数 (T+N) ──
+        **_calc_signal_duration(history, signal_type),
     }
 
     return {

@@ -867,20 +867,8 @@ body {
     margin-bottom: 10px;
 }
 
-.signal-row {
-    display: grid;
-    grid-template-columns: 20px 56px 1fr auto 8px;
-    align-items: center;
-    gap: 6px;
-    padding: 5px 6px;
-    border-radius: 6px;
-    font-size: 0.78rem;
-    transition: background 0.2s ease;
-}
+/* V10.0: .signal-row 已迁移至 V10.0 加权共振评分区块 (含强度条 grid) */
 
-.signal-row:hover {
-    background: rgba(255, 255, 255, 0.04);
-}
 
 /* 方向色条 — 左侧 2px 边框 */
 .signal-row.sig-dir-up {
@@ -958,6 +946,229 @@ body {
 @keyframes sig-pulse-green {
     0%, 100% { box-shadow: 0 0 4px rgba(16, 185, 129, 0.3); }
     50% { box-shadow: 0 0 10px rgba(16, 185, 129, 0.7); }
+}
+
+/* ====== V10.0: 加权共振评分 新增样式 ====== */
+
+/* 强势看空标签 (V9.0 缺失, V10.0 新增对称看空) */
+.signal-consensus-label.sig-strong-bear {
+    background: rgba(239, 68, 68, 0.22);
+    color: #fca5a5;
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    font-weight: 700;
+    animation: pulse-bear-label 2.5s ease-in-out infinite;
+}
+
+@keyframes pulse-bear-label {
+    0%, 100% { box-shadow: 0 0 4px rgba(239, 68, 68, 0.15); }
+    50% { box-shadow: 0 0 12px rgba(239, 68, 68, 0.35); }
+}
+
+/* V10.0 加权得分数值 */
+.v10-score {
+    font-size: 1.3rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.5px;
+}
+
+/* 置信度 badge */
+.sig-confidence {
+    font-size: 0.58rem;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-left: 6px;
+    letter-spacing: 0.3px;
+    vertical-align: middle;
+}
+
+.sig-conf-high {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--success-light);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.sig-conf-medium {
+    background: rgba(245, 158, 11, 0.12);
+    color: var(--warning-light);
+    border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.sig-conf-low {
+    background: rgba(148, 163, 184, 0.1);
+    color: var(--text-muted);
+    border: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+/* 策略权重 pill (策略名旁) */
+.sig-weight {
+    font-size: 0.55rem;
+    font-weight: 600;
+    padding: 0 4px;
+    border-radius: 3px;
+    background: rgba(59, 130, 246, 0.1);
+    color: rgba(147, 197, 253, 0.7);
+    margin-left: 4px;
+    vertical-align: middle;
+    letter-spacing: 0.2px;
+}
+
+/* V10.0: 策略矩阵行 — 更新 grid 以容纳强度条 */
+.signal-row {
+    display: grid;
+    grid-template-columns: 20px 72px 1fr minmax(80px, 110px) 8px;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 6px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    transition: background 0.2s ease;
+}
+
+.signal-row:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+/* 强度条容器 */
+.sig-strength-wrap {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+}
+
+/* 强度条轨道 (双向, 中心线在50%) */
+.sig-strength-track {
+    position: relative;
+    flex: 1;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 2px;
+    overflow: hidden;
+    min-width: 40px;
+}
+
+/* 中心线 (零点标记) */
+.sig-strength-center {
+    position: absolute;
+    left: 50%;
+    top: -1px;
+    bottom: -1px;
+    width: 1px;
+    background: rgba(255, 255, 255, 0.2);
+    z-index: 2;
+}
+
+/* 强度条本体 */
+.sig-strength-bar {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+    z-index: 1;
+}
+
+/* 右侧条 (正值=看多) */
+.sig-strength-bar.sig-bar-right {
+    left: 50%;
+}
+
+/* 左侧条 (负值=看空) */
+.sig-strength-bar.sig-bar-left {
+    right: 50%;
+}
+
+/* 强度数值 */
+.sig-strength-val {
+    font-size: 0.62rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    min-width: 28px;
+    text-align: right;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* ── V10.0 得分仪表条 ── */
+.v10-score {
+    font-size: 1.4rem;
+    font-weight: 900;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.5px;
+    line-height: 1;
+}
+
+.v10-gauge {
+    display: block;
+    position: relative;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 6px;
+}
+
+.v10-gauge-fill {
+    position: absolute;
+    top: 0; left: 0;
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.4s ease;
+}
+
+.v10-gauge-center {
+    position: absolute;
+    left: 50%;
+    top: -1px;
+    bottom: -1px;
+    width: 1px;
+    background: rgba(255, 255, 255, 0.25);
+    z-index: 2;
+}
+
+/* V10.0 signal-consensus-count 布局 (含 gauge) */
+.signal-consensus-count {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+/* ── 策略行入场动画 ── */
+@keyframes sigRowSlideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.signal-row {
+    animation: sigRowSlideIn 0.3s ease-out both;
+}
+
+/* 看空光晕 (卡片边框 + 呼吸灯) */
+.bear-glow {
+    position: relative;
+    overflow: hidden;
+    border-color: rgba(239, 68, 68, 0.25) !important;
+}
+
+.bear-glow::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: conic-gradient(from 0deg, transparent 0deg, transparent 90deg, rgba(239, 68, 68, 0.15) 180deg, transparent 270deg);
+    animation: rotate 5s linear infinite;
+    z-index: -1;
 }
 
 /* Phase 3: 从内联样式提取的 class */

@@ -14,46 +14,102 @@ function renderSignalCard(signalData) {
     const matrixEl = el('signal-matrix');
     const descEl = el('desc-signal');
 
-    // V9.0: 新结构化数据 (有 strategies 数组)
+    // V10.0: 新结构化数据 (有 strategies 数组 + v10_ 字段)
     if (signalData.strategies && Array.isArray(signalData.strategies)) {
-        // 共振摘要
-        if (consensusCountEl) consensusCountEl.textContent = signalData.consensus || '--';
+        const hasV10 = signalData.v10_score !== undefined;
+
+        // 共振摘要: V10.0 加权得分 + 方向标签 + 置信度
+        if (consensusCountEl) {
+            if (hasV10) {
+                const score = signalData.v10_score;
+                const sign = score >= 0 ? '+' : '';
+                const scoreColor = score > 15 ? '#10b981' : (score < -15 ? '#ef4444' : '#94a3b8');
+                // 得分数值 + 迷你进度条
+                const gaugePct = Math.min(100, Math.max(0, (score + 100) / 2)); // -100→0%, +100→100%
+                const gaugeColor = score > 15 ? 'rgba(16,185,129,0.6)' : (score < -15 ? 'rgba(239,68,68,0.6)' : 'rgba(148,163,184,0.3)');
+                consensusCountEl.innerHTML = `<span class="v10-score" style="color:${scoreColor}">${sign}${score.toFixed(1)}</span>
+                    <span class="v10-gauge"><span class="v10-gauge-fill" style="width:${gaugePct}%;background:${gaugeColor}"></span><span class="v10-gauge-center"></span></span>`;
+            } else {
+                consensusCountEl.textContent = signalData.consensus || '--';
+            }
+        }
         if (consensusLabelEl) {
-            const label = signalData.consensus_label || '同步中';
-            consensusLabelEl.textContent = label;
-            // 状态色
-            const ups = (signalData.consensus || '').match(/(\d+)\/5/);
-            const upCount = ups ? parseInt(ups[1], 10) : 0;
-            consensusLabelEl.className = 'signal-consensus-label ' +
-                (upCount >= 4 ? 'sig-bull' : (upCount >= 3 ? 'sig-mild-bull' : (upCount <= 1 ? 'sig-bear' : 'sig-neutral')));
+            const label = hasV10 ? signalData.v10_label : (signalData.consensus_label || '同步中');
+            const dir = hasV10 ? signalData.v10_direction : 'neutral';
+            const conf = hasV10 ? signalData.v10_confidence : '';
+
+            // V10.0: 五档状态色 (含 strong-bear)
+            let labelClass = 'sig-neutral';
+            if (hasV10) {
+                if (dir === 'bull' && signalData.v10_score >= 30) labelClass = 'sig-bull';
+                else if (dir === 'bull') labelClass = 'sig-mild-bull';
+                else if (dir === 'bear' && signalData.v10_score <= -30) labelClass = 'sig-strong-bear';
+                else if (dir === 'bear') labelClass = 'sig-bear';
+            } else {
+                const ups = (signalData.consensus || '').match(/(\d+)\/5/);
+                const upCount = ups ? parseInt(ups[1], 10) : 0;
+                labelClass = upCount >= 4 ? 'sig-bull' : (upCount >= 3 ? 'sig-mild-bull' : (upCount <= 1 ? 'sig-bear' : 'sig-neutral'));
+            }
+
+            // 方向 emoji
+            const dirEmoji = dir === 'bull' ? '📈' : (dir === 'bear' ? '📉' : '➖');
+            // 置信度 badge
+            const confBadge = conf ? ` <span class="sig-confidence sig-conf-${conf}">${conf === 'high' ? '高' : conf === 'medium' ? '中' : '低'}置信</span>` : '';
+            consensusLabelEl.innerHTML = `${dirEmoji} ${label}${confBadge}`;
+            consensusLabelEl.className = 'signal-consensus-label ' + labelClass;
         }
 
-        // 整体卡片光晕
+        // 整体卡片光晕: V10.0 方向驱动
         if (cardEl) {
-            const st = signalData.status;
-            if (st === 'up') cardEl.classList.add('active-glow');
-            else cardEl.classList.remove('active-glow');
+            const dir = hasV10 ? signalData.v10_direction : signalData.status;
+            cardEl.classList.remove('active-glow', 'bear-glow');
+            if (dir === 'bull' || dir === 'up') cardEl.classList.add('active-glow');
+            else if (dir === 'bear') cardEl.classList.add('bear-glow');
         }
 
-        // 五行策略矩阵
+        // 五行策略矩阵: V10.0 含强度条 + 权重
         if (matrixEl) {
-            matrixEl.innerHTML = signalData.strategies.map(s => {
+            matrixEl.innerHTML = signalData.strategies.map((s, i) => {
                 const dirClass = s.direction === 'up' ? 'sig-dir-up' :
                                  s.direction === 'down' ? 'sig-dir-down' :
                                  s.direction === 'mixed' ? 'sig-dir-mixed' : 'sig-dir-neutral';
-                return `<div class="signal-row ${dirClass}">
+                const strength = s.strength != null ? s.strength : 0;
+                const weight = s.weight != null ? (s.weight * 100).toFixed(0) : '';
+
+                // 强度条: 双向 [-1,+1] → 中心在50%
+                const barPct = Math.abs(strength) * 50;
+                const barDir = strength >= 0 ? 'right' : 'left';
+                const barColor = strength > 0.1 ? '#10b981' : (strength < -0.1 ? '#ef4444' : '#64748b');
+                const strengthLabel = (strength >= 0 ? '+' : '') + strength.toFixed(2);
+
+                // 权重 pill
+                const weightPill = weight ? `<span class="sig-weight">${weight}%</span>` : '';
+
+                return `<div class="signal-row ${dirClass}" style="animation-delay:${i * 40}ms">
                     <span class="sig-icon">${s.icon}</span>
-                    <span class="sig-name">${s.name}</span>
+                    <span class="sig-name">${s.name}${weightPill}</span>
                     <span class="sig-signal">${s.signal}</span>
-                    <span class="sig-metric">${s.metric}</span>
+                    <span class="sig-strength-wrap">
+                        <span class="sig-strength-track">
+                            <span class="sig-strength-center"></span>
+                            <span class="sig-strength-bar sig-bar-${barDir}" style="width:${barPct}%;background:${barColor}"></span>
+                        </span>
+                        <span class="sig-strength-val" style="color:${barColor}">${strengthLabel}</span>
+                    </span>
                     <span class="sig-dot ${dirClass}"></span>
                 </div>`;
             }).join('');
         }
 
-        // 描述行: 共振摘要
+        // 描述行: V10.0 精简格式
         if (descEl) {
-            descEl.textContent = `${signalData.consensus} · ${signalData.consensus_label}`;
+            if (hasV10) {
+                const legacy = signalData.v10_legacy || {};
+                const legacyStr = legacy.ups !== undefined ? ` · (${legacy.ups}↑ ${legacy.downs}↓)` : '';
+                descEl.textContent = `加权共振 ${signalData.v10_label}${legacyStr}`;
+            } else {
+                descEl.textContent = `${signalData.consensus} · ${signalData.consensus_label}`;
+            }
         }
     } else {
         // 降级: 旧格式 (value/trend/status) 兼容渲染
