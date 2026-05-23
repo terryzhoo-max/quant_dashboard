@@ -1,15 +1,21 @@
 #!/bin/bash
 # ============================================================
-#  AlphaCore 一键更新脚本 v1.0
-#  用法: bash /root/update.sh
+#  AlphaCore 一键更新脚本 v2.0
+#  用法: bash /root/quant_dashboard/quant_dashboard/update.sh
 #  说明: 拉取代码 → 重建镜像 → 重启容器 → 健康验证
+#
+#  v2.0 变更 (2026-05-23):
+#    - 移除 DOCKER_BUILDKIT=0 (已废弃)
+#    - 使用 docker build --network=host 解决 DNS 隔离
+#    - 使用 docker compose up -d 替代手动 docker run
+#    - 镜像名统一为 quant_dashboard-quant_dashboard
 # ============================================================
 
 set -e
 
 echo ""
 echo "╔══════════════════════════════════════════════╗"
-echo "║   AlphaCore 一键更新                        ║"
+echo "║   AlphaCore 一键更新 v2.0                    ║"
 echo "╚══════════════════════════════════════════════╝"
 echo ""
 
@@ -28,29 +34,20 @@ echo "✅ 代码已更新: $(git log --oneline -1)"
 
 # ── Step 2: 重建镜像 ──
 echo ""
-echo "⏳ [2/4] 重建 Docker 镜像 (约 2-3 分钟)..."
+echo "⏳ [2/4] 重建 Docker 镜像..."
 cd /root/quant_dashboard/quant_dashboard
-DOCKER_BUILDKIT=0 docker build --no-cache --network host \
-  -t quant_dashboard_quant_dashboard .
+
+# --network=host: 解决 BuildKit bridge 网络 DNS 隔离问题
+# 不加 --no-cache: 利用 Docker 层缓存加速 (requirements.txt 未变时秒级构建)
+docker build --network=host \
+  -t quant_dashboard-quant_dashboard .
 echo "✅ 镜像已重建"
 
 # ── Step 3: 重启容器 ──
 echo ""
 echo "⏳ [3/4] 重启容器..."
 docker rm -f quant_dashboard_app 2>/dev/null || true
-docker run -d \
-  --name quant_dashboard_app \
-  --restart unless-stopped \
-  --network quant_dashboard_default \
-  --dns 8.8.8.8 --dns 223.5.5.5 \
-  -p 8000:8000 \
-  -v /root/quant_dashboard/quant_dashboard/data_lake:/app/data_lake \
-  --env-file /root/quant_dashboard/quant_dashboard/.env \
-  -e REDIS_HOST=redis \
-  -e REDIS_PORT=6379 \
-  -e AC_LOG_FORMAT=console \
-  -e AC_LOG_LEVEL=INFO \
-  quant_dashboard_quant_dashboard
+docker compose up -d
 echo "✅ 容器已重启"
 
 # ── Step 4: 健康验证 ──
