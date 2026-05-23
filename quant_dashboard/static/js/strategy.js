@@ -937,11 +937,11 @@ async function runStrategy() {
             }
             if (progressText) progressText.textContent = text;
         };
-        setProgress(1, '🔄 正在并行拉取4策略数据...');
+        setProgress(1, '🔄 正在并行拉取六策略数据...');
 
         try {
-            const timer2 = setTimeout(() => setProgress(2, '📊 均值回归 + 红利趋势 + 动量轮动 + ERP择时 + AIAE标的池计算中...'), 5000);
-            const timer3 = setTimeout(() => setProgress(3, '🔗 五策略共振分析 + AIAE主控仓位调节中...'), 12000);
+            const timer2 = setTimeout(() => setProgress(2, '📊 MR + DIV + MOM + GEM + ERP + AIAE 六策略计算中...'), 5000);
+            const timer3 = setTimeout(() => setProgress(3, '🔗 六策略共振分析 + AIAE×ERP联合仓位调节中...'), 12000);
 
             const resp = await fetch(`${API_URL}/api/v1/strategy/run-all`);
             const json = await resp.json();
@@ -1123,13 +1123,21 @@ function renderExecutionDashboard(data, helpers) {
     const mrSigs = (data.strategies.mr?.signals || []).length;
     const divSigs = (data.strategies.div?.signals || []).length;
     const momSigs = (data.strategies.mom?.signals || []).length;
+    const gemSigs = (data.strategies.gem?.signals || []).length;
     const erpSigs = (data.strategies.erp?.signals || []).length;
     const aiaeSigs = (data.strategies.aiae_etf?.signals || []).length;
     safelySetText('exec-mr-count', mrSigs);
     safelySetText('exec-div-count', divSigs);
     safelySetText('exec-mom-count', momSigs);
+    safelySetText('exec-gem-count', gemSigs);
     safelySetText('exec-erp-count', erpSigs);
     safelySetText('exec-aiae-count', aiaeSigs);
+
+    // 动态更新执行控制台标的池信号数量
+    const poolEl = document.getElementById('st-pool-summary');
+    if (poolEl) {
+        poolEl.textContent = `均值回归 ${mrSigs}只 · 红利趋势 ${divSigs}只 · 动量轮动 ${momSigs}只 · GEM双动量 ${gemSigs}只 · ERP择时 ${erpSigs}只 · AIAE标的池 ${aiaeSigs}只ETF`;
+    }
 
     // ERP宏观评分徽章 (erpScore 已在上方声明)
     const erpBadge = document.getElementById('erp-macro-score-badge');
@@ -1773,6 +1781,11 @@ function renderMomSmartAlert(ov, data) {
     const xvCount = ov.xv_warnings || 0;
     const buyCount = ov.buy_count || 0;
     const cap = ov.position_cap || 0;
+    const maxHoldDays = ov.max_hold_days || 0;
+    const maxHoldName = ov.max_hold_name || '';
+    const rbDaysAlert = ov.rebalance_days || 10;
+    const holdOverdue = maxHoldDays > rbDaysAlert * 2;
+    const holdWarnSuffix = holdOverdue ? ` ⏱️ ${maxHoldName}已持仓T+${maxHoldDays}天，超建议调仓周期${rbDaysAlert}天的${Math.floor(maxHoldDays/rbDaysAlert)}倍，请审视是否需要轮换。` : '';
 
     let level, icon, title, sub, borderColor;
 
@@ -1783,23 +1796,23 @@ function renderMomSmartAlert(ov, data) {
     } else if (vix >= 30) {
         level = 'danger'; icon = '⚡'; borderColor = '#f87171';
         title = `VIX=${vix.toFixed(1)} 恐慌模式 · 仓位上限压至${cap}%`;
-        sub = `VIX≥30触发Layer2仓位压制，当前仅允许防御型标的。${stopCount > 0 ? `已有${stopCount}只触发累计止损。` : ''}`;
+        sub = `VIX≥30触发Layer2仓位压制，当前仅允许防御型标的。${stopCount > 0 ? `已有${stopCount}只触发累计止损。` : ''}${holdWarnSuffix}`;
     } else if (stopCount > 0) {
         level = 'caution'; icon = '🛡️'; borderColor = '#f59e0b';
         title = `${stopCount}只标的触发累计止损 · 注意仓位控制`;
-        sub = `累计浮亏超过阈值的标的已被清除，建议减仓观望。当前Regime: ${regime}，仓位上限${cap}%。`;
+        sub = `累计浮亏超过阈值的标的已被清除，建议减仓观望。当前Regime: ${regime}，仓位上限${cap}%。${holdWarnSuffix}`;
     } else if (regime === 'BEAR') {
         level = 'warning'; icon = '🔻'; borderColor = '#f59e0b';
         title = 'BEAR防守模式 · SHARPE主导 · 最多3只';
-        sub = `熊市环境下SHARPE因子权重提升至35%，优先选择低波标的。调仓周期拉长至20天，减少摩擦。${xvCount > 0 ? `${xvCount}只标的有交叉验证风险⚠️。` : ''}`;
+        sub = `熊市环境下SHARPE因子权重提升至35%，优先选择低波标的。调仓周期拉长至20天，减少摩擦。${xvCount > 0 ? `${xvCount}只标的有交叉验证风险⚠️。` : ''}${holdWarnSuffix}`;
     } else if (regime === 'BULL' && buyCount >= 3) {
         level = 'ok'; icon = '🚀'; borderColor = '#10b981';
         title = `BULL追强模式 · ${buyCount}只买入信号 · 仓位上限${cap}%`;
-        sub = `MOM_S主导(50%)快速捕捉行业轮动，Top5持仓，3天调仓。${xvCount > 0 ? `注意: ${xvCount}只有均值回归交叉验证警告。` : '信号方向一致，可按评分优先级执行。'}`;
+        sub = `MOM_S主导(50%)快速捕捉行业轮动，Top5持仓，${rbDaysAlert}天调仓。${xvCount > 0 ? `注意: ${xvCount}只有均值回归交叉验证警告。` : '信号方向一致，可按评分优先级执行。'}${holdWarnSuffix}`;
     } else {
         level = 'info'; icon = '📊'; borderColor = '#60a5fa';
         title = `${regime}模式 · ${buyCount}只买入信号 · 仓位上限${cap}%`;
-        sub = `均衡配置中，按综合评分排序执行。${xvCount > 0 ? `${xvCount}只标的有交叉验证标注。` : '当前市场环境正常。'}`;
+        sub = `均衡配置中，按综合评分排序执行。${xvCount > 0 ? `${xvCount}只标的有交叉验证标注。` : '当前市场环境正常。'}${holdWarnSuffix}`;
     }
 
     el.style.display = 'block';
@@ -1852,7 +1865,7 @@ function renderMomActionCards(buySignals, sellSignals) {
                     </div>
                     <div style="text-align:right; flex-shrink:0;">
                         <div style="font-weight:800; color:${momColor}; font-size:0.88rem;">${(s.momentum_pct || 0) > 0 ? '+' : ''}${s.momentum_pct || 0}%</div>
-                        <div style="font-size:0.65rem; color:var(--text-muted);">仓位 ${s.suggested_position || 0}%</div>
+                        <div style="font-size:0.65rem; color:var(--text-muted);">仓位 ${s.suggested_position || 0}%${s.entry_date_fmt ? ' · T+' + (s.hold_days || 0) : ''}</div>
                     </div>
                 </div>`;
             }).join('');
@@ -1903,7 +1916,7 @@ function renderMomentumActionList(containerId, items, type) {
             </div>
             <div class="st-ai-meta">
                 <span class="st-ai-score ${type === 'buy' ? 'st-ai-score-buy' : 'st-ai-score-sell'}">#${s.rank || '-'} ${s.momentum_pct > 0 ? '+' : ''}${s.momentum_pct}%</span>
-                <span class="st-ai-pos">${s.suggested_position > 0 ? s.suggested_position + '%' : '0%'}</span>
+                <span class="st-ai-pos">${s.suggested_position > 0 ? s.suggested_position + '%' : '0%'}${s.entry_date_fmt ? ' T+' + (s.hold_days || 0) : ''}</span>
             </div>
         </div>
     `).join('');
@@ -1930,6 +1943,17 @@ function renderMomentumTable(signals) {
         const rankBg = s.rank <= 5 ? 'rgba(245,158,11,0.15)' : 'transparent';
         const rankColor = s.rank <= 3 ? '#fbbf24' : (s.rank <= 5 ? '#fcd34d' : 'var(--text-muted)');
 
+        // T+持仓天数: Regime 自适应着色 (与 rebalance_days 绑定)
+        let holdLabel = '';
+        if (s.signal === 'buy' && s.entry_date_fmt) {
+            const hd = s.hold_days || 0;
+            const rb = s.rebalance_days || 10;
+            const hColor = hd <= rb ? '#e2e8f0'
+                         : hd <= rb * 2 ? '#34d399'
+                         : hd <= rb * 3 ? '#fbbf24' : '#fb923c';
+            holdLabel = ` <span style="color:${hColor};font-weight:600;font-size:0.65rem;">T+${hd}</span>`;
+        }
+
         return `<tr class="${rowClass}">
             <td style="text-align:center;font-weight:800;color:${rankColor};background:${rankBg};border-radius:8px 0 0 8px;">${s.rank || '-'}</td>
             <td style="font-weight:600;color:#fff;">${s.name}</td>
@@ -1940,7 +1964,7 @@ function renderMomentumTable(signals) {
             <td style="color:${volRatioColor}">${s.volume_ratio}x</td>
             <td style="color:var(--text-muted)">${s.hist_vol}%</td>
             <td style="color:${rsiColor}">${s.rsi}</td>
-            <td>${signalTag}</td>
+            <td>${signalTag}${holdLabel}</td>
             <td style="font-weight:600">${s.suggested_position > 0 ? s.suggested_position + '%' : '—'}</td>
         </tr>`;
     }).join('');

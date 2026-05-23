@@ -407,7 +407,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 # ── Batch 5: 静态资源缓存策略 ──
 _CACHE_LONG  = "public, max-age=2592000"   # 30天: 字体
-_CACHE_SHORT = "public, max-age=86400"     # 1天: JS/CSS
+_CACHE_SHORT = "no-cache"                  # JS/CSS: 每次验证 (304加速)
 _CACHE_NONE  = "no-cache"                  # HTML: 每次验证
 
 def _get_cache_control(path: str) -> str:

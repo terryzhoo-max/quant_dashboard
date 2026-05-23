@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AlphaCore · 策略中心</title>    <link rel="stylesheet" href="./static/css/fonts.css?v=1">
 
-    <link rel="stylesheet" href="./static/css/styles.css?v=12">
-    <link rel="stylesheet" href="./static/css/visual_excellence.css?v=3">
-    <link rel="stylesheet" href="./static/css/strategy.css?v=4">
+    <link rel="stylesheet" href="./static/css/styles.css">
+    <link rel="stylesheet" href="./static/css/visual_excellence.css">
+    <link rel="stylesheet" href="./static/css/strategy.css">
     <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -3610,15 +3610,15 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                 <section class="st-section">
                     <div class="st-run-bar glass-panel">
                         <div class="st-run-info">
-                            <h3 style="margin:0;font-size:1.1rem;color:#fff;">📊 量化五策略 · 实时执行引擎 <span style="font-size:0.7rem;background:linear-gradient(135deg,#f59e0b,#d97706);padding:2px 8px;border-radius:6px;margin-left:8px;">V4.0</span></h3>
-                            <p style="margin:4px 0 0;font-size:0.82rem;color:var(--text-muted);">均值回归 35只 / 红利趋势 8只 / 动量轮动 20只 / ERP择时 4只 / 🌡️ AIAE标的池 8只ETF | 五策略共振 · AIAE主控仓位</p>
+                            <h3 style="margin:0;font-size:1.1rem;color:#fff;">📊 量化六策略 · 实时执行引擎 <span style="font-size:0.7rem;background:linear-gradient(135deg,#f59e0b,#d97706);padding:2px 8px;border-radius:6px;margin-left:8px;">V5.0</span></h3>
+                            <p id="st-pool-summary" style="margin:4px 0 0;font-size:0.82rem;color:var(--text-muted);">均值回归 37只 · 红利趋势 8只 · 动量轮动 25只 · GEM双动量 7只 · ERP择时 4只 · AIAE标的池 8只ETF</p>
                         </div>
                         <div class="st-run-actions">
                             <select id="st-strategy-select" class="st-select" style="background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:8px 12px; margin-right:12px; outline:none; font-family:inherit;">
-                                <option value="run-all">🎯 全量运行 (推荐)</option>
-                                <option value="mean-reversion">📐 均值回归策略 V4.2</option>
-                                <option value="dividend-trend">💰 红利趋势策略 V4.0</option>
-                                <option value="momentum">🚀 行业动量轮动 V3.1</option>
+                                <option value="run-all">🎯 全量运行 · 六策略并行 (推荐)</option>
+                                <option value="mean-reversion">📐 均值回归 V4.2 · 37只</option>
+                                <option value="dividend-trend">💰 红利趋势 V4.0 · 8只</option>
+                                <option value="momentum">🚀 动量轮动 V3.1 · 25只</option>
                             </select>
                             <span class="st-data-time" id="st-data-time">等待运行...</span>
                             <button class="st-run-btn" id="st-run-btn" onclick="runStrategy()">🚀 运行策略</button>
@@ -3790,7 +3790,7 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                 <!-- ====== Zone 5: 信号共振分析 ====== -->
                 <div id="exec-zone5" style="display:none;">
                     <section class="st-section">
-                        <h3>🔗 五策略信号共振 <span style="font-size:0.7rem;color:var(--text-muted);font-weight:400;">MR × DIV × MOM × ERP × AIAE</span></h3>
+                        <h3>🔗 六策略信号共振 <span style="font-size:0.7rem;color:var(--text-muted);font-weight:400;">MR × DIV × MOM × GEM × ERP × AIAE</span></h3>
                         <div class="resonance-guide">
                             💡 共振 = ≥2个策略同方向信号 &nbsp;|&nbsp; <span style="color:#10b981">🟢 强买 = 2+策略看涨</span> &nbsp;|&nbsp; <span style="color:#ef4444">🔴 强卖 = 2+策略看跌</span> &nbsp;|&nbsp; <span style="color:#f59e0b">⚠️ 分歧 = 同时有买+卖信号</span>
                         </div>
@@ -4301,11 +4301,12 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
 
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
     <script>window.echarts || document.write('<script src="./static/vendor/echarts.min.js"><\/script>')</script>
-    <script src="./static/js/alphacore_utils.js?v=2"></script>
+    <script src="./static/js/alphacore_utils.js"></script>
     <script src="./static/js/strategy.js"></script>
     <script src="./static/js/strategy_erp.js"></script>
     <script src="./static/js/strategy_aiae.js"></script>
     <script src="./static/js/strategy_gem.js"></script>
-<script src="./static/js/sidebar.js?v=3"></script>
+    <script src="./static/js/sidebar.js"></script>
+
 </body>
 </html>

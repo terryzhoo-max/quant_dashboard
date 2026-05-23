@@ -32,10 +32,11 @@ ts.set_token(TUSHARE_TOKEN)
 pro = ts.pro_api()
 
 # ====== 标的池定义 ======
-# 进攻型标的池（20只 · 全市场ALL状态可用）
+# 进攻型标的池（21只 · 全市场ALL状态可用）
 MOMENTUM_POOL_OFFENSE = [
-    # 科技AI（6只）
+    # 科技AI（7只）
     {"code": "512480.SH", "name": "半导体ETF",         "group": "科技AI",     "max_pos": 25, "type": "offense"},
+    {"code": "159516.SZ", "name": "半导体设备ETF",     "group": "科技AI",     "max_pos": 20, "type": "offense"},
     {"code": "588200.SH", "name": "科创芯片ETF",       "group": "科技AI",     "max_pos": 20, "type": "offense"},
     {"code": "159995.SZ", "name": "芯片ETF",           "group": "科技AI",     "max_pos": 20, "type": "offense"},
     {"code": "515070.SH", "name": "人工智能AIETF",     "group": "科技AI",     "max_pos": 20, "type": "offense"},
@@ -955,6 +956,25 @@ def generate_signals(etf_data: dict, env: dict) -> dict:
     _save_holdings(new_holdings)
     print(f"  [持仓] 追踪{len(new_holdings)}只, 止损{len(stop_loss_events)}只")
 
+    # Step 8: 注入持仓天数 T+N (逐资产)
+    rebalance_days = params.get("rebalance_days", 10)
+    for r in all_results:
+        ts_code = r["ts_code"]
+        holding = new_holdings.get(ts_code)
+        if holding and holding.get("entry_date"):
+            try:
+                edate = str(holding["entry_date"])
+                entry_dt = datetime.strptime(edate, "%Y%m%d")
+                r["hold_days"] = max(0, (datetime.now() - entry_dt).days)
+                r["entry_date_fmt"] = entry_dt.strftime("%m-%d")
+            except Exception:
+                r["hold_days"] = 0
+                r["entry_date_fmt"] = ""
+        else:
+            r["hold_days"] = 0
+            r["entry_date_fmt"] = ""
+        r["rebalance_days"] = rebalance_days
+
     # V3.1 增强概览
     overview = {
         "regime":           env["regime"],
@@ -995,6 +1015,9 @@ def generate_signals(etf_data: dict, env: dict) -> dict:
             "RANGE": "震荡维持10天标准频率",
             "BEAR": "熊市建议20天调仓，减少摩擦成本",
         }.get(regime, "维持标准频率"),
+        # 持仓天数聚合 (供前端警示)
+        "max_hold_days":    max((r["hold_days"] for r in buy_signals), default=0) if buy_signals else 0,
+        "max_hold_name":    max(buy_signals, key=lambda r: r.get("hold_days", 0))["name"] if buy_signals else "",
     }
 
     return {
