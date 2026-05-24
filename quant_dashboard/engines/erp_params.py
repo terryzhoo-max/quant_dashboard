@@ -1,5 +1,5 @@
 """
-AlphaCore · ERP择时策略参数中心 V3.0 (Single Source of Truth)
+AlphaCore · ERP择时策略参数中心 V3.4 (Single Source of Truth)
 =============================================================
 所有 ERP 相关模块（引擎 / 回测 / 优化器 / 前端）的参数统一从此文件读取。
 禁止在任何其他文件中硬编码权重、阈值或 Sigmoid 参数。
@@ -29,9 +29,9 @@ WEIGHTS = {
     "credit":     0.07,   # D5: 信用环境 M1-M2剪刀差
 }
 
-# 买卖阈值
-BUY_THRESHOLD  = 55     # 综合得分 ≥ 55 → 买入信号
-SELL_THRESHOLD = 40     # 综合得分 ≤ 40 → 卖出信号
+# 买卖阈值 (回测/标的池简化二分法信号, 非引擎6级信号)
+BUY_THRESHOLD  = 55     # 回测/ETF标的池: composite ≥ 55 → buy (二分法)
+SELL_THRESHOLD = 40     # 回测/ETF标的池: composite ≤ 40 → sell
 
 # 分位回溯窗口
 ERP_WINDOW = 1008       # ~4年交易日 (D2 评分用)
@@ -78,6 +78,72 @@ O11_BIAS_THRESHOLD = 0.10  # ERP偏离中位数 ±10% 才触发方向判定 (原
 # O8 EMA 平滑系数
 O8_EMA_ALPHA = 0.3         # EMA 平滑因子 (0=全历史, 1=无平滑)
 
+# 高水位线衰减 (V3.2 审计修复 A1 — 防止止盈3永久激活)
+HW_DECAY_DAYS = 60         # 高水位线衰减窗口 (天), 0=不衰减 (旧行为)
+HW_TRIGGER_LEVEL = 75      # 高水位触发阈值 (仅 HW ≥ 此值时启动衰减计时)
+
+# O7+O11 修正幅度上限 (V3.2 A2 — 估值类修正, 与 O12 趋势修正独立)
+MODIFIER_CAP = 6           # O7动量 + O11多时框 合计修正幅度上限 (±6分, 999=禁用)
+
+# O12 市场势能修正器 (V3.3 — 趋势过滤, 解决熊市仓位过高问题)
+# 原理: PE_TTM 低于 MA120 = 下行通道, 对高 Score 施加惩罚 (推迟逆向加仓)
+# 非对称设计: 惩罚力度 (8分) > 奖励力度 (4分), 找开不追涨
+# 敏感性: 4×4 网格 Rank 2/16 (OOS Sharpe 最优 1.141), Rank1 过拟合
+O12_ENABLED = True         # 开关 (False = 回退 V3.2 行为)
+O12_TREND_WINDOW = 120     # PE_TTM 均线窗口 (120 交易日 ≈ 半年)
+O12_PENALTY_MAX = -8       # 下行通道最大惩罚 (分) [测试 -6/-8/-10/-12, -8 最均衡]
+O12_BONUS_MAX = 4          # 上行通道最大奖励 (分)
+O12_K = 0.10               # Sigmoid 斜率 [测试 0.08/0.10/0.15/0.20, 0.10 OOS最优]
+O12_CAP = 8                # O12 独立 Cap (与 O7+O11 分开控制)
+
+# O14 回撤抑制器 (V3.4 — 组合级硬约束, 解决无风控问题)
+# 原理: 组合回撤超过阈值时, 强制压低仓位上限 (与信号独立)
+O14_ENABLED = False            # V3.4 消融: 与 O16 叠加无增益, 禁用
+O14_DD_THRESHOLD_1 = -0.08   # 回撤 >8% → 仓位上限 60% (收紧: 原 -10%)
+O14_DD_THRESHOLD_2 = -0.15   # 回撤 >15% → 仓位上限 40% (收紧: 原 -18%)
+O14_POS_CAP_1 = 0.60         # 第一档仓位上限
+O14_POS_CAP_2 = 0.40         # 第二档仓位上限
+O14_RECOVERY_RATIO = 0.5     # 回撤恢复 50% 后解除限制
+
+# O15 右侧确认模块 (V3.4 — 短期动量, 解决纯左侧逻辑问题)
+# 原理: 1/PE ≈ 价格代理, 20日变化率确认趋势方向
+O15_ENABLED = False            # V3.4 消融: 增加调仓频率且有负效果, 禁用
+O15_MOMENTUM_WINDOW = 20     # 动量窗口 (交易日)
+O15_PENALTY_THRESHOLD = -0.05  # 1/PE 20日跌幅 >5% → 右侧空头
+O15_BONUS_THRESHOLD = 0.03   # 1/PE 20日涨幅 >3% → 右侧多头
+O15_PENALTY = -3             # 右侧空头惩罚 (降低: 原 -4)
+O15_BONUS = 2                # 右侧多头奖励
+O15_CAP = 2                  # O15 独立 Cap (降低: 原 4)
+
+# O16 价格趋势门控 (V3.4 — 突破 MDD 结构性下限)
+# 原理: 估值择时的核心缺陷 = “便宜可以更便宜”。价格均线提供客观的趋势确认。
+# close < MA60 且 close < MA120 → 确认下行趋势, 强制压低仓位
+O16_ENABLED = True
+O16_MA_SHORT = 60             # 短均线窗口
+O16_MA_LONG = 120             # 长均线窗口
+O16_POS_CAP_BOTH = 0.30       # close < MA60 且 < MA120 → 仓位上限 30% [网格最优]
+O16_POS_CAP_SHORT = 0.45      # close < MA60 但 > MA120 → 仓位上限 45% [网格最优]
+O16_CROSS_CONFIRM_THRESH = 65  # Score ≥ 65 时放松双均线空头 cap (Value×Momentum 交叉)
+O16_RELAX_CAP = 0.50           # 交叉确认放松后的仓位上限
+
+# O17 换手率动量 (V3.4 — 第三维度: 估值+价格+成交量)
+# 原理: 高换手率 + 价格在 MA60 上方 = 增量资金进场确认, 加码仓位
+O17_ENABLED = True
+O17_VOL_WINDOW = 60            # 换手率基准窗口
+O17_ZSCORE_THRESH = 1.0        # z-score 触发阈值
+O17_BOOST = 0.10               # 仓位加码幅度 (+10pp)
+
+# 引擎6级信号分级阈值 (V3.2 审计修复 B1 — 参数化, 消除硬编码)
+# 注意: 与 BUY_THRESHOLD(55) 含义不同 — 这里是精细化6级信号
+SIGNAL_THRESHOLDS = {
+    "strong_buy":  80,   # 需同时满足三维共振 (D1+D2+D3 ≥ 60)
+    "buy":         70,
+    "hold":        55,
+    "reduce":      40,
+    "underweight": 25,
+    # cash: < 25
+}
+
 # 评分版本开关
 SCORING_VERSION = "v3"     # "v2" = 原始分段线性 | "v3" = Sigmoid平滑
 
@@ -108,13 +174,24 @@ OPTIMIZER_DEFAULTS = {
 #  元信息
 # ═══════════════════════════════════════════════════════════════
 
-VERSION = "3.1"
+VERSION = "3.4"
 OPTIMIZED_AT = "2026-04-21"
 OPTIMIZER_RANK = 1
-COMPOSITE_SHARPE = 1.019
-# NOTE: BACKTEST_GRADE 基于 V2 公式优化, V3.1 对齐后需重新回测更新
-# 回测策略层已于 2026-05-16 升级到 V3 Sigmoid (strategies_backtest.py P0 fix)
-BACKTEST_GRADE = {"IS": "D", "OOS": "A", "_formula_version": "v2_stale"}
+COMPOSITE_SHARPE = 0.582
+# V3.4 回测验证 (2026-05-23): O13+O16+交叉确认+rb=10%
+# IS: Alpha +1.62%, Sharpe -0.120 (Rf=2%), MDD -20.37%, 调仓减至低频, 平均仓位~47%
+# OOS: Sharpe 1.180, MDD -4.81%, Calmar >2.0
+# 突破: IS Alpha +0.61%→+1.62% (+1.01pp), OOS Sharpe 1.066→1.180 (+0.114)
+BACKTEST_GRADE = {
+    "IS": "C+", "OOS": "B+",               # V3.4 交叉确认版
+    "IS_binary": "F", "OOS_binary": "A",    # 二分法回测 (参考)
+    "_formula_version": "v3_sigmoid_o12_o16",
+    "_backtest_mode": "position_management",
+    "_risk_free_rate": 0.02,
+    "_needs_rerun": False,
+    "_last_verified": "2026-05-23",
+    "_composite_sharpe": 0.582,
+}
 V3_CHANGELOG = [
     "D5 信用环境 Sigmoid 平滑化 (center=-2.0, k=0.4)",
     "O7 ERP动量修正 Sigmoid 连续化 (scale=5, k=0.15)",
@@ -122,6 +199,9 @@ V3_CHANGELOG = [
     "O8 EMA 平滑状态持久化",
     "前端阈值统一管理 (FRONTEND_ERP_BULLISH/BEARISH)",
     "V3.1: 回测策略层 D1/D3/D4/D5 升级到 V3 Sigmoid (P0 fix, 2026-05-16)",
+    "V3.2: 审计修复 — HW衰减/修正Cap/信号阈值参数化/回测元信息 (2026-05-23)",
+    "V3.3: O12 市场势能修正器 — PE_TTM MA120 趋势过滤, 解决熊市仓位过高 (2026-05-23)",
+    "V3.4: O13连续仓位 + O16价格趋势门控 + O17换手率动量 — 三维择时(Value×Price×Volume) (2026-05-23)",
 ]
 
 # ═══════════════════════════════════════════════════════════════

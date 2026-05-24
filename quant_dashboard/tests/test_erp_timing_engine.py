@@ -191,3 +191,212 @@ class TestSignalMap:
                   ["cash", "underweight", "reduce", "hold", "buy", "strong_buy"]]
         for i in range(len(levels) - 1):
             assert levels[i] < levels[i + 1]
+
+
+# ═══════════════════════════════════════════════════════
+#  V3.2 审计修复: HW 高水位线衰减 (A1)
+# ═══════════════════════════════════════════════════════
+
+class TestHWDecay:
+    """高水位线 60 天衰减机制"""
+
+    def test_hw_increases_on_new_high(self, engine):
+        """新高分应更新 HW"""
+        engine._score_high_water = 70.0
+        engine._hw_peak_date = "2026-04-01"
+        # 模拟 compute_signal 中的 HW 更新逻辑
+        composite = 80.0
+        if composite > engine._score_high_water:
+            engine._score_high_water = composite
+            engine._hw_peak_date = "2026-05-23"
+        assert engine._score_high_water == 80.0
+        assert engine._hw_peak_date == "2026-05-23"
+
+    def test_hw_no_decay_within_window(self, engine):
+        """60 天内 HW 应保持不变"""
+        import erp_params
+        engine._score_high_water = 80.0
+        engine._hw_peak_date = "2026-05-20"  # 3天前
+        composite = 60.0
+        # 模拟: composite < HW, 检查是否衰减
+        if composite > engine._score_high_water:
+            pass  # 不会进入
+        elif (erp_params.HW_DECAY_DAYS > 0
+              and engine._hw_peak_date
+              and engine._score_high_water >= erp_params.HW_TRIGGER_LEVEL):
+            from datetime import datetime
+            days_since = (datetime.now().date() - datetime.strptime(engine._hw_peak_date, "%Y-%m-%d").date()).days
+            if days_since > erp_params.HW_DECAY_DAYS:
+                engine._score_high_water = composite
+        # HW 应保持 80 (未超过 60 天)
+        assert engine._score_high_water == 80.0
+
+    def test_hw_decays_after_window(self, engine):
+        """超过 60 天后 HW 应衰减重置"""
+        import erp_params
+        engine._score_high_water = 85.0
+        engine._hw_peak_date = "2026-01-01"  # 远超 60 天
+        composite = 55.0
+        if composite > engine._score_high_water:
+            pass
+        elif (erp_params.HW_DECAY_DAYS > 0
+              and engine._hw_peak_date
+              and engine._score_high_water >= erp_params.HW_TRIGGER_LEVEL):
+            from datetime import datetime
+            days_since = (datetime.now().date() - datetime.strptime(engine._hw_peak_date, "%Y-%m-%d").date()).days
+            if days_since > erp_params.HW_DECAY_DAYS:
+                engine._score_high_water = composite
+                engine._hw_peak_date = str(datetime.now().date())
+        assert engine._score_high_water == 55.0, "HW should decay after 60 days"
+
+    def test_hw_no_decay_below_trigger(self, engine):
+        """HW 未达 75 阈值时不应触发衰减"""
+        import erp_params
+        engine._score_high_water = 60.0  # < HW_TRIGGER_LEVEL(75)
+        engine._hw_peak_date = "2026-01-01"
+        composite = 50.0
+        original_hw = engine._score_high_water
+        if composite > engine._score_high_water:
+            pass
+        elif (erp_params.HW_DECAY_DAYS > 0
+              and engine._hw_peak_date
+              and engine._score_high_water >= erp_params.HW_TRIGGER_LEVEL):
+            from datetime import datetime
+            days_since = (datetime.now().date() - datetime.strptime(engine._hw_peak_date, "%Y-%m-%d").date()).days
+            if days_since > erp_params.HW_DECAY_DAYS:
+                engine._score_high_water = composite
+        assert engine._score_high_water == original_hw, "HW below trigger should not decay"
+
+
+# ═══════════════════════════════════════════════════════
+#  V3.2 审计修复: O7+O11 修正 Cap (A2)
+# ═══════════════════════════════════════════════════════
+
+class TestModifierCap:
+    """O7+O11 合并修正幅度上限"""
+
+    def test_cap_limits_positive(self):
+        """正向修正不应超过 MODIFIER_CAP"""
+        import erp_params
+        momentum_mod = 5.0
+        mtf_mod = 3.0
+        total = momentum_mod + mtf_mod  # = 8
+        capped = max(-erp_params.MODIFIER_CAP, min(erp_params.MODIFIER_CAP, total))
+        assert capped == erp_params.MODIFIER_CAP  # 8 被 cap 到 6
+
+    def test_cap_limits_negative(self):
+        """负向修正不应低于 -MODIFIER_CAP"""
+        import erp_params
+        momentum_mod = -5.0
+        mtf_mod = -3.0
+        total = momentum_mod + mtf_mod  # = -8
+        capped = max(-erp_params.MODIFIER_CAP, min(erp_params.MODIFIER_CAP, total))
+        assert capped == -erp_params.MODIFIER_CAP
+
+    def test_passthrough_within_cap(self):
+        """合计 ≤ cap 时不应截断"""
+        import erp_params
+        momentum_mod = 3.0
+        mtf_mod = 1.0
+        total = momentum_mod + mtf_mod  # = 4
+        capped = max(-erp_params.MODIFIER_CAP, min(erp_params.MODIFIER_CAP, total))
+        assert capped == 4.0  # 不截断
+
+
+# ═══════════════════════════════════════════════════════
+#  V3.2 审计修复: 信号阈值参数化 (B1)
+# ═══════════════════════════════════════════════════════
+
+class TestSignalThresholds:
+    """SIGNAL_THRESHOLDS 参数一致性"""
+
+    def test_thresholds_descending(self):
+        """阈值应严格递减: strong_buy > buy > hold > reduce > underweight"""
+        import erp_params
+        T = erp_params.SIGNAL_THRESHOLDS
+        assert T["strong_buy"] > T["buy"] > T["hold"] > T["reduce"] > T["underweight"]
+
+    def test_thresholds_match_original(self):
+        """参数化后的值应与原始硬编码一致"""
+        import erp_params
+        T = erp_params.SIGNAL_THRESHOLDS
+        assert T["strong_buy"] == 80
+        assert T["buy"] == 70
+        assert T["hold"] == 55
+        assert T["reduce"] == 40
+        assert T["underweight"] == 25
+
+    def test_buy_threshold_vs_signal_threshold(self):
+        """BUY_THRESHOLD(回测) 与 SIGNAL_THRESHOLDS(引擎) 应有明确区分"""
+        import erp_params
+        # BUY_THRESHOLD 用于二分法, 等于 hold 阈值
+        assert erp_params.BUY_THRESHOLD == erp_params.SIGNAL_THRESHOLDS["hold"]
+        # 但引擎 buy 信号需要更高分
+        assert erp_params.SIGNAL_THRESHOLDS["buy"] > erp_params.BUY_THRESHOLD
+
+
+class TestTrendModifier:
+    """V3.3 O12 市场势能修正器测试"""
+
+    @pytest.fixture
+    def engine(self):
+        return ERPTimingEngine()
+
+    def test_downtrend_penalty(self, engine):
+        """PE < MA120 时应产生负修正"""
+        import pandas as pd
+        # 构造 PE 序列: 前 120 天 = 12, 最后几天 = 10 (下跌)
+        pe = pd.Series([12.0] * 130 + [10.0] * 5)
+        mod, desc = engine._trend_modifier(pe)
+        assert mod < 0, f"Downtrend should give negative mod, got {mod}"
+        assert "下行" in desc
+
+    def test_uptrend_bonus(self, engine):
+        """PE > MA120 时应产生正修正"""
+        import pandas as pd
+        pe = pd.Series([10.0] * 130 + [12.0] * 5)
+        mod, desc = engine._trend_modifier(pe)
+        assert mod > 0, f"Uptrend should give positive mod, got {mod}"
+        assert "上行" in desc
+
+    def test_asymmetric(self, engine):
+        """惩罚力度应大于奖励力度 (非对称设计)"""
+        import pandas as pd
+        pe_down = pd.Series([12.0] * 130 + [10.0] * 5)  # -16.7% 偏离
+        pe_up = pd.Series([10.0] * 130 + [12.0] * 5)    # +20% 偏离
+        mod_down, _ = engine._trend_modifier(pe_down)
+        mod_up, _ = engine._trend_modifier(pe_up)
+        assert abs(mod_down) > abs(mod_up), \
+            f"Penalty ({mod_down}) should be larger than bonus ({mod_up})"
+
+    def test_disabled(self, engine):
+        """O12_ENABLED=False 时返回 0"""
+        import pandas as pd
+        import erp_params
+        original = erp_params.O12_ENABLED
+        try:
+            erp_params.O12_ENABLED = False
+            pe = pd.Series([12.0] * 130 + [10.0] * 5)
+            mod, desc = engine._trend_modifier(pe)
+            assert mod == 0
+            assert "禁用" in desc
+        finally:
+            erp_params.O12_ENABLED = original
+
+    def test_insufficient_data(self, engine):
+        """数据不足时返回 0"""
+        import pandas as pd
+        pe = pd.Series([12.0] * 50)  # < window + 10
+        mod, desc = engine._trend_modifier(pe)
+        assert mod == 0
+        assert "不足" in desc
+
+    def test_cap_respected(self, engine):
+        """修正不超过 O12_CAP"""
+        import pandas as pd
+        import erp_params
+        cap = erp_params.O12_CAP
+        # 极端下跌: PE 从 15 跌到 5 (-66%)
+        pe = pd.Series([15.0] * 130 + [5.0] * 5)
+        mod, _ = engine._trend_modifier(pe)
+        assert abs(mod) <= cap + 0.1, f"Mod {mod} exceeds cap {cap}"

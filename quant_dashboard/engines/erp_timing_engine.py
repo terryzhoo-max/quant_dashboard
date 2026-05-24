@@ -179,9 +179,9 @@ ENCYCLOPEDIA = {
 
 
 class ERPTimingEngine:
-    """宏观ERP择时引擎 V3.0"""
+    """宏观ERP择时引擎 V3.3"""
 
-    VERSION = "3.0"
+    VERSION = "3.4"
     INDEX_CODE = "000300.SH"
     BOND_CODE = "1001.CB"
 
@@ -213,6 +213,7 @@ class ERPTimingEngine:
         self._prev_score = history.get("prev_score")
         self._prev_score_date = history.get("prev_score_date")
         self._score_high_water = history.get("score_high_water", 0.0)
+        self._hw_peak_date = history.get("hw_peak_date")  # V3.2: HW 衰减计时起点
         self._score_history = history.get("score_history", [])  # O6: 最近5天Score列表
         self._prev_smooth_score = history.get("prev_smooth_score")  # V3.0: 持久化 EMA 状态
 
@@ -232,6 +233,7 @@ class ERPTimingEngine:
             "prev_score": self._prev_score,
             "prev_score_date": str(self._prev_score_date) if self._prev_score_date else None,
             "score_high_water": self._score_high_water,
+            "hw_peak_date": getattr(self, '_hw_peak_date', None),  # V3.2: HW 衰减计时
             "score_history": self._score_history[-5:],
             "prev_smooth_score": getattr(self, '_prev_smooth_score', None),
         }
@@ -396,6 +398,8 @@ class ERPTimingEngine:
     def _compute_erp_series(self) -> pd.DataFrame:
         """计算5年ERP时间序列"""
         pe_df = self._fetch_pe_ttm_history()
+        # V3.4: 挂载原始 pe_df 供 _compute_position_layer 复用 (避免二次 fetch)
+        self._last_pe_df = pe_df
         yield_df = self._fetch_yield_10y_history()
         merged = pd.merge(pe_df, yield_df, on='trade_date', how='left')
         merged = merged.sort_values('trade_date')
@@ -513,6 +517,10 @@ class ERPTimingEngine:
         因子1 — M1水位: Sigmoid(m1_now, center=0, k=0.4)
         因子2 — M1动量: Sigmoid(m1_now - m1_3m, center=0, k=0.5)
         融合: 水位60% + 动量40%
+
+        NOTE: M1 统计口径于 2024年1月调整 (纳入个人活期存款),
+        导致 2024年后 M1 同比数值与历史不完全可比。
+        center=0 假设在口径调整后可能需要重新校准。
         """
         import math
         lk = erp_params.D3_LEVEL_K
@@ -660,6 +668,103 @@ class ERPTimingEngine:
         self._prev_smooth_score = smooth
         return round(smooth, 1)
 
+    def _trend_modifier(self, pe_series) -> tuple:
+        """O12: 市场势能修正器 (V3.3)
+        用 PE_TTM MA120 作为趋势代理。PE < MA120 → 下行通道 → 惩罚 Score (推迟逆向加仓)。
+        非对称设计: 惩罚力度 > 奖励力度 (找开不追涨)。
+
+        返回: (mod: float, desc: str)
+        """
+        if not erp_params.O12_ENABLED:
+            return 0, "O12 已禁用"
+
+        window = erp_params.O12_TREND_WINDOW
+        if len(pe_series) < window + 10:
+            return 0, "PE 数据不足"
+
+        pe_current = float(pe_series.iloc[-1])
+        pe_ma = float(pe_series.tail(window).mean())
+        if pe_ma <= 0:
+            return 0, "PE均线异常"
+
+        deviation = (pe_current - pe_ma) / pe_ma  # 偏离度
+
+        import math
+        k = erp_params.O12_K
+        if deviation < 0:
+            # 下行通道: 惩罚
+            penalty_max = abs(erp_params.O12_PENALTY_MAX)
+            sigmoid_val = 2.0 / (1.0 + math.exp(k * deviation * 100)) - 1.0
+            mod = -penalty_max * sigmoid_val
+            mod = max(erp_params.O12_PENALTY_MAX, mod)
+        else:
+            # 上行通道: 小幅奖励
+            bonus_max = erp_params.O12_BONUS_MAX
+            sigmoid_val = 2.0 / (1.0 + math.exp(-k * deviation * 100)) - 1.0
+            mod = bonus_max * sigmoid_val
+            mod = min(erp_params.O12_BONUS_MAX, mod)
+
+        # 独立 Cap
+        mod = max(-erp_params.O12_CAP, min(erp_params.O12_CAP, mod))
+        mod = round(mod, 1)
+
+        # 描述
+        trend = "下行" if deviation < 0 else "上行"
+        desc = (f"PE {'<' if deviation < 0 else '>'} MA{window} "
+                f"(偏离{deviation*100:+.1f}%) → {trend}通道 ({mod:+.1f}分)")
+
+        return mod, desc
+
+    def _momentum_confirmation(self, pe_series) -> tuple:
+        """O15: 右侧确认 (V3.4)
+        用 1/PE_TTM 的短期变化率作为价格动量代理。
+        1/PE 与价格同向 (短期内盈利 TTM 几乎不变)。
+
+        返回: (mod: float, desc: str)
+        """
+        if not erp_params.O15_ENABLED:
+            return 0, "O15 已禁用"
+
+        window = erp_params.O15_MOMENTUM_WINDOW
+        if len(pe_series) < window + 5:
+            return 0, "PE 数据不足"
+
+        pe_now = float(pe_series.iloc[-1])
+        pe_prev = float(pe_series.iloc[-window])
+        if pe_now <= 0 or pe_prev <= 0:
+            return 0, "PE 异常"
+
+        inv_pe_now = 1.0 / pe_now
+        inv_pe_prev = 1.0 / pe_prev
+        momentum = (inv_pe_now / inv_pe_prev) - 1.0
+
+        if momentum < erp_params.O15_PENALTY_THRESHOLD:
+            mod = erp_params.O15_PENALTY
+            trend = "右侧空头"
+        elif momentum > erp_params.O15_BONUS_THRESHOLD:
+            mod = erp_params.O15_BONUS
+            trend = "右侧多头"
+        else:
+            mod = 0
+            trend = "动量中性"
+
+        mod = max(-erp_params.O15_CAP, min(erp_params.O15_CAP, mod))
+        desc = f"1/PE 20日 {momentum*100:+.1f}% → {trend} ({mod:+.0f}分)"
+        return mod, desc
+
+    def _hw_current_label(self, score: float) -> str:
+        """V3.2: 止盈3 current 字段 — 显示 HW 值 + 衰减倒计时"""
+        hw = self._score_high_water
+        peak_date = getattr(self, '_hw_peak_date', None)
+        if peak_date and erp_params.HW_DECAY_DAYS > 0 and hw >= erp_params.HW_TRIGGER_LEVEL:
+            try:
+                days_since = (datetime.now().date() - datetime.strptime(peak_date, "%Y-%m-%d").date()).days
+                days_left = max(0, erp_params.HW_DECAY_DAYS - days_since)
+                return f"Score={score:.1f} (HW={hw:.0f}, 衰减{days_left}d)"
+            except (ValueError, TypeError):
+                pass
+        return f"Score={score:.1f} (HW={hw:.0f})"
+
     def _generate_trade_rules(self, score: float, dims: dict, snap: dict) -> dict:
         """生成买卖信号 + 止盈止损规则 (逆向加仓型)"""
         erp = snap.get("erp_value", 0)
@@ -684,16 +789,17 @@ class ERPTimingEngine:
         elif bullish_count >= 1 and bearish_count >= 1:
             resonance = "divergence"  # 信号分歧
 
-        # === 信号分级 ===
-        if score >= 80 and resonance == "bullish_resonance":
+        # === 信号分级 (V3.2: 阈值从参数中心读取) ===
+        T = erp_params.SIGNAL_THRESHOLDS
+        if score >= T["strong_buy"] and resonance == "bullish_resonance":
             signal_key = "strong_buy"
-        elif score >= 70:
+        elif score >= T["buy"]:
             signal_key = "buy"
-        elif score >= 55:
+        elif score >= T["hold"]:
             signal_key = "hold"
-        elif score >= 40:
+        elif score >= T["reduce"]:
             signal_key = "reduce"
-        elif score >= 25:
+        elif score >= T["underweight"]:
             signal_key = "underweight"
         else:
             signal_key = "cash"
@@ -738,8 +844,8 @@ class ERPTimingEngine:
             },
             {
                 "trigger": "综合得分从 ≥75 跌破 55", "action": "一次性降至50%", "type": "score_drop",
-                "triggered": bool(self._score_high_water >= 75 and score < 55),
-                "current": f"Score={score:.1f} (HW={self._score_high_water:.0f})"
+                "triggered": bool(self._score_high_water >= erp_params.HW_TRIGGER_LEVEL and score < 55),
+                "current": self._hw_current_label(score)
             },
         ]
         m1_falling_3m = dims.get("m1_trend", {}).get("m1_info", {}).get("3m_direction") == "falling"
@@ -862,11 +968,22 @@ class ERPTimingEngine:
 
             # O7: ERP动量修正
             momentum_mod, momentum_desc = self._erp_momentum_modifier(erp_df['erp'])
-            composite = round(min(100, max(0, composite + momentum_mod)), 1)
 
             # O11: 多时间框架确认
             mtf = multi_timeframe_confirmation(erp_df['erp'], composite)
-            composite = round(min(100, max(0, composite + mtf["confidence_mod"])), 1)
+
+            # V3.2: O7+O11 合并后 cap (估值类修正)
+            total_mod_val = momentum_mod + mtf["confidence_mod"]
+            capped_val_mod = max(-erp_params.MODIFIER_CAP, min(erp_params.MODIFIER_CAP, total_mod_val))
+            composite = round(min(100, max(0, composite + capped_val_mod)), 1)
+
+            # V3.3 O12: 市场势能修正器 (趋势过滤, 独立 Cap)
+            trend_mod, trend_desc = self._trend_modifier(erp_df['pe_ttm'])
+            composite = round(min(100, max(0, composite + trend_mod)), 1)
+
+            # V3.4 O15: 右侧确认 (短期动量, 独立 Cap)
+            mom_confirm_mod, mom_confirm_desc = self._momentum_confirmation(erp_df['pe_ttm'])
+            composite = round(min(100, max(0, composite + mom_confirm_mod)), 1)
 
             # O8: EMA平滑
             composite = self._smooth_composite(composite)
@@ -883,7 +1000,10 @@ class ERPTimingEngine:
                 "m1_trend":   {"score": d3_score, "weight": self.W["m1_trend"], "label": "M1流动性", "desc": d3_desc, "m1_info": m1_info},
                 "volatility": {"score": d4_score, "weight": self.W["volatility"], "label": "波动率", "desc": d4_desc, "vol_info": vol_info},
                 "credit":     {"score": d5_score, "weight": self.W["credit"], "label": "信用环境", "desc": d5_desc, "credit_info": credit_info},
-                "erp_momentum": {"score": momentum_mod, "weight": 0, "label": "ERP动量", "desc": momentum_desc},
+                "erp_momentum": {"score": momentum_mod, "weight": 0, "label": "ERP动量", "desc": momentum_desc,
+                                 "raw_total_mod": round(total_mod_val, 1), "capped_mod": round(capped_val_mod, 1)},
+                "market_trend": {"score": trend_mod, "weight": 0, "label": "市场势能", "desc": trend_desc},
+                "momentum_confirm": {"score": mom_confirm_mod, "weight": 0, "label": "右侧确认", "desc": mom_confirm_desc},
             }
 
             # 买卖规则
@@ -891,9 +1011,23 @@ class ERPTimingEngine:
             # C1+C2 fix: 更新 Score 追踪状态
             self._prev_score = composite
             self._prev_score_date = str(datetime.now().date())
-            self._score_high_water = max(self._score_high_water, composite)
+            # V3.2 审计修复 A1: HW 高水位线 + 60天衰减 (防止止盈3永久激活)
+            today_str = self._prev_score_date  # 复用, 避免重复调用 datetime.now()
+            if composite > self._score_high_water:
+                self._score_high_water = composite
+                self._hw_peak_date = today_str
+            elif (erp_params.HW_DECAY_DAYS > 0
+                  and getattr(self, '_hw_peak_date', None)
+                  and self._score_high_water >= erp_params.HW_TRIGGER_LEVEL):
+                try:
+                    days_since = (datetime.now().date() - datetime.strptime(self._hw_peak_date, "%Y-%m-%d").date()).days
+                    if days_since > erp_params.HW_DECAY_DAYS:
+                        self._score_high_water = composite  # 衰减重置
+                        self._hw_peak_date = today_str
+                except (ValueError, TypeError):
+                    pass  # 日期解析失败不影响主流程
+
             # O6: 追加到Score历史 (每天仅记录一次)
-            today_str = str(datetime.now().date())
             if not self._score_history or self._score_history[-1].get("date") != today_str:
                 self._score_history.append({"date": today_str, "score": composite})
             else:
@@ -1091,10 +1225,147 @@ class ERPTimingEngine:
             return {"status": "error", "message": str(e)}
 
     def generate_report(self) -> dict:
-        """生成完整策略报告"""
+        """生成完整策略报告 (V3.4: 含仓位管理层信号)"""
         signal_data = self.compute_signal()
         chart_data = self.get_erp_chart_data()
-        return {**signal_data, "chart": chart_data, "engine_version": self.VERSION, "index": self.INDEX_CODE, "updated_at": datetime.now().isoformat()}
+        # V3.4 仓位层: 独立 try/except, 失败不影响主信号
+        try:
+            position_layer = self._compute_position_layer(signal_data)
+        except Exception as e:
+            print(f"[ERP V3.4] position_layer 降级: {e}")
+            position_layer = {"status": "degraded", "message": str(e)}
+        return {**signal_data, "chart": chart_data, "position_layer": position_layer,
+                "engine_version": self.VERSION, "index": self.INDEX_CODE,
+                "updated_at": datetime.now().isoformat()}
+
+    def _compute_position_layer(self, signal_data: dict) -> dict:
+        """V3.4 仓位管理层: O16 趋势状态 + O17 换手率 + 仓位建议
+
+        生产优化:
+        - 复用 compute_signal 已拉取的 pe_df (通过 self._last_pe_df), 消除重复 L1 缓存查询
+        - 仅计算最后一行的 MA/zscore, 不对全量 2700+ 行做 rolling (快 ~10x)
+        - 失败时 graceful degradation, 不阻断主信号
+        """
+        if signal_data.get("status") != "success":
+            return {"status": "unavailable"}
+
+        # 复用 compute_signal 已拉取的 pe_df, 避免第二次 _fetch + lock
+        pe_df = getattr(self, '_last_pe_df', None)
+        if pe_df is None or pe_df.empty:
+            return {"status": "unavailable", "reason": "no_pe_data"}
+
+        pe_vals = pe_df['pe_ttm'].values  # numpy array, 避免 Series 开销
+        n = len(pe_vals)
+
+        # O16: 趋势判定 — 只算最后一个 MA 值 (O(1) 而非 O(n))
+        ws = erp_params.O16_MA_SHORT  # 60
+        wl = erp_params.O16_MA_LONG   # 120
+        latest_pe = float(pe_vals[-1])
+
+        if n >= wl:
+            latest_ma_short = float(pe_vals[-ws:].mean())
+            latest_ma_long = float(pe_vals[-wl:].mean())
+        elif n >= ws:
+            latest_ma_short = float(pe_vals[-ws:].mean())
+            latest_ma_long = None
+        else:
+            latest_ma_short = None
+            latest_ma_long = None
+
+        if latest_ma_short is not None and latest_ma_long is not None:
+            if latest_pe < latest_ma_short and latest_pe < latest_ma_long:
+                trend_status, trend_label, trend_emoji = "bearish", "双均线空头", "🔴"
+            elif latest_pe < latest_ma_short:
+                trend_status, trend_label, trend_emoji = "weak", "短期弱势", "🟡"
+            elif latest_pe > latest_ma_short and latest_pe > latest_ma_long:
+                trend_status, trend_label, trend_emoji = "bullish", "双均线多头", "🟢"
+            else:
+                trend_status, trend_label, trend_emoji = "neutral", "趋势中性", "⚪"
+        else:
+            trend_status, trend_label, trend_emoji = "insufficient_data", "数据不足", "⚪"
+
+        # O17: 换手率 z-score — 只算最后一个值 (O(1))
+        vol_zscore = 0.0
+        vol_signal = "neutral"
+        latest_turnover = 0.0
+
+        if 'turnover_rate' in pe_df.columns:
+            tr_vals = pe_df['turnover_rate'].values
+            if n >= 20:
+                vw = min(erp_params.O17_VOL_WINDOW, n)
+                tr_window = tr_vals[-vw:]
+                tr_valid = tr_window[~np.isnan(tr_window)]
+                if len(tr_valid) >= 20:
+                    tr_mean = float(tr_valid.mean())
+                    tr_std = float(tr_valid.std())
+                    if tr_std > 0:
+                        vol_zscore = round((float(tr_vals[-1]) - tr_mean) / tr_std, 2)
+                    if vol_zscore > erp_params.O17_ZSCORE_THRESH:
+                        vol_signal = "high_conviction"
+                    elif vol_zscore < -1.0:
+                        vol_signal = "low_activity"
+                latest_turnover = round(float(tr_vals[-1]), 2) if not np.isnan(tr_vals[-1]) else 0.0
+
+        # 仓位映射 — 分段线性 (与 erp_position_backtest._score_to_position 一致)
+        score = signal_data.get("signal", {}).get("score", 50)
+        _thresholds = [(80, 0.90), (70, 0.70), (55, 0.55), (40, 0.35), (25, 0.15)]
+        if score >= _thresholds[0][0]:
+            base_position = _thresholds[0][1]
+        elif score <= _thresholds[-1][0]:
+            base_position = max(0.05, score / _thresholds[-1][0] * _thresholds[-1][1])
+        else:
+            base_position = 0.05
+            for j in range(len(_thresholds) - 1):
+                hi_s, hi_p = _thresholds[j]
+                lo_s, lo_p = _thresholds[j + 1]
+                if lo_s <= score < hi_s:
+                    base_position = lo_p + (score - lo_s) / (hi_s - lo_s) * (hi_p - lo_p)
+                    break
+
+        # O16 门控
+        suggested_position = base_position
+        o16_cap_applied = None
+        if trend_status == "bearish":
+            if score >= erp_params.O16_CROSS_CONFIRM_THRESH:
+                cap = erp_params.O16_RELAX_CAP
+                o16_cap_applied = f"交叉确认放松 → {int(cap*100)}%"
+            else:
+                cap = erp_params.O16_POS_CAP_BOTH
+                o16_cap_applied = f"全防御 → {int(cap*100)}%"
+            suggested_position = min(suggested_position, cap)
+        elif trend_status == "weak":
+            cap = erp_params.O16_POS_CAP_SHORT
+            o16_cap_applied = f"短期限仓 → {int(cap*100)}%"
+            suggested_position = min(suggested_position, cap)
+
+        # O17 加码
+        o17_boost_applied = False
+        if trend_status == "bullish" and vol_zscore > erp_params.O17_ZSCORE_THRESH:
+            suggested_position = min(suggested_position + erp_params.O17_BOOST, 0.95)
+            o17_boost_applied = True
+
+        return {
+            "status": "success",
+            "trend": {
+                "status": trend_status, "label": trend_label, "emoji": trend_emoji,
+                "pe_current": round(latest_pe, 2),
+                "pe_ma60": round(latest_ma_short, 2) if latest_ma_short else None,
+                "pe_ma120": round(latest_ma_long, 2) if latest_ma_long else None,
+            },
+            "volume": {
+                "turnover_rate": latest_turnover,
+                "zscore": vol_zscore,
+                "signal": vol_signal,
+            },
+            "position": {
+                "score": score,
+                "base_position_pct": round(base_position * 100, 1),
+                "suggested_position_pct": round(suggested_position * 100, 1),
+                "o16_cap": o16_cap_applied,
+                "o17_boost": o17_boost_applied,
+            },
+            "backtest_grade": erp_params.BACKTEST_GRADE,
+        }
 
 
 # ===== 引擎单例 =====

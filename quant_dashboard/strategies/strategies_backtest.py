@@ -372,8 +372,9 @@ def erp_timing_strategy_vectorized(
       4. 其他 → 保持 (0)
       5. 内嵌止损
 
-    注: O7(动量修正)/O10(自适应权重)/O11(多时框确认)/O8(EMA平滑) 不纳入回测。
-        这四个后处理模块合计贡献 ±8分 (8%), 向量化代价高, 不影响核心公式验证。
+    注: O7(动量修正)/O10(自适应权重)/O11(多时框确认)/O8(EMA平滑)/O12(趋势过滤) 不纳入二分法回测。
+        这五个后处理模块合计贡献 ±14分, 向量化代价高, 不影响核心公式验证。
+        如需含修正器回测, 使用 erp_position_backtest.compute_composite_series。
 
     参数:
       df:             ETF 价格 DataFrame (需含 close 列, DatetimeIndex)

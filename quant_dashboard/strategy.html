@@ -7,7 +7,7 @@
 
     <link rel="stylesheet" href="./static/css/styles.css">
     <link rel="stylesheet" href="./static/css/visual_excellence.css">
-    <link rel="stylesheet" href="./static/css/strategy.css">
+    <link rel="stylesheet" href="./static/css/strategy.css?v=201">
     <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -4178,7 +4178,62 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
             <!-- 警示横幅 -->
             <div id="erp-alert-banner" style="display:none;margin-top:8px;"></div>
 
-            <!-- ZONE 1 · 实时快照 (6卡 + 趋势箭头) -->
+            <!-- ZONE 1 · V3.4 仓位管理层 (三维择时: 估值×价格×成交量) [NEW DECISION BLOCK] -->
+            <div class="glass-panel" id="erp-position-layer" style="padding:16px;margin-top:14px;border:1px solid rgba(245,158,11,0.2);">
+                <h3 style="margin:0 0 12px;font-size:0.9rem;color:#f8fafc;">⚡ V3.4 仓位管理 · 三维择时 <span style="font-size:0.6rem;background:linear-gradient(135deg,#f59e0b,#d97706);padding:1px 6px;border-radius:4px;color:#000;font-weight:800;margin-left:6px;">LIVE</span></h3>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+                    <!-- 趋势状态 -->
+                    <div id="erp-pl-trend" style="background:rgba(15,23,42,0.6);border:1px solid rgba(100,116,139,0.2);border-radius:10px;padding:14px;">
+                        <div style="font-size:0.7rem;color:#64748b;margin-bottom:6px;">📈 O16 价格趋势</div>
+                        <div id="erp-pl-trend-emoji" style="font-size:1.8rem;line-height:1;">⚪</div>
+                        <div id="erp-pl-trend-label" style="font-size:0.82rem;font-weight:700;color:#e2e8f0;margin-top:4px;">--</div>
+                        <div id="erp-pl-trend-detail" style="font-size:0.63rem;color:#94a3b8;margin-top:4px;">PE -- · MA60 -- · MA120 --</div>
+                    </div>
+                    <!-- 换手率 -->
+                    <div id="erp-pl-volume" style="background:rgba(15,23,42,0.6);border:1px solid rgba(100,116,139,0.2);border-radius:10px;padding:14px;">
+                        <div style="font-size:0.7rem;color:#64748b;margin-bottom:6px;">📊 O17 换手率动量</div>
+                        <div id="erp-pl-vol-zscore" style="font-size:1.8rem;font-weight:800;line-height:1;color:#94a3b8;">--</div>
+                        <div id="erp-pl-vol-signal" style="font-size:0.75rem;color:#94a3b8;margin-top:4px;">z-score</div>
+                        <div id="erp-pl-vol-detail" style="font-size:0.63rem;color:#94a3b8;margin-top:4px;">换手率 --%</div>
+                    </div>
+                    <!-- 仓位建议 -->
+                    <div id="erp-pl-position" style="background:rgba(15,23,42,0.6);border:1px solid rgba(245,158,11,0.2);border-radius:10px;padding:14px;">
+                        <div style="font-size:0.7rem;color:#64748b;margin-bottom:6px;">🎯 建议仓位</div>
+                        <div style="display:flex;align-items:baseline;gap:4px;">
+                            <span id="erp-pl-pos-value" style="font-size:1.8rem;font-weight:800;line-height:1;color:#f59e0b;">--%</span>
+                        </div>
+                        <div id="erp-pl-pos-base" style="font-size:0.65rem;color:#94a3b8;margin-top:4px;">基础 --%</div>
+                        <div id="erp-pl-pos-mods" style="font-size:0.63rem;color:#64748b;margin-top:2px;">--</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ZONE 2 · 买卖信号中枢 [NEW] -->
+            <div class="glass-panel" style="padding:16px;margin-top:14px;border:1px solid rgba(245,158,11,0.2);">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                    <h3 style="margin:0;font-size:0.9rem;color:#f8fafc;">🎯 买卖信号中枢</h3>
+                    <div id="erp-signal-level-bar" style="display:flex;gap:3px;"></div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;">
+                    <!-- 左: ETF配置 -->
+                    <div style="background:rgba(15,23,42,0.6);border-radius:8px;padding:12px;">
+                        <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:8px;">📦 ETF 配置方案</div>
+                        <div id="erp-etf-advice" style="display:flex;flex-direction:column;gap:6px;"></div>
+                    </div>
+                    <!-- 中: 止盈规则 -->
+                    <div style="background:rgba(15,23,42,0.6);border-radius:8px;padding:12px;">
+                        <div style="font-size:0.75rem;color:#10b981;margin-bottom:8px;">📈 止盈规则</div>
+                        <div id="erp-take-profit" style="display:flex;flex-direction:column;gap:5px;"></div>
+                    </div>
+                    <!-- 右: 止损规则 (逆向) -->
+                    <div style="background:rgba(15,23,42,0.6);border-radius:8px;padding:12px;">
+                        <div style="font-size:0.75rem;color:#f59e0b;margin-bottom:8px;">🛡️ 逆向止损规则</div>
+                        <div id="erp-stop-loss" style="display:flex;flex-direction:column;gap:5px;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ZONE 3 · 实时快照 (6卡 + 趋势箭头) -->
             <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-top:14px;">
                 <div class="st-metric-card" id="erp-card-erp">
                     <div class="st-metric-label">ERP 股债性价比</div>
@@ -4218,32 +4273,7 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                 </div>
             </div>
 
-            <!-- ZONE 2 · 买卖信号中枢 [NEW] -->
-            <div class="glass-panel" style="padding:16px;margin-top:14px;border:1px solid rgba(245,158,11,0.2);">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                    <h3 style="margin:0;font-size:0.9rem;color:#f8fafc;">🎯 买卖信号中枢</h3>
-                    <div id="erp-signal-level-bar" style="display:flex;gap:3px;"></div>
-                </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;">
-                    <!-- 左: ETF配置 -->
-                    <div style="background:rgba(15,23,42,0.6);border-radius:8px;padding:12px;">
-                        <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:8px;">📦 ETF 配置方案</div>
-                        <div id="erp-etf-advice" style="display:flex;flex-direction:column;gap:6px;"></div>
-                    </div>
-                    <!-- 中: 止盈规则 -->
-                    <div style="background:rgba(15,23,42,0.6);border-radius:8px;padding:12px;">
-                        <div style="font-size:0.75rem;color:#10b981;margin-bottom:8px;">📈 止盈规则</div>
-                        <div id="erp-take-profit" style="display:flex;flex-direction:column;gap:5px;"></div>
-                    </div>
-                    <!-- 右: 止损规则 (逆向) -->
-                    <div style="background:rgba(15,23,42,0.6);border-radius:8px;padding:12px;">
-                        <div style="font-size:0.75rem;color:#f59e0b;margin-bottom:8px;">🛡️ 逆向止损规则</div>
-                        <div id="erp-stop-loss" style="display:flex;flex-direction:column;gap:5px;"></div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- ZONE 3 · 五维评分 + 仪表盘 -->
+            <!-- ZONE 4 · 五维评分 + 仪表盘 -->
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px;">
                 <!-- 左: 五维评分条 + 百科 -->
                 <div class="glass-panel" style="padding:16px;">
@@ -4258,19 +4288,11 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                 </div>
             </div>
 
-            <!-- ZONE 4 · ERP历史走势图 (V3.0 — markArea色带 + dataZoom + KPI) -->
+            <!-- ZONE 5 · ERP历史走势图 (V3.0 — markArea色带 + dataZoom + KPI) -->
             <div class="glass-panel" style="padding:16px;margin-top:14px;">
                 <h3 id="erp-chart-title" style="margin:0 0 8px;font-size:0.85rem;color:#94a3b8;">📈 ERP 历史走势 · 四档区间可视化</h3>
                 <div id="erp-chart-kpis" style="display:flex;gap:10px;margin-bottom:10px;"></div>
                 <div id="erp-history-chart" style="width:100%;height:380px;"></div>
-            </div>
-
-            <!-- ZONE 5 · 规则百科 [NEW] -->
-            <div class="glass-panel" style="padding:16px;margin-top:14px;">
-                <h3 style="margin:0 0 10px;font-size:0.85rem;color:#94a3b8;cursor:pointer;" onclick="document.getElementById('erp-encyclopedia-body').style.display=document.getElementById('erp-encyclopedia-body').style.display==='none'?'grid':'none'">
-                    📖 规则百科 · 指标解读 <span style="font-size:0.65rem;color:#64748b;">▼ 点击展开/折叠</span>
-                </h3>
-                <div id="erp-encyclopedia-body" style="display:none;grid-template-columns:1fr 1fr;gap:10px;"></div>
             </div>
 
             <!-- ZONE 6 · 诊断卡片 (增强) -->
@@ -4279,7 +4301,15 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
                 <div id="erp-diagnosis-cards" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;"></div>
             </div>
 
-            <!-- ZONE 7 · 警示 + 更新信息 -->
+            <!-- ZONE 7 · 规则百科 [NEW] -->
+            <div class="glass-panel" style="padding:16px;margin-top:14px;">
+                <h3 style="margin:0 0 10px;font-size:0.85rem;color:#94a3b8;cursor:pointer;" onclick="document.getElementById('erp-encyclopedia-body').style.display=document.getElementById('erp-encyclopedia-body').style.display==='none'?'grid':'none'">
+                    📖 规则百科 · 指标解读 <span style="font-size:0.65rem;color:#64748b;">▼ 点击展开/折叠</span>
+                </h3>
+                <div id="erp-encyclopedia-body" style="display:none;grid-template-columns:1fr 1fr;gap:10px;"></div>
+            </div>
+
+            <!-- ZONE 8 · 警示 + 更新信息 -->
             <div style="margin-top:14px;padding:10px 14px;background:rgba(15,23,42,0.5);border-radius:8px;border:1px solid rgba(100,116,139,0.2);">
                 <div style="display:flex;justify-content:space-between;align-items:center;">
                     <span style="font-size:0.7rem;color:#64748b;">⚠️ ERP择时为宏观层面信号，建议结合具体策略(均值回归/红利/动量)的微观信号综合决策。本引擎采用逆向加仓策略，大跌不止损反而加仓。</span>
@@ -4301,12 +4331,12 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
 
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
     <script>window.echarts || document.write('<script src="./static/vendor/echarts.min.js"><\/script>')</script>
-    <script src="./static/js/alphacore_utils.js"></script>
-    <script src="./static/js/strategy.js"></script>
-    <script src="./static/js/strategy_erp.js"></script>
-    <script src="./static/js/strategy_aiae.js"></script>
-    <script src="./static/js/strategy_gem.js"></script>
-    <script src="./static/js/sidebar.js"></script>
+    <script src="./static/js/alphacore_utils.js?v=201"></script>
+    <script src="./static/js/strategy.js?v=201"></script>
+    <script src="./static/js/strategy_erp.js?v=201"></script>
+    <script src="./static/js/strategy_aiae.js?v=201"></script>
+    <script src="./static/js/strategy_gem.js?v=201"></script>
+    <script src="./static/js/sidebar.js?v=201"></script>
 
 </body>
 </html>

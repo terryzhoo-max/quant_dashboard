@@ -1,7 +1,8 @@
 # AlphaCore 服务器运维手册
 
 > 基于阿里云 ECS (40G 系统盘) + Docker Compose 部署方案  
-> 最后更新: 2026-05-23 · 基于实际生产排障经验编写
+> 最后更新: 2026-05-23 · 基于实际生产排障经验编写  
+> 当前版本: AlphaCore V26.0.0 · update.sh v3.1
 
 ---
 
@@ -40,8 +41,16 @@
 | `/root/quant_dashboard/quant_dashboard/` | 应用代码 + Dockerfile + docker-compose.yml |
 | `/root/quant_dashboard/quant_dashboard/data_lake/` | 运行时数据 (Volume 挂载, 不入镜像) |
 | `/root/quant_dashboard/quant_dashboard/.env` | 环境变量 (API Token, 严禁入库) |
-| `/root/backups/` | 自动备份存储目录 |
+| `/root/backups/` | 自动备份 + update.log 更新日志 |
 | `/etc/docker/daemon.json` | Docker 守护进程配置 (DNS + 日志限制) |
+
+### 关键脚本
+
+| 脚本 | 版本 | 用途 |
+|------|------|------|
+| `update.sh` | v3.1 | 一键更新 (拉取→构建→切换→健康检查→回滚) |
+| `deploy.sh` | v4.0 | 首次部署 (含 Nginx/SSL/API Key 验证) |
+| `backup.sh` | v1.0 | 定时备份 (data_lake + Redis + .env) |
 
 ---
 
@@ -102,7 +111,57 @@ crontab -l
 
 ## 3. 日常更新部署
 
-### 3.1 标准流程 (推荐)
+### 3.1 一键更新 (推荐)
+
+```bash
+cd /root/quant_dashboard/quant_dashboard
+bash update.sh
+```
+
+update.sh v3.1 自动完成以下全流程:
+
+```
+Step 0: 预检 (磁盘≥2GB / Docker运行 / .env存在)
+  ↓ 失败 → 立即退出, 无副作用
+Step 1: git pull 拉取最新代码
+  ↓ 失败 → 自动恢复, 退出
+Step 2: docker build --network=host (旧容器继续服务)
+  ↓ 失败 → 旧服务不受影响, 退出
+Step 3: rm + compose up (最短停机窗口, ~2s)
+  ↓ 失败 → 自动回滚到旧镜像
+Step 4: 健康检查轮询 (每3s, 最多60s, 必须 status=ok)
+  ↓ 失败 → 自动回滚 + 打印容器日志
+Step 5: 清理悬空镜像, 输出完整报告
+```
+
+**生产级保护特性:**
+- 先 build 后切换 (构建失败不影响运行中的服务)
+- 自动回滚 (健康检查失败时恢复旧镜像 + 验证回滚结果)
+- 并发锁 (防止同时执行多个 update)
+- 中断安全 (Ctrl+C 时自动恢复服务)
+- 全程日志 (`/root/backups/update.log`)
+
+**实际运行效果 (2026-05-23 验证):**
+
+```
+[15:52:32] ⏳ [0/5] 环境预检...
+[15:52:32]   ✅ 磁盘: 剩余 30GB
+[15:52:32]   ✅ Docker: 运行中
+[15:52:32]   ✅ .env: 存在
+[15:52:33]   ✅ 代码: 356906c
+[15:52:34]   ✅ 镜像构建完成 (1s)
+[15:52:36]   ✅ 容器已切换
+[15:52:43]   ✅ 健康检查通过 (6s)
+[15:52:43] ╔══════════════════════════════════════════════╗
+[15:52:43] ║   ✅ 更新成功                                ║
+[15:52:43]   📦 版本: AlphaCore V26.0.0
+[15:52:43]   🗄️ 缓存: redis
+[15:52:43]   ⏱️ 耗时: 11s (构建 1s)
+[15:52:43]   💾 磁盘: 剩余 30GB
+[15:52:43] ╚══════════════════════════════════════════════╝
+```
+
+### 3.2 手动流程 (仅在 update.sh 异常时使用)
 
 ```bash
 # Step 1: 拉取代码
@@ -124,15 +183,23 @@ sleep 10
 curl -s http://localhost:8000/health | python3 -m json.tool
 ```
 
-### 3.2 一键脚本
-
-```bash
-bash /root/quant_dashboard/quant_dashboard/update.sh
-```
-
 > **警告**: 不要用 `docker compose up -d --build`，  
 > 其 BuildKit 网络隔离会导致构建时 DNS 超时。  
 > 必须用 `docker build --network=host` 单独构建。
+
+### 3.3 从本地电脑到服务器的完整流程
+
+```bash
+# 本地 (Windows):
+cd d:\FIONA\google AI\quant_dashboard
+git add -A
+git commit -m "update: 功能描述"
+git push
+
+# 服务器 (SSH):
+cd /root/quant_dashboard/quant_dashboard
+bash update.sh
+```
 
 ---
 
@@ -155,8 +222,9 @@ docker system df
 
 #### P0: Docker 清理 (通常释放 5-30 GiB)
 
-> 40G 系统盘 + Docker 部署, Docker 镜像/构建缓存是最大空间杀手。
-> 每次 docker build 产生的中间层会持续累积。
+> 40G 系统盘 + Docker 部署, Docker 镜像/构建缓存是最大空间杀手。  
+> 每次 docker build 产生的中间层会持续累积。  
+> **实战案例**: 2026-05-23 发现 59 个废弃镜像占了 34.6 GB, 清理后释放 32 GiB。
 
 ```bash
 # 查看 Docker 占用详情
@@ -166,7 +234,7 @@ docker system df -v
 docker system prune -a -f
 docker builder prune -a -f
 
-# 重新构建应用镜像
+# 重新构建应用镜像 + 重启
 cd /root/quant_dashboard/quant_dashboard
 docker build --network=host -t quant_dashboard-quant_dashboard .
 docker rm -f quant_dashboard_app
@@ -197,6 +265,9 @@ rm -rf data_lake/financials/
 rm -f data_lake/daily_prices/gem_*.parquet
 ```
 
+> data_lake/daily_prices/ 中的主缓存文件不建议全部删除。  
+> 策略运行时会自动从 Tushare API 重建, 但会消耗 API 调用额度。
+
 #### P3: 备份清理
 
 ```bash
@@ -212,37 +283,73 @@ docker exec alphacore_redis redis-cli BGREWRITEAOF
 
 ---
 
-## 5. 常见故障排查
+## 5. 自动化防护
 
-### 5.1 磁盘满 (Use% > 90%)
+### 已部署的 Cron 任务
+
+```
+15 17 * * *   acme.sh SSL 证书自动续期
+0  3  * * *   备份 (data_lake + Redis + .env + Git commit)
+0  3  * * 0   Docker 清理 (72h 前的废弃资源) + 日志清理
+```
+
+### Docker 日志限制 (/etc/docker/daemon.json)
+
+```json
+{
+  "dns": ["223.5.5.5", "8.8.8.8"],
+  "log-driver": "json-file",
+  "log-opts": { "max-size": "10m", "max-file": "3" }
+}
+```
+
+每个容器最多 30MB 日志 (3 × 10MB), 自动轮转。
+
+### update.sh 内置防护
+
+| 防护 | 机制 |
+|------|------|
+| 磁盘预检 | 剩余 <2GB 拒绝更新 |
+| 构建失败保护 | 旧容器不动, 安全退出 |
+| 健康检查 | 轮询最多 60s, 必须 status=ok |
+| 自动回滚 | 失败时恢复旧镜像 + 验证 |
+| 并发锁 | PID 锁文件防重复执行 |
+| 中断安全 | Ctrl+C 时自动恢复服务 |
+| 悬空镜像清理 | 每次部署后自动清理 |
+
+---
+
+## 6. 常见故障排查
+
+### 6.1 磁盘满 (Use% > 90%)
 
 ```bash
 df -h / && docker system df
 docker system prune -a -f && docker builder prune -a -f
 sudo apt clean && sudo journalctl --vacuum-size=50M
 
-# 然后重建服务
+# 重建服务
 cd /root/quant_dashboard/quant_dashboard
-docker build --network=host -t quant_dashboard-quant_dashboard .
-docker rm -f quant_dashboard_app && docker compose up -d
+bash update.sh
 ```
 
-### 5.2 Docker 构建 DNS 超时
+### 6.2 Docker 构建 DNS 超时
 
 ```
 Failed to establish a new connection: [Errno -3] Temporary failure in name resolution
 ```
 
-原因: BuildKit bridge 网络隔离。  
-解决: `docker build --network=host -t quant_dashboard-quant_dashboard .`
+原因: BuildKit bridge 网络隔离, 容器内无法解析 DNS。  
+解决: `docker build --network=host` (update.sh 已内置)。  
+**不要用** `docker compose build` (不支持 --network 参数)。
 
-### 5.3 容器名冲突
+### 6.3 容器名冲突
 
 ```bash
 docker rm -f quant_dashboard_app && docker compose up -d
 ```
 
-### 5.4 服务无响应
+### 6.4 服务无响应
 
 ```bash
 docker ps -a
@@ -251,9 +358,37 @@ ss -tlnp | grep 8000
 docker compose restart
 ```
 
+### 6.5 update.sh 无输出
+
+原因: Windows 换行符 (CRLF) 导致 bash 解析失败。  
+诊断: `file update.sh` — 若显示 "CRLF" 则有问题。  
+修复:
+```bash
+sed -i 's/\r$//' update.sh
+bash update.sh
+```
+
+### 6.6 update.sh 自动回滚触发
+
+查看更新日志定位失败原因:
+```bash
+tail -50 /root/backups/update.log
+docker logs --tail 100 quant_dashboard_app
+```
+
 ---
 
-## 6. 备份与恢复
+## 7. 备份与恢复
+
+### 自动备份内容 (每天 03:00)
+
+| 项目 | 说明 |
+|------|------|
+| data_lake/ | Parquet 缓存 + JSON 配置 |
+| Redis RDB + AOF | 快照 + 增量日志 |
+| .env | 环境变量 (含 API Token) |
+| docker-compose.yml | 容器编排配置 |
+| git_commit.txt | 代码版本号 |
 
 ### 手动备份
 
@@ -273,7 +408,7 @@ docker compose restart
 
 ---
 
-## 7. 40G 系统盘容量预算
+## 8. 40G 系统盘容量预算
 
 | 组件 | 占用 | 说明 |
 |------|------|------|
@@ -289,30 +424,59 @@ docker compose restart
 | **正常总计** | **~5 GB** | **剩余 ~35 GB 余量** |
 
 > 空间杀手: 每次 `docker build` 不清理旧镜像, 一个应用镜像 ~700MB,  
-> 构建 50 次就吃掉 35GB。每周自动清理 cron 是必须的防线。
+> 构建 50 次就吃掉 35GB。每周 cron + update.sh 内置清理是双重防线。
+
+---
+
+## 9. 长期建议
+
+### 方案 A: 数据盘分离 (推荐, ¥3/月)
+
+```bash
+# 1. 阿里云控制台创建 20G ESSD 云盘, 挂载到 ECS
+# 2. 格式化并挂载
+mkfs.ext4 /dev/vdb
+mkdir -p /data
+mount /dev/vdb /data
+echo '/dev/vdb /data ext4 defaults 0 2' >> /etc/fstab
+
+# 3. 迁移 data_lake + backups
+mv /root/quant_dashboard/quant_dashboard/data_lake /data/data_lake
+ln -s /data/data_lake /root/quant_dashboard/quant_dashboard/data_lake
+mv /root/backups /data/backups
+ln -s /data/backups /root/backups
+```
+
+### 方案 B: 系统盘在线扩容
+
+```bash
+# 阿里云控制台扩容 40G → 60G 后:
+growpart /dev/vda 3
+resize2fs /dev/vda3
+df -h /
+```
 
 ---
 
 ## 快速命令速查
 
 ```bash
-# ── 部署 ──
-cd /root/quant_dashboard/quant_dashboard
-docker build --network=host -t quant_dashboard-quant_dashboard .
-docker rm -f quant_dashboard_app && docker compose up -d
+# ── 一键更新 (推荐) ──
+cd /root/quant_dashboard/quant_dashboard && bash update.sh
 
-# ── 状态 ──
+# ── 状态检查 ──
 docker ps && curl -s localhost:8000/health | python3 -m json.tool
 
-# ── 日志 ──
-docker logs --tail 20 quant_dashboard_app
+# ── 查看日志 ──
+docker logs --tail 20 quant_dashboard_app   # 应用日志
+tail -30 /root/backups/update.log           # 更新日志
 
-# ── 磁盘 ──
+# ── 磁盘诊断 ──
 df -h / && docker system df
 
-# ── 清理 ──
+# ── 紧急清理 ──
 docker system prune -a -f && docker builder prune -a -f
 
-# ── 备份 ──
+# ── 手动备份 ──
 bash /root/quant_dashboard/backup.sh
 ```

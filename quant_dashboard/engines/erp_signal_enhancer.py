@@ -19,6 +19,10 @@ def adaptive_weights(base_weights: dict, vol_key: str, vol_regime: str) -> dict:
     - 其他: 原始权重不变
 
     所有权重调整后归一化至总和=1.0
+
+    NOTE (V3.2 审计): 恐慌时 D3(M1流动性) 有效权重从 35% 被动降至 ~31-32%,
+    被 D4 权重提升挤压。当前接受此行为 — 恐慌环境下估值波动率信号
+    比月频 M1 数据更具即时性。如需保护 D3 最低权重, 可在此添加 floor 约束。
     """
     w = dict(base_weights)  # 浅拷贝
 

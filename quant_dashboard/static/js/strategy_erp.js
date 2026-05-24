@@ -160,10 +160,12 @@ async function loadERPTimingData() {
         renderERPAlerts(data.alerts || []);
         renderERPTradeHub(data.trade_rules || {});
         renderERPDimBars(data.dimensions, data.encyclopedia || {});
-        renderERPGauge(data.signal, data.trade_rules);
+        renderERPGauge(data.signal, data.trade_rules, data.position_layer);
         if (data.chart && data.chart.status === 'success') renderERPHistoryChart(data.chart, data);
         renderERPEncyclopedia(data.encyclopedia || {});
         renderERPDiagnosis(data.diagnosis || []);
+        // V3.4: 仓位管理层
+        if (data.position_layer) renderERPPositionLayer(data.position_layer);
         // 头部徽章
         const sig = data.signal || {};
         const tr = data.trade_rules || {};
@@ -327,7 +329,7 @@ function renderERPDimBars(dims, encyclopedia) {
     const order = ['erp_abs', 'erp_pct', 'm1_trend', 'volatility', 'credit'];
     const icons = { erp_abs: '\uD83D\uDCCA', erp_pct: '\uD83D\uDCD0', m1_trend: '\uD83D\uDCA7', volatility: '\uD83C\uDF0A', credit: '\uD83D\uDD17' };
     const encKeys = { erp_abs: 'erp_abs', erp_pct: 'erp_pct', m1_trend: 'm1_trend', volatility: 'volatility', credit: 'credit' };
-    container.innerHTML = order.map(key => {
+    let html = order.map(key => {
         const d = dims[key];
         if (!d) return '';
         const barColor = d.score >= 70 ? '#10b981' : (d.score >= 40 ? '#f59e0b' : '#ef4444');
@@ -352,9 +354,40 @@ function renderERPDimBars(dims, encyclopedia) {
             '<div style="font-size:0.63rem;color:#94a3b8;margin-top:3px;">' + (d.desc || '') + '</div>' +
             encHtml + '</div>';
     }).join('');
+
+    // V3.3: O7 ERP动量 + O12 市场势能修正器 (正负标签, 非进度条)
+    const modifiers = ['erp_momentum', 'market_trend', 'momentum_confirm'];
+    const modIcons = { erp_momentum: '\u26A1', market_trend: '\uD83C\uDF0A', momentum_confirm: '\uD83C\uDFAF' };
+    const modItems = modifiers.map(key => {
+        const d = dims[key];
+        if (!d) return '';
+        const val = d.score || 0;
+        const color = val > 0 ? '#10b981' : (val < 0 ? '#ef4444' : '#64748b');
+        const sign = val > 0 ? '+' : '';
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:' + color + '10;border-radius:6px;border:1px solid ' + color + '25;">' +
+            '<span style="font-size:0.72rem;color:#cbd5e1;">' + (modIcons[key]||'') + ' ' + (d.label||key) + '</span>' +
+            '<span style="font-size:0.78rem;font-weight:700;color:' + color + ';">' + sign + val + '\u5206</span></div>';
+    }).filter(Boolean);
+
+    if (modItems.length) {
+        html += '<div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(100,116,139,0.2);">' +
+            '<div style="font-size:0.65rem;color:#64748b;margin-bottom:5px;">\u4FEE\u6B63\u5668</div>' +
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">' + modItems.join('') + '</div>';
+        // 修正器描述 (折叠显示)
+        const descItems = modifiers.map(key => {
+            const d = dims[key];
+            return d && d.desc ? '<div style="font-size:0.6rem;color:#94a3b8;">' + (modIcons[key]||'') + ' ' + d.desc + '</div>' : '';
+        }).filter(Boolean);
+        if (descItems.length) {
+            html += '<div style="margin-top:4px;">' + descItems.join('') + '</div>';
+        }
+        html += '</div>';
+    }
+
+    container.innerHTML = html;
 }
 
-function renderERPGauge(signal, trade) {
+function renderERPGauge(signal, trade, posLayer) {
     const dom = document.getElementById('erp-gauge-chart');
     if (!dom) return;
     _erpGaugeChart = AC.disposeChart(_erpGaugeChart);
@@ -382,10 +415,25 @@ function renderERPGauge(signal, trade) {
             data: [{ value: score }]
         }]
     });
-    // 信号矩阵
+    // V3.4: 统一仓位建议 — 优先使用 position_layer 精确仓位
     const matrix = document.getElementById('erp-signal-matrix');
     if (matrix && trade) {
-        matrix.innerHTML = (trade.resonance_label || '') + ' | \u4ED3\u4F4D\u5EFA\u8BAE: <span style="color:' + color + ';font-weight:700;">' + (signal.position || '--') + '</span>';
+        const pl = (posLayer && posLayer.status === 'success') ? posLayer.position : null;
+        let posText, posColor;
+        if (pl) {
+            const pct = pl.suggested_position_pct;
+            posColor = pct >= 60 ? '#10b981' : (pct <= 40 ? '#ef4444' : '#f59e0b');
+            posText = pct + '%';
+            // 显示 O16/O17 修正标签
+            const mods = [];
+            if (pl.o16_cap) mods.push('O16 ' + pl.o16_cap);
+            if (pl.o17_boost) mods.push('O17 +10pp');
+            if (mods.length) posText += ' <span style="font-size:0.6rem;color:#94a3b8;">(' + mods.join(' · ') + ')</span>';
+        } else {
+            posText = signal.position || '--';
+            posColor = color;
+        }
+        matrix.innerHTML = (trade.resonance_label || '') + ' | \u4ED3\u4F4D\u5EFA\u8BAE: <span style="color:' + posColor + ';font-weight:700;">' + posText + '</span>';
     }
 }
 
@@ -634,6 +682,59 @@ function renderERPDiagnosis(cards) {
             '<div style="font-size:0.75rem;font-weight:600;color:' + style.border + ';margin-bottom:3px;">' + style.icon + ' ' + c.title + '</div>' +
             '<div style="font-size:0.65rem;color:#cbd5e1;line-height:1.5;">' + c.text + '</div></div>';
     }).join('');
+}
+
+// V3.4: 仓位管理层渲染 (O16 趋势 + O17 换手率 + 仓位建议)
+function renderERPPositionLayer(pl) {
+    if (!pl || pl.status !== 'success') return;
+    const trend = pl.trend || {};
+    const vol = pl.volume || {};
+    const pos = pl.position || {};
+
+    // O16 趋势
+    const trendColors = { bullish: '#10b981', neutral: '#94a3b8', weak: '#f59e0b', bearish: '#ef4444' };
+    const trendColor = trendColors[trend.status] || '#94a3b8';
+    const trendCard = document.getElementById('erp-pl-trend');
+    if (trendCard) trendCard.style.borderColor = trendColor + '40';
+    const te = document.getElementById('erp-pl-trend-emoji');
+    if (te) te.textContent = trend.emoji || '⚪';
+    const tl = document.getElementById('erp-pl-trend-label');
+    if (tl) { tl.textContent = trend.label || '--'; tl.style.color = trendColor; }
+    const td = document.getElementById('erp-pl-trend-detail');
+    if (td) td.textContent = 'PE ' + (trend.pe_current || '--') + ' · MA60 ' + (trend.pe_ma60 || '--') + ' · MA120 ' + (trend.pe_ma120 || '--');
+
+    // O17 换手率
+    const zs = vol.zscore != null ? vol.zscore : '--';
+    const volColor = vol.signal === 'high_conviction' ? '#10b981' : (vol.signal === 'low_activity' ? '#ef4444' : '#94a3b8');
+    const volLabels = { high_conviction: '🔥 放量确认', low_activity: '💤 缩量冷淡', neutral: '📊 正常水平' };
+    const zsEl = document.getElementById('erp-pl-vol-zscore');
+    if (zsEl) { zsEl.textContent = typeof zs === 'number' ? (zs >= 0 ? '+' : '') + zs.toFixed(2) : zs; zsEl.style.color = volColor; }
+    const vsEl = document.getElementById('erp-pl-vol-signal');
+    if (vsEl) { vsEl.textContent = volLabels[vol.signal] || 'z-score'; vsEl.style.color = volColor; }
+    const vdEl = document.getElementById('erp-pl-vol-detail');
+    if (vdEl) vdEl.textContent = '换手率 ' + (vol.turnover_rate || '--') + '%';
+    const volCard = document.getElementById('erp-pl-volume');
+    if (volCard) volCard.style.borderColor = volColor + '40';
+
+    // 仓位建议
+    const posVal = document.getElementById('erp-pl-pos-value');
+    if (posVal) {
+        posVal.textContent = (pos.suggested_position_pct || '--') + '%';
+        const pc = pos.suggested_position_pct || 50;
+        posVal.style.color = pc >= 60 ? '#10b981' : (pc <= 40 ? '#ef4444' : '#f59e0b');
+    }
+    const posBase = document.getElementById('erp-pl-pos-base');
+    if (posBase) posBase.textContent = '基础 ' + (pos.base_position_pct || '--') + '% (Score=' + (pos.score || '--') + ')';
+    const posMods = document.getElementById('erp-pl-pos-mods');
+    if (posMods) {
+        const parts = [];
+        if (pos.o16_cap) parts.push('O16: ' + pos.o16_cap);
+        if (pos.o17_boost) parts.push('O17: +10pp 放量加码');
+        if (!parts.length) parts.push('无修正');
+        posMods.textContent = parts.join(' · ');
+    }
+    const posCard = document.getElementById('erp-pl-position');
+    if (posCard) posCard.style.borderColor = 'rgba(245,158,11,0.3)';
 }
 
 // Phase 2: resize 已由 alphacore_utils.js 注册中心统一处理
