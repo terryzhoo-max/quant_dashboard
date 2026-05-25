@@ -183,3 +183,56 @@ AUDIT_MUTE = {
     "degraded_mode": False,              # 降级模式: fail → warn (不触发 enforcer)
     "mute_until": None,                  # 静音到期时间 (ISO格式, 过期自动解除)
 }
+
+# ── AI 配置加载中心 (生产级安全加固) ──
+import json
+
+def get_ai_config() -> dict:
+    """
+    统一加载 AI 配置文件，并动态使用环境变量覆盖敏感 API 密钥。
+    提供集中式配置与双向保底逻辑。
+    """
+    config_dir = Path(__file__).resolve().parent / "config"
+    config_path = config_dir / "ai_config.json"
+    
+    # 默认保底配置
+    default_cfg = {
+        "enable_ai_narrative": False,
+        "provider": "deepseek",
+        "gemini": {
+            "api_key": "",
+            "model": "gemini-2.0-flash"
+        },
+        "deepseek": {
+            "api_key": "",
+            "model": "deepseek-chat",
+            "base_url": "https://api.deepseek.com"
+        },
+        "timeout_seconds": 30,
+        "max_tokens": 1024,
+        "fallback_on_error": True
+    }
+    
+    if not config_path.exists():
+        return default_cfg
+        
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+    except Exception:
+        return default_cfg
+
+    # 动态注入环境变量 (支持 .env 中的密钥)
+    ds_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    if ds_key and ds_key != "ENV_VAR":
+        if "deepseek" not in cfg:
+            cfg["deepseek"] = {}
+        cfg["deepseek"]["api_key"] = ds_key
+
+    gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if gemini_key and gemini_key != "ENV_VAR":
+        if "gemini" not in cfg:
+            cfg["gemini"] = {}
+        cfg["gemini"]["api_key"] = gemini_key
+
+    return cfg

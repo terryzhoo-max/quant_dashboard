@@ -21,6 +21,7 @@ from typing import List, Dict, Optional
 
 from services.logger import get_logger
 from services import db as ac_db
+from config import get_ai_config
 
 logger = get_logger("ac.nlp")
 
@@ -30,7 +31,6 @@ _CONFIG_PATH = os.path.join(
     "config", "ai_config.json"
 )
 
-# ── 关键词白名单 (预过滤, 降低 LLM 调用量) ──
 _KEYWORD_WHITELIST = [
     # 宏观
     "央行", "降息", "加息", "降准", "LPR", "MLF", "GDP", "CPI", "PPI", "PMI",
@@ -85,12 +85,8 @@ _EXTRACTION_PROMPT = """你是一位专业的量化投资分析师。请从以�
 
 
 def _load_ai_config() -> dict:
-    """加载 AI 配置"""
-    try:
-        with open(_CONFIG_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {"enable_ai_narrative": False}
+    """加载 AI 配置 (使用统一的安全配置中心)"""
+    return get_ai_config()
 
 
 def _call_deepseek_json(prompt: str) -> list:

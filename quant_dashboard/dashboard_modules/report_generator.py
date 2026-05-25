@@ -618,12 +618,9 @@ _AI_CONFIG_PATH = _rg_os.path.join(
 
 
 def _load_ai_config() -> dict:
-    """加载 AI 配置 (带缓存)"""
-    try:
-        with open(_AI_CONFIG_PATH, "r", encoding="utf-8") as f:
-            return _rg_json.load(f)
-    except Exception:
-        return {"enable_ai_narrative": False}
+    """加载 AI 配置 (已重构：使用统一的安全配置中心)"""
+    from config import get_ai_config
+    return get_ai_config()
 
 
 def _is_ai_enabled() -> bool:
@@ -739,8 +736,9 @@ MR技术面: {mr_regime} ({mr_cn})
 
 
 def _call_gemini(prompt: str, cfg: dict) -> str:
-    """调用 Gemini API (标准库 urllib, 零依赖)"""
+    """调用 Gemini API (标准库 urllib, 零依赖，带柔性指数退避重试)"""
     import urllib.request
+    import time
 
     gemini_cfg = cfg.get("gemini", {})
     api_key = gemini_cfg.get("api_key", "")
@@ -763,22 +761,35 @@ def _call_gemini(prompt: str, cfg: dict) -> str:
         url, data=payload, method="POST",
         headers={"Content-Type": "application/json"}
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        result = _rg_json.loads(resp.read().decode("utf-8"))
-
-    # 解析 Gemini 响应
-    candidates = result.get("candidates", [])
-    if not candidates:
-        raise ValueError("Gemini 返回空 candidates")
-    parts = candidates[0].get("content", {}).get("parts", [])
-    if not parts:
-        raise ValueError("Gemini 返回空 parts")
-    return parts[0].get("text", "")
+    
+    max_retries = 3
+    retry_delay = 2.0
+    for attempt in range(max_retries):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                result = _rg_json.loads(resp.read().decode("utf-8"))
+            
+            candidates = result.get("candidates", [])
+            if not candidates:
+                raise ValueError("Gemini 返回空 candidates")
+            parts = candidates[0].get("content", {}).get("parts", [])
+            if not parts:
+                raise ValueError("Gemini 返回空 parts")
+            return parts[0].get("text", "")
+        except Exception as e:
+            if attempt == max_retries - 1:
+                logger.error("Gemini 调用最终失败: %s", e)
+                raise e
+            logger.warning("Gemini 调用失败: %s。将在 %.1fs 后进行重试 (%d/%d)", 
+                           e, retry_delay, attempt + 1, max_retries)
+            time.sleep(retry_delay)
+            retry_delay *= 2.0
 
 
 def _call_openai_compatible(prompt: str, cfg: dict, provider: str) -> str:
-    """调用 OpenAI 兼容 API (DeepSeek / OpenAI / 其他兼容端点)"""
+    """调用 OpenAI 兼容 API (DeepSeek / OpenAI / 其他兼容端点，带柔性指数退避重试)"""
     import urllib.request
+    import time
 
     provider_cfg = cfg.get(provider, {})
     api_key = provider_cfg.get("api_key", "")
@@ -806,13 +817,26 @@ def _call_openai_compatible(prompt: str, cfg: dict, provider: str) -> str:
             "Authorization": f"Bearer {api_key}",
         }
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        result = _rg_json.loads(resp.read().decode("utf-8"))
-
-    choices = result.get("choices", [])
-    if not choices:
-        raise ValueError(f"{provider} 返回空 choices")
-    return choices[0].get("message", {}).get("content", "")
+    
+    max_retries = 3
+    retry_delay = 2.0
+    for attempt in range(max_retries):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                result = _rg_json.loads(resp.read().decode("utf-8"))
+            
+            choices = result.get("choices", [])
+            if not choices:
+                raise ValueError(f"{provider} 返回空 choices")
+            return choices[0].get("message", {}).get("content", "")
+        except Exception as e:
+            if attempt == max_retries - 1:
+                logger.error("%s 调用最终失败: %s", provider, e)
+                raise e
+            logger.warning("%s 调用失败: %s。将在 %.1fs 后进行重试 (%d/%d)", 
+                           provider, e, retry_delay, attempt + 1, max_retries)
+            time.sleep(retry_delay)
+            retry_delay *= 2.0
 
 
 def _generate_ai_narrative(snapshot: dict, jcs: dict, conflicts: dict,

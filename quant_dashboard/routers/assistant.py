@@ -140,19 +140,12 @@ def _build_system_context() -> dict:
 
 
 def _call_deepseek_chat(messages: list, max_tokens: int = 800) -> Optional[str]:
-    """调用 DeepSeek Chat API (复用 narrative_engine 的 OpenAI-compatible 模式)"""
+    """调用 DeepSeek Chat API (带柔性指数退避重试)"""
     import urllib.request
+    import time
+    from config import get_ai_config
 
-    # 读取配置
-    try:
-        config_path = __import__('os').path.join(
-            __import__('os').path.dirname(__import__('os').path.dirname(__import__('os').path.abspath(__file__))),
-            "config", "ai_config.json"
-        )
-        with open(config_path, "r", encoding="utf-8") as f:
-            cfg = json.load(f)
-    except Exception:
-        cfg = {}
+    cfg = get_ai_config()
 
     ds_cfg = cfg.get("deepseek", {})
     api_key = ds_cfg.get("api_key", "")
@@ -178,22 +171,36 @@ def _call_deepseek_chat(messages: list, max_tokens: int = 800) -> Optional[str]:
             "Authorization": f"Bearer {api_key}",
         }
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        result = json.loads(resp.read().decode("utf-8"))
-
-    choices = result.get("choices", [])
-    if not choices:
-        return None
-
-    usage = result.get("usage", {})
-    logger.info("[Assistant] DeepSeek tokens: prompt=%d completion=%d",
-                usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
-
-    return choices[0].get("message", {}).get("content", "")
+    
+    max_retries = 3
+    retry_delay = 1.5
+    for attempt in range(max_retries):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+            
+            choices = result.get("choices", [])
+            if not choices:
+                return None
+            
+            usage = result.get("usage", {})
+            logger.info("[Assistant] DeepSeek tokens: prompt=%d completion=%d",
+                        usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
+            
+            return choices[0].get("message", {}).get("content", "")
+        except Exception as e:
+            if attempt == max_retries - 1:
+                logger.error("[Assistant] DeepSeek 调用最终失败: %s", e)
+                raise e
+            logger.warning("[Assistant] DeepSeek 调用失败: %s。将在 %.1fs 后进行重试 (%d/%d)", 
+                           e, retry_delay, attempt + 1, max_retries)
+            time.sleep(retry_delay)
+            retry_delay *= 2.0
+    return None
 
 
 @router.post("/chat")
-async def chat(
+def chat(
     message: str = Body(..., embed=True),
     history: list = Body(default=[], embed=True),
 ):

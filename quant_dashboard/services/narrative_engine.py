@@ -25,6 +25,7 @@ from datetime import datetime
 from typing import Optional
 
 from services.logger import get_logger
+from config import get_ai_config
 
 logger = get_logger("ac.narrative")
 
@@ -36,11 +37,8 @@ _CONFIG_PATH = os.path.join(
 
 
 def _load_ai_config() -> dict:
-    try:
-        with open(_CONFIG_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {"enable_ai_narrative": False}
+    """加载 AI 配置 (使用统一的安全配置中心)"""
+    return get_ai_config()
 
 
 # ═══════════════════════════════════════════════════════
@@ -122,8 +120,10 @@ def _call_llm(prompt: str, cfg: dict) -> Optional[str]:
     return None
 
 
+import time
+
 def _call_gemini(prompt: str, cfg: dict, timeout: int, max_tokens: int) -> Optional[str]:
-    """Gemini API 调用"""
+    """Gemini API 调用 (带柔性指数退避重试)"""
     api_key = cfg["api_key"]
     model = cfg.get("model", "gemini-2.0-flash")
     url = (f"https://generativelanguage.googleapis.com/v1beta/"
@@ -141,18 +141,32 @@ def _call_gemini(prompt: str, cfg: dict, timeout: int, max_tokens: int) -> Optio
         url, data=payload, method="POST",
         headers={"Content-Type": "application/json"}
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        result = json.loads(resp.read().decode("utf-8"))
-
-    candidates = result.get("candidates", [])
-    if not candidates:
-        return None
-    return candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+    
+    max_retries = 3
+    retry_delay = 2.0
+    for attempt in range(max_retries):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+            
+            candidates = result.get("candidates", [])
+            if not candidates:
+                return None
+            return candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+        except Exception as e:
+            if attempt == max_retries - 1:
+                logger.error("[Narrative] Gemini 调用最终失败: %s", e)
+                raise e
+            logger.warning("[Narrative] Gemini 调用失败: %s。将在 %.1fs 后进行重试 (%d/%d)", 
+                           e, retry_delay, attempt + 1, max_retries)
+            time.sleep(retry_delay)
+            retry_delay *= 2.0
+    return None
 
 
 def _call_openai_compatible(prompt: str, cfg: dict, base_url: str,
                              timeout: int, max_tokens: int) -> Optional[str]:
-    """OpenAI 兼容 API (DeepSeek / OpenAI)"""
+    """OpenAI 兼容 API (DeepSeek / OpenAI) (带柔性指数退避重试)"""
     api_key = cfg["api_key"]
     model = cfg.get("model", "deepseek-chat")
     url = f"{base_url.rstrip('/')}/v1/chat/completions"
@@ -174,13 +188,27 @@ def _call_openai_compatible(prompt: str, cfg: dict, base_url: str,
             "Authorization": f"Bearer {api_key}",
         }
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        result = json.loads(resp.read().decode("utf-8"))
-
-    choices = result.get("choices", [])
-    if not choices:
-        return None
-    return choices[0].get("message", {}).get("content", "")
+    
+    max_retries = 3
+    retry_delay = 2.0
+    for attempt in range(max_retries):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+            
+            choices = result.get("choices", [])
+            if not choices:
+                return None
+            return choices[0].get("message", {}).get("content", "")
+        except Exception as e:
+            if attempt == max_retries - 1:
+                logger.error("[Narrative] OpenAI/DeepSeek 调用最终失败: %s", e)
+                raise e
+            logger.warning("[Narrative] OpenAI/DeepSeek 调用失败: %s。将在 %.1fs 后进行重试 (%d/%d)", 
+                           e, retry_delay, attempt + 1, max_retries)
+            time.sleep(retry_delay)
+            retry_delay *= 2.0
+    return None
 
 
 def _call_claude(prompt: str, cfg: dict, timeout: int, max_tokens: int) -> Optional[str]:
