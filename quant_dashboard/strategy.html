@@ -477,6 +477,134 @@
                 </div>
             </section>
 
+            <!-- ==================== ZONE 6 · 因子分解 & 高频估算 ==================== -->
+            <div class="aiae-zone-header" style="--aiae-zone-color:#f59e0b;">
+                <span class="zone-icon">🔬</span>
+                <div>
+                    <div class="zone-title">ZONE 6 · 因子分解 & 高频估算</div>
+                    <div class="zone-sub">三因子 Waterfall · HF 代理补偿 · 因子趋势</div>
+                </div>
+            </div>
+            <section class="st-section">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                    <!-- Waterfall 瀑布图 -->
+                    <div class="glass-panel" style="padding:18px; border:1px solid rgba(245,158,11,0.15);">
+                        <div class="aiae-section-label" style="margin-bottom:10px;">三因子贡献瀑布图</div>
+                        <div id="aiae-waterfall-chart" style="width:100%; height:260px;"></div>
+                    </div>
+                    <!-- HF 高频代理卡片 -->
+                    <div class="glass-panel" style="padding:18px; border:1px solid rgba(245,158,11,0.15);">
+                        <div class="aiae-section-label" style="margin-bottom:10px;">高频代理估算 (HF Proxy)</div>
+                        <div id="aiae-hf-card" style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                            <div style="text-align:center; padding:12px; background:rgba(245,158,11,0.05); border-radius:10px; border:1px solid rgba(245,158,11,0.12);">
+                                <div style="font-size:0.68rem; color:#94a3b8;">AIAE_V1</div>
+                                <div id="hf-aiae-v1" style="font-size:1.6rem; font-weight:800; color:#f59e0b; font-family:'Outfit',sans-serif;">—</div>
+                            </div>
+                            <div style="text-align:center; padding:12px; background:rgba(16,185,129,0.05); border-radius:10px; border:1px solid rgba(16,185,129,0.12);">
+                                <div style="font-size:0.68rem; color:#94a3b8;">AIAE_HF (日频修正)</div>
+                                <div id="hf-aiae-hf" style="font-size:1.6rem; font-weight:800; color:#10b981; font-family:'Outfit',sans-serif;">—</div>
+                            </div>
+                            <div style="text-align:center; padding:10px; background:rgba(255,255,255,0.03); border-radius:8px;">
+                                <div style="font-size:0.65rem; color:#64748b;">HF Delta</div>
+                                <div id="hf-delta-val" style="font-size:1.1rem; font-weight:700; color:#cbd5e1;">—</div>
+                            </div>
+                            <div style="text-align:center; padding:10px; background:rgba(255,255,255,0.03); border-radius:8px;">
+                                <div style="font-size:0.65rem; color:#64748b;">置信度</div>
+                                <div id="hf-confidence" style="font-size:0.9rem; font-weight:600; color:#94a3b8;">—</div>
+                            </div>
+                        </div>
+                        <div style="margin-top:14px;">
+                            <div id="hf-radar-chart" style="width:100%; height:140px;"></div>
+                        </div>
+                    </div>
+                </div>
+                <!-- 因子趋势堆叠面积图 -->
+                <div class="glass-panel" style="padding:18px; margin-top:16px; border:1px solid rgba(245,158,11,0.12);">
+                    <div class="aiae-section-label" style="margin-bottom:8px;">因子贡献趋势 (堆叠面积)</div>
+                    <div id="aiae-factor-trend-chart" style="width:100%; height:240px;"></div>
+                </div>
+            </section>
+
+            <!-- ==================== ZONE 7 · 实盘监控 & 跨市场 ==================== -->
+            <div class="aiae-zone-header" style="--aiae-zone-color:#f59e0b;">
+                <span class="zone-icon">🛡️</span>
+                <div>
+                    <div class="zone-title">ZONE 7 · 实盘监控 & 跨市场联动</div>
+                    <div class="zone-sub">持仓健康度 · 减仓候选 · 四市场传导预警 · 回测对账</div>
+                </div>
+            </div>
+            <section class="st-section">
+                <div style="display:grid; grid-template-columns:280px 1fr; gap:16px;">
+                    <!-- 健康度仪表 -->
+                    <div class="glass-panel" style="padding:18px; text-align:center; border:1px solid rgba(245,158,11,0.12);">
+                        <div class="aiae-section-label">实盘健康度</div>
+                        <div id="aiae-health-gauge" style="width:100%; height:180px;"></div>
+                        <div id="aiae-health-grade" style="font-size:1.8rem; font-weight:900; color:#f59e0b; font-family:'Outfit',sans-serif;">—</div>
+                        <div id="aiae-health-msg" style="font-size:0.7rem; color:#64748b; margin-top:4px;">加载数据后显示</div>
+                    </div>
+                    <!-- 6维蛛网图 + 减仓候选 -->
+                    <div>
+                        <div class="glass-panel" style="padding:18px; border:1px solid rgba(245,158,11,0.12);">
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+                                <div>
+                                    <div class="aiae-section-label" style="margin-bottom:6px;">六维评分雷达</div>
+                                    <div id="aiae-health-radar" style="width:100%; height:200px;"></div>
+                                </div>
+                                <div>
+                                    <div class="aiae-section-label" style="margin-bottom:6px;">关键偏差指标</div>
+                                    <div id="aiae-deviation-stats" style="font-size:0.75rem; color:#94a3b8; line-height:2.0;">
+                                        <div>仓位偏差: <span id="dev-gap" style="color:#f59e0b; font-weight:700;">—</span></div>
+                                        <div>ETF 覆盖: <span id="dev-etf" style="color:#f59e0b; font-weight:700;">—</span></div>
+                                        <div>最大持仓: <span id="dev-max" style="color:#f59e0b; font-weight:700;">—</span></div>
+                                        <div>集中度: <span id="dev-conc" style="color:#94a3b8; font-weight:600;">—</span></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- 减仓候选 -->
+                        <div id="aiae-reduction-panel" class="glass-panel" style="padding:14px 18px; margin-top:12px; border:1px solid rgba(239,68,68,0.15); display:none;">
+                            <div style="font-size:0.78rem; font-weight:700; color:#f87171; margin-bottom:8px;">🔴 首批减仓候选</div>
+                            <div id="aiae-reduction-list" style="font-size:0.72rem; color:#cbd5e1;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 跨市场预警 -->
+                <div class="glass-panel" style="padding:18px; margin-top:16px; border:1px solid rgba(245,158,11,0.12);">
+                    <div class="aiae-section-label" style="margin-bottom:10px;">跨市场联动预警</div>
+                    <!-- 四市场 Regime 条 -->
+                    <div id="aiae-cross-regime-bar" style="display:flex; gap:12px; margin-bottom:14px;"></div>
+                    <!-- 预警卡片 -->
+                    <div id="aiae-cross-alerts" style="display:grid; gap:10px;"></div>
+                    <div id="aiae-cross-empty" style="font-size:0.75rem; color:#475569; text-align:center; padding:16px; display:none;">
+                        ✅ 当前无跨市场联动预警
+                    </div>
+                </div>
+
+                <!-- 回测对账摘要 -->
+                <div class="glass-panel" style="padding:18px; margin-top:16px; border:1px solid rgba(245,158,11,0.12);">
+                    <div class="aiae-section-label" style="margin-bottom:10px;">回测-实盘对账</div>
+                    <div id="aiae-recon-summary" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:12px;">
+                        <div style="text-align:center; padding:10px; background:rgba(255,255,255,0.03); border-radius:8px;">
+                            <div style="font-size:0.65rem; color:#64748b;">仓位偏差</div>
+                            <div id="recon-gap" style="font-size:1.1rem; font-weight:700; color:#f59e0b; font-family:'Outfit',sans-serif;">—</div>
+                        </div>
+                        <div style="text-align:center; padding:10px; background:rgba(255,255,255,0.03); border-radius:8px;">
+                            <div style="font-size:0.65rem; color:#64748b;">合规率</div>
+                            <div id="recon-compliance" style="font-size:1.1rem; font-weight:700; color:#10b981; font-family:'Outfit',sans-serif;">—</div>
+                        </div>
+                        <div style="text-align:center; padding:10px; background:rgba(255,255,255,0.03); border-radius:8px;">
+                            <div style="font-size:0.65rem; color:#64748b;">对账评分</div>
+                            <div id="recon-score" style="font-size:1.1rem; font-weight:700; color:#60a5fa; font-family:'Outfit',sans-serif;">—</div>
+                        </div>
+                        <div style="text-align:center; padding:10px; background:rgba(255,255,255,0.03); border-radius:8px;">
+                            <div style="font-size:0.65rem; color:#64748b;">买卖比</div>
+                            <div id="recon-bsr" style="font-size:1.1rem; font-weight:700; color:#a78bfa; font-family:'Outfit',sans-serif;">—</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             </div><!-- /st-aiae-position -->
 
             <!-- ==================== 均值回归策略 ==================== -->

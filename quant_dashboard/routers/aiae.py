@@ -85,6 +85,150 @@ async def update_fund_position(req: FundPositionUpdate):
         return {"status": "error", "message": str(e)}
 
 
+# ─── AIAE 偏差分析 (P2-A) ───
+
+@router.get("/aiae/deviation")
+async def get_position_deviation():
+    """实盘持仓 vs AIAE 建议偏差分析"""
+    try:
+        from engines.position_deviation_engine import get_deviation_engine
+        dev_engine = get_deviation_engine()
+        portfolio = dev_engine.load_portfolio()
+        if not portfolio:
+            return {"status": "error", "message": "portfolio_store.json 不存在或不可读"}
+
+        # 尝试获取 AIAE 报告
+        aiae_report = None
+        try:
+            engine = get_aiae_engine()
+            aiae_report = engine.generate_report()
+        except Exception:
+            pass
+
+        result = dev_engine.compute_deviation(portfolio, aiae_report)
+        return result
+    except Exception as e:
+        logger.error(f"Deviation analysis error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@router.get("/aiae/hf_proxy")
+async def get_hf_proxy():
+    """AIAE 高频代理估算"""
+    try:
+        from engines.hf_proxy_engine import get_hf_engine
+        engine = get_aiae_engine()
+        report = engine.generate_report()
+        aiae_v1 = report.get("current", {}).get("aiae_v1", 22.0)
+
+        hf = get_hf_engine().get_aiae_hf_estimate(aiae_v1)
+        return {"status": "success", "data": hf}
+    except Exception as e:
+        logger.error(f"HF Proxy error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+# ─── AIAE 回测对账 (P4-A) ───
+
+@router.get("/aiae/reconciliation")
+async def get_reconciliation_report():
+    """回测-实盘综合对账报告"""
+    try:
+        from engines.backtest_reconciliation import get_reconciliation_engine
+        return get_reconciliation_engine().generate_full_report()
+    except Exception as e:
+        logger.error(f"Reconciliation error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+# ─── 跨市场联动预警 (P3-A) ───
+
+@router.get("/aiae/cross_market_alerts")
+async def get_cross_market_alerts():
+    """跨市场 AIAE 联动预警"""
+    try:
+        from engines.cross_market_alert import get_cross_alert_engine
+        from services.cache_service import cache_manager as _cm
+
+        # 获取四市场 regime
+        cn_regime = 3
+        try:
+            cn_report = get_aiae_engine().generate_report()
+            cn_regime = cn_report.get("current", {}).get("regime", 3)
+        except Exception:
+            pass
+
+        _g = _cm.get_json("aiae_global_report_data") or {}
+        _gc = _g.get("global_comparison", {})
+        regimes = {
+            "CN": cn_regime,
+            "US": _gc.get("us_regime", 3),
+            "HK": _gc.get("hk_regime", 3),
+            "JP": _gc.get("jp_regime", 3),
+        }
+
+        alerts = get_cross_alert_engine().scan_alerts(regimes)
+        matrix = get_cross_alert_engine().get_contagion_matrix()
+
+        return {
+            "status": "success",
+            "regimes": regimes,
+            "alerts": alerts,
+            "alert_count": len(alerts),
+            "contagion_matrix": matrix,
+        }
+    except Exception as e:
+        logger.error(f"Cross-market alert error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+# ─── AIAE 因子分解 (P1-B) ───
+
+@router.get("/aiae/decomposition")
+async def get_aiae_decomposition():
+    """AIAE V1 三因子贡献分解 (Waterfall 图数据)"""
+    try:
+        engine = get_aiae_engine()
+        report = engine.generate_report()
+        current = report.get("current", {})
+        return {
+            "status": "success",
+            "aiae_v1": current.get("aiae_v1"),
+            "regime": current.get("regime"),
+            "decomposition": current.get("decomposition"),
+            "hf_estimate": report.get("hf_estimate"),
+        }
+    except Exception as e:
+        logger.error(f"Decomposition error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+# ─── AIAE 因子趋势 (P4-B) ───
+
+@router.get("/aiae/factor_trend")
+async def get_factor_trend(days: int = 60):
+    """AIAE 三因子贡献趋势 (堆叠面积图数据)"""
+    try:
+        from engines.factor_trend_engine import get_factor_trend_engine
+        return get_factor_trend_engine().get_trend_data(days=min(days, 180))
+    except Exception as e:
+        logger.error(f"Factor trend error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+# ─── HF 权重校准 (P5-B) ───
+
+@router.get("/aiae/hf_calibration")
+async def get_hf_calibration():
+    """HF 代理权重 OLS 校准"""
+    try:
+        from engines.hf_calibration import get_calibration_engine
+        return get_calibration_engine().calibrate()
+    except Exception as e:
+        logger.error(f"HF Calibration error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
 # ─── AIAE 全球 (US + JP + HK) ───
 
 @router.get("/aiae_global/report")

@@ -619,6 +619,51 @@ class AIAEEngine:
             AP.W_FUND_POS * fund_normalized +
             AP.W_MARGIN_HEAT * margin_normalized, 2)
 
+    def compute_aiae_v1_decomposed(self, aiae_simple: float, fund_pos: float, margin_heat: float) -> dict:
+        """V3.1: 带因子贡献分解的 AIAE_V1 计算
+        
+        返回 AIAE_V1 值 + 三因子各自的原始值、归一化值、权重和贡献量。
+        用于前端 Waterfall 图展示。
+        """
+        fund_norm = AP.sigmoid_normalize(fund_pos, AP.FUND_SIGMOID_CENTER, AP.FUND_SIGMOID_K)
+        margin_norm = AP.sigmoid_normalize(margin_heat, AP.MARGIN_SIGMOID_CENTER, AP.MARGIN_SIGMOID_K)
+
+        contrib_simple = AP.W_AIAE_SIMPLE * aiae_simple
+        contrib_fund = AP.W_FUND_POS * fund_norm
+        contrib_margin = AP.W_MARGIN_HEAT * margin_norm
+        total = contrib_simple + contrib_fund + contrib_margin
+
+        return {
+            "aiae_v1": round(total, 2),
+            "decomposition": {
+                "aiae_simple": {
+                    "label": "AIAE_简 (证券化率)",
+                    "raw": round(aiae_simple, 2),
+                    "normalized": round(aiae_simple, 2),
+                    "weight": AP.W_AIAE_SIMPLE,
+                    "contribution": round(contrib_simple, 2),
+                    "frequency": "月频",
+                },
+                "fund_position": {
+                    "label": "基金仓位 (Sigmoid)",
+                    "raw": round(fund_pos, 2),
+                    "normalized": round(fund_norm, 2),
+                    "weight": AP.W_FUND_POS,
+                    "contribution": round(contrib_fund, 2),
+                    "frequency": "季频",
+                },
+                "margin_heat": {
+                    "label": "融资热度 (Sigmoid)",
+                    "raw": round(margin_heat, 2),
+                    "normalized": round(margin_norm, 2),
+                    "weight": AP.W_MARGIN_HEAT,
+                    "contribution": round(contrib_margin, 2),
+                    "frequency": "日频",
+                },
+            },
+        }
+
+
     # ========== 五档判定层 ==========
 
     def classify_regime(self, aiae_value: float, prev_regime: int = None) -> int:
@@ -839,18 +884,24 @@ class AIAEEngine:
                     history = json.load(f)
             except Exception:
                 pass
+        decomposition = getattr(self, '_last_decomposition', None)
         if history and history[-1].get("month") == current_month:
             history[-1]["aiae_v1"] = aiae_v1
             history[-1]["regime"] = regime
             history[-1]["updated_at"] = datetime.now().isoformat()
+            if decomposition:
+                history[-1]["decomposition"] = decomposition
         else:
-            history.append({
+            entry = {
                 "month": current_month,
                 "aiae_v1": aiae_v1,
                 "regime": regime,
                 "recorded_at": datetime.now().isoformat(),
                 "updated_at": datetime.now().isoformat(),
-            })
+            }
+            if decomposition:
+                entry["decomposition"] = decomposition
+            history.append(entry)
         atomic_write_json(history, fp)
 
     def _get_prev_month_aiae(self) -> Optional[float]:
@@ -1018,6 +1069,8 @@ class AIAEEngine:
             aiae_simple = self.compute_aiae_simple(total_mv, m2)
             margin_heat = self.compute_margin_heat(margin_data, total_mv)
             aiae_v1 = self.compute_aiae_v1(aiae_simple, self._fund_position, margin_heat)
+            aiae_decomposed = self.compute_aiae_v1_decomposed(aiae_simple, self._fund_position, margin_heat)
+            self._last_decomposition = aiae_decomposed.get("decomposition")
 
             # 3. 五档判定 (V3.1: 从月度历史读取 prev_regime 启用迟滞)
             prev_regime = None
@@ -1065,6 +1118,58 @@ class AIAEEngine:
 
             # 9. ERP交叉验证
             cross_validation = self._cross_validate(regime, erp_value)
+
+            # 10. 高频代理估算 (P1-A)
+            hf_estimate = None
+            try:
+                from engines.hf_proxy_engine import get_hf_engine
+                hf_estimate = get_hf_engine().get_aiae_hf_estimate(aiae_v1)
+            except Exception as e:
+                _log(f"高频代理引擎不可用 (non-fatal): {e}", "WARN")
+
+            # 11. 跨市场联动预警 (P3-A)
+            cross_market_alerts = None
+            try:
+                from engines.cross_market_alert import get_cross_alert_engine
+                # 尝试读取全球 AIAE 缓存中的 regime 数据
+                from services.cache_service import cache_manager as _cm
+                _g = _cm.get_json("aiae_global_report_data") or {}
+                _gc = _g.get("global_comparison", {})
+                if _gc:
+                    regimes = {
+                        "CN": regime,
+                        "US": _gc.get("us_regime", 3),
+                        "HK": _gc.get("hk_regime", 3),
+                        "JP": _gc.get("jp_regime", 3),
+                    }
+                    cross_market_alerts = get_cross_alert_engine().scan_alerts(regimes)
+            except Exception as e:
+                _log(f"跨市场预警不可用 (non-fatal): {e}", "WARN")
+
+            # 12. 实盘偏差健康度 (P2-B)
+            deviation_health = None
+            try:
+                from engines.position_deviation_engine import get_deviation_engine
+                _dev = get_deviation_engine()
+                _portfolio = _dev.load_portfolio()
+                if _portfolio:
+                    _dev_result = _dev.compute_deviation(_portfolio, {
+                        "position": {"matrix_position": matrix_position},
+                        "current": {"regime": regime},
+                        "stale_data_warnings": [],
+                    })
+                    deviation_health = _dev_result.get("health_score")
+            except Exception as e:
+                _log(f"偏差健康度不可用 (non-fatal): {e}", "WARN")
+
+            # 13. 因子趋势快照 (P4-B)
+            try:
+                from engines.factor_trend_engine import get_factor_trend_engine
+                _decomp = aiae_decomposed.get("decomposition")
+                _hf_d = hf_estimate.get("hf_delta") if hf_estimate else None
+                get_factor_trend_engine().record_snapshot(_decomp, aiae_v1, regime, _hf_d)
+            except Exception as e:
+                _log(f"因子趋势记录失败 (non-fatal): {e}", "WARN")
 
             _log(f"报告生成完成 ({time.time()-t0:.1f}s) | AIAE={aiae_v1}% Regime={regime} Pos={matrix_position}%")
 
@@ -1120,6 +1225,7 @@ class AIAEEngine:
                     "fund_position": self._fund_position,
                     "fund_position_date": self._fund_position_date,
                     "slope": slope_info,
+                    "decomposition": aiae_decomposed.get("decomposition"),
                 },
 
                 "position": {
@@ -1138,11 +1244,15 @@ class AIAEEngine:
                 "stale_data_warnings": stale_warnings,
                 "fund_update_guide": FUND_UPDATE_GUIDE,
 
+                "hf_estimate": hf_estimate,
+                "cross_market_alerts": cross_market_alerts,
+                "deviation_health": deviation_health,
+
                 "raw_data": {
                     "mv": mv_data,
                     "m2": m2_data,
                     "margin": margin_data,
-                }
+                },
             }
 
         except Exception as e:

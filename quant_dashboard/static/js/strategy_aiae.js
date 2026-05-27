@@ -169,6 +169,12 @@ function renderAIAEUI(data) {
 
     // ── Action Dashboard ──
     try { renderAIAEActionDashboard(c.regime, ri, p.matrix_position); } catch(e) { console.warn('[AIAE] action skip:', e); }
+
+    // ── ZONE 6: Factor Decomposition + HF (async, non-blocking) ──
+    try { loadAndRenderZone6(); } catch(e) { console.warn('[AIAE] zone6 skip:', e); }
+
+    // ── ZONE 7: Health + Cross-Market + Reconciliation (async, non-blocking) ──
+    try { loadAndRenderZone7(); } catch(e) { console.warn('[AIAE] zone7 skip:', e); }
 }
 
 // ── Warning Indicators V2.1 (DOM 缓存) ──
@@ -630,6 +636,439 @@ function renderAIAESignals(signals) {
             </div>
         </div>`;
     }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  ZONE 6: 因子分解 + HF 高频代理
+// ═══════════════════════════════════════════════════════════════
+
+async function loadAndRenderZone6() {
+    // 并发请求 decomposition + factor_trend
+    const [decompResp, trendResp] = await Promise.allSettled([
+        fetch('/api/v1/aiae/decomposition', { signal: AbortSignal.timeout(8000) }).then(r => r.json()),
+        fetch('/api/v1/aiae/factor_trend?days=60', { signal: AbortSignal.timeout(8000) }).then(r => r.json()),
+    ]);
+
+    const decomp = decompResp.status === 'fulfilled' ? decompResp.value : null;
+    const trend = trendResp.status === 'fulfilled' ? trendResp.value : null;
+
+    if (decomp && decomp.decomposition) {
+        renderWaterfallChart(decomp.decomposition, decomp.aiae_v1);
+    }
+    if (decomp && decomp.hf_estimate) {
+        renderHFCard(decomp.hf_estimate, decomp.aiae_v1);
+    }
+    if (trend && trend.status === 'success' && trend.series) {
+        renderFactorTrendChart(trend);
+    }
+}
+
+function renderWaterfallChart(decomp, totalV1) {
+    const container = document.getElementById('aiae-waterfall-chart');
+    if (!container || typeof echarts === 'undefined') return;
+    try { window._aiaeWfChart = AC.disposeChart(window._aiaeWfChart); } catch(_) {}
+    window._aiaeWfChart = AC.registerChart(echarts.init(container));
+
+    const factors = ['aiae_simple', 'fund_position', 'margin_heat'];
+    const labels = factors.map(f => decomp[f]?.label || f);
+    labels.push('AIAE V1');
+
+    const contribs = factors.map(f => decomp[f]?.contribution || 0);
+
+    // Waterfall: transparent base stacks
+    let cumBase = 0;
+    const baseData = [];
+    const contribData = [];
+
+    for (let i = 0; i < contribs.length; i++) {
+        baseData.push(cumBase);
+        contribData.push(contribs[i]);
+        cumBase += contribs[i];
+    }
+    // Total bar: from 0 to total
+    baseData.push(0);
+    contribData.push(totalV1 || cumBase);
+
+    const colors = ['#f59e0b', '#eab308', '#f97316', 'rgba(255,255,255,0.9)'];
+
+    window._aiaeWfChart.setOption({
+        backgroundColor: 'transparent',
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(15,23,42,0.95)',
+            borderColor: 'rgba(245,158,11,0.3)',
+            textStyle: { color: '#e2e8f0', fontSize: 11 },
+            formatter: function(params) {
+                if (!params.length) return '';
+                const idx = params[0].dataIndex;
+                const val = contribData[idx];
+                const freq = idx < factors.length ? (decomp[factors[idx]]?.frequency || '') : '';
+                const weight = idx < factors.length ? (decomp[factors[idx]]?.weight * 100).toFixed(0) + '%' : '100%';
+                return '<b>' + labels[idx] + '</b><br/>' +
+                    '贡献: <b>' + val.toFixed(2) + '</b> pt<br/>' +
+                    '权重: ' + weight + (freq ? ' · ' + freq : '');
+            }
+        },
+        grid: { left: 50, right: 20, top: 20, bottom: 40 },
+        xAxis: {
+            type: 'category', data: labels,
+            axisLabel: { color: '#94a3b8', fontSize: 10, interval: 0, rotate: 0 },
+            axisLine: { lineStyle: { color: '#334155' } }
+        },
+        yAxis: {
+            type: 'value',
+            axisLabel: { color: '#64748b', fontSize: 9 },
+            splitLine: { lineStyle: { color: 'rgba(255,255,255,0.04)' } }
+        },
+        series: [
+            {
+                type: 'bar', stack: 'wf', data: baseData, barWidth: '45%',
+                itemStyle: { color: 'transparent' }, emphasis: { disabled: true }
+            },
+            {
+                type: 'bar', stack: 'wf', data: contribData.map((v, i) => ({
+                    value: v,
+                    itemStyle: { color: colors[i], borderRadius: [4, 4, 0, 0] }
+                })),
+                barWidth: '45%',
+                label: {
+                    show: true, position: 'top', color: '#cbd5e1', fontSize: 10,
+                    formatter: p => p.value.toFixed(2)
+                }
+            }
+        ]
+    });
+}
+
+function renderHFCard(hf, v1) {
+    const $v1 = document.getElementById('hf-aiae-v1');
+    const $hf = document.getElementById('hf-aiae-hf');
+    const $delta = document.getElementById('hf-delta-val');
+    const $conf = document.getElementById('hf-confidence');
+
+    if ($v1) $v1.textContent = (v1 || 0).toFixed(2) + '%';
+
+    const aiae_hf = hf.aiae_hf || v1 || 0;
+    const delta = hf.hf_delta || 0;
+    const conf = hf.confidence || 'N/A';
+
+    if ($hf) $hf.textContent = aiae_hf.toFixed(2) + '%';
+    if ($delta) {
+        const sign = delta >= 0 ? '+' : '';
+        $delta.textContent = sign + delta.toFixed(2) + ' pt';
+        $delta.style.color = delta > 0 ? '#f97316' : (delta < 0 ? '#10b981' : '#94a3b8');
+    }
+
+    if ($conf) {
+        const dots = { 'LOW': '●○○○', 'MEDIUM': '●●○○', 'HIGH': '●●●○', 'VERY_HIGH': '●●●●' };
+        const confColors = { 'LOW': '#64748b', 'MEDIUM': '#eab308', 'HIGH': '#10b981', 'VERY_HIGH': '#3b82f6' };
+        $conf.textContent = conf + ' ' + (dots[conf] || '○○○○');
+        $conf.style.color = confColors[conf] || '#94a3b8';
+    }
+
+    // HF sub-indicator radar
+    const radarEl = document.getElementById('hf-radar-chart');
+    if (!radarEl || typeof echarts === 'undefined' || !hf.breakdown) return;
+    try { window._hfRadar = AC.disposeChart(window._hfRadar); } catch(_) {}
+    window._hfRadar = AC.registerChart(echarts.init(radarEl));
+
+    const bd = hf.breakdown;
+    // 后端键名: turnover/etf_flow/margin_delta, 值结构: {normalized, weight, contribution}
+    const radarData = [
+        bd.turnover?.normalized ?? bd.turnover_zscore?.normalized ?? 0,
+        bd.etf_flow?.normalized ?? bd.etf_flow_rank?.normalized ?? 0,
+        bd.margin_delta?.normalized ?? bd.margin_delta_5d?.normalized ?? 0
+    ].map(v => Math.min(Math.max((v + 1) * 50, 0), 100)); // [-1,1] → [0,100]
+
+    window._hfRadar.setOption({
+        backgroundColor: 'transparent',
+        radar: {
+            indicator: [
+                { name: '换手率', max: 100 },
+                { name: 'ETF流', max: 100 },
+                { name: '融资Δ', max: 100 }
+            ],
+            radius: '60%',
+            nameTextStyle: { color: '#94a3b8', fontSize: 9 },
+            axisLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } },
+            splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } },
+            splitArea: { show: false }
+        },
+        series: [{
+            type: 'radar',
+            data: [{ value: radarData, areaStyle: { color: 'rgba(245,158,11,0.15)' } }],
+            lineStyle: { color: '#f59e0b', width: 2 },
+            itemStyle: { color: '#f59e0b' },
+            symbol: 'circle', symbolSize: 5
+        }]
+    });
+}
+
+function renderFactorTrendChart(trend) {
+    const container = document.getElementById('aiae-factor-trend-chart');
+    if (!container || typeof echarts === 'undefined') return;
+    try { window._ftChart = AC.disposeChart(window._ftChart); } catch(_) {}
+    window._ftChart = AC.registerChart(echarts.init(container));
+
+    const series = trend.series;
+    const dates = trend.dates || [];
+    const colors = { 'aiae_simple': '#f59e0b', 'fund_position': '#eab308', 'margin_heat': '#f97316' };
+    const names = { 'aiae_simple': 'AIAE简', 'fund_position': '基金仓位', 'margin_heat': '融资热度' };
+
+    // series 格式: {aiae_simple: {label: "...", values: [...]}} 或 {aiae_simple: [...]}
+    const echartsData = Object.entries(series).map(([key, valOrObj]) => {
+        const vals = Array.isArray(valOrObj) ? valOrObj : (valOrObj?.values || []);
+        return {
+            name: names[key] || (valOrObj?.label) || key,
+            type: 'line', stack: 'factor', areaStyle: { opacity: 0.4 },
+            data: vals, smooth: true,
+            lineStyle: { width: 1.5, color: colors[key] || '#94a3b8' },
+            itemStyle: { color: colors[key] || '#94a3b8' },
+            symbol: 'none'
+        };
+    });
+
+    window._ftChart.setOption({
+        backgroundColor: 'transparent',
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(15,23,42,0.95)',
+            borderColor: 'rgba(245,158,11,0.3)',
+            textStyle: { color: '#e2e8f0', fontSize: 11 }
+        },
+        legend: {
+            data: Object.values(names), top: 0, right: 10,
+            textStyle: { color: '#94a3b8', fontSize: 10 }
+        },
+        grid: { left: 45, right: 15, top: 30, bottom: 30 },
+        xAxis: {
+            type: 'category', data: dates, boundaryGap: false,
+            axisLabel: { color: '#64748b', fontSize: 9 },
+            axisLine: { lineStyle: { color: '#334155' } }
+        },
+        yAxis: {
+            type: 'value',
+            axisLabel: { color: '#64748b', fontSize: 9 },
+            splitLine: { lineStyle: { color: 'rgba(255,255,255,0.04)' } }
+        },
+        series: echartsData
+    });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  ZONE 7: 实盘健康度 + 跨市场 + 对账
+// ═══════════════════════════════════════════════════════════════
+
+async function loadAndRenderZone7() {
+    const [devResp, alertResp, reconResp] = await Promise.allSettled([
+        fetch('/api/v1/aiae/deviation', { signal: AbortSignal.timeout(8000) }).then(r => r.json()),
+        fetch('/api/v1/aiae/cross_market_alerts', { signal: AbortSignal.timeout(8000) }).then(r => r.json()),
+        fetch('/api/v1/aiae/reconciliation', { signal: AbortSignal.timeout(8000) }).then(r => r.json()),
+    ]);
+
+    const dev = devResp.status === 'fulfilled' ? devResp.value : null;
+    const alerts = alertResp.status === 'fulfilled' ? alertResp.value : null;
+    const recon = reconResp.status === 'fulfilled' ? reconResp.value : null;
+
+    if (dev && dev.status === 'success') {
+        renderHealthGauge(dev.health_score);
+        renderHealthRadar(dev.health_score);
+        renderDeviationStats(dev);
+        renderReductionList(dev.reduction_candidates);
+    }
+    if (alerts) {
+        renderCrossMarketAlerts(alerts);
+    }
+    if (recon && recon.status === 'success') {
+        renderReconSummary(recon);
+    }
+}
+
+function renderHealthGauge(hs) {
+    if (!hs) return;
+    const container = document.getElementById('aiae-health-gauge');
+    if (!container || typeof echarts === 'undefined') return;
+    try { window._healthGauge = AC.disposeChart(window._healthGauge); } catch(_) {}
+    window._healthGauge = AC.registerChart(echarts.init(container));
+
+    const score = hs.score || 0;
+    const gradeColors = { 'S': '#10b981', 'A': '#3b82f6', 'B': '#eab308', 'C': '#f97316', 'D': '#ef4444' };
+    const color = gradeColors[hs.grade?.[0]] || '#f59e0b';
+
+    window._healthGauge.setOption({
+        series: [{
+            type: 'gauge', startAngle: 200, endAngle: -20,
+            min: 0, max: 100,
+            pointer: { length: '55%', width: 4, itemStyle: { color: color } },
+            anchor: { show: true, size: 8, itemStyle: { color: '#0f172a', borderColor: color, borderWidth: 2 } },
+            axisLine: {
+                lineStyle: {
+                    width: 12,
+                    color: [[0.3, '#ef4444'], [0.5, '#f97316'], [0.7, '#eab308'], [0.85, '#3b82f6'], [1, '#10b981']]
+                }
+            },
+            axisTick: { show: false },
+            splitLine: { show: false },
+            axisLabel: { show: false },
+            detail: { show: false },
+            data: [{ value: score }],
+            animationDuration: 1200
+        }]
+    });
+
+    const $grade = document.getElementById('aiae-health-grade');
+    const $msg = document.getElementById('aiae-health-msg');
+    if ($grade) { $grade.textContent = score + '/' + (hs.grade || '—'); $grade.style.color = color; }
+    // 后端无 verdict 字段, 根据 grade 生成
+    const verdictMap = { 'A': '健康', 'B+': '良好', 'B': '偏弱', 'C+': '需改善', 'C': '风险', 'D': '危险' };
+    if ($msg) $msg.textContent = hs.verdict || verdictMap[hs.grade] || '';
+}
+
+function renderHealthRadar(hs) {
+    if (!hs || !hs.breakdown) return;
+    const container = document.getElementById('aiae-health-radar');
+    if (!container || typeof echarts === 'undefined') return;
+    try { window._healthRadar = AC.disposeChart(window._healthRadar); } catch(_) {}
+    window._healthRadar = AC.registerChart(echarts.init(container));
+
+    const bd = hs.breakdown;
+    const dims = ['position', 'etf_coverage', 'concentration', 'allocation', 'stop_loss', 'freshness'];
+    const labels = ['仓位', 'ETF覆盖', '集中度', '配额', '止损', '新鲜度'];
+    // breakdown 返回扁平格式 {position: 70} 而非 {position: {score: 70}}
+    const values = dims.map(d => {
+        const v = bd[d];
+        return (typeof v === 'number') ? v : (v?.score ?? 50);
+    });
+
+    window._healthRadar.setOption({
+        backgroundColor: 'transparent',
+        radar: {
+            indicator: labels.map(l => ({ name: l, max: 100 })),
+            radius: '65%',
+            nameTextStyle: { color: '#94a3b8', fontSize: 9 },
+            axisLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } },
+            splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } },
+            splitArea: { show: false }
+        },
+        series: [{
+            type: 'radar',
+            data: [{ value: values, areaStyle: { color: 'rgba(245,158,11,0.15)' } }],
+            lineStyle: { color: '#f59e0b', width: 2 },
+            itemStyle: { color: '#f59e0b' },
+            symbol: 'circle', symbolSize: 4
+        }]
+    });
+}
+
+function renderDeviationStats(dev) {
+    const pd = dev.position_deviation;
+    const conc = dev.concentration;
+    const etf = dev.etf_coverage;
+
+    const $gap = document.getElementById('dev-gap');
+    const $etf = document.getElementById('dev-etf');
+    const $max = document.getElementById('dev-max');
+    const $conc = document.getElementById('dev-conc');
+
+    if ($gap && pd) {
+        // 后端字段名: gap (非 gap_pt)
+        const gap = pd.gap ?? pd.gap_pt;
+        $gap.textContent = (gap !== null && gap !== undefined) ? gap + 'pt (' + pd.gap_severity + ')' : '—';
+        $gap.style.color = pd.gap_severity === 'critical' ? '#ef4444' : (pd.gap_severity === 'warning' ? '#f97316' : '#10b981');
+    }
+    if ($etf && etf) $etf.textContent = etf.held_count + '/' + etf.total_count + ' (' + etf.coverage_pct + '%)';
+    // 后端字段: positions (非 top_holdings), 取 max_name + max_pct
+    if ($max && conc) {
+        if (conc.max_name) {
+            $max.textContent = conc.max_name + ' ' + (conc.max_pct || 0).toFixed(1) + '%';
+        } else if (conc.positions && conc.positions.length) {
+            const top = conc.positions[0];
+            $max.textContent = top.name + ' ' + top.pct.toFixed(1) + '%';
+        }
+    }
+    if ($conc && conc) {
+        $conc.textContent = conc.verdict;
+        $conc.style.color = conc.verdict === '红线违规' ? '#ef4444' : (conc.alert_count > 0 ? '#f97316' : '#10b981');
+    }
+}
+
+function renderReductionList(rc) {
+    const panel = document.getElementById('aiae-reduction-panel');
+    const list = document.getElementById('aiae-reduction-list');
+    if (!panel || !list || !rc) return;
+
+    if (!rc.count || rc.count === 0) { panel.style.display = 'none'; return; }
+    panel.style.display = 'block';
+
+    // 后端字段: candidates (非 items), pct (非 position_pct), ts_code (非 code)
+    const items = rc.candidates || rc.items || [];
+    if (!items.length) { panel.style.display = 'none'; return; }
+    list.innerHTML = items.map(item =>
+        `<div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.04);">
+            <span><b style="color:#f87171">${item.name}</b> (${item.ts_code || item.code || ''})</span>
+            <span>占比 <b>${(item.pct ?? item.position_pct ?? 0).toFixed(1)}%</b> · 浮盈 <b style="color:${item.pnl_pct > 0 ? '#10b981' : '#ef4444'}">${item.pnl_pct > 0 ? '+' : ''}${item.pnl_pct.toFixed(1)}%</b> · 优先级 ${item.priority.toFixed(2)}</span>
+        </div>`
+    ).join('');
+}
+
+function renderCrossMarketAlerts(data) {
+    const regimeBar = document.getElementById('aiae-cross-regime-bar');
+    const alertsEl = document.getElementById('aiae-cross-alerts');
+    const emptyEl = document.getElementById('aiae-cross-empty');
+
+    // Regime bar
+    if (regimeBar && data.regimes) {
+        const regimeColors = { 1: '#10b981', 2: '#3b82f6', 3: '#eab308', 4: '#f97316', 5: '#ef4444' };
+        const marketNames = { 'CN': 'A股', 'US': '美股', 'HK': '港股', 'JP': '日股' };
+        regimeBar.innerHTML = Object.entries(data.regimes).map(([mkt, r]) => {
+            const c = regimeColors[r] || '#94a3b8';
+            return `<div style="flex:1; text-align:center; padding:8px; background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid ${c}33;">
+                <div style="font-size:0.65rem; color:#64748b;">${marketNames[mkt] || mkt}</div>
+                <div style="font-size:1.1rem; font-weight:800; color:${c}; font-family:'Outfit',sans-serif;">R${r}</div>
+            </div>`;
+        }).join('');
+    }
+
+    // Alerts
+    const alerts = data.alerts || [];
+    if (alertsEl) {
+        if (alerts.length === 0) {
+            alertsEl.innerHTML = '';
+            if (emptyEl) emptyEl.style.display = 'block';
+        } else {
+            if (emptyEl) emptyEl.style.display = 'none';
+            const sevColors = { 'critical': '#ef4444', 'warning': '#f97316', 'opportunity': '#10b981', 'info': '#3b82f6' };
+            const sevIcons = { 'critical': '🔴', 'warning': '⚠️', 'opportunity': '🟢', 'info': 'ℹ️' };
+            alertsEl.innerHTML = alerts.map(a => {
+                const c = sevColors[a.severity] || '#94a3b8';
+                return `<div style="padding:12px 16px; background:${c}08; border:1px solid ${c}33; border-radius:10px; border-left:3px solid ${c};">
+                    <div style="font-size:0.8rem; font-weight:700; color:${c};">${sevIcons[a.severity] || ''} ${a.title}</div>
+                    <div style="font-size:0.7rem; color:#94a3b8; margin-top:4px; line-height:1.5;">${a.action || ''}</div>
+                    ${a.contagion_coef ? '<div style="font-size:0.65rem; color:#64748b; margin-top:2px;">传导系数: ' + a.contagion_coef + '</div>' : ''}
+                </div>`;
+            }).join('');
+        }
+    }
+}
+
+function renderReconSummary(recon) {
+    const pos = recon.position_reconciliation;
+    const trades = recon.trade_analysis;
+
+    if (pos && pos.summary) {
+        const $gap = document.getElementById('recon-gap');
+        const $comp = document.getElementById('recon-compliance');
+        const $score = document.getElementById('recon-score');
+        // avg_gap_pt 可能为 null, 兼容 avg_gap
+        const gapVal = pos.summary.avg_gap_pt ?? pos.summary.avg_gap ?? 0;
+        if ($gap) $gap.textContent = (typeof gapVal === 'number' ? gapVal.toFixed(1) : gapVal) + 'pt';
+        if ($comp) $comp.textContent = pos.summary.compliance_rate_pct?.toFixed(1) + '%';
+        if ($score) $score.textContent = pos.summary.score + '/100';
+    }
+    if (trades && trades.status === 'success') {
+        const $bsr = document.getElementById('recon-bsr');
+        if ($bsr) $bsr.textContent = (trades.buy_sell_ratio || 0).toFixed(2);
+    }
 }
 
 // 页面首次加载时，如果AIAE是默认active tab则自动加载
