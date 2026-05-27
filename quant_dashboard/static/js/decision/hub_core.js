@@ -303,7 +303,47 @@ function renderAIAEHub(snapshot) {
     const fundPos = snapshot.fund_position || 80;
     const rd = _REGIME_DEFS.find(d => d.r === regime) || _REGIME_DEFS[2];
 
+    // C1 Fix: 数据质量评分与决策锁定
+    const dqs = (snapshot.data_quality_score !== undefined) ? snapshot.data_quality_score : 100;
+    const locked = snapshot.decision_locked === true;
+
     panel.classList.remove('initially-hidden');
+
+    // ── C1 Fix: 数据质量评分条 (始终显示) ──
+    let dqEl = document.getElementById('aiae-hub-dq-bar');
+    if (!dqEl) {
+        dqEl = document.createElement('div');
+        dqEl.id = 'aiae-hub-dq-bar';
+        dqEl.style.cssText = 'margin-bottom:10px;padding:8px 12px;border-radius:8px;background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.06);';
+        panel.insertBefore(dqEl, panel.firstChild);
+    }
+    const dqColor = dqs >= 80 ? '#10b981' : dqs >= 50 ? '#f59e0b' : '#ef4444';
+    const dqLabel = dqs >= 80 ? '数据充足' : dqs >= 50 ? '部分降级' : '严重降级';
+    dqEl.innerHTML = `
+        <div style="display:flex;align-items:center;gap:10px;font-size:0.72rem;">
+            <span style="color:#64748b;white-space:nowrap;">数据质量</span>
+            <div style="flex:1;height:5px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;">
+                <div style="width:${dqs}%;height:100%;background:${dqColor};border-radius:3px;transition:width 0.4s;"></div>
+            </div>
+            <span style="color:${dqColor};font-weight:600;white-space:nowrap;">${dqs}/100</span>
+            <span style="color:${dqColor};white-space:nowrap;">${dqLabel}</span>
+        </div>`;
+
+    // ── C1 Fix: 决策锁定横幅 (仅 score<50 时显示) ──
+    let lockEl = document.getElementById('aiae-hub-lock-banner');
+    if (!lockEl) {
+        lockEl = document.createElement('div');
+        lockEl.id = 'aiae-hub-lock-banner';
+        panel.insertBefore(lockEl, dqEl.nextSibling);
+    }
+    if (locked) {
+        lockEl.style.cssText = 'margin-bottom:10px;padding:8px 12px;border-radius:8px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);display:flex;align-items:center;gap:8px;';
+        lockEl.innerHTML = `
+            <span style="font-size:1rem;">🔒</span>
+            <span style="color:#ef4444;font-size:0.75rem;font-weight:600;">决策已锁定 — 数据质量不足，当前仓位建议仅供参考，请勿直接执行</span>`;
+    } else {
+        lockEl.style.display = 'none';
+    }
 
     // ── ECharts 半环仪表 ──
     const chartEl = document.getElementById('aiae-hub-gauge-chart');
@@ -336,7 +376,7 @@ function renderAIAEHub(snapshot) {
                 },
                 pointer: {
                     length: '55%', width: 4,
-                    itemStyle: { color: rd.color }
+                    itemStyle: { color: locked ? '#94a3b8' : rd.color }
                 },
                 axisTick: { show: false },
                 splitLine: { show: false },
@@ -347,9 +387,9 @@ function renderAIAEHub(snapshot) {
                 title: { show: false },
                 detail: {
                     valueAnimation: true,
-                    formatter: '{value}%',
+                    formatter: locked ? '{value}% 🔒' : '{value}%',
                     fontSize: 22, fontWeight: 700,
-                    color: rd.color,
+                    color: locked ? '#94a3b8' : rd.color,
                     offsetCenter: [0, '10%']
                 },
                 data: [{ value: Math.round(v1 * 10) / 10 }]
@@ -394,6 +434,23 @@ function renderAIAEHub(snapshot) {
     // ── 三警示指标 ──
     const warns = document.getElementById('aiae-hub-warnings');
     if (warns) {
+        const fpSource = snapshot.fund_position_source || 'manual_update';
+        const fpDate = snapshot.fund_position_date || '';
+        const fpDateShort = fpDate && fpDate.includes('-')
+            ? fpDate.split('-').slice(1).join('-')
+            : fpDate;
+            
+        let fpLabel = '🏦 基金仓位';
+        if (fpSource === 'ths_api') {
+            fpLabel = '🏦 基金仓位 (同花顺)';
+        } else if (fpSource === 'lg_api') {
+            fpLabel = '🏦 基金仓位 (乐咕-备)';
+        } else if (fpSource === 'manual_update') {
+            fpLabel = '🏦 基金仓位 (手动)';
+        } else if (fpSource === 'initial_seed') {
+            fpLabel = '🏦 基金仓位 (种子)';
+        }
+
         const items = [
             {
                 label: '🔥 融资热度', val: marginHeat.toFixed(2) + '%',
@@ -410,7 +467,7 @@ function renderAIAEHub(snapshot) {
                 threshold: '警戒: |±1.5|'
             },
             {
-                label: '🏦 基金仓位', val: fundPos + '%',
+                label: fpLabel, val: fundPos + '%' + (fpDateShort ? ` (${fpDateShort})` : ''),
                 pct: Math.min(100, fundPos),
                 danger: fundPos >= 90,
                 color: fundPos >= 90 ? '#ef4444' : '#10b981',
@@ -427,6 +484,7 @@ function renderAIAEHub(snapshot) {
         `).join('');
     }
 }
+
 
 // ═══════════════════════════════════════════════════
 //  V22.0: 信号时效衰减指示器

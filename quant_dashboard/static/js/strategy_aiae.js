@@ -25,7 +25,12 @@ function _aiaeCacheDOM() {
      'warn-margin-bar','warn-slope-bar','warn-fund-bar',
      'warning-panel','history-summary','regime-cards',
      'alloc-cards','load-status','load-btn','refresh-btn',
-     'fund-reminder-banner','fund-stale-badge'
+     'fund-reminder-banner','fund-stale-badge',
+     'slippage-desk', 'slip-size', 'slip-cost', 'slip-algo',
+     'contagion-matrix-container', 'contagion-matrix',
+     'grc-emergency-alert', 'discipline-drawer', 'drawer-trigger',
+     'drawer-close', 'drawer-overlay', 'grc-read-confirm',
+     'grc-sig-input', 'grc-sign-btn', 'grc-audit-trail', 'slip-size-select'
     ].forEach(k => {
         _aiaeDOM[k] = document.getElementById('aiae-' + k);
     });
@@ -83,9 +88,227 @@ async function loadAIAEReport(forceRefresh = false) {
     }
 }
 
+// ── 生产级风控抽屉交互绑定 ──
+let _grcDrawerBound = false;
+
+// 辅助渲染时间轴
+function renderGRCAuditTrail() {
+    const trailEl = _aiaeDOM['grc-audit-trail'];
+    if (!trailEl) return;
+    
+    let history = [];
+    try {
+        history = JSON.parse(localStorage.getItem('aiae_grc_audit_history') || '[]');
+    } catch(e) {
+        history = [];
+    }
+    
+    if (history.length === 0) {
+        trailEl.innerHTML = `<div style="font-size: 0.65rem; color: #64748b; font-style: italic;">暂无签认记录</div>`;
+        return;
+    }
+    
+    const regimeRoman = {1:'Ⅰ', 2:'Ⅱ', 3:'Ⅲ', 4:'Ⅳ', 5:'Ⅴ'};
+    trailEl.innerHTML = history.map((record, idx) => {
+        const gapVal = parseFloat(record.gap);
+        const gapStr = (gapVal >= 0 ? '+' : '') + gapVal.toFixed(1) + ' pt';
+        return `
+            <div class="aiae-audit-node">
+                <div class="aiae-audit-dot signed"></div>
+                <div class="aiae-audit-info">
+                    交易员 <b>${record.operator}</b> 签认 SOP 纪律<br/>
+                    <span style="color:#94a3b8;">状态: AIAE ${regimeRoman[record.regime] || record.regime}级 · 实盘偏差 ${gapStr}</span>
+                </div>
+                <div class="aiae-audit-time">${record.timestamp}</div>
+            </div>
+        `;
+    }).join('');
+}
+
+function bindGRCDrawer() {
+    if (_grcDrawerBound) return;
+    
+    const trigger = _aiaeDOM['drawer-trigger'];
+    const drawer = _aiaeDOM['discipline-drawer'];
+    const closeBtn = _aiaeDOM['drawer-close'];
+    const overlay = _aiaeDOM['drawer-overlay'];
+    const checkbox = _aiaeDOM['grc-read-confirm'];
+    const sigInput = _aiaeDOM['grc-sig-input'];
+    const signBtn = _aiaeDOM['grc-sign-btn'];
+    const scaleSelect = _aiaeDOM['slip-size-select'];
+
+    if (trigger && drawer) {
+        trigger.addEventListener('click', () => {
+            drawer.classList.add('open');
+            if (overlay) overlay.style.display = 'block';
+            renderGRCAuditTrail();
+        });
+    }
+
+    const closeDrawer = () => {
+        if (drawer) drawer.classList.remove('open');
+        if (overlay) overlay.style.display = 'none';
+    };
+
+    if (closeBtn) closeBtn.addEventListener('click', closeDrawer);
+    if (overlay) overlay.addEventListener('click', closeDrawer);
+
+    // 键盘 Esc 快捷键关闭抽屉
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && drawer && drawer.classList.contains('open')) {
+            closeDrawer();
+        }
+    });
+
+    // 记住签认勾选状态并绑定提交签名按钮
+    if (checkbox && sigInput && signBtn) {
+        const confirmed = localStorage.getItem('aiae_grc_confirmed') === 'true';
+        checkbox.checked = confirmed;
+        
+        // 初始高亮检查
+        const lastSignature = localStorage.getItem('aiae_grc_last_signature');
+        if (confirmed && lastSignature && trigger) {
+            trigger.style.background = 'rgba(16, 185, 129, 0.25)';
+            trigger.textContent = `🛡️ ${lastSignature} 已签认`;
+        }
+
+        checkbox.addEventListener('change', () => {
+            if (!checkbox.checked) {
+                localStorage.setItem('aiae_grc_confirmed', 'false');
+                if (trigger) {
+                    trigger.style.background = 'rgba(16, 185, 129, 0.15)';
+                    trigger.textContent = '🛡️ 风控 SOP 百科';
+                }
+            }
+        });
+
+        signBtn.addEventListener('click', () => {
+            if (!checkbox.checked) {
+                alert('请先勾选：我已阅读并理解生产级风控合规纪律');
+                return;
+            }
+            
+            const operatorName = sigInput.value.trim().toUpperCase();
+            if (!operatorName) {
+                sigInput.style.borderColor = '#ef4444';
+                sigInput.style.boxShadow = '0 0 8px rgba(239, 68, 68, 0.3)';
+                setTimeout(() => {
+                    sigInput.style.borderColor = 'rgba(255,255,255,0.08)';
+                    sigInput.style.boxShadow = 'none';
+                }, 2000);
+                return;
+            }
+            
+            // 构造签认审计记录
+            const gapVal = _aiaeData ? (_aiaeData.position.gap ?? _aiaeData.position.gap_pt ?? 0) : 0;
+            const regimeVal = _aiaeData ? _aiaeData.current.regime : 3;
+            
+            const record = {
+                operator: operatorName,
+                timestamp: new Date().toLocaleString('zh-CN'),
+                regime: regimeVal,
+                gap: gapVal
+            };
+            
+            let history = [];
+            try {
+                history = JSON.parse(localStorage.getItem('aiae_grc_audit_history') || '[]');
+            } catch(e) {
+                history = [];
+            }
+            
+            history.unshift(record);
+            if (history.length > 3) {
+                history = history.slice(0, 3);
+            }
+            
+            localStorage.setItem('aiae_grc_audit_history', JSON.stringify(history));
+            localStorage.setItem('aiae_grc_confirmed', 'true');
+            localStorage.setItem('aiae_grc_last_signature', operatorName);
+            
+            checkbox.checked = true;
+            sigInput.value = '';
+            
+            if (trigger) {
+                trigger.style.background = 'rgba(16, 185, 129, 0.25)';
+                trigger.textContent = `🛡️ ${operatorName} 已签认`;
+            }
+            
+            renderGRCAuditTrail();
+            
+            // 提示签认成功并关闭抽屉
+            const originalText = signBtn.textContent;
+            signBtn.textContent = '✅ 已成功签认';
+            signBtn.disabled = true;
+            setTimeout(() => {
+                signBtn.textContent = originalText;
+                signBtn.disabled = false;
+                closeDrawer();
+            }, 1000);
+        });
+    }
+
+    // 绑定组合资产规模选择联动
+    if (scaleSelect) {
+        scaleSelect.addEventListener('change', () => {
+            if (_aiaeData) {
+                renderDeviationStats(_aiaeData);
+            }
+        });
+    }
+
+    _grcDrawerBound = true;
+}
+
+// ── 动态合规警示渲染 ──
+function renderAIAEGRCAlert(c, pd) {
+    const alertEl = _aiaeDOM['grc-emergency-alert'];
+    if (!alertEl) return;
+
+    const gap = pd.gap ?? pd.gap_pt;
+    const regime = c.regime;
+    const ri = c.regime_info || {};
+
+    let alertHtml = '';
+    let levelClass = 'alert-level-green';
+
+    // 场景 1：超额违规强平警告 (Regime 4/5 且实盘偏差为负或为正，只要实盘偏离严重)
+    if (regime >= 4) {
+        levelClass = 'alert-level-red';
+        alertHtml = `🚨 <b>合规预警</b>：当前宏观定位为 <b style="color:${ri.color};">${ri.cn || '偏热'} (${regime}级)</b>。根据 GRC 一级防御铁律，<b>严禁在此状态下开新仓或追高进攻型标的！</b> 必须严格按照交易指令，每周强制降低总权益仓位上限至 ${ri.position || '25-40%'} 水平。`;
+    } 
+    // 场景 2：实盘仓位严重超配超过硬顶的 110%
+    else if (gap !== null && gap > 8.0) {
+        levelClass = 'alert-level-red';
+        alertHtml = `🚨 <b>合规违规</b>：当前仓位偏离度达 <b>+${gap.toFixed(1)} pt</b>，超出合规警示硬红线 (3.0pt)！属于<b>【严重超配违规】</b>，禁止因主观执念手动覆盖信号，请立即开启执行决策桌并启动 TWAP/VWAP 算法分拆减仓。`;
+    } 
+    // 场景 3：大底机会建仓提示
+    else if (regime <= 2 && gap !== null && gap < -8.0) {
+        levelClass = 'alert-level-blue';
+        alertHtml = `💡 <b>合规建仓提示</b>：当前市场处于配置性极佳的 <b style="color:${ri.color};">${ri.cn || '底部'} (${regime}级)</b>，但实盘偏离度为 <b>${gap.toFixed(1)} pt</b> (严重欠配)。依据一级防御 SOP，建议利用盘中日度回踩机会，被动买入宽基 ETF 完成补仓，禁止单日一步满仓。`;
+    }
+    // 场景 4：常规超配或欠配警示（橙色警告，偏差处于 3 到 8pt 之间）
+    else if (gap !== null && (gap > 3.0 || gap < -3.0)) {
+        levelClass = 'alert-level-orange';
+        const typeStr = gap > 0 ? '超配偏离' : '欠配偏离';
+        alertHtml = `⚠️ <b>合规提示</b>：当前实盘处于常规 ${typeStr} 状态，偏离度为 <b>${gap > 0 ? '+' : ''}${gap.toFixed(1)} pt</b>，超出 3.0pt 软限限制。请投资经理与交易员密切监控，仓位调整建议利用执行桌算法分摊 1.5 - 2 天完成，禁止因主观情绪一步到位。`;
+    }
+    // 正常状态 (Gap 处于合规区间 [-3.0, 3.0]pt)
+    else {
+        levelClass = 'alert-level-green';
+        alertHtml = `🟢 <b>合规运行中</b>：当前实盘与宏观 AIAE 偏离度为 <b>${gap >= 0 ? '+' : ''}${gap !== null ? gap.toFixed(1) : '0.0'} pt</b>，处于合规偏差允许区间 [-3.0, +3.0]pt 内。系统风控与三层防御正常运转。`;
+    }
+
+    // 设置警示类名并显示
+    alertEl.className = 'aiae-grc-alert ' + levelClass;
+    alertEl.innerHTML = alertHtml;
+    alertEl.style.display = 'block';
+}
+
 function renderAIAEUI(data) {
     if (!data) return;
     _aiaeCacheDOM();  // 懒初始化 DOM 缓存
+    try { bindGRCDrawer(); } catch(e) { console.warn('[AIAE GRC] Drawer bind error:', e); }
     const c = data.current;
     const p = data.position;
     const cv = data.cross_validation;
@@ -175,6 +398,9 @@ function renderAIAEUI(data) {
 
     // ── ZONE 7: Health + Cross-Market + Reconciliation (async, non-blocking) ──
     try { loadAndRenderZone7(); } catch(e) { console.warn('[AIAE] zone7 skip:', e); }
+
+    // ── GRC: 生产级风控警告动态渲染 ──
+    try { renderAIAEGRCAlert(c, p); } catch(e) { console.warn('[AIAE GRC] GRC alert render error:', e); }
 }
 
 // ── Warning Indicators V2.1 (DOM 缓存) ──
@@ -952,10 +1178,23 @@ function renderHealthRadar(hs) {
         },
         series: [{
             type: 'radar',
-            data: [{ value: values, areaStyle: { color: 'rgba(245,158,11,0.15)' } }],
-            lineStyle: { color: '#f59e0b', width: 2 },
+            data: [{ 
+                value: values, 
+                areaStyle: { 
+                    color: new echarts.graphic.RadialGradient(0.5, 0.5, 0.8, [
+                        { offset: 0, color: 'rgba(245, 158, 11, 0.05)' },
+                        { offset: 1, color: 'rgba(245, 158, 11, 0.22)' }
+                    ])
+                } 
+            }],
+            lineStyle: { 
+                color: '#f59e0b', 
+                width: 2.5,
+                shadowColor: 'rgba(245, 158, 11, 0.4)',
+                shadowBlur: 10
+            },
             itemStyle: { color: '#f59e0b' },
-            symbol: 'circle', symbolSize: 4
+            symbol: 'circle', symbolSize: 5
         }]
     });
 }
@@ -971,13 +1210,24 @@ function renderDeviationStats(dev) {
     const $conc = document.getElementById('dev-conc');
 
     if ($gap && pd) {
-        // 后端字段名: gap (非 gap_pt)
         const gap = pd.gap ?? pd.gap_pt;
-        $gap.textContent = (gap !== null && gap !== undefined) ? gap + 'pt (' + pd.gap_severity + ')' : '—';
-        $gap.style.color = pd.gap_severity === 'critical' ? '#ef4444' : (pd.gap_severity === 'warning' ? '#f97316' : '#10b981');
+        if (gap !== null && gap !== undefined) {
+            const absGap = Math.abs(gap);
+            let badgeClass = 'compliant';
+            let badgeText = 'Compliant';
+            if (absGap > 8.0) {
+                badgeClass = 'hard-breach';
+                badgeText = 'Hard Breach';
+            } else if (absGap > 3.0) {
+                badgeClass = 'soft-warning';
+                badgeText = 'Soft Limit';
+            }
+            $gap.innerHTML = `${gap.toFixed(1)} pt <span class="aiae-compliance-badge ${badgeClass}">${badgeText}</span>`;
+        } else {
+            $gap.textContent = '—';
+        }
     }
     if ($etf && etf) $etf.textContent = etf.held_count + '/' + etf.total_count + ' (' + etf.coverage_pct + '%)';
-    // 后端字段: positions (非 top_holdings), 取 max_name + max_pct
     if ($max && conc) {
         if (conc.max_name) {
             $max.textContent = conc.max_name + ' ' + (conc.max_pct || 0).toFixed(1) + '%';
@@ -989,6 +1239,53 @@ function renderDeviationStats(dev) {
     if ($conc && conc) {
         $conc.textContent = conc.verdict;
         $conc.style.color = conc.verdict === '红线违规' ? '#ef4444' : (conc.alert_count > 0 ? '#f97316' : '#10b981');
+    }
+
+    // 🔬 交互式调仓执行建议与滑点估计 (ADV Desk)
+    const $desk = _aiaeDOM['slippage-desk'];
+    const $sSize = _aiaeDOM['slip-size'];
+    const $sCost = _aiaeDOM['slip-cost'];
+    const $sAlgo = _aiaeDOM['slip-algo'];
+    const $sizeSelect = _aiaeDOM['slip-size-select'];
+
+    if ($desk && pd) {
+        const gap = pd.gap ?? pd.gap_pt;
+        if (gap !== null && gap !== undefined && Math.abs(gap) > 0.05) {
+            $desk.style.display = 'block';
+            
+            // 获取交互选择的总资产规模 (若无，fallback 到 5000 万)
+            const portfolioSize = $sizeSelect ? parseFloat($sizeSelect.value) : 50000000;
+            const tradeSize = (portfolioSize * Math.abs(gap) / 100);
+            
+            // 经典的非线性滑点预估公式：基于绝对交易额相比于日均基准流量（设 ADV 盘中单批承载力为 250 万人民币）
+            // 经验模型: 1.5bps 固差 + 0.8 * (tradeSize / 2,500,000)^0.6 冲击系数
+            const estSlippageBps = 1.5 + 0.8 * Math.pow(tradeSize / 2500000, 0.6);
+            
+            // 交互式执行建议算法选择联动
+            let algo = '主动盘中限价单 (Limit Order)';
+            if (tradeSize > 20000000) {
+                algo = '大额调仓：建议 VWAP 算法，分 2 天分批执行';
+            } else if (tradeSize > 5000000) {
+                algo = '建议 TWAP 算法，分 1 天内执行';
+            } else if (Math.abs(gap) > 8.0) {
+                algo = '建议 VWAP 算法，分 2 天分批执行';
+            } else if (Math.abs(gap) > 4.0) {
+                algo = '建议 TWAP 算法，分 1 天内执行';
+            } else if (Math.abs(gap) > 1.5) {
+                algo = '盘中主动分拆下单 (约 2-4 小时)';
+            }
+            
+            if ($sSize) $sSize.textContent = (tradeSize / 10000).toFixed(1) + ' 万 RMB';
+            if ($sCost) $sCost.textContent = `~${estSlippageBps.toFixed(1)} bps (${(tradeSize * estSlippageBps / 10000).toFixed(0)} 元)`;
+            if ($sAlgo) {
+                $sAlgo.textContent = algo;
+                $sAlgo.style.color = tradeSize > 20000000 || Math.abs(gap) > 8.0 ? '#ef4444' : (tradeSize > 5000000 || Math.abs(gap) > 4.0 ? '#f97316' : '#60a5fa');
+            }
+        } else {
+            $desk.style.display = 'none';
+        }
+    } else if ($desk) {
+        $desk.style.display = 'none';
     }
 }
 
@@ -1048,6 +1345,56 @@ function renderCrossMarketAlerts(data) {
                 </div>`;
             }).join('');
         }
+    }
+
+    // 🌐 跨市场风险传染系数矩阵 (Contagion Correlation Matrix)
+    const mContainer = _aiaeDOM['contagion-matrix-container'];
+    const mTableContainer = _aiaeDOM['contagion-matrix'];
+    if (mContainer && mTableContainer && data.contagion_matrix && data.contagion_matrix.matrix) {
+        mContainer.style.display = 'block';
+        const matrix = data.contagion_matrix.matrix;
+        const markets = ['CN', 'US', 'HK', 'JP'];
+        const mNames = { 'CN': 'A股', 'US': '美股', 'HK': '港股', 'JP': '日股' };
+        
+        let html = '<table class="aiae-contagion-table">';
+        html += '<thead><tr><th>源 ➔ 宿</th>' + markets.map(m => `<th>${mNames[m]}</th>`).join('') + '</tr></thead>';
+        html += '<tbody>';
+        
+        markets.forEach(src => {
+            html += `<tr><td>${mNames[src]}</td>`;
+            markets.forEach(dest => {
+                const key = `${src}➔${dest}`;
+                const keyAlt = `${src}→${dest}`;
+                const val = matrix[key] ?? matrix[keyAlt] ?? (src === dest ? 1.0 : 0.0);
+                
+                // 根据传染系数分配热力背景色 (红、橙、蓝)
+                let bgColor = 'rgba(255,255,255,0.01)';
+                let textColor = '#cbd5e1';
+                if (src !== dest) {
+                    if (val >= 0.7) {
+                        bgColor = `rgba(239, 68, 68, ${val * 0.28})`; // 强传染: 红色
+                        textColor = '#f87171';
+                    } else if (val >= 0.4) {
+                        bgColor = `rgba(249, 115, 22, ${val * 0.22})`;  // 中传染: 橙色
+                        textColor = '#fbd58d';
+                    } else if (val >= 0.2) {
+                        bgColor = `rgba(59, 130, 246, ${val * 0.18})`; // 弱传染: 蓝色
+                        textColor = '#93c5fd';
+                    }
+                } else {
+                    bgColor = 'rgba(255, 255, 255, 0.04)';
+                    textColor = '#94a3b8';
+                }
+                
+                html += `<td style="background: ${bgColor}; color: ${textColor}">${val.toFixed(2)}</td>`;
+            });
+            html += '</tr>';
+        });
+        
+        html += '</tbody></table>';
+        mTableContainer.innerHTML = html;
+    } else if (mContainer) {
+        mContainer.style.display = 'none';
     }
 }
 

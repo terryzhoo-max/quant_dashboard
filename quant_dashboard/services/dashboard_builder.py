@@ -253,6 +253,11 @@ async def _build_dashboard_data_full():
             "erp_tier": temp_data["erp_tier"],
             "margin_heat": aiae_report.get("current", {}).get("margin_heat", 2.0),
             "fund_position": aiae_report.get("current", {}).get("fund_position", 80),
+            # C1 Fix: 数据质量评分与决策锁定透传 (机构级合规字段)
+            "data_quality_score": aiae_report.get("data_quality_score", 100),
+            "decision_locked": aiae_report.get("decision_locked", False),
+            "fund_position_source": aiae_report.get("current", {}).get("fund_position_source", "manual_update"),
+            "fund_position_date": aiae_report.get("current", {}).get("fund_position_date", ""),
         }
 
         # 更新缓存 (P0-2: 原子写入)

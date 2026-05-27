@@ -100,6 +100,11 @@ def _build_snapshot_from_cache() -> dict:
         snapshot["aiae_slope_dir"] = aiae_ctx.get("slope_direction", "flat")
         snapshot["margin_heat"] = aiae_ctx.get("margin_heat", 2.0)
         snapshot["fund_position"] = aiae_ctx.get("fund_position", 80)
+        # C1 Fix: 数据质量评分与决策锁定字段 (机构级合规透传)
+        snapshot["data_quality_score"] = aiae_ctx.get("data_quality_score", 100)
+        snapshot["decision_locked"] = aiae_ctx.get("decision_locked", False)
+        snapshot["fund_position_source"] = aiae_ctx.get("fund_position_source", "manual_update")
+        snapshot["fund_position_date"] = aiae_ctx.get("fund_position_date", "")
 
     # 策略结果
     strategy_results = cache_manager.get_json("strategy_results") or {}

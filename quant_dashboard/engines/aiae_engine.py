@@ -44,6 +44,7 @@ import os
 import json
 import math
 import threading
+import calendar
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
@@ -263,6 +264,7 @@ class AIAEEngine:
         fp_data = self._load_fund_position()
         self._fund_position = fp_data["value"]
         self._fund_position_date = fp_data["date"]
+        self._fund_position_source = fp_data.get("source", "initial_seed")
 
         # V2.1: 引擎初始化时预填月度历史 (冷启动修复)
         # 用最新历史快照估算值做种子, 避免首次 generate_report 前斜率为 flat
@@ -306,12 +308,13 @@ class AIAEEngine:
             _log(f"种子文件创建失败: {e}", "WARN")
         return seed_data
 
-    def update_fund_position(self, value: float, date: str) -> Dict:
-        """C1: 手动更新基金仓位 + 持久化存储
+    def update_fund_position(self, value: float, date: str, source: str = "manual_update") -> Dict:
+        """C1: 手动或自动更新基金仓位 + 持久化存储
         
         Args:
-            value: 偏股型基金仓位 (60-100%)
-            date: 对应的季报截止日 (如 "2026-03-31")
+            value: 偏股型基金仓位 (50-100%)
+            date: 对应的更新日期 (如 "2026-05-26")
+            source: 触发来源 (如 "ths_api" / "lg_api" / "manual_update")
         Returns:
             更新结果
         """
@@ -321,6 +324,7 @@ class AIAEEngine:
         old_value = self._fund_position
         self._fund_position = value
         self._fund_position_date = date
+        self._fund_position_source = source
         
         # 加载现有文件以保留 history
         fp_file = os.path.join(CACHE_DIR, "aiae_fund_position.json")
@@ -332,18 +336,23 @@ class AIAEEngine:
             except Exception:
                 pass
         history = existing.get("history", [])
-        # 推断季度标签
+        # 推断季度/日期标签
         month = int(date.split("-")[1]) if "-" in date else 1
         q_label = f"{date.split('-')[0]}Q{(month - 1) // 3 + 1}"
-        history.append({"quarter": q_label, "value": value, "date": date,
-                        "updated_at": datetime.now().isoformat()})
+        history.append({
+            "quarter": q_label, 
+            "value": value, 
+            "date": date,
+            "source": source,
+            "updated_at": datetime.now().isoformat()
+        })
 
         data = {
             "value": value,
             "date": date,
             "updated_at": datetime.now().isoformat(),
             "previous_value": old_value,
-            "source": "manual_update",
+            "source": source,
             "history": history,
         }
         atomic_write_json(data, fp_file)
@@ -952,8 +961,13 @@ class AIAEEngine:
             # 当月数据由 live_aiae 实时点代表, 跳过月度历史
             if live_aiae is not None and m == current_month_prefix:
                 continue
-            # 月度记录用月末日期作为图表X轴点
-            d = m + "-28"  # 近似月末
+            # W7 Fix: 用 calendar.monthrange 精确计算月末日期，消除 -28 近似误差
+            try:
+                _y, _mo = int(m[:4]), int(m[5:7])
+                _last_day = calendar.monthrange(_y, _mo)[1]
+                d = f"{_y:04d}-{_mo:02d}-{_last_day:02d}"
+            except Exception:
+                d = m + "-28"  # 极端容错降级
             # 跳过与静态节点日期接近(30天内)的条目, 避免重叠
             skip = False
             for sd in static_points:
@@ -1173,21 +1187,29 @@ class AIAEEngine:
 
             _log(f"报告生成完成 ({time.time()-t0:.1f}s) | AIAE={aiae_v1}% Regime={regime} Pos={matrix_position}%")
 
-            # C1: 收集数据过期告警
+            # C1: 收集数据过期告警 + 数据质量评分
             stale_warnings = []
             fund_stale = self._get_fund_position_stale_warning()
             if fund_stale:
                 stale_warnings.append(fund_stale)
+
+            # C1 Fix: 精确统计降级数据源数量，用于计算质量评分
+            l3_fallback_count = 0  # L3 硬编码降级计数
+            l2_stale_count = 0     # L2 磁盘缓存降级计数
+
             # 检查数据源降级
             for src_name, src_data in [("市值", mv_data), ("M2", m2_data), ("融资", margin_data)]:
                 if src_data.get("is_fallback"):
+                    l3_fallback_count += 1
                     stale_warnings.append({
                         "type": f"{src_name}_fallback",
                         "severity": "warning",
                         "message": f"{src_name}数据使用降级值，非实时",
                     })
+
             # F4 加固: ERP 降级状态告警
             erp_is_degraded = False
+            erp_age_hours = 0
             try:
                 erp_cache_file = os.path.join(CACHE_DIR, "aiae_erp_latest.json")
                 if os.path.exists(erp_cache_file):
@@ -1196,11 +1218,14 @@ class AIAEEngine:
                     erp_age_hours = (time.time() - datetime.fromisoformat(erp_cache.get("ts", datetime.now().isoformat())).timestamp()) / 3600
                     if erp_age_hours > 48:
                         erp_is_degraded = True
+                        l2_stale_count += 1
                 else:
                     erp_is_degraded = True
+                    l3_fallback_count += 1
             except Exception:
                 erp_is_degraded = True
-            if erp_value == 3.5 or erp_is_degraded:
+                l3_fallback_count += 1
+            if erp_is_degraded:
                 stale_warnings.append({
                     "type": "erp_degraded",
                     "severity": "warning",
@@ -1208,11 +1233,48 @@ class AIAEEngine:
                     "erp_value": erp_value,
                 })
 
+            # C1 Fix: 基金仓位质量扣分
+            fund_stale_days = 0
+            if fund_stale:
+                fund_stale_days = fund_stale.get("days_stale", 0)
+                if fund_stale.get("severity") == "critical":
+                    l3_fallback_count += 1
+                else:
+                    l2_stale_count += 1
+
+            # C1 Fix: 数据质量评分 (0-100)
+            # 扣分规则: L3降级每个 -25pt，L2过期每个 -10pt，ERP过期超24h额外-10pt
+            data_quality_score = 100
+            data_quality_score -= l3_fallback_count * 25
+            data_quality_score -= l2_stale_count * 10
+            if erp_age_hours > 24:
+                data_quality_score -= 10
+            if fund_stale_days > 90:
+                data_quality_score -= 15
+            elif fund_stale_days > 45:
+                data_quality_score -= 5
+            data_quality_score = max(0, data_quality_score)
+
+            # C1 Fix: 决策锁定 — 质量评分 < 50 时禁止执行建议
+            decision_locked = data_quality_score < 50
+            if decision_locked:
+                _log(f"[RISK] 数据质量评分 {data_quality_score}/100 < 50，决策已锁定，仅供参考", "WARN")
+                stale_warnings.append({
+                    "type": "decision_locked",
+                    "severity": "critical",
+                    "message": f"数据质量评分 {data_quality_score}/100，建议仓位仅供参考，请勿直接执行",
+                    "data_quality_score": data_quality_score,
+                })
+
             return {
                 "status": "success",
                 "engine_version": self.VERSION,
                 "updated_at": datetime.now().isoformat(),
                 "latency_ms": round((time.time()-t0)*1000),
+
+                # C1 Fix: 数据质量与决策锁定字段 (机构级合规)
+                "data_quality_score": data_quality_score,
+                "decision_locked": decision_locked,
 
                 "current": {
                     "aiae_simple": aiae_simple,
@@ -1224,6 +1286,7 @@ class AIAEEngine:
                     "margin_heat": margin_heat,
                     "fund_position": self._fund_position,
                     "fund_position_date": self._fund_position_date,
+                    "fund_position_source": getattr(self, "_fund_position_source", "manual_update"),
                     "slope": slope_info,
                     "decomposition": aiae_decomposed.get("decomposition"),
                 },
@@ -1235,6 +1298,7 @@ class AIAEEngine:
                     "regime": regime,
                     "matrix": POSITION_MATRIX,
                     "allocations": allocations,
+                    "decision_locked": decision_locked,
                 },
 
                 "signals": signals,
@@ -1261,7 +1325,9 @@ class AIAEEngine:
             return self._fallback_report(str(e))
 
     def _get_erp_value(self) -> float:
-        """尝试从ERP引擎获取当前ERP值, 三级降级: 引擎→磁盘缓存→硬编码"""
+        """尝试从ERP引擎获取当前ERP值, 三级降级: 引擎→磁盘缓存→硬编码
+        C2 Fix: 磁盘缓存超过24小时时，主动触发后台重算，而非静默使用旧值。
+        """
         erp_cache_file = os.path.join(CACHE_DIR, "aiae_erp_latest.json")
         try:
             from erp_timing_engine import get_erp_engine
@@ -1277,13 +1343,33 @@ class AIAEEngine:
                 return erp_val
         except Exception as e:
             _log(f"ERP引擎读取失败, 尝试磁盘缓存: {e}", "WARN")
-        # 降级 L2: 磁盘缓存
+        # 降级 L2: 磁盘缓存 (C2 Fix: 检测缓存年龄, 超24h主动触发后台重算)
         if os.path.exists(erp_cache_file):
             try:
                 with open(erp_cache_file, 'r', encoding='utf-8') as f:
                     cached = json.load(f)
                 erp_val = cached.get("erp_value", 3.5)
-                _log(f"ERP 使用磁盘缓存: {erp_val}% (from {cached.get('ts', '?')})", "WARN")
+                cache_age_h = (time.time() - datetime.fromisoformat(
+                    cached.get("ts", datetime.now().isoformat())).timestamp()) / 3600
+                if cache_age_h > 24:
+                    # C2 Fix: 超过24小时 → 主动后台重算, 本次仍使用缓存但标记重算中
+                    _log(f"ERP缓存已 {cache_age_h:.1f}h, 触发后台重算", "WARN")
+                    def _bg_erp_refresh():
+                        try:
+                            from erp_timing_engine import get_erp_engine as _get
+                            _sig = _get().compute_signal()
+                            if _sig.get("status") == "success":
+                                _v = _sig["current_snapshot"].get("erp_value", 3.5)
+                                atomic_write_json({"erp_value": _v, "ts": datetime.now().isoformat()}, erp_cache_file)
+                                _log(f"ERP后台重算完成: {_v}%")
+                        except Exception as _e:
+                            _log(f"ERP后台重算失败: {_e}", "WARN")
+                    try:
+                        _bg_executor.submit(_bg_erp_refresh)
+                    except Exception:
+                        pass
+                else:
+                    _log(f"ERP 使用磁盘缓存: {erp_val}% (缓存 {cache_age_h:.1f}h 前)", "WARN")
                 return erp_val
             except Exception:
                 pass
@@ -1368,13 +1454,17 @@ class AIAEEngine:
         _log(f"缓存已清除 ({len(keys_to_clear)} keys)")
 
 
-# ===== 引擎单例 =====
+# ===== 引擎单例 (C3 Fix: 双重检查锁定, 防并发竞态) =====
 _aiae_instance = None
+_aiae_instance_lock = threading.Lock()
 
 def get_aiae_engine() -> AIAEEngine:
     global _aiae_instance
     if _aiae_instance is None:
-        _aiae_instance = AIAEEngine()
+        with _aiae_instance_lock:
+            # 双重检查: 防止多个线程同时通过第一次 None 判断
+            if _aiae_instance is None:
+                _aiae_instance = AIAEEngine()
     return _aiae_instance
 
 

@@ -3011,3 +3011,483 @@
 #mom-action-panel {
     animation: momAlertIn 0.5s ease;
 }
+
+/* ====================================================================
+   AIAE V3.3 · 仓位管控面板生产级两列网格布局
+   ==================================================================== */
+.aiae-row-grid {
+    display: grid;
+    grid-template-columns: 1.25fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+    align-items: stretch;
+}
+.aiae-row-grid-equal {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+    align-items: stretch;
+}
+@media (max-width: 1100px) {
+    .aiae-row-grid, .aiae-row-grid-equal {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+/* ── 视觉打磨：AIAE专属滚动条 (琥珀金主题) ── */
+#aiae-reduction-list::-webkit-scrollbar,
+#aiae-signal-cards::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+}
+#aiae-reduction-list::-webkit-scrollbar-track,
+#aiae-signal-cards::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.01);
+    border-radius: 3px;
+}
+#aiae-reduction-list::-webkit-scrollbar-thumb,
+#aiae-signal-cards::-webkit-scrollbar-thumb {
+    background: rgba(245, 158, 11, 0.25);
+    border-radius: 3px;
+}
+#aiae-reduction-list::-webkit-scrollbar-thumb:hover,
+#aiae-signal-cards::-webkit-scrollbar-thumb:hover {
+    background: rgba(245, 158, 11, 0.45);
+}
+
+/* ── 视觉打磨：行动卡片响应式折行 ── */
+.aiae-action-dashboard {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)) !important;
+    gap: 10px !important;
+}
+
+/* ── 视觉打磨：AIAE ETF 黄金特色卡片高级光泽与呼吸 ── */
+.aiae-alloc-card[data-strategy="aiae_etf"] {
+    border-color: rgba(245, 158, 11, 0.45) !important;
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(20, 24, 34, 0.6) 50%, rgba(217, 119, 6, 0.04) 100%) !important;
+    box-shadow: 0 4px 15px rgba(245, 158, 11, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+    position: relative;
+}
+.aiae-alloc-card[data-strategy="aiae_etf"]::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    border-radius: 12px;
+    box-shadow: inset 0 0 8px rgba(245, 158, 11, 0.15);
+    pointer-events: none;
+    animation: aiae-featured-glow 3s ease-in-out infinite alternate;
+}
+@keyframes aiae-featured-glow {
+    0% { opacity: 0.3; }
+    100% { opacity: 0.8; }
+}
+
+/* ── 视觉打磨：合规评级气泡 (Compliance Badges) ── */
+.aiae-compliance-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.6rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+.aiae-compliance-badge.compliant {
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    color: #10b981;
+}
+.aiae-compliance-badge.soft-warning {
+    background: rgba(249, 115, 22, 0.12);
+    border: 1px solid rgba(249, 115, 22, 0.25);
+    color: #f97316;
+}
+.aiae-compliance-badge.hard-breach {
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    color: #ef4444;
+    animation: aiae-badge-pulse 1.5s infinite alternate;
+}
+@keyframes aiae-badge-pulse {
+    0% { box-shadow: 0 0 2px rgba(239, 68, 68, 0.2); }
+    100% { box-shadow: 0 0 8px rgba(239, 68, 68, 0.6); }
+}
+
+/* ── 视觉打磨：五档卡片激活态的高级呼吸灯 ── */
+.aiae-regime-card {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+.aiae-regime-card.active {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.aiae-regime-card[data-regime="1"].active { border-color: rgba(16, 185, 129, 0.5) !important; background: rgba(16, 185, 129, 0.06) !important; }
+.aiae-regime-card[data-regime="2"].active { border-color: rgba(59, 130, 246, 0.5) !important; background: rgba(59, 130, 246, 0.06) !important; }
+.aiae-regime-card[data-regime="3"].active { border-color: rgba(234, 179, 8, 0.5) !important; background: rgba(234, 179, 8, 0.06) !important; }
+.aiae-regime-card[data-regime="4"].active { border-color: rgba(249, 115, 22, 0.5) !important; background: rgba(249, 115, 22, 0.06) !important; }
+.aiae-regime-card[data-regime="5"].active { border-color: rgba(239, 68, 68, 0.5) !important; background: rgba(239, 68, 68, 0.06) !important; }
+
+/* 在激活卡片右上角放置一个闪烁的状态指示灯 */
+.aiae-regime-card.active::before {
+    content: '';
+    position: absolute;
+    top: 4px; right: 4px;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    z-index: 10;
+}
+.aiae-regime-card[data-regime="1"].active::before { background: #10b981; box-shadow: 0 0 6px #10b981; }
+.aiae-regime-card[data-regime="2"].active::before { background: #3b82f6; box-shadow: 0 0 6px #3b82f6; }
+.aiae-regime-card[data-regime="3"].active::before { background: #eab308; box-shadow: 0 0 6px #eab308; }
+.aiae-regime-card[data-regime="4"].active::before { background: #f97316; box-shadow: 0 0 6px #f97316; }
+.aiae-regime-card[data-regime="5"].active::before { background: #ef4444; box-shadow: 0 0 6px #ef4444; animation: aiae-lamp-flash 1s infinite alternate; }
+
+@keyframes aiae-lamp-flash {
+    0% { opacity: 0.4; }
+    100% { opacity: 1; }
+}
+
+/* ── 视觉打磨：超标进度条的波纹脉冲 ── */
+.aiae-warning-card.warn-danger .aiae-warn-bar-fill {
+    position: relative;
+    animation: aiae-bar-pulse 1.2s infinite ease-in-out alternate;
+}
+@keyframes aiae-bar-pulse {
+    0% { filter: brightness(0.95); opacity: 0.8; }
+    100% { filter: brightness(1.25); opacity: 1; box-shadow: 0 0 4px currentColor; }
+}
+
+/* ── 视觉打磨：跨市场风险传染热力图表格 ── */
+.aiae-contagion-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+    font-family: 'Outfit', sans-serif;
+    background: rgba(0, 0, 0, 0.12);
+    border-radius: 6px;
+    overflow: hidden;
+}
+.aiae-contagion-table th, .aiae-contagion-table td {
+    padding: 6px 4px;
+    font-size: 0.65rem;
+    text-align: center;
+    border: 1px solid rgba(255, 255, 255, 0.03);
+}
+.aiae-contagion-table th {
+    background: rgba(0, 0, 0, 0.25);
+    color: #64748b;
+    font-weight: 700;
+}
+.aiae-contagion-table td {
+    font-weight: 700;
+    transition: all 0.25s ease;
+}
+.aiae-contagion-table td:first-child {
+    background: rgba(0, 0, 0, 0.15);
+    color: #94a3b8;
+    font-weight: 600;
+}
+
+/* ── 视觉打磨：增强全局毛玻璃的物理深度与发光 ── */
+.glass-panel {
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    background: rgba(20, 24, 34, 0.45) !important;
+    border: 1px solid rgba(255, 255, 255, 0.05) !important;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.28) !important;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.glass-panel:hover {
+    border-color: rgba(245, 158, 11, 0.15) !important;
+    box-shadow: 0 8px 32px 0 rgba(245, 158, 11, 0.03), 0 0 1px rgba(245, 158, 11, 0.1) !important;
+}
+
+/* ── 视觉打磨：动态合规警告通告栏 (GRC Emergency Alert) ── */
+.aiae-grc-alert {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(20, 24, 34, 0.7) 100%);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-left: 4px solid #ef4444;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 0.72rem;
+    color: #fecaca;
+    line-height: 1.5;
+    box-shadow: 0 4px 15px rgba(239, 68, 68, 0.04);
+    animation: aiae-grc-alert-glow 2.5s infinite alternate ease-in-out;
+}
+@keyframes aiae-grc-alert-glow {
+    0% { border-color: rgba(239, 68, 68, 0.3); box-shadow: 0 4px 15px rgba(239, 68, 68, 0.04); }
+    100% { border-color: rgba(239, 68, 68, 0.75); box-shadow: 0 4px 20px rgba(239, 68, 68, 0.18), inset 0 0 6px rgba(239, 68, 68, 0.1); }
+}
+
+/* ── 视觉打磨：生产级风控 GRC 侧边滑动抽屉 (Discipline Drawer) ── */
+.aiae-drawer-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    z-index: 1000;
+    transition: opacity 0.3s ease;
+}
+.aiae-drawer {
+    position: fixed;
+    top: 0; right: 0;
+    width: 440px;
+    max-width: 90%;
+    height: 100%;
+    background: rgba(15, 23, 42, 0.82);
+    backdrop-filter: blur(25px);
+    -webkit-backdrop-filter: blur(25px);
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: -10px 0 40px rgba(0, 0, 0, 0.6);
+    z-index: 1001;
+    display: flex;
+    flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.aiae-drawer.open {
+    transform: translateX(0);
+}
+.aiae-drawer-header {
+    padding: 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.aiae-drawer-close {
+    background: none;
+    border: none;
+    color: #94a3b8;
+    font-size: 1.5rem;
+    cursor: pointer;
+    line-height: 1;
+    transition: color 0.2s ease;
+    padding: 0 6px;
+}
+.aiae-drawer-close:hover {
+    color: #ef4444;
+}
+.aiae-drawer-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    box-sizing: border-box;
+}
+.aiae-drawer-content::-webkit-scrollbar {
+    width: 5px;
+}
+.aiae-drawer-content::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.01);
+}
+.aiae-drawer-content::-webkit-scrollbar-thumb {
+    background: rgba(245, 158, 11, 0.2);
+    border-radius: 3px;
+}
+.aiae-drawer-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(245, 158, 11, 0.4);
+}
+
+/* 抽屉内部块级元素排版 */
+.aiae-grc-block {
+    margin-bottom: 24px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.aiae-grc-section-title {
+    font-size: 0.8rem;
+    font-weight: 800;
+    color: #f59e0b;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.aiae-grc-desc {
+    font-size: 0.65rem;
+    color: #94a3b8;
+    line-height: 1.6;
+    margin-bottom: 10px;
+}
+
+/* GRC 微型表格 */
+.aiae-grc-minitable {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 6px;
+    overflow: hidden;
+}
+.aiae-grc-minitable th, .aiae-grc-minitable td {
+    padding: 6px 8px;
+    font-size: 0.62rem;
+    text-align: left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+.aiae-grc-minitable th {
+    background: rgba(0, 0, 0, 0.3);
+    color: #64748b;
+    font-weight: 700;
+}
+.aiae-grc-minitable td {
+    color: #cbd5e1;
+}
+.aiae-grc-minitable tr:last-child td {
+    border-bottom: none;
+}
+
+/* 列表排版 */
+.aiae-grc-list {
+    margin: 8px 0 0 0;
+    padding-left: 14px;
+    list-style-type: square;
+    color: #cbd5e1;
+    font-size: 0.65rem;
+}
+.aiae-grc-list li {
+    margin-bottom: 6px;
+    line-height: 1.5;
+}
+.redline-list li {
+    list-style-type: none;
+    padding-left: 4px;
+    margin-left: -14px;
+}
+
+/* 抽屉底部 SOP 签认 */
+.aiae-drawer-footer {
+    padding: 16px 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(15, 23, 42, 0.4);
+    box-sizing: border-box;
+}
+.aiae-grc-checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.7rem;
+    color: #94a3b8;
+    cursor: pointer;
+    user-select: none;
+    font-weight: 600;
+}
+.aiae-grc-checkbox-label input[type="checkbox"] {
+    width: 14px; height: 14px;
+    accent-color: #f59e0b;
+    cursor: pointer;
+}
+.aiae-grc-checkbox-label span {
+    transition: color 0.2s ease;
+}
+.aiae-grc-checkbox-label:hover span {
+    color: #f59e0b;
+}
+
+/* 4级合规警告体系打磨 */
+.aiae-grc-alert.alert-level-red {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(20, 24, 34, 0.8) 100%) !important;
+    border: 1px solid rgba(239, 68, 68, 0.35) !important;
+    border-left: 4px solid #ef4444 !important;
+    color: #fecaca !important;
+    animation: aiae-grc-alert-glow-red 2.5s infinite alternate ease-in-out !important;
+}
+.aiae-grc-alert.alert-level-orange {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(20, 24, 34, 0.8) 100%) !important;
+    border: 1px solid rgba(245, 158, 11, 0.25) !important;
+    border-left: 4px solid #f59e0b !important;
+    color: #fef3c7 !important;
+    animation: aiae-grc-alert-glow-orange 3s infinite alternate ease-in-out !important;
+}
+.aiae-grc-alert.alert-level-green {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, rgba(20, 24, 34, 0.8) 100%) !important;
+    border: 1px solid rgba(16, 185, 129, 0.15) !important;
+    border-left: 4px solid #10b981 !important;
+    color: #d1fae5 !important;
+    box-shadow: 0 4px 15px rgba(16, 185, 129, 0.02) !important;
+}
+.aiae-grc-alert.alert-level-blue {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.06) 0%, rgba(20, 24, 34, 0.8) 100%) !important;
+    border: 1px solid rgba(59, 130, 246, 0.2) !important;
+    border-left: 4px solid #3b82f6 !important;
+    color: #dbeafe !important;
+}
+
+@keyframes aiae-grc-alert-glow-red {
+    0% { border-color: rgba(239, 68, 68, 0.35); box-shadow: 0 4px 15px rgba(239, 68, 68, 0.04); }
+    100% { border-color: rgba(239, 68, 68, 0.8); box-shadow: 0 4px 20px rgba(239, 68, 68, 0.18), inset 0 0 6px rgba(239, 68, 68, 0.08); }
+}
+@keyframes aiae-grc-alert-glow-orange {
+    0% { border-color: rgba(245, 158, 11, 0.25); box-shadow: 0 4px 12px rgba(245, 158, 11, 0.03); }
+    100% { border-color: rgba(245, 158, 11, 0.6); box-shadow: 0 4px 18px rgba(245, 158, 11, 0.12); }
+}
+
+/* 签名输入聚焦动效 */
+#aiae-grc-sig-input {
+    transition: all 0.25s ease;
+}
+#aiae-grc-sig-input:focus {
+    border-color: rgba(245, 158, 11, 0.45) !important;
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.15) !important;
+    background: rgba(0, 0, 0, 0.5) !important;
+}
+#aiae-grc-sign-btn:hover:not(:disabled) {
+    background: rgba(245, 158, 11, 0.35) !important;
+    color: #fff !important;
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.1) !important;
+}
+
+/* 审计历史时间轴 */
+.aiae-audit-timeline {
+    position: relative;
+    padding-left: 14px;
+    margin-top: 8px;
+    border-left: 1px solid rgba(255, 255, 255, 0.06);
+}
+.aiae-audit-node {
+    position: relative;
+    margin-bottom: 12px;
+}
+.aiae-audit-node:last-child {
+    margin-bottom: 0;
+}
+.aiae-audit-dot {
+    position: absolute;
+    left: -18.5px;
+    top: 4px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #64748b;
+    border: 2px solid #0f172a;
+}
+.aiae-audit-dot.signed {
+    background: #10b981;
+    box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+}
+.aiae-audit-info {
+    font-size: 0.62rem;
+    color: #cbd5e1;
+    line-height: 1.4;
+}
+.aiae-audit-info b {
+    color: #f59e0b;
+}
+.aiae-audit-time {
+    font-size: 0.55rem;
+    color: #64748b;
+    margin-top: 2px;
+}
+
+
+
+

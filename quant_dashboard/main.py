@@ -115,6 +115,13 @@ async def lifespan(app: FastAPI):
                                  "AccuracyBackfill")
         except RuntimeError:
             pass
+
+        # P1-A: 启动时触发自动抓取最新基金仓位 (AKShare)
+        try:
+            from services.aiae_scheduler import update_aiae_fund_position_task
+            _startup_pool.submit(_safe_warmup, update_aiae_fund_position_task, "AIAE_Fund_Crawl")
+        except RuntimeError:
+            pass
     threading.Thread(target=_phase2, daemon=True).start()
 
     # ── Init APScheduler ──
@@ -168,6 +175,15 @@ async def lifespan(app: FastAPI):
             _logger.error("NLP 情报扫描异常: %s", e)
     scheduler.add_job(_nlp_scan_callback, CronTrigger(day_of_week='mon-fri', hour=9, minute=35), id="nlp_scan_am")
     scheduler.add_job(_nlp_scan_callback, CronTrigger(day_of_week='mon-fri', hour=15, minute=15), id="nlp_scan_pm")
+
+    # 14. P1-A: 自动抓取 AIAE 基金仓位 (AKShare) 每日 16:00 (周一至周五)
+    def _aiae_fund_position_update_callback():
+        try:
+            from services.aiae_scheduler import update_aiae_fund_position_task
+            update_aiae_fund_position_task()
+        except Exception as e:
+            _logger.error("AIAE 基金仓位自动抓取任务异常: %s", e)
+    scheduler.add_job(_aiae_fund_position_update_callback, CronTrigger(day_of_week='mon-fri', hour=16, minute=0), id="aiae_fund_position_update")
 
     scheduler.start()
     app.state.scheduler = scheduler
