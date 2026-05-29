@@ -12,7 +12,7 @@
     <title>决策中枢 · AlphaCore</title>
     <link rel="stylesheet" href="./static/css/fonts.css?v=1">
     <link rel="stylesheet" href="./static/css/styles.css?v=12">
-    <link rel="stylesheet" href="./static/css/decision.css?v=52">
+    <link rel="stylesheet" href="./static/css/decision.css?v=53">
     <link rel="stylesheet" href="./static/css/visual_excellence.css?v=3">
     <link rel="stylesheet" href="./static/css/mobile.css?v=1">
     <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -248,6 +248,19 @@
                     <div class="pp-footer" id="pp-footer"></div>
                 </div>
 
+                <!-- V5.0: 策略配额 + 压力测试面板 (补充 position-path) -->
+                <div class="dh-collapsible glass-decision collapsed" id="rebalance-panel">
+                    <div class="dh-collapsible-header" onclick="toggleDHPanel('rebalance-panel')">
+                        <span class="dh-collapsible-title">⚖️ V5 配额·压力测试</span>
+                        <span class="dh-collapsible-summary" id="rebalance-summary">加载中...</span>
+                        <span class="dh-collapsible-arrow">▶</span>
+                    </div>
+                    <div class="dh-collapsible-body">
+                        <div class="rebal-alloc-grid" id="rebal-alloc-grid"></div>
+                        <div class="rebal-stress" id="rebal-stress"></div>
+                    </div>
+                </div>
+
                 <!-- V24.0: 决策参考手册 (折叠合并: 阈值速查 + SOP) -->
                 <div class="dh-collapsible glass-decision collapsed" id="ref-manual-panel">
                     <div class="dh-collapsible-header" onclick="toggleDHPanel('ref-manual-panel')">
@@ -263,7 +276,7 @@
                                     <thead><tr><th>引擎</th><th class="th-bull">🟢 看多</th><th>━ 中性</th><th class="th-bear">🔴 看空</th></tr></thead>
                                     <caption class="threshold-table-caption">权重为仓位温度计因子权重，JCS 内部引擎等权</caption>
                                     <tbody>
-                                        <tr><td class="tt-engine">AIAE<span class="tt-w">35%</span></td><td class="tt-bull">R1-R2 (&lt;17%)</td><td>R3 (17-23%)</td><td class="tt-bear">R4-R5 (&gt;23%)</td></tr>
+                                        <tr><td class="tt-engine">AIAE<span class="tt-w">35%</span></td><td class="tt-bull">R1-R2 (&lt;24%)</td><td>R3 (24-26.5%)</td><td class="tt-bear">R4-R5 (&gt;26.5%)</td></tr>
                                         <tr><td class="tt-engine">ERP<span class="tt-w">25%</span></td><td class="tt-bull">Score &gt;55</td><td>35-55</td><td class="tt-bear">&lt;35</td></tr>
                                         <tr><td class="tt-engine">VIX<span class="tt-w">20%</span></td><td class="tt-bull">&lt;16</td><td>16-25</td><td class="tt-bear">&gt;25</td></tr>
                                         <tr><td class="tt-engine">MR<span class="tt-w">20%</span></td><td class="tt-bull">BULL</td><td>RANGE</td><td class="tt-bear">BEAR/CRASH</td></tr>
@@ -810,6 +823,7 @@
     <script src="./static/js/decision/swing_guard.js?v=52"></script>
     <script src="./static/js/decision/risk_alerts.js?v=52"></script>
     <script src="./static/js/decision/optimizer.js?v=52"></script>
+    <script src="./static/js/decision/rebalance_panel.js?v=53"></script>
     <script src="./static/js/decision.js?v=52"></script>
     <script>
     if ('serviceWorker' in navigator) {

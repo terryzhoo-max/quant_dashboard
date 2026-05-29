@@ -4466,3 +4466,215 @@
     animation: shimmer 1.8s infinite;
 }
 
+/* ═══════════════════════════════════════════════════
+   V5.0: 策略配额偏离 + 压力测试面板 (v53)
+   ═══════════════════════════════════════════════════ */
+
+/* ── 区块标题 ── */
+.rebal-section-header {
+    font-size: 0.62rem; font-weight: 800; color: #475569;
+    letter-spacing: 1px; text-transform: uppercase;
+    margin: 16px 20px 10px; padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    display: flex; align-items: center; gap: 8px;
+}
+.rebal-section-header::before {
+    content: ''; width: 3px; height: 12px; border-radius: 2px;
+    background: linear-gradient(180deg, #6366f1, #3b82f6);
+}
+
+/* ── 策略配额条 ── */
+.rebal-bars { padding: 0 20px 12px; }
+.rebal-bar-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; margin-bottom: 2px; border-radius: 8px;
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+    position: relative;
+}
+.rebal-bar-row:hover {
+    background: rgba(255,255,255,0.025);
+    transform: translateX(3px);
+}
+.rebal-bar-row[data-status="over"]::before {
+    content: ''; position: absolute; left: 0; top: 4px; bottom: 4px; width: 2px;
+    background: #ef4444; border-radius: 0 2px 2px 0; opacity: 0.6;
+}
+.rebal-bar-row[data-status="under"]::before {
+    content: ''; position: absolute; left: 0; top: 4px; bottom: 4px; width: 2px;
+    background: #10b981; border-radius: 0 2px 2px 0; opacity: 0.6;
+}
+.rebal-bar-icon { font-size: 0.75rem; flex-shrink: 0; width: 18px; text-align: center; }
+.rebal-bar-label {
+    width: 56px; flex-shrink: 0;
+    font-size: 0.7rem; font-weight: 600; color: #cbd5e1;
+}
+.rebal-bar-alloc {
+    width: 28px; flex-shrink: 0; text-align: right;
+    font-size: 0.6rem; font-weight: 700; color: #64748b;
+    font-variant-numeric: tabular-nums;
+}
+.rebal-bar-track {
+    flex: 1; height: 6px; position: relative;
+    background: rgba(148,163,184,0.06); border-radius: 3px;
+    overflow: visible;
+}
+.rebal-bar-fill {
+    height: 100%; border-radius: 3px;
+    transition: width 1s cubic-bezier(0.34, 1.56, 0.64, 1);
+    box-shadow: 0 0 8px currentColor;
+    position: relative;
+}
+.rebal-bar-fill::after {
+    content: ''; position: absolute; right: 0; top: -1px; bottom: -1px; width: 2px;
+    background: inherit; border-radius: 1px; filter: brightness(1.5);
+}
+.rebal-bar-marker {
+    position: absolute; top: -4px; width: 2px; height: 14px;
+    background: rgba(255,255,255,0.5); border-radius: 1px;
+    box-shadow: 0 0 6px rgba(255,255,255,0.3);
+    transition: left 0.8s ease;
+}
+.rebal-bar-delta {
+    width: 56px; flex-shrink: 0; text-align: right;
+    font-size: 0.68rem; font-weight: 700; color: #64748b;
+    font-variant-numeric: tabular-nums;
+}
+.rebal-bar-delta.over { color: #ef4444; }
+.rebal-bar-delta.under { color: #10b981; }
+
+/* 偏离告警 */
+.rebal-deviation-alert {
+    margin: 4px 20px 12px; padding: 8px 14px; border-radius: 8px;
+    font-size: 0.72rem; font-weight: 600;
+    display: flex; align-items: center; gap: 6px;
+    animation: deviationPulse 3s ease-in-out infinite;
+}
+.rebal-deviation-alert.over {
+    background: rgba(239,68,68,0.05); color: #fca5a5;
+    border: 1px solid rgba(239,68,68,0.15);
+}
+.rebal-deviation-alert.under {
+    background: rgba(16,185,129,0.05); color: #6ee7b7;
+    border: 1px solid rgba(16,185,129,0.15);
+}
+@keyframes deviationPulse {
+    0%,100% { opacity: 0.8; }
+    50% { opacity: 1; }
+}
+
+/* ── 压力测试网格 ── */
+.rebal-stress-grid {
+    display: grid; grid-template-columns: repeat(5, 1fr);
+    gap: 6px; padding: 0 20px 10px;
+}
+.rebal-stress-cell {
+    text-align: center; padding: 10px 4px 8px;
+    border-radius: 10px;
+    background: rgba(15,23,42,0.35);
+    border: 1px solid rgba(255,255,255,0.04);
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    position: relative; overflow: hidden;
+}
+.rebal-stress-cell::before {
+    content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 30px;
+    background: radial-gradient(ellipse at bottom, var(--cell-glow, transparent) 0%, transparent 70%);
+    opacity: 0.4; pointer-events: none;
+}
+.rebal-stress-cell:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    border-color: rgba(255,255,255,0.1);
+}
+.rebal-stress-cell.active {
+    border-color: rgba(59,130,246,0.4);
+    background: rgba(59,130,246,0.06);
+    --cell-glow: rgba(59,130,246,0.15);
+}
+.rebal-stress-cell.warn {
+    border-color: rgba(245,158,11,0.3);
+    --cell-glow: rgba(245,158,11,0.1);
+}
+.rebal-stress-cell.critical {
+    border-color: rgba(239,68,68,0.35);
+    background: rgba(239,68,68,0.04);
+    --cell-glow: rgba(239,68,68,0.15);
+}
+.stress-emoji { font-size: 0.7rem; margin-bottom: 2px; }
+.stress-regime {
+    font-size: 0.6rem; font-weight: 800; color: #64748b;
+    letter-spacing: 0.8px;
+}
+.stress-target {
+    font-size: 1.15rem; font-weight: 800; color: #e2e8f0;
+    margin: 2px 0;
+    font-variant-numeric: tabular-nums;
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+}
+.stress-delta {
+    font-size: 0.58rem; font-weight: 700; color: #64748b;
+    font-variant-numeric: tabular-nums;
+}
+.stress-sell {
+    font-size: 0.6rem; font-weight: 700; color: #94a3b8;
+    margin-top: 2px;
+}
+.rebal-stress-cell.critical .stress-sell {
+    color: #ef4444;
+    animation: stressPulse 2s ease-in-out infinite;
+}
+.rebal-stress-cell.warn .stress-sell { color: #f59e0b; }
+@keyframes stressPulse {
+    0%,100% { opacity: 0.7; }
+    50% { opacity: 1; text-shadow: 0 0 8px rgba(239,68,68,0.5); }
+}
+
+/* ── 风险行 ── */
+.rebal-risk-row {
+    margin: 6px 20px 16px; padding: 10px 16px;
+    border-radius: 10px;
+    display: flex; align-items: center; gap: 10px;
+    font-size: 0.73rem; font-weight: 600;
+    position: relative; overflow: hidden;
+}
+.rebal-risk-row::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    border-radius: 0 2px 2px 0;
+}
+.rebal-risk-row.safe {
+    background: rgba(16,185,129,0.04); color: #6ee7b7;
+    border: 1px solid rgba(16,185,129,0.12);
+}
+.rebal-risk-row.safe::before { background: #10b981; }
+.rebal-risk-row.warn {
+    background: rgba(245,158,11,0.04); color: #fcd34d;
+    border: 1px solid rgba(245,158,11,0.12);
+}
+.rebal-risk-row.warn::before { background: #f59e0b; }
+.rebal-risk-row.danger {
+    background: rgba(239,68,68,0.04); color: #fca5a5;
+    border: 1px solid rgba(239,68,68,0.15);
+    animation: riskRowPulse 3s ease-in-out infinite;
+}
+.rebal-risk-row.danger::before { background: #ef4444; }
+@keyframes riskRowPulse {
+    0%,100% { box-shadow: 0 0 8px rgba(239,68,68,0.06); }
+    50% { box-shadow: 0 0 20px rgba(239,68,68,0.15), inset 0 0 10px rgba(239,68,68,0.03); }
+}
+.risk-icon { font-size: 0.7rem; flex-shrink: 0; }
+.risk-label { font-weight: 800; letter-spacing: 0.5px; }
+.risk-value {
+    font-weight: 800; font-size: 0.75rem;
+    padding: 2px 8px; border-radius: 4px;
+    background: rgba(255,255,255,0.06);
+}
+.risk-detail {
+    font-size: 0.65rem; color: #64748b; font-weight: 500;
+    margin-left: auto; font-variant-numeric: tabular-nums;
+}
+
+/* ── 空状态 ── */
+.rebal-empty {
+    text-align: center; padding: 24px 20px;
+    font-size: 0.78rem; color: #475569; font-style: italic;
+}
+

@@ -631,7 +631,7 @@ def _get_live_portfolio():
     # ── 降级: 从 JSON 手动解析 (成本估算) ──
     pf_path = os.path.join(PROJECT_ROOT, "portfolio_store.json")
     if not os.path.exists(pf_path):
-        return [], 0, 0, False, None
+        return [], 0, 0, False, None, 0
     try:
         with open(pf_path, "r", encoding="utf-8") as f:
             pf = json.load(f)

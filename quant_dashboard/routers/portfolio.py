@@ -202,3 +202,33 @@ async def get_intraday_pnl():
 
     return stale_while_revalidate(
         "swr_intraday_pnl", _compute, fresh_ttl=60, stale_ttl=300)
+
+
+@router.get("/portfolio/rebalance")
+async def get_rebalance_orders():
+    """V5.0: 精确调仓指令 — 基于 AIAE regime + 配额矩阵生成个股级交易指令"""
+    try:
+        from engines.rebalance_engine import generate_rebalance_orders
+        result = generate_rebalance_orders()
+        if result["status"] == "success":
+            return R.ok(result)
+        else:
+            return R.error(result.get("error", "调仓引擎异常"), "ERR_REBALANCE")
+    except Exception as e:
+        return R.error(str(e), "ERR_REBALANCE")
+
+
+@router.get("/portfolio/stress-test")
+async def get_stress_test():
+    """V5.0: 组合压力测试 — R1~R5 全场景调仓模拟 + 流动性评估"""
+    try:
+        from engines.rebalance_engine import run_stress_test
+        result = run_stress_test()
+        if result["status"] == "success":
+            return R.ok(result)
+        else:
+            return R.error(result.get("error", "压力测试异常"), "ERR_STRESS")
+    except Exception as e:
+        return R.error(str(e), "ERR_STRESS")
+
+

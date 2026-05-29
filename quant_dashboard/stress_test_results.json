@@ -1,0 +1,94 @@
+{
+  "status": "success",
+  "generated_at": "2026-05-29T17:58:21.101495",
+  "scenarios": {
+    "R1": {
+      "target_pct": 75,
+      "delta_pct": 24.5,
+      "total_sell": 518595,
+      "total_buy": 850186,
+      "sell_count": 18,
+      "buy_count": 4,
+      "strategy_deviation": 1305054,
+      "alloc": {
+        "mr": 37,
+        "div": 18,
+        "mom": 22,
+        "gem": 10,
+        "erp": 13
+      }
+    },
+    "R2": {
+      "target_pct": 70,
+      "delta_pct": 19.5,
+      "total_sell": 518595,
+      "total_buy": 809809,
+      "sell_count": 18,
+      "buy_count": 4,
+      "strategy_deviation": 1305054,
+      "alloc": {
+        "mr": 32,
+        "div": 23,
+        "mom": 20,
+        "gem": 12,
+        "erp": 13
+      }
+    },
+    "R3": {
+      "target_pct": 60,
+      "delta_pct": 9.5,
+      "total_sell": 529121,
+      "total_buy": 680606,
+      "sell_count": 19,
+      "buy_count": 4,
+      "strategy_deviation": 1208152,
+      "alloc": {
+        "mr": 22,
+        "div": 26,
+        "mom": 20,
+        "gem": 15,
+        "erp": 17
+      }
+    },
+    "R4": {
+      "target_pct": 35,
+      "delta_pct": -15.5,
+      "total_sell": 664791,
+      "total_buy": 414122,
+      "sell_count": 21,
+      "buy_count": 4,
+      "strategy_deviation": 1078948,
+      "alloc": {
+        "mr": 8,
+        "div": 42,
+        "mom": 10,
+        "gem": 18,
+        "erp": 22
+      }
+    },
+    "R5": {
+      "target_pct": 10,
+      "delta_pct": -40.5,
+      "total_sell": 772351,
+      "total_buy": 118257,
+      "sell_count": 23,
+      "buy_count": 2,
+      "strategy_deviation": 890979,
+      "alloc": {
+        "mr": 0,
+        "div": 65,
+        "mom": 0,
+        "gem": 15,
+        "erp": 20
+      }
+    }
+  },
+  "risk_assessment": {
+    "current_equity_pct": 100.0,
+    "r4_sell_amount": 664791,
+    "r5_sell_amount": 772351,
+    "max_daily_sell": 163194,
+    "r5_liquidation_days": 4.7,
+    "liquidity_risk": "HIGH"
+  }
+}

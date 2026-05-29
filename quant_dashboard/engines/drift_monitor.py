@@ -1,5 +1,5 @@
 """
-AlphaCore V22.0 · 策略漂移监控 (Strategy Drift Monitor)
+AlphaCore V5.0 · 策略漂移监控 (Strategy Drift Monitor)
 ==========================================================
 检测策略信号是否在持续退化, 预防"无声失效"。
 
@@ -8,8 +8,9 @@ AlphaCore V22.0 · 策略漂移监控 (Strategy Drift Monitor)
   2. 市场环境偏移: 当前 AIAE regime 在训练集的覆盖度
   3. JCS 趋势: JCS 是否在系统性下降
   4. 矛盾趋势: 矛盾计数是否在上升
+  5. Regime 切换逼近 (V5.0): AIAE_简 是否接近 V5 阈值边界
 
-数据源: decision_log (SQLite) + 当前快照
+数据源: decision_log (SQLite) + AIAE 引擎缓存
 """
 
 from datetime import datetime, timedelta
@@ -229,6 +230,114 @@ def check_conflict_trend() -> dict:
         }
 
 
+def check_regime_transition() -> dict:
+    """
+    V5.0 · Regime 切换逼近预警。
+
+    检测 AIAE_简 是否接近 V5 阈值边界:
+      [22.8, 24.0, 26.5, 28.3]
+    接近 ±0.5pt → warning (即将切换档位)
+    处于 R1/R5 极端档位 → critical (需要特殊操作)
+    """
+    try:
+        from engines.aiae_engine import get_aiae_engine
+        engine = get_aiae_engine()
+        cache = getattr(engine, '_last_report_cache', None)
+
+        if not cache or not isinstance(cache, dict):
+            return {"status": "insufficient_data", "label": "AIAE 数据未就绪"}
+
+        current = cache.get('current', {})
+        aiae_simple = current.get('aiae_simple')
+        regime = current.get('regime', 3)
+
+        if aiae_simple is None:
+            return {"status": "insufficient_data", "label": "AIAE_简 不可用"}
+
+        # V5 阈值
+        thresholds = [
+            (22.8, 1, 2, "极低估→低估"),
+            (24.0, 2, 3, "低估→中性"),
+            (26.5, 3, 4, "中性→偏高"),
+            (28.3, 4, 5, "偏高→过热"),
+        ]
+
+        # V5 仓位影响参考 (ERP_4_6 行, 最常见情况)
+        pos_by_regime = {1: 75, 2: 70, 3: 60, 4: 35, 5: 10}
+        PROXIMITY = 0.5  # ±0.5 百分点
+
+        # 检测接近哪个阈值
+        nearest = None
+        min_dist = 999
+        for thresh, r_low, r_high, label in thresholds:
+            dist = abs(aiae_simple - thresh)
+            if dist < min_dist:
+                min_dist = dist
+                nearest = (thresh, r_low, r_high, label, dist)
+
+        # R1/R5 极端 regime 告警
+        if regime == 5:
+            return {
+                "status": "critical",
+                "label": f"R5 极度过热 (AIAE={aiae_simple:.1f}%)",
+                "detail": f"AIAE_简={aiae_simple:.1f}% 处于 Ⅴ级过热区。建议仓位 ≤15%，禁止开新仓。"
+                          f" 需连续观察至 AIAE_简 回落至 {28.3}% 以下方可恢复。",
+                "aiae_simple": aiae_simple,
+                "regime": regime,
+                "nearest_threshold": nearest[0] if nearest else None,
+                "distance": round(min_dist, 2),
+            }
+        if regime == 1:
+            return {
+                "status": "critical",
+                "label": f"R1 极低估值 (AIAE={aiae_simple:.1f}%)",
+                "detail": f"AIAE_简={aiae_simple:.1f}% 处于 Ⅰ级极低估值区。历史大底信号，"
+                          f"建议分3批建仓至60-80%。密切关注是否为结构性变化。",
+                "aiae_simple": aiae_simple,
+                "regime": regime,
+                "nearest_threshold": nearest[0] if nearest else None,
+                "distance": round(min_dist, 2),
+            }
+
+        # 接近阈值切换预警
+        if nearest and min_dist <= PROXIMITY:
+            thresh, r_low, r_high, label, dist = nearest
+            direction = "上行" if aiae_simple > thresh else "下行"
+            from_r = r_high if aiae_simple > thresh else r_low
+            to_r = r_low if aiae_simple > thresh else r_high
+            pos_from = pos_by_regime.get(from_r, 50)
+            pos_to = pos_by_regime.get(to_r, 50)
+            pos_delta = pos_to - pos_from
+
+            return {
+                "status": "warning",
+                "label": f"逼近切换 ({label}, 距{dist:.1f}pt)",
+                "detail": f"AIAE_简={aiae_simple:.1f}% 距 {thresh}% 阈值仅 {dist:.1f}pt。"
+                          f"若{direction}穿越 → R{from_r}→R{to_r}, 仓位变动约 {pos_delta:+d}%。"
+                          f"建议提前准备调仓方案。",
+                "aiae_simple": aiae_simple,
+                "regime": regime,
+                "nearest_threshold": thresh,
+                "distance": round(dist, 2),
+                "potential_transition": f"R{from_r}→R{to_r}",
+                "position_impact": pos_delta,
+            }
+
+        return {
+            "status": "ok",
+            "label": f"R{regime} 稳定 (距阈值{min_dist:.1f}pt)",
+            "detail": f"AIAE_简={aiae_simple:.1f}%, 距最近阈值 {nearest[0]}% 有 {min_dist:.1f}pt 缓冲, 无切换风险。",
+            "aiae_simple": aiae_simple,
+            "regime": regime,
+            "nearest_threshold": nearest[0] if nearest else None,
+            "distance": round(min_dist, 2),
+        }
+
+    except Exception as e:
+        logger.warning(f"Regime 切换检测失败: {e}")
+        return {"status": "ok", "label": "检测不可用", "detail": str(e)}
+
+
 def get_drift_status() -> dict:
     """
     一站式漂移状态检查。
@@ -250,6 +359,7 @@ def get_drift_status() -> dict:
         "regime_shift": check_regime_shift(),
         "jcs_trend": check_jcs_trend(),
         "conflict_trend": check_conflict_trend(),
+        "regime_transition": check_regime_transition(),
     }
 
     # 综合判定

@@ -410,8 +410,19 @@ app.include_router(assistant.router)
 async def root():
     return FileResponse("index.html", headers={"Cache-Control": "no-cache"})
 
+# P1 安全加固: HTML 页面白名单 (防止 /../ 路径穿越和任意文件读取)
+_ALLOWED_PAGES = {
+    "index", "decision", "portfolio", "audit", "strategy",
+    "factor", "settings", "optimizer", "rebalance",
+    "erp_timing", "global_analysis", "market_sentiment",
+}
+
 @app.get("/{filename}.html")
 async def serve_html(filename: str):
+    # 只允许白名单中的页面名，阻止路径穿越攻击
+    if filename not in _ALLOWED_PAGES:
+        from starlette.responses import Response
+        return Response("Not Found", status_code=404)
     return FileResponse(f"{filename}.html", headers={"Cache-Control": "no-cache"})
 
 
@@ -441,8 +452,11 @@ class SafeStaticFiles(StaticFiles):
     """安全过滤 + Cache-Control 注入"""
     ALLOWED_EXTENSIONS = {
         '.html', '.js', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg',
-        '.ico', '.woff', '.woff2', '.ttf', '.eot', '.map', '.json',
+        '.ico', '.woff', '.woff2', '.ttf', '.eot', '.map',
     }
+    # P1 安全加固: .json 仅允许 /static/ 路径下的文件
+    # 防止 portfolio_store.json / trade_history.json 等敏感文件被直接访问
+    STATIC_ONLY_EXTENSIONS = {'.json'}
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] == "http":
@@ -453,7 +467,14 @@ class SafeStaticFiles(StaticFiles):
                 await response(scope, receive, send)
                 return
             _, ext = _os.path.splitext(path)
-            if ext and ext.lower() not in self.ALLOWED_EXTENSIONS:
+            ext_lower = ext.lower() if ext else ""
+            # P1: STATIC_ONLY 扩展名仅允许 /static/ 路径
+            if ext_lower in self.STATIC_ONLY_EXTENSIONS:
+                if not path.startswith("/static/"):
+                    response = Response("Not Found", status_code=404)
+                    await response(scope, receive, send)
+                    return
+            elif ext_lower and ext_lower not in self.ALLOWED_EXTENSIONS:
                 response = Response("Not Found", status_code=404)
                 await response(scope, receive, send)
                 return

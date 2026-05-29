@@ -64,10 +64,19 @@ _cache = {}
 _cache_lock = threading.Lock()
 _bg_executor = ThreadPoolExecutor(max_workers=3)
 
+# P1 修复: 从 print() 迁移到标准 logger (生产级日志集中采集)
+try:
+    from services.logger import get_logger
+    _logger = get_logger("ac.aiae")
+except ImportError:
+    import logging
+    _logger = logging.getLogger("ac.aiae")
+
 def _log(msg: str, level: str = "INFO"):
-    """结构化日志"""
-    ts_str = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-    print(f"[{ts_str}] [{level}] [AIAE] {msg}")
+    """结构化日志 — 使用标准 logger"""
+    _level_map = {"DEBUG": _logger.debug, "INFO": _logger.info,
+                  "WARN": _logger.warning, "ERROR": _logger.error}
+    _level_map.get(level, _logger.info)("[AIAE] %s", msg)
 
 def atomic_write_json(data, filepath):
     tmp_path = filepath + ".tmp"
@@ -598,12 +607,47 @@ class AIAEEngine:
             return 20.0  # 降级
         return round(total_mv_wan_yi / (total_mv_wan_yi + m2_wan_yi) * 100, 2)
 
-    def compute_margin_heat(self, margin_data: Dict, total_mv_wan_yi: float) -> float:
-        """融资占比热度 = 融资余额 / 总市值 × 100"""
+    def compute_margin_heat(self, margin_data: Dict, mv_data: Dict) -> Dict:
+        """W6: 融资占比热度 = 融资余额 / 总市値 x 100
+
+        V3.2 升级: 返回 dict 而非浮点数，含跨日时间错配检测元数据。
+        W6 Fix: margin.trade_date 与 mv.trade_date 不对齐时记录告警，暴露给审计。
+        """
         rzye_wan_yi = margin_data.get("rzye_wan_yi", 1.85)
+        total_mv_wan_yi = mv_data.get("total_mv_wan_yi", 95.0)
+        margin_trade_date = margin_data.get("trade_date", "unknown")
+        mv_trade_date = mv_data.get("trade_date", "unknown")
+
         if total_mv_wan_yi <= 0:
-            return 2.0
-        return round(rzye_wan_yi / total_mv_wan_yi * 100, 2)
+            heat = 2.0
+        else:
+            heat = round(rzye_wan_yi / total_mv_wan_yi * 100, 2)
+
+        # W6: 检测融资与市値日期错配
+        date_mismatch = False
+        date_gap_days = 0
+        if margin_trade_date != "unknown" and mv_trade_date != "unknown":
+            try:
+                m_dt = datetime.strptime(margin_trade_date, "%Y%m%d")
+                mv_dt = datetime.strptime(mv_trade_date, "%Y%m%d")
+                date_gap_days = abs((m_dt - mv_dt).days)
+                if date_gap_days > 1:
+                    date_mismatch = True
+                    _log(
+                        f"[W6] 融资日期({margin_trade_date}) vs 市値日期({mv_trade_date})"
+                        f" 差 {date_gap_days} 天，融资热度存在跨日计算偏差",
+                        "WARN"
+                    )
+            except Exception:
+                pass
+
+        return {
+            "value": heat,
+            "margin_trade_date": margin_trade_date,
+            "mv_trade_date": mv_trade_date,
+            "date_mismatch": date_mismatch,
+            "date_gap_days": date_gap_days,
+        }
 
     def compute_aiae_v1(self, aiae_simple: float, fund_pos: float, margin_heat: float) -> float:
         """
@@ -675,31 +719,46 @@ class AIAEEngine:
 
     # ========== 五档判定层 ==========
 
-    def classify_regime(self, aiae_value: float, prev_regime: int = None) -> int:
+    def classify_regime(self, aiae_value: float, prev_regime: int = None,
+                        *, aiae_simple: float = None) -> int:
         """AIAE值 → 五档状态 (1-5)
         V3.0: 分界线从 aiae_params.REGIME_THRESHOLDS 读取
         V3.1: 支持迟滞 (prev_regime 非 None 时启用, 防止边界跳变)
+        V5.0: V5_ENABLED 时使用 aiae_simple + V5 阈值 (百分位分档)
         """
-        t = AP.REGIME_THRESHOLDS  # [12.5, 17, 23, 30]
-        H = getattr(AP, 'REGIME_HYSTERESIS', 0.5)
+        # V5 模式: 用 AIAE_简 直接百分位分档
+        if getattr(AP, 'V5_ENABLED', False) and aiae_simple is not None:
+            t = AP.V5_REGIME_THRESHOLDS
+            H = getattr(AP, 'V5_REGIME_HYSTERESIS', 0.5)
+            value = aiae_simple
+        else:
+            t = AP.REGIME_THRESHOLDS  # [12.5, 17, 23, 30]
+            H = getattr(AP, 'REGIME_HYSTERESIS', 0.5)
+            value = aiae_value
 
-        # 冷启动 / 首次调用: 直接判定
+        # 冷启动: 直接判定
         if prev_regime is None:
-            if aiae_value < t[0]: return 1
-            elif aiae_value < t[1]: return 2
-            elif aiae_value < t[2]: return 3
-            elif aiae_value < t[3]: return 4
-            else: return 5
+            for i, th in enumerate(t):
+                if value < th:
+                    return i + 1
+            return 5
 
-        # 迟滞判定: 升级需 threshold+H, 降级需 threshold-H
-        regime = prev_regime
-        boundaries = [(t[0], 1, 2), (t[1], 2, 3), (t[2], 3, 4), (t[3], 4, 5)]
-        for thresh, lower, upper in boundaries:
-            if regime == lower and aiae_value >= thresh + H:
-                regime = upper
-            elif regime == upper and aiae_value < thresh - H:
-                regime = lower
-        return regime
+        # 方向性有效阈值 (修复迟滞黑洞 Bug)
+        effective = []
+        for i, th in enumerate(t):
+            lower_regime = i + 1
+            upper_regime = i + 2
+            if prev_regime <= lower_regime:
+                effective.append(th + H)  # 上行需多跨
+            elif prev_regime >= upper_regime:
+                effective.append(th - H)  # 下行需多跌
+            else:
+                effective.append(th)
+
+        for i, th in enumerate(effective):
+            if value < th:
+                return i + 1
+        return 5
 
     def compute_slope(self, current: float, previous: float) -> Dict:
         """月环比斜率"""
@@ -720,21 +779,32 @@ class AIAEEngine:
                                   aiae_value: float = None) -> int:
         """AIAE × ERP 仓位矩阵查表
         V3.0: 在分界线 ±1.5pt 内做平滑插值，消除仓位跳变
+        V5.0: V5_ENABLED 时使用 V5_POSITION_MATRIX (R1 仓位上限 80%)
         """
-        row = POSITION_MATRIX.get(erp_level, POSITION_MATRIX["erp_2_4"])
+        # V5 模式使用独立仓位矩阵
+        if getattr(AP, 'V5_ENABLED', False):
+            matrix = AP.V5_POSITION_MATRIX
+            thresholds = AP.V5_REGIME_THRESHOLDS
+            buffer = getattr(AP, 'V5_REGIME_SMOOTH_BUFFER', 0.5)
+        else:
+            matrix = POSITION_MATRIX
+            thresholds = AP.REGIME_THRESHOLDS
+            buffer = AP.REGIME_SMOOTH_BUFFER
+
+        row = matrix.get(erp_level, matrix["erp_2_4"])
         idx = min(regime - 1, 4)
         base_pos = row[idx]
         
-        # V3.0: 分界线平滑插值
+        # 分界线平滑插值
         if aiae_value is not None:
-            t = AP.REGIME_THRESHOLDS
-            for i, threshold in enumerate(t):
-                pos_high = row[i]       # 低档仓位（AIAE 低→仓位高）
-                pos_low = row[i + 1]    # 高档仓位（AIAE 高→仓位低）
-                if abs(aiae_value - threshold) <= AP.REGIME_SMOOTH_BUFFER:
+            for i, threshold in enumerate(thresholds):
+                pos_high = row[i]       # 低档仓位
+                pos_low = row[i + 1]    # 高档仓位
+                if abs(aiae_value - threshold) <= buffer:
                     base_pos = AP.smooth_position(
-                        pos_low, pos_high, aiae_value, threshold)
-                    _log(f"仓位平滑: AIAE={aiae_value:.1f} 近分界{threshold} → 插值 {base_pos}% (原{row[idx]}%)")
+                        pos_low, pos_high, aiae_value, threshold, buffer)
+                    mode = "V5" if getattr(AP, 'V5_ENABLED', False) else "V3"
+                    _log(f"仓位平滑({mode}): AIAE={aiae_value:.1f} 近分界{threshold} → 插值 {base_pos}% (原{row[idx]}%)")
                     break
         
         return base_pos
@@ -763,20 +833,32 @@ class AIAEEngine:
 
     # ========== AIAE ETF 标的池执行 (run-all 集成) ==========
 
-    def generate_etf_signals(self, regime: int) -> List[Dict]:
+    def generate_etf_signals(self, regime: int, matrix_position: int = None) -> List[Dict]:
         """
         根据 AIAE 五档, 为 8 只 ETF 生成标准化执行信号.
         返回格式与其他策略对齐: [{name, ts_code, signal, suggested_position, style, group, ...}]
-        """
-        etf_allocs = AIAE_ETF_MATRIX.get(regime, AIAE_ETF_MATRIX[3])
-        regime_info = REGIMES.get(regime, REGIMES[3])
-        signals = []
 
+        C8 Fix: 若提供 matrix_position, 按比例缩放 ETF 建仓量——
+          ETF 矩阵行和 (110/90/65/40/15) 与 POSITION_MATRIX 建议仓位可能不同,
+          自动缩放确保实际建仓总量等于 matrix_position, 消除隐性超配。
+        """
+        etf_allocs_raw = AIAE_ETF_MATRIX.get(regime, AIAE_ETF_MATRIX[3])
+        regime_info = REGIMES.get(regime, REGIMES[3])
+
+        # C8 Fix: 计算原始行和, 按 matrix_position 等比缩放
+        raw_total = sum(etf_allocs_raw.values())
+        if matrix_position is not None and raw_total > 0:
+            scale = matrix_position / raw_total
+        else:
+            scale = 1.0  # 无 matrix_position 时不缩放
+
+        signals = []
         for etf in AIAE_ETF_POOL:
             code = etf["ts_code"]
-            pos = etf_allocs.get(code, 0)
+            raw_pos = etf_allocs_raw.get(code, 0)
+            pos = round(raw_pos * scale, 1) if scale != 1.0 else raw_pos
 
-            # 信号判定: pos>0 → buy, pos==0且档位>3 → sell, 否则 hold
+            # 信号判定: pos>0 → buy, pos==0且档位>=4 → sell, 否则 hold
             if pos > 0:
                 sig = "buy"
             elif regime >= 4:
@@ -791,6 +873,8 @@ class AIAEEngine:
                 "signal": sig,
                 "signal_score": max(10, 100 - (regime - 1) * 20),  # I:100 II:80 III:60 IV:40 V:20
                 "suggested_position": pos,
+                "raw_position": raw_pos,   # C8: 保留原始值供审计
+                "scale_factor": round(scale, 4),
                 "style": etf["style"],
                 "group": etf["group"],
                 "regime": regime,
@@ -913,8 +997,87 @@ class AIAEEngine:
             history.append(entry)
         atomic_write_json(history, fp)
 
+
+    def _seed_monthly_history_if_needed(self, current_aiae: float, current_regime: int):
+        """V3.2: 冷启动月度历史预填 — 用 HISTORICAL_SNAPSHOTS 最近锚点插値真实种子
+
+        V2.1 旧逻辑缺陷: 用 current±0.3 注入与当前几乎相同的值，导致斜率永远输出接近 0。
+        V3.2 修复: 找 HISTORICAL_SNAPSHOTS 中日期最近的已知锡点，按时间差线性插値，
+                生成比 ±0.3 更具参考价値的次月永远不以种子覆盖真实历史。
+        """
+        history = self._load_monthly_history()
+        current_month = datetime.now().strftime("%Y-%m")
+
+        # 已有上月真实数据 → 无需预填
+        non_current = [h for h in history
+                       if h["month"] != current_month and not h.get("is_seed")]
+        if len(non_current) >= 1:
+            return
+
+        # V3.2: 从 HISTORICAL_SNAPSHOTS 找最近的两个历史锡点构建插値基准
+        now = datetime.now()
+        anchors = []
+        for snap in HISTORICAL_SNAPSHOTS:
+            try:
+                snap_dt = datetime.strptime(snap["date"], "%Y-%m-%d")
+                if snap_dt < now:  # 只取过去时间点
+                    anchors.append((snap_dt, snap["aiae"]))
+            except Exception:
+                pass
+        # 按日期降序排列，取最近两个历史锡点
+        anchors.sort(key=lambda x: x[0], reverse=True)
+
+        if len(anchors) >= 2:
+            # 两点插値: 按时间比例从最旧锚点到当前实际値线性演变
+            dt_old, v_old = anchors[1]   # 较旧锚点
+            dt_new, v_new = anchors[0]   # 较新锚点
+            total_days = max((dt_new - dt_old).days, 1)
+        elif len(anchors) == 1:
+            # 仅有一个锚点，用它到当前实际値之间插値
+            dt_old, v_old = anchors[0]
+            dt_new, v_new = now, current_aiae
+            total_days = max((dt_new - dt_old).days, 1)
+        else:
+            # 无任何锚点，降级为旧逻辑
+            _log("冒启动种子: 无可用历史锚点，除用 current±0.3 降级", "WARN")
+            dt_old, v_old = now - timedelta(days=90), current_aiae
+            dt_new, v_new = now, current_aiae
+            total_days = 90
+
+        seed_entries = []
+        for i in range(3, 0, -1):
+            seed_date = now - timedelta(days=30 * i)
+            seed_month = seed_date.strftime("%Y-%m")
+            if seed_month == current_month:
+                continue
+            # 按时间比例插値 (v_old + 比例 * (v_new - v_old))
+            days_from_old = max((seed_date - dt_old).days, 0)
+            ratio = min(days_from_old / total_days, 1.0)
+            seed_val = round(v_old + ratio * (v_new - v_old), 2)
+            seed_val = max(5.0, min(50.0, seed_val))  # 合理性护栏
+            seed_entries.append({
+                "month": seed_month,
+                "aiae_v1": seed_val,
+                "regime": self.classify_regime(seed_val),
+                "recorded_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+                "source": "seed_interpolated",
+                "is_seed": True,
+                "seed_note": f"V3.2插値种子: 锡点[{dt_old.strftime('%Y-%m')},{dt_new.strftime('%Y-%m')}] val=[{v_old},{v_new:.1f}]",
+            })
+
+        if seed_entries:
+            history = seed_entries + history
+            fp = self._get_monthly_history_file()
+            atomic_write_json(history, fp)
+            _slope_hint = round(seed_entries[-1]["aiae_v1"] - seed_entries[0]["aiae_v1"], 2)
+            _log(f"V3.2 月度历史预填 {len(seed_entries)} 条 (插値种子，初始斜率提示约 {_slope_hint:+.2f}pt)")
+
     def _get_prev_month_aiae(self) -> Optional[float]:
-        """C2: 获取上个月的 AIAE 值 (SQLite 优先)"""
+        """C2: 获取上个月的 AIAE 实测值 (SQLite 优先)
+
+        W6 Fix: JSON fallback 过滤 is_seed 插值种子条目，防止合成数据污染斜率信号。
+        """
         current_month = datetime.now().strftime("%Y-%m")
         # SQLite 优先
         try:
@@ -933,9 +1096,9 @@ class AIAEEngine:
             except Exception:
                 pass
         for entry in reversed(history):
-            if entry["month"] != current_month:
+            if entry["month"] != current_month and not entry.get("is_seed"):
                 return entry["aiae_v1"]
-        _log("月度历史不足: 斜率计算将输出 flat (无上月对比数据)", "WARN")
+        _log("月度历史不足: 斜率计算将输出 flat (无真实上月对比数据)", "WARN")
         return None
 
     # ========== 历史走势数据 ==========
@@ -944,6 +1107,7 @@ class AIAEEngine:
         """输出历史 AIAE 走势 (静态关键节点 + 月度连续数据 + 当前实时点)
         V3.1 P2: 将 SQLite 月度历史合并进图表, 从9个离散节点升级为连续趋势线
         H3: 如果提供 live_aiae, 自动追加末尾实时点
+        W4 Fix: 过滤 is_seed 合成种子条目, 不向用户展示合成历史数据
         """
         # Step 1: 静态历史关键节点 (保留标注)
         static_points = {}
@@ -955,6 +1119,9 @@ class AIAEEngine:
         monthly = self._load_monthly_history()
         current_month_prefix = datetime.now().strftime("%Y-%m")
         for entry in monthly:
+            # W4 Fix: 跳过合成种子条目, 避免图表展示不真实的插值历史
+            if entry.get("is_seed"):
+                continue
             m = entry.get("month", "")  # "2026-03"
             if not m or len(m) < 7:
                 continue
@@ -1015,44 +1182,6 @@ class AIAEEngine:
             }
         }
 
-    # ========== 月度历史预填 (V2.1 冷启动修复) ==========
-
-    def _seed_monthly_history_if_needed(self, current_aiae: float, current_regime: int):
-        """V2.1: 如果月度历史为空或只有本月, 用近似值预填最近3个月
-        避免斜率计算因无上月对比而永远为 flat
-        """
-        history = self._load_monthly_history()
-        current_month = datetime.now().strftime("%Y-%m")
-        
-        # 如果已有2条以上记录 → 无需预填
-        non_current = [h for h in history if h["month"] != current_month]
-        if len(non_current) >= 1:
-            return  # 已有上月数据
-        
-        # 预填最近3个月 (用当前值±小幅波动估算)
-        seed_entries = []
-        for i in range(3, 0, -1):
-            seed_date = datetime.now() - timedelta(days=30 * i)
-            seed_month = seed_date.strftime("%Y-%m")
-            if seed_month == current_month:
-                continue
-            # 微调 ±0.3 避免完全相同
-            seed_val = round(current_aiae + (i - 2) * 0.3, 2)
-            seed_entries.append({
-                "month": seed_month,
-                "aiae_v1": seed_val,
-                "regime": current_regime,
-                "recorded_at": datetime.now().isoformat(),
-                "updated_at": datetime.now().isoformat(),
-                "source": "seed_estimate",
-                "is_seed": True,
-            })
-        
-        if seed_entries:
-            history = seed_entries + history
-            fp = self._get_monthly_history_file()
-            atomic_write_json(history, fp)
-            _log(f"月度历史已预填 {len(seed_entries)} 条估算记录 (冷启动修复)")
 
     # ========== 完整报告 ==========
 
@@ -1081,12 +1210,14 @@ class AIAEEngine:
 
             # 2. 计算 AIAE
             aiae_simple = self.compute_aiae_simple(total_mv, m2)
-            margin_heat = self.compute_margin_heat(margin_data, total_mv)
+            # W6: compute_margin_heat 返回 dict，含跨日时间错配元数据
+            margin_heat_info = self.compute_margin_heat(margin_data, mv_data)
+            margin_heat = margin_heat_info["value"]  # float，供下游计算
             aiae_v1 = self.compute_aiae_v1(aiae_simple, self._fund_position, margin_heat)
             aiae_decomposed = self.compute_aiae_v1_decomposed(aiae_simple, self._fund_position, margin_heat)
             self._last_decomposition = aiae_decomposed.get("decomposition")
 
-            # 3. 五档判定 (V3.1: 从月度历史读取 prev_regime 启用迟滞)
+            # 3. 五档判定 (V3.1: 迟滞; V5.0: AIAE_简直接分档)
             prev_regime = None
             try:
                 _hist = self._load_monthly_history()
@@ -1097,7 +1228,10 @@ class AIAEEngine:
                         break
             except Exception:
                 pass
-            regime = self.classify_regime(aiae_v1, prev_regime)
+
+            # V5: 用 aiae_simple 分档; V3: 用 aiae_v1
+            regime = self.classify_regime(aiae_v1, prev_regime,
+                                          aiae_simple=aiae_simple)
             regime_info = REGIMES[regime]
 
             # V2.1: 月度历史冷启动修复
@@ -1106,14 +1240,17 @@ class AIAEEngine:
             except Exception as e:
                 _log(f"月度历史预填失败 (non-fatal): {e}", "WARN")
 
-            # 4. 斜率 (C2: 与上月同口径值对比)
+            # 4. 斜率
             prev_aiae = self._get_prev_month_aiae()
             slope_info = self.compute_slope(aiae_v1, prev_aiae)
 
-            # 5. ERP 交叉 (尝试从 ERP 引擎获取)
+            # 5. ERP 交叉
             erp_value = self._get_erp_value()
             erp_level = self.classify_erp_level(erp_value)
-            matrix_position = self.get_position_from_matrix(regime, erp_level, aiae_value=aiae_v1)
+            # V5: 平滑插值使用 aiae_simple; V3: 使用 aiae_v1
+            smooth_val = aiae_simple if getattr(AP, 'V5_ENABLED', False) else aiae_v1
+            matrix_position = self.get_position_from_matrix(regime, erp_level,
+                                                            aiae_value=smooth_val)
 
             # 6. 子策略配额
             allocations = self.allocate_sub_strategies(regime, matrix_position)
@@ -1281,9 +1418,20 @@ class AIAEEngine:
                     "aiae_v1": aiae_v1,
                     "regime": regime,
                     "regime_info": regime_info,
+                    # P1 修复: 分档透明性 — 明确展示实际分档依据
+                    "regime_mode": "V5_simple" if getattr(AP, 'V5_ENABLED', False) else "V3_composite",
+                    "regime_basis_value": aiae_simple if getattr(AP, 'V5_ENABLED', False) else aiae_v1,
+                    "regime_thresholds": list(AP.V5_REGIME_THRESHOLDS) if getattr(AP, 'V5_ENABLED', False) else list(AP.REGIME_THRESHOLDS),
                     "total_mv_wan_yi": total_mv,
                     "m2_wan_yi": m2,
                     "margin_heat": margin_heat,
+                    # W6: 融资热度元数据 (供审计溯源，含跨日错配标记)
+                    "margin_heat_meta": {
+                        "margin_trade_date": margin_heat_info.get("margin_trade_date"),
+                        "mv_trade_date": margin_heat_info.get("mv_trade_date"),
+                        "date_mismatch": margin_heat_info.get("date_mismatch", False),
+                        "date_gap_days": margin_heat_info.get("date_gap_days", 0),
+                    },
                     "fund_position": self._fund_position,
                     "fund_position_date": self._fund_position_date,
                     "fund_position_source": getattr(self, "_fund_position_source", "manual_update"),

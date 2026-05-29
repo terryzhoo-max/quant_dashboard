@@ -31,6 +31,10 @@ _JCS_WEIGHTS = {
     "bond": 0.05,   # V25.3 NEW: 国债利率信号
 }
 
+# P2 安全校验: 权重总和必须为 1.0 (防止未来修改时漂移)
+assert abs(sum(_JCS_WEIGHTS.values()) - 1.0) < 0.01, \
+    f"JCS 权重总和偏离 1.0: {sum(_JCS_WEIGHTS.values()):.4f}"
+
 # V25.3 影子模式: 旧4维权重 (用于并行对比)
 _JCS_WEIGHTS_V4 = {
     "aiae": 0.35,

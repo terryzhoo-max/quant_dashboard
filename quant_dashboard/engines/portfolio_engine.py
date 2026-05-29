@@ -101,8 +101,11 @@ class PortfolioEngine:
         return default
 
     def _save_portfolio(self):
-        with open(self.store_path, 'w', encoding='utf-8') as f:
+        """原子写入持仓数据 (.tmp + os.replace 防崩溃损坏)"""
+        tmp_path = self.store_path + ".tmp"
+        with open(tmp_path, 'w', encoding='utf-8') as f:
             json.dump(self.holdings, f, indent=4, ensure_ascii=False)
+        os.replace(tmp_path, self.store_path)
 
     def _load_history(self) -> list:
         if os.path.exists(self.history_path):
@@ -114,8 +117,11 @@ class PortfolioEngine:
         return []
 
     def _save_history(self):
-        with open(self.history_path, 'w', encoding='utf-8') as f:
+        """原子写入交易历史 (.tmp + os.replace 防崩溃损坏)"""
+        tmp_path = self.history_path + ".tmp"
+        with open(tmp_path, 'w', encoding='utf-8') as f:
             json.dump(self.trade_history, f, indent=4, ensure_ascii=False)
+        os.replace(tmp_path, self.history_path)
 
     def _record_trade(self, action: str, ts_code: str, name: str, amount: int, price: float, success: bool, msg: str):
         """追加交易记录 (SQLite 主存储 + JSON 备份)"""

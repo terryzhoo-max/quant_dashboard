@@ -48,10 +48,11 @@ async def get_aiae_report():
 
 @router.get("/aiae/chart")
 async def get_aiae_chart():
-    """AIAE 历史走势图数据"""
+    """AIAE 历史走势图数据 — P1 修复: run_in_executor 防止阻塞"""
     try:
+        loop = asyncio.get_running_loop()
         engine = get_aiae_engine()
-        chart = engine.get_chart_data()
+        chart = await loop.run_in_executor(executor, engine.get_chart_data)
         return {"status": "success", "data": chart}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -186,10 +187,11 @@ async def get_cross_market_alerts():
 
 @router.get("/aiae/decomposition")
 async def get_aiae_decomposition():
-    """AIAE V1 三因子贡献分解 (Waterfall 图数据)"""
+    """AIAE V1 三因子贡献分解 (Waterfall 图数据) — P1 修复: run_in_executor"""
     try:
+        loop = asyncio.get_running_loop()
         engine = get_aiae_engine()
-        report = engine.generate_report()
+        report = await loop.run_in_executor(executor, engine.generate_report)
         current = report.get("current", {})
         return {
             "status": "success",
@@ -279,8 +281,10 @@ async def get_aiae_global_report():
         # ── P0 修复: 跨区域归一化温度 (各区域 AIAE 标度不同, 不可直接比较) ──
         # 用各区域五档阈值做分段线性插值, 映射到统一 0-100 温度标尺
         # Ⅰ/Ⅱ边界→20, Ⅱ/Ⅲ→40, Ⅲ/Ⅳ→60, Ⅳ/Ⅴ→80
+        # P2 修复: CN 阈值从 aiae_params 动态读取 (Single Source of Truth)
+        import aiae_params as _AP
         _REGION_THRESHOLDS = {
-            "cn": [12.5, 17, 23, 30],   # aiae_params.py REGIME_THRESHOLDS
+            "cn": list(_AP.V5_REGIME_THRESHOLDS) if getattr(_AP, 'V5_ENABLED', False) else list(_AP.REGIME_THRESHOLDS),
             "us": [15, 20, 27, 34],     # REGIMES_US 阈值
             "jp": [10, 14, 20, 28],     # REGIMES_JP 阈值
             "hk": [8, 12, 18, 25],      # REGIMES_HK 阈值
@@ -653,3 +657,71 @@ async def get_current_regime_params():
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+# ─── AIAE V5 仓位策略回测结果 ───
+
+@router.get("/aiae_v5_backtest")
+async def get_aiae_v5_backtest():
+    """返回 AIAE V5 回测预计算结果 (权益曲线 + 信号时序)"""
+    fp = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                      "aiae_backtest_v4_results.json")
+    if not os.path.exists(fp):
+        return {"status": "error", "message": "请先运行 aiae_backtest_v4.py"}
+    try:
+        with open(fp, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return {"status": "ok", "data": data}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@router.get("/aiae_v5_signal_history")
+async def get_aiae_v5_signal_history():
+    """返回 AIAE 真实信号时序 (137个月 regime/position/erp)"""
+    import pandas as pd
+    fp = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                      "data_lake", "aiae_true_history.parquet")
+    if not os.path.exists(fp):
+        return {"status": "error", "message": "请先运行 aiae_data_builder.py"}
+    try:
+        df = pd.read_parquet(fp)
+        records = []
+        for _, row in df.iterrows():
+            records.append({
+                "month": row["month"],
+                "aiae_simple": round(float(row["aiae_simple"]), 2),
+                "aiae_v1": round(float(row["aiae_v1"]), 2),
+                "regime": int(row["regime"]),
+                "erp": round(float(row["erp"]), 2),
+                "erp_tier": str(row["erp_tier"]),
+                "matrix_position": int(row["matrix_position"]),
+                "data_quality": str(row.get("data_quality", "medium")),
+            })
+        return {"status": "ok", "data": records}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# ─── V5 子策略联合回测 ───
+
+@router.get("/portfolio_backtest")
+async def get_portfolio_backtest():
+    """返回 V5 子策略联合回测结果 (组合净值 + regime分析)"""
+    fp = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                      "portfolio_backtest_results.json")
+    if not os.path.exists(fp):
+        # 首次请求时自动运行回测
+        try:
+            from engines.portfolio_backtest import run_portfolio_backtest
+            result = run_portfolio_backtest("2018-01")
+            return {"status": "ok", "data": result}
+        except Exception as e:
+            return {"status": "error", "message": f"回测执行失败: {e}"}
+    try:
+        with open(fp, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return {"status": "ok", "data": data}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+

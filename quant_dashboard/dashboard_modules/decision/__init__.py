@@ -79,8 +79,6 @@ from dashboard_modules.decision.events import (  # noqa: F401
     get_recent_events,
 )
 
-# ── 仍在原文件中的函数 (聚合函数, 依赖多个子模块) ──
+# ── 聚合函数不在此 re-export (防止循环导入) ──
 # get_hub_data, get_hub_data_with_events, log_daily_decision
-# compute_risk_matrix, compute_contagion_matrix
-# backfill_signal_accuracy
-from dashboard_modules.decision_engine import *  # noqa: F401,F403
+# → 直接通过 from dashboard_modules.decision_engine import ... 访问

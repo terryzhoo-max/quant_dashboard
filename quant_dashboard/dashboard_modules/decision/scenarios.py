@@ -307,7 +307,8 @@ def apply_shock_to_snapshot(snapshot: dict, node_impacts: dict) -> dict:
         after["aiae_regime_cn"] = _REGIME_CN_MAP.get(after["aiae_regime"], "中性均衡")
         after["suggested_position"] = _REGIME_CAP_MAP.get(after["aiae_regime"], 55)
 
-    mr_shock = node_impacts.get("mr", 0) + node_impacts.get("vix", 0) * (-0.6)
+    # P1 修复: VIX→MR 权重与 _SHOCK_EDGES 定义保持一致 (-0.80)
+    mr_shock = node_impacts.get("mr", 0) + node_impacts.get("vix", 0) * (-0.80)
     after["mr_regime"] = _SNAPSHOT_DELTA_MAP["mr_regime"](mr_shock)
     after["hub_composite"] = _recalc_hub_composite(after)
 

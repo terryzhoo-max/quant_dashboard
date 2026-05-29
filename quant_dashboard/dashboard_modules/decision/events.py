@@ -74,8 +74,10 @@ def _save_last_snapshot(snapshot: dict):
             "mr_regime": snapshot.get("mr_regime"),
         }
         os.makedirs(os.path.dirname(_SNAPSHOT_PATH), exist_ok=True)
-        with open(_SNAPSHOT_PATH, 'w', encoding='utf-8') as f:
+        tmp_path = _SNAPSHOT_PATH + ".tmp"
+        with open(tmp_path, 'w', encoding='utf-8') as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, _SNAPSHOT_PATH)
     except Exception as e:
         logger.debug("保存事件快照失败: %s", e)
 
@@ -96,8 +98,10 @@ def _save_event_log(events: list):
     try:
         os.makedirs(os.path.dirname(_EVENT_LOG_PATH), exist_ok=True)
         trimmed = events[-_MAX_EVENTS:]
-        with open(_EVENT_LOG_PATH, 'w', encoding='utf-8') as f:
+        tmp_path = _EVENT_LOG_PATH + ".tmp"
+        with open(tmp_path, 'w', encoding='utf-8') as f:
             json.dump(trimmed, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, _EVENT_LOG_PATH)
     except Exception as e:
         logger.debug("保存事件日志失败: %s", e)
 

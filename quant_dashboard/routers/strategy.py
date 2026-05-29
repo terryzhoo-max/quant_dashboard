@@ -335,7 +335,7 @@ def _run_aiae_strategy() -> dict:
         aiae_v1 = report["current"]["aiae_v1"]
         matrix_pos = report["position"]["matrix_position"]
 
-        signals = engine.generate_etf_signals(regime)
+        signals = engine.generate_etf_signals(regime, matrix_position=matrix_pos)
 
         erp_score_for_weights = None
         try:

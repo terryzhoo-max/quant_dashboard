@@ -86,9 +86,11 @@ def _load_mute_config():
 
 
 def _save_mute_config(mute_cfg):
-    """持久化静音配置到运行时文件"""
-    with open(MUTE_RUNTIME_FILE, "w", encoding="utf-8") as f:
+    """持久化静音配置到运行时文件 (原子写入)"""
+    tmp = MUTE_RUNTIME_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(mute_cfg, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, MUTE_RUNTIME_FILE)
 
 
 def _load_audit_config():
@@ -120,8 +122,10 @@ def _append_log(entry):
     if len(logs) > MAX_LOG_ENTRIES:
         logs = logs[-MAX_LOG_ENTRIES:]
 
-    with open(LOG_FILE, "w", encoding="utf-8") as f:
+    tmp = LOG_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(logs, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, LOG_FILE)
 
 
 def get_enforcement_log(limit=20):
@@ -146,8 +150,10 @@ def set_trade_block(blocked, reason=""):
         "reason": reason,
         "blocked_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S") if blocked else "",
     }
-    with open(BLOCK_FILE, "w", encoding="utf-8") as f:
+    tmp = BLOCK_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, BLOCK_FILE)
 
     _append_log({
         "action": "trade_block" if blocked else "trade_unblock",
@@ -362,7 +368,7 @@ def run_post_audit_enforcement(audit_report):
         # 重新获取实时持仓 (不依赖审计报告中的冗余数据)
         try:
             from audit_engine import _get_live_portfolio
-            pos_list, _, _, _, _ = _get_live_portfolio()
+            pos_list, _, _, _, _, _ = _get_live_portfolio()
         except Exception:
             pass
 
@@ -457,8 +463,10 @@ def toggle_enforcer(enabled):
     # 通过运行时文件实现，不修改 config.py 源码
     runtime_file = os.path.join(BASE_DIR, "audit_enforcer_runtime.json")
     data = {"enabled": enabled}
-    with open(runtime_file, "w", encoding="utf-8") as f:
+    tmp = runtime_file + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, runtime_file)
 
     _append_log({
         "action": "enforcer_toggle",

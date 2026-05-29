@@ -16,6 +16,10 @@ from dashboard_modules.decision.snapshot import _build_snapshot_from_cache
 
 logger = get_logger("ac.decision.position_path")
 
+import os as _os
+_PROJECT_ROOT = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+_DAILY_DIR = _os.path.join(_PROJECT_ROOT, "data_lake", "daily_prices")
+
 # 仓位调整优先级规则
 _POSITION_RULES = {
     "max_single_stock": 20,      # 单票仓位上限 (%)
@@ -258,7 +262,7 @@ def _estimate_volatility(code: str) -> float:
     import os
     try:
         import pandas as pd
-        fpath = f"data_lake/daily_prices/{code}.parquet"
+        fpath = _os.path.join(_DAILY_DIR, f"{code}.parquet")
         if not os.path.exists(fpath):
             return 0.25
         df = pd.read_parquet(fpath)
@@ -277,7 +281,7 @@ def _estimate_daily_volume(code: str, price: float) -> float:
     import os
     try:
         import pandas as pd
-        fpath = f"data_lake/daily_prices/{code}.parquet"
+        fpath = _os.path.join(_DAILY_DIR, f"{code}.parquet")
         if not os.path.exists(fpath):
             return price * 10000
         df = pd.read_parquet(fpath)

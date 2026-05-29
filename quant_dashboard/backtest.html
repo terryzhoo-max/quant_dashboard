@@ -93,6 +93,7 @@
                 <div class="cfg-item">
                     <label>策略</label>
                     <select id="strategy-select">
+                        <option value="aiae_v5" selected>🎯 AIAE V5 仓位策略</option>
                         <option value="mr">📐 均值回归 V4.2</option>
                         <option value="div">💰 红利趋势 V4.0</option>
                         <option value="mom">🚀 动量轮动 V3.0</option>
@@ -165,13 +166,34 @@
                 <button class="ci-toggle-btn" id="ci-toggle-btn" onclick="toggleCIPanel()">🔄 CI/CD 管道</button>
             </div>
 
+            <!-- AIAE V5 预计算结果面板 -->
+            <div id="aiae-v5-panel" class="bt-chart-panel" style="display:none;">
+                <h4 style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+                    🎯 AIAE V5 仓位策略回测 <span style="font-size:0.7rem;font-weight:400;color:var(--text-muted)">2015-01 ~ 2026-05 · 真实 M2+总市值信号</span>
+                </h4>
+                <!-- 六策略对比表 -->
+                <div id="v5-metrics-table" style="margin-bottom:20px;"></div>
+                <!-- 权益曲线 -->
+                <div id="v5-equity-chart" style="height:360px;"></div>
+                <!-- Regime 时序 -->
+                <div style="margin-top:16px;">
+                    <h4>📊 AIAE_简 + Regime 时序</h4>
+                    <div id="v5-regime-chart" style="height:280px;"></div>
+                </div>
+                <!-- 仓位时序 -->
+                <div style="margin-top:16px;">
+                    <h4>📈 建议仓位时序</h4>
+                    <div id="v5-position-chart" style="height:200px;"></div>
+                </div>
+            </div>
+
             <!-- Empty State (before first run) -->
             <div id="empty-state" class="bt-empty-state">
                 <div class="empty-icon">🧪</div>
                 <div class="empty-title">配置策略参数，点击「开始回测」</div>
                 <div class="empty-desc">
-                    V5.0 · 策略中心完全对齐：均值回归V4.2 / 红利趋势V4.0 / 动量轮动V3.0<br>
-                    Regime 三态预设 · Radar 6维评级 · 蒙特卡洛 500x · 年度统计 · Alpha Overlay
+                    V5.0 · AIAE 仓位策略已预计算 · 选择 AIAE V5 可直接查看结果<br>
+                    均值回归V4.2 / 红利趋势V4.0 / 动量轮动V3.0 需点击「开始回测」
                 </div>
             </div>
 
@@ -364,6 +386,156 @@
     </div>
 
     <script src="./static/js/backtest.js?v=52"></script>
+    <script>
+    // ── AIAE V5 面板控制 ──
+    const REGIME_COLORS = {1:'#22c55e', 2:'#86efac', 3:'#94a3b8', 4:'#fb923c', 5:'#ef4444'};
+    const REGIME_LABELS = {1:'R1 极低估', 2:'R2 低估', 3:'R3 中性', 4:'R4 高估', 5:'R5 极高估'};
+
+    document.getElementById('strategy-select').addEventListener('change', function() {
+        const panel = document.getElementById('aiae-v5-panel');
+        const empty = document.getElementById('empty-state');
+        if (this.value === 'aiae_v5') {
+            panel.style.display = 'block';
+            if(empty) empty.style.display = 'none';
+            loadAIAEV5();
+        } else {
+            panel.style.display = 'none';
+        }
+    });
+
+    // 页面加载自动显示 V5
+    if(document.getElementById('strategy-select').value === 'aiae_v5') {
+        document.getElementById('aiae-v5-panel').style.display = 'block';
+        document.getElementById('empty-state').style.display = 'none';
+        setTimeout(loadAIAEV5, 300);
+    }
+
+    async function loadAIAEV5() {
+        try {
+            const [btRes, sigRes] = await Promise.all([
+                fetch('/api/aiae/aiae_v5_backtest').then(r=>r.json()),
+                fetch('/api/aiae/aiae_v5_signal_history').then(r=>r.json())
+            ]);
+            if(btRes.status==='ok') renderV5Backtest(btRes.data);
+            if(sigRes.status==='ok') renderV5Signal(sigRes.data);
+        } catch(e) { console.error('AIAE V5 load error:', e); }
+    }
+
+    function renderV5Backtest(data) {
+        // 策略对比表
+        const strats = data.strategies || data;
+        const strategies = Object.entries(strats);
+        let html = '<table style="width:100%;font-size:0.78rem;border-collapse:collapse;">';
+        html += '<thead><tr style="border-bottom:1px solid rgba(148,163,184,0.2);">';
+        html += '<th style="text-align:left;padding:6px 8px;">策略</th>';
+        html += '<th style="text-align:right;padding:6px 8px;">CAGR</th>';
+        html += '<th style="text-align:right;padding:6px 8px;">MDD</th>';
+        html += '<th style="text-align:right;padding:6px 8px;">Sharpe</th>';
+        html += '<th style="text-align:right;padding:6px 8px;">Alpha</th>';
+        html += '</tr></thead><tbody>';
+        for(const [name, info] of strategies) {
+            const m = info.metrics || {};
+            const isV5 = name.includes('V5');
+            const style = isV5 ? 'background:rgba(59,130,246,0.08);font-weight:600;' : '';
+            html += `<tr style="border-bottom:1px solid rgba(148,163,184,0.1);${style}">`;
+            html += `<td style="padding:5px 8px;">${isV5?'🎯 ':''}${name}</td>`;
+            html += `<td style="text-align:right;padding:5px 8px;color:${(m.annualized_return||0)>0?'#22c55e':'#ef4444'}">${(m.annualized_return||0).toFixed(1)}%</td>`;
+            html += `<td style="text-align:right;padding:5px 8px;color:#ef4444">${(m.max_drawdown||0).toFixed(1)}%</td>`;
+            html += `<td style="text-align:right;padding:5px 8px;">${(m.sharpe_ratio||0).toFixed(2)}</td>`;
+            html += `<td style="text-align:right;padding:5px 8px;">${(m.alpha||0)>0?'+':''}${(m.alpha||0).toFixed(1)}%</td>`;
+            html += '</tr>';
+        }
+        html += '</tbody></table>';
+        document.getElementById('v5-metrics-table').innerHTML = html;
+
+        // 权益曲线
+        const chart = echarts.init(document.getElementById('v5-equity-chart'));
+        const series = [];
+        const colors = ['#94a3b8','#a78bfa','#60a5fa','#fbbf24','#f87171','#3b82f6'];
+        for(const [name, info] of strategies) {
+            if(!info.dates || !info.equity) continue;
+            const vals = info.dates.map((d,i) => [d, info.equity[i]]);
+            const isV5 = name.includes('V5');
+            series.push({
+                name: name.replace(/\s*\(.*?\)/g, ''),
+                type: 'line', data: vals, showSymbol: false,
+                lineStyle: { width: isV5 ? 2.5 : 1.2, opacity: isV5 ? 1 : 0.5 },
+                z: isV5 ? 10 : 1,
+            });
+        }
+        chart.setOption({
+            tooltip: {trigger:'axis', backgroundColor:'rgba(15,23,42,0.95)', borderColor:'rgba(59,130,246,0.3)', textStyle:{color:'#e2e8f0',fontSize:11}},
+            legend: {data: series.map(s=>s.name), textStyle:{color:'#94a3b8',fontSize:10}, top:0, type:'scroll'},
+            color: colors,
+            grid: {left:50,right:20,top:35,bottom:30},
+            xAxis: {type:'time', axisLine:{lineStyle:{color:'rgba(148,163,184,0.2)'}}, axisLabel:{color:'#64748b',fontSize:10}},
+            yAxis: {type:'value', name:'净值', nameTextStyle:{color:'#64748b'}, axisLine:{show:false}, splitLine:{lineStyle:{color:'rgba(148,163,184,0.08)'}}, axisLabel:{color:'#64748b',fontSize:10}},
+            series: series
+        });
+        window.addEventListener('resize', ()=>chart.resize());
+    }
+
+    function renderV5Signal(data) {
+        // AIAE_简 + Regime 色带
+        const months = data.map(d=>d.month);
+        const aiaeVals = data.map(d=>d.aiae_simple);
+        const regimes = data.map(d=>d.regime);
+        const positions = data.map(d=>d.matrix_position);
+
+        // Regime 时序图
+        const rChart = echarts.init(document.getElementById('v5-regime-chart'));
+        // 构建 regime 色带 markArea
+        const markAreas = [];
+        let prevR = regimes[0], start = months[0];
+        for(let i=1; i<=regimes.length; i++) {
+            if(i===regimes.length || regimes[i] !== prevR) {
+                markAreas.push([{xAxis:start, itemStyle:{color: REGIME_COLORS[prevR]+'20'}}, {xAxis: i<regimes.length?months[i]:months[months.length-1]}]);
+                if(i<regimes.length) { start=months[i]; prevR=regimes[i]; }
+            }
+        }
+        rChart.setOption({
+            tooltip: {trigger:'axis', backgroundColor:'rgba(15,23,42,0.95)', borderColor:'rgba(59,130,246,0.3)', textStyle:{color:'#e2e8f0',fontSize:11},
+                formatter: p => { const d=data.find(x=>x.month===p[0].axisValue); return d?`<b>${d.month}</b><br>AIAE_简: ${d.aiae_simple}%<br>Regime: ${REGIME_LABELS[d.regime]}<br>ERP: ${d.erp}% (${d.erp_tier})`:'';}},
+            grid: {left:50,right:20,top:30,bottom:30},
+            xAxis: {type:'category', data:months, axisLabel:{color:'#64748b',fontSize:9,rotate:45,interval:11}},
+            yAxis: {type:'value', name:'AIAE_简 (%)', nameTextStyle:{color:'#64748b'}, min:18, max:36, axisLabel:{color:'#64748b',fontSize:10}, splitLine:{lineStyle:{color:'rgba(148,163,184,0.08)'}}},
+            series: [{
+                name:'AIAE_简', type:'line', data:aiaeVals, showSymbol:false,
+                lineStyle:{color:'#3b82f6',width:2},
+                areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(59,130,246,0.15)'},{offset:1,color:'rgba(59,130,246,0)'}]}},
+                markArea: {silent:true, data:markAreas},
+                markLine: {silent:true, lineStyle:{type:'dashed',color:'rgba(148,163,184,0.3)'}, data:[
+                    {yAxis:22.8, label:{formatter:'R1/R2',color:'#64748b',fontSize:9}},
+                    {yAxis:24.0, label:{formatter:'R2/R3',color:'#64748b',fontSize:9}},
+                    {yAxis:26.5, label:{formatter:'R3/R4',color:'#64748b',fontSize:9}},
+                    {yAxis:28.3, label:{formatter:'R4/R5',color:'#64748b',fontSize:9}},
+                ]}
+            }]
+        });
+
+        // 仓位时序
+        const pChart = echarts.init(document.getElementById('v5-position-chart'));
+        pChart.setOption({
+            tooltip: {trigger:'axis', backgroundColor:'rgba(15,23,42,0.95)', borderColor:'rgba(59,130,246,0.3)', textStyle:{color:'#e2e8f0',fontSize:11}},
+            grid: {left:50,right:20,top:20,bottom:30},
+            xAxis: {type:'category', data:months, axisLabel:{color:'#64748b',fontSize:9,rotate:45,interval:11}},
+            yAxis: {type:'value', name:'仓位 (%)', min:0, max:100, axisLabel:{color:'#64748b',fontSize:10}, splitLine:{lineStyle:{color:'rgba(148,163,184,0.08)'}}},
+            series: [{
+                name:'建议仓位', type:'bar', data:positions,
+                itemStyle:{color:p => {
+                    const v = p.data;
+                    if(v >= 70) return '#22c55e';
+                    if(v >= 50) return '#86efac';
+                    if(v >= 35) return '#fbbf24';
+                    return '#ef4444';
+                }, borderRadius:[2,2,0,0]},
+                barMaxWidth: 8,
+            }]
+        });
+
+        window.addEventListener('resize', ()=>{rChart.resize();pChart.resize();});
+    }
+    </script>
     <script>
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js', { scope: '/' })

@@ -21,7 +21,7 @@ _logger = logging.getLogger("ac.cache")
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
-REDIS_DB = os.getenv("REDIS_DB", 0)
+REDIS_DB = int(os.getenv("REDIS_DB", 0))
 
 
 class CacheService:
@@ -119,8 +119,7 @@ class CacheService:
                 return True
             except Exception:
                 # Redis 异常时 fallback 到内存
-                with self._memory_lock:
-                    self._memory_cache.pop(key, None)
+                pass
 
         with self._memory_lock:
             self._memory_cache.pop(key, None)

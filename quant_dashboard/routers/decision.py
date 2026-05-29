@@ -8,7 +8,7 @@ GET  /api/v1/decision/history   — 决策日志历史
 """
 
 from fastapi import APIRouter, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 router = APIRouter(prefix="/api/v1/decision", tags=["decision"])
@@ -55,11 +55,17 @@ async def get_scenarios():
 async def simulate(req: SimulateRequest):
     """执行情景模拟 (纯数学推演, 零API调用)"""
     from dashboard_modules.decision_engine import (
-        simulate_scenario, _build_snapshot_from_cache
+        simulate_scenario, _build_snapshot_from_cache, SCENARIOS
     )
-    snapshot = _build_snapshot_from_cache()
-    result = simulate_scenario(req.scenario, snapshot)
-    return {"status": "success", **result}
+    if req.scenario not in SCENARIOS:
+        return {"status": "error", "error": f"未知情景: {req.scenario}",
+                "available": list(SCENARIOS.keys())}
+    try:
+        snapshot = _build_snapshot_from_cache()
+        result = simulate_scenario(req.scenario, snapshot)
+        return {"status": "success", **result}
+    except Exception as e:
+        return {"status": "error", "error": f"模拟异常: {str(e)[:200]}"}
 
 
 @router.get("/history")
@@ -127,7 +133,10 @@ async def get_accuracy_dashboard(window: int = Query(default=30, ge=7, le=180)):
 
 
 @router.get("/calendar")
-async def get_calendar(year: int = Query(default=None), month: int = Query(default=None)):
+async def get_calendar(
+    year: int = Query(default=None, ge=2020, le=2030),
+    month: int = Query(default=None, ge=1, le=12),
+):
     """复盘日历数据"""
     from services import db as ac_db
     data = ac_db.get_calendar_data(year, month)
@@ -167,10 +176,13 @@ async def get_swing_guard():
 @router.get("/position-path")
 async def get_position_path():
     """仓位调整路径生成器: 3步执行计划 (T / T+2 / T+5) + V22.0 执行成本"""
-    from dashboard_modules.decision_engine import generate_position_path, estimate_position_path_costs
-    result = generate_position_path()
-    result = estimate_position_path_costs(result)
-    return {"status": "success", **result}
+    try:
+        from dashboard_modules.decision_engine import generate_position_path, estimate_position_path_costs
+        result = generate_position_path()
+        result = estimate_position_path_costs(result)
+        return {"status": "success", **result}
+    except Exception as e:
+        return {"status": "error", "error": f"路径生成异常: {str(e)[:200]}"}
 
 
 # ── V22.0: 策略参数版本管理 ──
@@ -254,8 +266,10 @@ async def save_param_snapshot():
         "aiae_version": aiae_version,
     }
     filepath = os.path.join(versions_dir, f"{version_id}.json")
-    with open(filepath, 'w', encoding='utf-8') as f:
+    tmp_path = filepath + ".tmp"
+    with open(tmp_path, 'w', encoding='utf-8') as f:
         json.dump(snapshot, f, ensure_ascii=False, indent=2)
+    os.replace(tmp_path, filepath)
 
     return {"status": "success", "version_id": version_id, "filepath": filepath}
 
@@ -475,7 +489,7 @@ async def get_correlation_matrix():
 # ═══════════════════════════════════════════════════
 
 @router.get("/alerts")
-async def get_signal_alerts(limit: int = 20):
+async def get_signal_alerts(limit: int = Query(default=20, ge=1, le=100)):
     """获取最近预警记录"""
     from services import db as ac_db
     alerts = ac_db.get_recent_alerts(limit)
@@ -494,11 +508,14 @@ async def acknowledge_alert(alert_id: int):
 @router.post("/alerts/ack-all")
 async def acknowledge_all_alerts():
     """一键全部已读"""
-    from services import db as ac_db
-    conn = ac_db._get_conn()
-    conn.execute("UPDATE signal_alerts SET acknowledged = 1 WHERE acknowledged = 0")
-    conn.commit()
-    return {"status": "ok"}
+    try:
+        from services import db as ac_db
+        conn = ac_db._get_conn()
+        conn.execute("UPDATE signal_alerts SET acknowledged = 1 WHERE acknowledged = 0")
+        conn.commit()
+        return {"status": "ok"}
+    except Exception as e:
+        return {"status": "error", "error": f"批量确认失败: {str(e)[:200]}"}
 
 
 # ── V22.0: 跨市场风险传染矩阵 ──
@@ -540,7 +557,7 @@ async def list_shock_sources():
 class ShockRequest(BaseModel):
     source: str
     magnitude: Optional[float] = None
-    steps: int = 3
+    steps: int = Field(default=3, ge=1, le=10)
 
 
 @router.post("/shock-propagate")
@@ -695,9 +712,9 @@ async def get_param_sensitivity():
 # ═══════════════════════════════════════════════════════════
 
 class OptimizeCustomRequest(BaseModel):
-    risk_aversion: float = 2.5
-    cost_rate: float = 0.003
-    max_turnover: float = 0.25
+    risk_aversion: float = Field(default=2.5, ge=0.1, le=20.0)
+    cost_rate: float = Field(default=0.003, ge=0.0, le=0.05)
+    max_turnover: float = Field(default=0.25, ge=0.01, le=1.0)
 
 
 @router.get("/optimize")

@@ -1,7 +1,12 @@
 """
-AlphaCore · 红利趋势增强策略引擎 V4.0
+AlphaCore · 红利趋势增强策略引擎 V5.0
 数据源：Tushare（5000积分用户 — 按ts_code批量获取）
 标的池：8只红利类ETF · 固定权重配置
+
+V5.0 升级：
+  · AIAE V5 配额穿透约束 — 读取 SUB_STRATEGY_ALLOC["div"] 压仓
+  · 与 MR/Momentum/GEM 统一的 24h 缓存新鲜度保护
+  · 仓位 = min(策略仓位, Regime上限, AIAE配额)
 
 V4.0 升级：
   · 7维100分评分体系（新增RSI动量方向Δ RSI₅）
@@ -533,9 +538,49 @@ def run_dividend_strategy(regime: str = None) -> dict:
     pos_cap_pct = int(p['pos_cap'] * 100)
     total_pos   = min(raw_total_pos, pos_cap_pct)
 
+    # ── V5.0: AIAE 配额穿透约束 (与 MR/Momentum 引擎一致) ──
+    # AIAE 只能压低仓位，不能放大；24h缓存过期降级为R3
+    aiae_regime = None
+    aiae_cap_pct = None
+    try:
+        from engines.aiae_engine import get_aiae_engine
+        aiae_engine = get_aiae_engine()
+        aiae_ctx = getattr(aiae_engine, '_last_report_cache', None)
+        if aiae_ctx and isinstance(aiae_ctx, dict):
+            cached_at = aiae_ctx.get('generated_at', '')
+            # 24h 新鲜度保护
+            is_fresh = False
+            if cached_at:
+                try:
+                    from datetime import datetime as _dt
+                    cache_time = _dt.fromisoformat(cached_at.replace('Z', '+00:00'))
+                    age_hours = (datetime.now(cache_time.tzinfo) - cache_time).total_seconds() / 3600
+                    is_fresh = age_hours < 24
+                except:
+                    is_fresh = False
+
+            if is_fresh:
+                current = aiae_ctx.get('current', {})
+                aiae_regime = current.get('regime', 3)
+            else:
+                aiae_regime = 3  # 过期降级为R3
+
+            # 从 SUB_STRATEGY_ALLOC 获取红利配额
+            from engines.aiae_params import SUB_STRATEGY_ALLOC
+            if aiae_regime in SUB_STRATEGY_ALLOC:
+                aiae_cap_pct = SUB_STRATEGY_ALLOC[aiae_regime].get('div', 100)
+                old_pos = total_pos
+                total_pos = min(total_pos, aiae_cap_pct)
+                if total_pos < old_pos:
+                    print(f"[红利引擎] AIAE V5 配额约束: R{aiae_regime} div配额={aiae_cap_pct}%, "
+                          f"仓位 {old_pos}% → {total_pos}%")
+    except Exception as e:
+        print(f"[红利引擎] AIAE配额读取失败(non-fatal): {e}")
+
     print(f"[红利引擎] 完成: {len(results)}只有信号, {len(errors)}只异常")
     print(f"[红利引擎] 趋势向上:{trend_up_count}, 买入:{buy_count}, 卖出:{sell_count}, "
-          f"仓位:{total_pos}%（上限{pos_cap_pct}%）")
+          f"仓位:{total_pos}%（Regime上限{pos_cap_pct}%"
+          f"{', AIAE配额' + str(aiae_cap_pct) + '%' if aiae_cap_pct else ''}）")
 
     return {
         "status":    "success",
@@ -549,6 +594,8 @@ def run_dividend_strategy(regime: str = None) -> dict:
                 "sell_count":        sell_count,
                 "total_suggested_pos": total_pos,
                 "pos_cap":           pos_cap_pct,
+                "aiae_regime":       aiae_regime,
+                "aiae_cap_pct":      aiae_cap_pct,
             },
             "regime_params": {
                 "regime":     regime,

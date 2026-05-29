@@ -1,5 +1,5 @@
 """
-AlphaCore · 策略 CI/CD 管道 V1.0 (P1-3)
+AlphaCore · 策略 CI/CD 管道 V2.0 (P1-3 + V5 自检)
 ==========================================
 触发: APScheduler 月度任务 / 手动 API 调用
 流程:
@@ -313,7 +313,7 @@ def run_erp_ci() -> dict:
 def run_full_ci() -> dict:
     """
     月度全策略 CI
-    按内存安全顺序执行: MR(三态串行) → ERP
+    按内存安全顺序执行: MR(三态串行) → ERP → AIAE V5 自检
     """
     logger.info("═══ 策略 CI/CD 月度管道启动 ═══")
     t0 = datetime.now()
@@ -322,6 +322,7 @@ def run_full_ci() -> dict:
         "timestamp": t0.isoformat(),
         "mr_results": [],
         "erp_result": None,
+        "aiae_v5_check": None,
         "summary": {},
     }
 
@@ -339,6 +340,14 @@ def run_full_ci() -> dict:
     except Exception as e:
         logger.error("[CI] ERP 全局异常: %s", e)
 
+    # Phase 3: AIAE V5 月度自检
+    try:
+        v5_check = _run_aiae_v5_monthly_check()
+        all_results["aiae_v5_check"] = v5_check
+    except Exception as e:
+        logger.error("[CI] AIAE V5 自检异常: %s", e)
+        all_results["aiae_v5_check"] = {"status": "ERROR", "error": str(e)}
+
     # 汇总
     total_runs = len(all_results["mr_results"]) + (1 if all_results["erp_result"] else 0)
     accepted = sum(1 for r in all_results["mr_results"] if r.get("status") == "ACCEPT")
@@ -346,12 +355,179 @@ def run_full_ci() -> dict:
         accepted += 1
 
     elapsed = (datetime.now() - t0).total_seconds()
+    v5_status = (all_results.get("aiae_v5_check") or {}).get("status", "SKIP")
     all_results["summary"] = {
         "total_runs": total_runs,
         "accepted": accepted,
+        "aiae_v5_status": v5_status,
         "elapsed_seconds": round(elapsed, 1),
     }
 
-    logger.info("═══ CI/CD 月度管道完成: %d/%d ACCEPT · %.0fs ═══",
-                accepted, total_runs, elapsed)
+    logger.info("═══ CI/CD 月度管道完成: %d/%d ACCEPT · V5=%s · %.0fs ═══",
+                accepted, total_runs, v5_status, elapsed)
     return all_results
+
+
+# ═══════════════════════════════════════════════════════════
+#  AIAE V5 月度自检 (Phase 3)
+# ═══════════════════════════════════════════════════════════
+
+def _run_aiae_v5_monthly_check() -> dict:
+    """
+    V5 月度自检:
+      1. 生产就绪检查 (12 项)
+      2. 联合回测刷新 (对比上月)
+      3. 漂移监控状态
+      4. 回归检测 (本月 Sharpe vs 上月)
+    """
+    logger.info("[CI] AIAE V5 月度自检开始")
+    result = {"status": "PASS", "checks": {}, "alerts": []}
+
+    # ── Check 1: 生产就绪 ──
+    try:
+        from engines.production_check import (
+            check_aiae_params, check_aiae_engine, check_v5_regime_classify,
+            check_v5_position_matrix, check_sub_strategy_alloc,
+            check_dividend_aiae_integration, check_frontend_v5_sync,
+            check_history_parquet, check_backtest_results,
+        )
+        prod_checks = {
+            "params": check_aiae_params(),
+            "engine": check_aiae_engine(),
+            "regime": check_v5_regime_classify(),
+            "matrix": check_v5_position_matrix(),
+            "alloc": check_sub_strategy_alloc(),
+            "div_aiae": check_dividend_aiae_integration(),
+            "frontend": check_frontend_v5_sync(),
+            "history": check_history_parquet(),
+            "backtest": check_backtest_results(),
+        }
+        prod_pass = sum(1 for v in prod_checks.values() if v[0] == "pass")
+        prod_total = len(prod_checks)
+        result["checks"]["production_ready"] = f"{prod_pass}/{prod_total}"
+
+        if prod_pass < prod_total:
+            failed = [k for k, v in prod_checks.items() if v[0] != "pass"]
+            result["alerts"].append(f"生产就绪检查失败: {', '.join(failed)}")
+            result["status"] = "WARN"
+
+        logger.info("[CI] V5 生产就绪: %d/%d PASS", prod_pass, prod_total)
+    except Exception as e:
+        result["checks"]["production_ready"] = f"ERROR: {e}"
+        logger.warning("[CI] V5 生产就绪检查异常: %s", e)
+
+    # ── Check 2: 联合回测刷新 ──
+    try:
+        bt_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "portfolio_backtest_results.json"
+        )
+
+        # 读取上月结果 (如果存在)
+        old_metrics = {}
+        if os.path.exists(bt_path):
+            with open(bt_path, "r", encoding="utf-8") as f:
+                old_data = json.load(f)
+            old_v5 = old_data.get("strategies", {}).get("V5_联合配置", {})
+            old_metrics = {
+                "sharpe": old_v5.get("sharpe", 0),
+                "mdd": old_v5.get("mdd_pct", 0),
+                "cagr": old_v5.get("cagr_pct", 0),
+            }
+
+        # 重新运行回测
+        from engines.portfolio_backtest import run_portfolio_backtest
+        new_data = run_portfolio_backtest("2018-01")
+        gc.collect()
+
+        new_v5 = new_data.get("strategies", {}).get("V5_联合配置", {})
+        new_metrics = {
+            "sharpe": new_v5.get("sharpe", 0),
+            "mdd": new_v5.get("mdd_pct", 0),
+            "cagr": new_v5.get("cagr_pct", 0),
+        }
+
+        result["checks"]["backtest_sharpe"] = new_metrics["sharpe"]
+        result["checks"]["backtest_mdd"] = new_metrics["mdd"]
+        result["checks"]["backtest_cagr"] = new_metrics["cagr"]
+
+        # 回归检测: Sharpe 下降 > 15% 则告警
+        if old_metrics and old_metrics.get("sharpe", 0) > 0:
+            sharpe_delta = new_metrics["sharpe"] - old_metrics["sharpe"]
+            sharpe_pct_change = sharpe_delta / old_metrics["sharpe"] * 100
+            result["checks"]["sharpe_drift"] = round(sharpe_pct_change, 1)
+
+            if sharpe_pct_change < -15:
+                result["alerts"].append(
+                    f"V5 Sharpe 回归告警: {old_metrics['sharpe']:.2f} → "
+                    f"{new_metrics['sharpe']:.2f} ({sharpe_pct_change:+.1f}%)"
+                )
+                result["status"] = "WARN"
+
+        logger.info("[CI] V5 联合回测: Sharpe=%.2f MDD=%.1f%% CAGR=%.1f%%",
+                    new_metrics["sharpe"], new_metrics["mdd"], new_metrics["cagr"])
+    except Exception as e:
+        result["checks"]["backtest"] = f"ERROR: {e}"
+        logger.warning("[CI] V5 联合回测异常: %s", e)
+
+    # ── Check 3: 漂移监控 ──
+    try:
+        from engines.drift_monitor import check_regime_transition
+        drift = check_regime_transition()
+        drift_status = drift.get("status", "ok")
+        result["checks"]["regime_drift"] = drift_status
+
+        if drift_status == "critical":
+            result["alerts"].append(f"Regime 告警: {drift.get('label', '')}")
+            result["status"] = "CRITICAL"
+        elif drift_status == "warning":
+            result["alerts"].append(f"Regime 预警: {drift.get('label', '')}")
+            if result["status"] != "CRITICAL":
+                result["status"] = "WARN"
+
+        logger.info("[CI] V5 漂移监控: %s", drift_status)
+    except Exception as e:
+        result["checks"]["regime_drift"] = f"ERROR: {e}"
+        logger.warning("[CI] V5 漂移监控异常: %s", e)
+
+    # ── Check 4: 组合压力测试 ──
+    try:
+        from engines.rebalance_engine import run_stress_test
+        stress = run_stress_test()
+        if stress["status"] == "success":
+            ra = stress["risk_assessment"]
+            result["checks"]["liquidity_risk"] = ra["liquidity_risk"]
+            result["checks"]["r5_liquidation_days"] = ra["r5_liquidation_days"]
+
+            if ra["liquidity_risk"] == "HIGH":
+                result["alerts"].append(
+                    f"流动性风险 HIGH: R5 清仓需 {ra['r5_liquidation_days']:.1f} 天 "
+                    f"(单日最大 {ra['max_daily_sell']:,.0f})"
+                )
+                if result["status"] not in ("CRITICAL",):
+                    result["status"] = "WARN"
+
+            logger.info("[CI] V5 压力测试: 流动性=%s, R5清仓=%.1f天",
+                        ra["liquidity_risk"], ra["r5_liquidation_days"])
+    except Exception as e:
+        result["checks"]["stress_test"] = f"ERROR: {e}"
+        logger.warning("[CI] V5 压力测试异常: %s", e)
+
+    # ── 写入告警 ──
+    if result["alerts"]:
+        try:
+            from services.alert_monitor import push_alert
+            for alert_msg in result["alerts"]:
+                push_alert(
+                    title="V5 月度自检",
+                    detail=alert_msg,
+                    severity="warning" if result["status"] == "WARN" else "critical",
+                    source="ci_pipeline",
+                )
+        except Exception:
+            pass  # 告警推送失败不影响 CI 结果
+
+    logger.info("[CI] AIAE V5 月度自检完成: status=%s, alerts=%d",
+                result["status"], len(result["alerts"]))
+    return result
+

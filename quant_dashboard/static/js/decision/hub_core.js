@@ -282,11 +282,11 @@ function renderAlerts(alerts) {
 // ═══════════════════════════════════════════════════
 
 const _REGIME_DEFS = [
-    { r: 1, emoji: '🟢', name: 'Ⅰ级', cn: '极度恐慌', range: '<12.5%', pos: '90-95%', color: '#10b981' },
-    { r: 2, emoji: '🔵', name: 'Ⅱ级', cn: '低配置区', range: '12.5-17%', pos: '70-85%', color: '#3b82f6' },
-    { r: 3, emoji: '🟡', name: 'Ⅲ级', cn: '中性均衡', range: '17-23%', pos: '50-65%', color: '#eab308' },
-    { r: 4, emoji: '🟠', name: 'Ⅳ级', cn: '偏热区域', range: '23-30%', pos: '25-40%', color: '#f97316' },
-    { r: 5, emoji: '🔴', name: 'Ⅴ级', cn: '极度过热', range: '>30%', pos: '0-15%', color: '#ef4444' },
+    { r: 1, emoji: '🟢', name: 'Ⅰ级', cn: '极低估值', range: '<22.8%', pos: '60-80%', color: '#10b981' },
+    { r: 2, emoji: '🔵', name: 'Ⅱ级', cn: '低估区', range: '22.8-24%', pos: '50-75%', color: '#3b82f6' },
+    { r: 3, emoji: '🟡', name: 'Ⅲ级', cn: '中性均衡', range: '24-26.5%', pos: '35-65%', color: '#eab308' },
+    { r: 4, emoji: '🟠', name: 'Ⅳ级', cn: '偏高区域', range: '26.5-28.3%', pos: '15-40%', color: '#f97316' },
+    { r: 5, emoji: '🔴', name: 'Ⅴ级', cn: '极度过热', range: '>28.3%', pos: '0-15%', color: '#ef4444' },
 ];
 
 function renderAIAEHub(snapshot) {
@@ -366,11 +366,11 @@ function renderAIAEHub(snapshot) {
                     lineStyle: {
                         width: 14,
                         color: [
-                            [0.3125, '#10b981'],  // 0-12.5: 绿
-                            [0.425, '#3b82f6'],   // 12.5-17: 蓝
-                            [0.575, '#eab308'],   // 17-23: 黄
-                            [0.75, '#f97316'],     // 23-30: 橙
-                            [1, '#ef4444'],        // 30-40: 红
+                            [0.57, '#10b981'],    // 0-22.8: 绿
+                            [0.60, '#3b82f6'],    // 22.8-24: 蓝
+                            [0.6625, '#eab308'],  // 24-26.5: 黄
+                            [0.7075, '#f97316'],  // 26.5-28.3: 橙
+                            [1, '#ef4444'],        // 28.3-40: 红
                         ]
                     }
                 },
