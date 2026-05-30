@@ -49,7 +49,8 @@ async def get_portfolio_risk():
         engine = get_portfolio_engine()
         return R.ok(engine.calculate_risk_metrics())
 
-    return stale_while_revalidate("swr_portfolio_risk", _compute, fresh_ttl=300, stale_ttl=1800)
+    return await asyncio.get_running_loop().run_in_executor(
+        executor, lambda: stale_while_revalidate("swr_portfolio_risk", _compute, fresh_ttl=300, stale_ttl=1800))
 
 @router.get("/portfolio/history")
 async def get_portfolio_history():
@@ -169,8 +170,9 @@ async def get_brinson_attribution(days: int = 20):
         return R.ok(result) if result.get("status") == "success" else R.error(
             result.get("error", "归因计算失败"), "ERR_BRINSON", data=result)
 
-    return stale_while_revalidate(
-        f"swr_brinson_{days}", _compute, fresh_ttl=3600, stale_ttl=14400)
+    return await asyncio.get_running_loop().run_in_executor(
+        executor, lambda: stale_while_revalidate(
+            f"swr_brinson_{days}", _compute, fresh_ttl=3600, stale_ttl=14400))
 
 
 @router.get("/portfolio/factor-attribution")
@@ -186,8 +188,9 @@ async def get_factor_attribution(days: int = 60):
         return R.ok(result) if result.get("status") == "success" else R.error(
             result.get("error", "因子归因失败"), "ERR_FACTOR_ATTR", data=result)
 
-    return stale_while_revalidate(
-        f"swr_factor_attr_{days}", _compute, fresh_ttl=7200, stale_ttl=28800)
+    return await asyncio.get_running_loop().run_in_executor(
+        executor, lambda: stale_while_revalidate(
+            f"swr_factor_attr_{days}", _compute, fresh_ttl=7200, stale_ttl=28800))
 
 
 @router.get("/portfolio/intraday-pnl")
@@ -200,8 +203,9 @@ async def get_intraday_pnl():
         result = engine.get_intraday_pnl()
         return R.ok(result)
 
-    return stale_while_revalidate(
-        "swr_intraday_pnl", _compute, fresh_ttl=60, stale_ttl=300)
+    return await asyncio.get_running_loop().run_in_executor(
+        executor, lambda: stale_while_revalidate(
+            "swr_intraday_pnl", _compute, fresh_ttl=60, stale_ttl=300))
 
 
 @router.get("/portfolio/rebalance")

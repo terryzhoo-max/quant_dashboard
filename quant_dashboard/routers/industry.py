@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 import numpy as np
 import pandas as pd
@@ -301,10 +301,10 @@ async def run_factor_analysis(req: FactorAnalysisRequest):
 async def get_momentum_backtest(
     start_date: str = "2021-01-01",
     end_date: str = None,
-    top_n: int = 4,
-    rebalance_days: int = 10,
-    mom_s_window: int = 20,
-    stop_loss: float = -0.08
+    top_n: int = Query(default=4, ge=1, le=20),
+    rebalance_days: int = Query(default=10, ge=1, le=60),
+    mom_s_window: int = Query(default=20, ge=5, le=120),
+    stop_loss: float = Query(default=-0.08, ge=-0.5, le=0)
 ):
     """运行行业动量轮动多因子历史回测 (V2.0)"""
     try:

@@ -1,30 +1,30 @@
 """AlphaCore 请求/响应 Pydantic 模型 — 从 main.py 提取"""
-from pydantic import BaseModel
-from typing import List, Optional
+from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
 
 # ── 回测 ──
 class BacktestRequest(BaseModel):
-    strategy: str  # 'mr', 'div', 'mom', 'erp'
-    ts_code: str
-    start_date: str
-    end_date: str
-    initial_cash: float = 1000000.0
+    strategy: Literal["mr", "div", "mom", "erp"]
+    ts_code: str = Field(..., min_length=3, max_length=20)
+    start_date: str = Field(..., pattern=r"^\d{8}$")
+    end_date: str = Field(..., pattern=r"^\d{8}$")
+    initial_cash: float = Field(1000000.0, ge=10000, le=100000000)
     params: dict = {}
-    order_pct: float = 0.01
-    adj: str = 'qfq'
-    benchmark_code: str = '000300.SH'
+    order_pct: float = Field(0.01, ge=0.001, le=1.0)
+    adj: Literal["qfq", "hfq", ""] = "qfq"
+    benchmark_code: str = Field("000300.SH", min_length=3, max_length=20)
 
 class BatchBacktestRequest(BaseModel):
-    items: List[BacktestRequest]
+    items: List[BacktestRequest] = Field(..., min_length=1, max_length=10)
 
 # ── 交易 ──
 class TradeRequest(BaseModel):
-    ts_code: str
-    amount: int
-    price: float
-    name: str = ""
-    action: str  # "buy" or "sell"
+    ts_code: str = Field(..., min_length=3, max_length=20)
+    amount: int = Field(..., gt=0, le=10000000)
+    price: float = Field(..., gt=0, le=100000)
+    name: str = Field("", max_length=50)
+    action: Literal["buy", "sell"]
 
 # ── 因子分析 ──
 class FactorAnalysisRequest(BaseModel):

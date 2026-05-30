@@ -17,8 +17,9 @@ router = APIRouter(prefix="/api/v1", tags=["market"])
 executor = ThreadPoolExecutor(max_workers=4)
 logger = logging.getLogger("alphacore.market")
 
-# 个股名称本地缓存
+# 个股名称本地缓存 (LRU: 防止无限膨胀, 最多缓存 500 条)
 _NAME_CACHE: Dict[str, str] = {}
+_NAME_CACHE_MAXSIZE = 500
 
 
 @router.get("/strategy/erp-timing")
@@ -31,14 +32,16 @@ async def get_erp_timing():
         report = engine.generate_report()
         return {"status": "success", "data": report}
 
-    return stale_while_revalidate("swr_erp_timing", _compute, fresh_ttl=3600, stale_ttl=21600)
+    return await asyncio.get_running_loop().run_in_executor(
+        executor, lambda: stale_while_revalidate("swr_erp_timing", _compute, fresh_ttl=3600, stale_ttl=21600))
 
 
 @router.get("/strategy/erp-global")
 async def get_erp_global():
     """海外ERP择时 — V2: SWR 三级缓存 (30min fresh / 4h stale)"""
     from services.cache_service import stale_while_revalidate
-    return stale_while_revalidate("swr_erp_global", _compute_erp_global, fresh_ttl=1800, stale_ttl=14400)
+    return await asyncio.get_running_loop().run_in_executor(
+        executor, lambda: stale_while_revalidate("swr_erp_global", _compute_erp_global, fresh_ttl=1800, stale_ttl=14400))
 
 
 def _compute_erp_global():
@@ -160,7 +163,8 @@ async def get_rates_strategy():
         report = engine.generate_report()
         return {"status": "success", "data": report}
 
-    return stale_while_revalidate("swr_rates", _compute, fresh_ttl=3600, stale_ttl=21600)
+    return await asyncio.get_running_loop().run_in_executor(
+        executor, lambda: stale_while_revalidate("swr_rates", _compute, fresh_ttl=3600, stale_ttl=21600))
 
 
 @router.get("/strategy/gold-signal")
@@ -172,16 +176,25 @@ async def get_gold_signal():
         from engines.gold_signal_engine import compute_gold_signal
         return compute_gold_signal()
 
-    return stale_while_revalidate("swr_gold_signal", _compute, fresh_ttl=3600, stale_ttl=21600)
+    return await asyncio.get_running_loop().run_in_executor(
+        executor, lambda: stale_while_revalidate("swr_gold_signal", _compute, fresh_ttl=3600, stale_ttl=21600))
 
 
 @router.get("/stock/name")
 async def get_stock_name(ts_code: str):
     """查询单只标的的中文名称，支持 A 股和场内 ETF"""
-    ts_code = ts_code.strip().upper()
+    ts_code = ts_code.strip().upper()[:20]  # 防超长字符串
 
     if ts_code in _NAME_CACHE:
         return {"ts_code": ts_code, "name": _NAME_CACHE[ts_code], "type": "cached"}
+
+    def _cache_put(key, val):
+        """LRU 驱逐: 超限时清除最旧的一半"""
+        if len(_NAME_CACHE) >= _NAME_CACHE_MAXSIZE:
+            keys = list(_NAME_CACHE.keys())[:_NAME_CACHE_MAXSIZE // 2]
+            for k in keys:
+                _NAME_CACHE.pop(k, None)
+        _NAME_CACHE[key] = val
 
     def do_lookup():
         pro = ts.pro_api(TUSHARE_TOKEN)
@@ -192,7 +205,7 @@ async def get_stock_name(ts_code: str):
             df_fund = pro.fund_basic(ts_code=ts_code, market="E")
             if df_fund is not None and not df_fund.empty:
                 name = df_fund.iloc[0]["name"]
-                _NAME_CACHE[ts_code] = name
+                _cache_put(ts_code, name)
                 return {"ts_code": ts_code, "name": name, "type": "etf"}
         except Exception:
             pass
@@ -201,7 +214,7 @@ async def get_stock_name(ts_code: str):
             df_stock = pro.stock_basic(ts_code=ts_code, fields="ts_code,name")
             if df_stock is not None and not df_stock.empty:
                 name = df_stock.iloc[0]["name"]
-                _NAME_CACHE[ts_code] = name
+                _cache_put(ts_code, name)
                 return {"ts_code": ts_code, "name": name, "type": "stock"}
         except Exception:
             pass
@@ -210,7 +223,7 @@ async def get_stock_name(ts_code: str):
             df_idx = pro.index_basic(ts_code=ts_code, fields="ts_code,name")
             if df_idx is not None and not df_idx.empty:
                 name = df_idx.iloc[0]["name"]
-                _NAME_CACHE[ts_code] = name
+                _cache_put(ts_code, name)
                 return {"ts_code": ts_code, "name": name, "type": "index"}
         except Exception:
             pass
