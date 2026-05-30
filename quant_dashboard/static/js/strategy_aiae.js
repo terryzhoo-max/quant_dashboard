@@ -13,7 +13,8 @@ let _aiaeLoading = false;
 // DOM 缓存 — 避免每次 render 执行 ~30 次 getElementById
 const _aiaeDOM = {};
 function _aiaeCacheDOM() {
-    if (_aiaeDOM._ready) return;
+    // V5.1: 校验关键 DOM 节点有效性，允许首次失败后重新获取
+    if (_aiaeDOM._ready && _aiaeDOM['hero-value'] && document.contains(_aiaeDOM['hero-value'])) return;
     ['hero-value','hero-regime','hero-position','hero-erp',
      'gauge-container','gauge-label','gauge-regime','slope-indicator',
      'data-simple','data-margin','data-fund','data-fund-date',
@@ -35,6 +36,14 @@ function _aiaeCacheDOM() {
         _aiaeDOM[k] = document.getElementById('aiae-' + k);
     });
     _aiaeDOM._ready = true;
+}
+
+// V5.1: ECharts 异步就绪等待 — 解决 CDN 首次加载竞态
+function _waitForECharts(callback, retries) {
+    if (retries === undefined) retries = 25; // 最多等 ~7.5 秒
+    if (typeof echarts !== 'undefined') { try { callback(); } catch(e) { console.warn('[AIAE] ECharts callback error:', e); } return; }
+    if (retries <= 0) { console.warn('[AIAE] ECharts 未能在超时内加载，图表渲染跳过'); return; }
+    setTimeout(function() { _waitForECharts(callback, retries - 1); }, 300);
 }
 
 
@@ -324,8 +333,12 @@ function renderAIAEUI(data) {
     if ($p) $p.textContent = p.matrix_position + '%';
     if ($e) { $e.textContent = cv.verdict; $e.style.color = cv.color; }
 
-    // ── ZONE 1: ECharts Gauge ──
-    try { renderAIAEGauge(c.aiae_v1, c.regime, ri); } catch(e) { console.warn('[AIAE] gauge skip:', e); }
+    // ── ZONE 1: ECharts Gauge (V5.1: 异步等待 ECharts 就绪) ──
+    var _gaugeArgs = [c.aiae_v1, c.regime, ri];
+    try {
+        if (typeof echarts !== 'undefined') { renderAIAEGauge(_gaugeArgs[0], _gaugeArgs[1], _gaugeArgs[2]); }
+        else { _waitForECharts(function() { renderAIAEGauge(_gaugeArgs[0], _gaugeArgs[1], _gaugeArgs[2]); }); }
+    } catch(e) { console.warn('[AIAE] gauge skip:', e); }
     const $gl = _aiaeDOM['gauge-label'];
     const $gr = _aiaeDOM['gauge-regime'];
     const $sl = _aiaeDOM['slope-indicator'];
@@ -374,8 +387,14 @@ function renderAIAEUI(data) {
         `;
     }
 
-    // ── ZONE 3: History chart ──
-    try { if (data.chart) renderAIAEHistoryChart(data.chart, c.aiae_v1); } catch(e) { console.warn('[AIAE] chart skip:', e); }
+    // ── ZONE 3: History chart (V5.1: 异步等待 ECharts 就绪) ──
+    if (data.chart) {
+        var _chartData = data.chart, _chartV1 = c.aiae_v1;
+        try {
+            if (typeof echarts !== 'undefined') { renderAIAEHistoryChart(_chartData, _chartV1); }
+            else { _waitForECharts(function() { renderAIAEHistoryChart(_chartData, _chartV1); }); }
+        } catch(e) { console.warn('[AIAE] chart skip:', e); }
+    }
 
     // ── History summary current value (DOM 缓存) ──
     const $hc = _aiaeDOM['hist-current'];
@@ -1419,10 +1438,11 @@ function renderReconSummary(recon) {
 }
 
 // 页面首次加载时，如果AIAE是默认active tab则自动加载
+// V5.1: 等待 ECharts 就绪后再加载，解决 CDN 首次访问竞态
 document.addEventListener('DOMContentLoaded', function() {
     const aiaeTab = document.querySelector('.st-tab[data-report="st-aiae-position"]');
     if (aiaeTab && aiaeTab.classList.contains('active')) {
-        setTimeout(() => loadAIAEReport(), 500);
+        _waitForECharts(function() { loadAIAEReport(); }, 30);
     }
 });
 

@@ -53,6 +53,7 @@
     AC.initTabSystem = function(onTabSwitch) {
         var tabs = document.querySelectorAll('.st-tab');
         var reports = document.querySelectorAll('.st-report');
+        console.log('[AC] initTabSystem: found', tabs.length, 'tabs,', reports.length, 'reports');
         tabs.forEach(function(tab) {
             tab.addEventListener('click', function() {
                 var targetId = tab.dataset.report;
@@ -60,7 +61,11 @@
                 reports.forEach(function(r) { r.classList.remove('active'); });
                 tab.classList.add('active');
                 var target = document.getElementById(targetId);
-                if (target) target.classList.add('active');
+                if (target) {
+                    target.classList.add('active');
+                } else {
+                    console.error('[AC] Tab target not found:', targetId);
+                }
                 var dash = document.querySelector('.dashboard');
                 if (dash) dash.scrollTo({ top: 0, behavior: 'smooth' });
                 if (typeof onTabSwitch === 'function') onTabSwitch(targetId);
