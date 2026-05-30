@@ -122,8 +122,9 @@ def _hot_data_reactor_tick():
             hot_data["timestamp"] = now_dt.isoformat()
 
             with _STRATEGY_LOCK:
-                cache_manager.set_json("last_update", time.time())
-                cache_manager.set_json("dashboard_data", hot_data)
+                _hot_ttl = _get_cache_ttl()
+                cache_manager.set_json("last_update", time.time(), ttl_seconds=_hot_ttl)
+                cache_manager.set_json("dashboard_data", hot_data, ttl_seconds=_hot_ttl)
     except Exception as e:
         logger.warning(f"Reactor tick 异常: {e}")
 
@@ -260,11 +261,12 @@ async def _build_dashboard_data_full():
             "fund_position_date": aiae_report.get("current", {}).get("fund_position_date", ""),
         }
 
-        # 更新缓存 (P0-2: 原子写入)
+        # 更新缓存 (P0-2: 原子写入, R7: 智能 TTL 防陈旧)
+        _build_ttl = _get_cache_ttl()
         with _STRATEGY_LOCK:
-            cache_manager.set_json("last_update", current_time)
-            cache_manager.set_json("dashboard_data", final_data)
-            cache_manager.set_json("aiae_ctx", _full_aiae_ctx)
+            cache_manager.set_json("last_update", current_time, ttl_seconds=_build_ttl)
+            cache_manager.set_json("dashboard_data", final_data, ttl_seconds=_build_ttl)
+            cache_manager.set_json("aiae_ctx", _full_aiae_ctx, ttl_seconds=_build_ttl)
         return final_data
 
     except Exception as e:
