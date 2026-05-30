@@ -43,6 +43,8 @@ function drawJCSRing(score, level) {
     let current = 0;
     const duration = 800;
     const startTime = performance.now();
+    // R5 P1-2: 取消旧动画防止多个 rAF 叠加
+    if (drawJCSRing._rafId) cancelAnimationFrame(drawJCSRing._rafId);
     function animate(now) {
         const elapsed = now - startTime;
         const progress = Math.min(elapsed / duration, 1);
@@ -60,9 +62,10 @@ function drawJCSRing(score, level) {
         ctx.beginPath(); ctx.arc(cx, cy, r, startAngle, endAngle);
         ctx.strokeStyle = color; ctx.lineWidth = lw + 6; ctx.globalAlpha = 0.15; ctx.stroke(); ctx.globalAlpha = 1;
         if (el) el.textContent = (score * ease).toFixed(1);
-        if (progress < 1) requestAnimationFrame(animate);
+        if (progress < 1) drawJCSRing._rafId = requestAnimationFrame(animate);
+        else drawJCSRing._rafId = null;
     }
-    requestAnimationFrame(animate);
+    drawJCSRing._rafId = requestAnimationFrame(animate);
 }
 
 // ═══════════════════════════════════════════════════
@@ -281,17 +284,38 @@ function renderAlerts(alerts) {
 //  V17.5 K: AIAE 宏观仓位管控仪表
 // ═══════════════════════════════════════════════════
 
-const _REGIME_DEFS = [
-    { r: 1, emoji: '🟢', name: 'Ⅰ级', cn: '极低估值', range: '<22.8%', pos: '60-80%', color: '#10b981' },
-    { r: 2, emoji: '🔵', name: 'Ⅱ级', cn: '低估区', range: '22.8-24%', pos: '50-75%', color: '#3b82f6' },
-    { r: 3, emoji: '🟡', name: 'Ⅲ级', cn: '中性均衡', range: '24-26.5%', pos: '35-65%', color: '#eab308' },
-    { r: 4, emoji: '🟠', name: 'Ⅳ级', cn: '偏高区域', range: '26.5-28.3%', pos: '15-40%', color: '#f97316' },
-    { r: 5, emoji: '🔴', name: 'Ⅴ级', cn: '极度过热', range: '>28.3%', pos: '0-15%', color: '#ef4444' },
+// R5 P0-2: 默认阈值 (后端 regime_thresholds 可覆盖)
+const _DEFAULT_REGIME_THRESHOLDS = [22.8, 24, 26.5, 28.3];
+
+const _REGIME_DEFS_BASE = [
+    { r: 1, emoji: '🟢', name: 'Ⅰ级', cn: '极低估值', pos: '60-80%', color: '#10b981' },
+    { r: 2, emoji: '🔵', name: 'Ⅱ级', cn: '低估区', pos: '50-75%', color: '#3b82f6' },
+    { r: 3, emoji: '🟡', name: 'Ⅲ级', cn: '中性均衡', pos: '35-65%', color: '#eab308' },
+    { r: 4, emoji: '🟠', name: 'Ⅳ级', cn: '偏高区域', pos: '15-40%', color: '#f97316' },
+    { r: 5, emoji: '🔴', name: 'Ⅴ级', cn: '极度过热', pos: '0-15%', color: '#ef4444' },
 ];
+
+function _buildRegimeDefs(thresholds) {
+    const t = thresholds || _DEFAULT_REGIME_THRESHOLDS;
+    return _REGIME_DEFS_BASE.map((d, i) => ({
+        ...d,
+        range: i === 0 ? `<${t[0]}%` :
+               i === 4 ? `>${t[3]}%` :
+               `${t[i-1]}-${t[i]}%`
+    }));
+}
+
+// 默认初始化 (首次渲染前)
+let _REGIME_DEFS = _buildRegimeDefs(null);
 
 function renderAIAEHub(snapshot) {
     const panel = document.getElementById('aiae-hub-panel');
     if (!panel) return;
+
+    // R5 P0-2: 从后端动态获取阈值,更新 _REGIME_DEFS
+    if (snapshot.regime_thresholds && Array.isArray(snapshot.regime_thresholds)) {
+        _REGIME_DEFS = _buildRegimeDefs(snapshot.regime_thresholds);
+    }
 
     const regime = snapshot.aiae_regime || 3;
     const v1 = snapshot.aiae_v1 || 22;
@@ -365,13 +389,17 @@ function renderAIAEHub(snapshot) {
                 axisLine: {
                     lineStyle: {
                         width: 14,
-                        color: [
-                            [0.57, '#10b981'],    // 0-22.8: 绿
-                            [0.60, '#3b82f6'],    // 22.8-24: 蓝
-                            [0.6625, '#eab308'],  // 24-26.5: 黄
-                            [0.7075, '#f97316'],  // 26.5-28.3: 橙
-                            [1, '#ef4444'],        // 28.3-40: 红
-                        ]
+                        color: (() => {
+                            // R5 P0-3: 动态 gauge 色段 — 从 regime_thresholds 计算
+                            const t = snapshot.regime_thresholds || _DEFAULT_REGIME_THRESHOLDS;
+                            return [
+                                [t[0] / 40, '#10b981'],
+                                [t[1] / 40, '#3b82f6'],
+                                [t[2] / 40, '#eab308'],
+                                [t[3] / 40, '#f97316'],
+                                [1, '#ef4444'],
+                            ];
+                        })()
                     }
                 },
                 pointer: {
@@ -401,7 +429,12 @@ function renderAIAEHub(snapshot) {
     // ── Regime 标签 + 斜率 ──
     const regimeEl = document.getElementById('aiae-hub-regime');
     if (regimeEl) {
-        regimeEl.textContent = `${rd.emoji} ${rd.name} · ${regimeCn}`;
+        // R5 P0-2: 展示 regime_mode 和 regime_basis_value
+        const modeLabel = snapshot.regime_mode === 'v5_percentile' ? ' · V5' :
+                          snapshot.regime_mode === 'simple' ? ' · Simple' : '';
+        const basisStr = snapshot.regime_basis_value != null
+            ? ` (${snapshot.regime_basis_value.toFixed(1)}%)` : '';
+        regimeEl.textContent = `${rd.emoji} ${rd.name} · ${regimeCn}${modeLabel}${basisStr}`;
         regimeEl.style.color = rd.color;
     }
     const slopeEl = document.getElementById('aiae-hub-slope');

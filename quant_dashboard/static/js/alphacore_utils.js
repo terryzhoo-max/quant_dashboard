@@ -144,6 +144,26 @@
             throw err;
         }
 
+        // R5: Pydantic 422 验证错误 — 解析 {detail: [{loc, msg, type}]} 格式
+        if (res.status === 422) {
+            let errMsg = "请求参数验证失败";
+            try {
+                const errJson = await res.json();
+                if (errJson.detail && Array.isArray(errJson.detail)) {
+                    const msgs = errJson.detail.map(d => {
+                        const field = (d.loc || []).slice(1).join('.');
+                        return field ? `${field}: ${d.msg}` : d.msg;
+                    });
+                    errMsg = "参数验证失败:\n" + msgs.join("\n");
+                }
+            } catch (e) {}
+            alert("⚠️ " + errMsg);
+            const err = new Error(errMsg);
+            err.status = 422;
+            err.isValidation = true;
+            throw err;
+        }
+
         return res;
     };
 

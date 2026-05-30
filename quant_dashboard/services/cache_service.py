@@ -39,6 +39,8 @@ class CacheService:
     def _init(self):
         """初始化: 尝试连接 Redis，失败则降级为内存模式"""
         self._memory_cache = {}      # key → (value, expire_at|None)
+        self._mem_maxsize = 200       # R5 P1-6: 内存缓存容量上限 (LRU 驱逐)
+        self._mem_access_order = []   # LRU 追踪: [最近访问的 key, ...]
         self._memory_lock = threading.Lock()
         self.use_redis = False
 
@@ -69,9 +71,16 @@ class CacheService:
         return value
 
     def _mem_set(self, key, value, ttl_seconds=None):
-        """内存缓存写入, 调用方须已持有 _memory_lock"""
+        """内存缓存写入 (带 LRU 驱逐), 调用方须已持有 _memory_lock"""
         expire_at = (_time.time() + ttl_seconds) if ttl_seconds else None
         self._memory_cache[key] = (value, expire_at)
+        # R5 P1-6: LRU 驱逐
+        if key in self._mem_access_order:
+            self._mem_access_order.remove(key)
+        self._mem_access_order.append(key)
+        while len(self._memory_cache) > self._mem_maxsize:
+            evict_key = self._mem_access_order.pop(0)
+            self._memory_cache.pop(evict_key, None)
 
     def get_json(self, key: str, default=None):
         """获取 JSON 反序列化后的缓存值"""
@@ -117,9 +126,9 @@ class CacheService:
             try:
                 self.redis_client.delete(key)
                 return True
-            except Exception:
-                # Redis 异常时 fallback 到内存
-                pass
+            except Exception as e:
+                # R5: Redis 异常时 fallback 到内存 + 日志
+                _logger.debug("Redis delete(%s) 异常: %s", key, e)
 
         with self._memory_lock:
             self._memory_cache.pop(key, None)

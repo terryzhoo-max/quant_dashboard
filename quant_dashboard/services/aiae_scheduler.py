@@ -13,14 +13,12 @@ import urllib.request
 import threading
 import time
 from datetime import datetime
+import logging
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from engines.aiae_engine import get_aiae_engine
 
-def _log(msg: str, level: str = "INFO"):
-    ts_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    # 严格使用 ASCII 字符日志输出，防止 Windows 控制台 GBK 编码崩溃
-    print(f"[{ts_str}] [{level}] [AIAE_SCHEDULER] {msg}")
+logger = logging.getLogger("alphacore.aiae_scheduler")
 
 def fetch_ths_position() -> dict:
     """从同花顺日频基金仓位估算接口获取数据"""
@@ -72,9 +70,9 @@ def fetch_lg_position() -> dict:
 def run_delayed_retry(retry_count: int, delay_seconds: int = 600):
     """开启后台单次守护线程，进行非阻塞延时重试"""
     def _retry_worker():
-        _log(f"延时 {delay_seconds} 秒后启动重试任务...")
+        logger.info(f"延时 {delay_seconds} 秒后启动重试任务...")
         time.sleep(delay_seconds)
-        _log(f"开始执行第 {retry_count} 次延时重试...")
+        logger.info(f"开始执行第 {retry_count} 次延时重试...")
         update_aiae_fund_position_task(retry_count=retry_count)
         
     t = threading.Thread(target=_retry_worker, daemon=True)
@@ -82,7 +80,7 @@ def run_delayed_retry(retry_count: int, delay_seconds: int = 600):
 
 def update_aiae_fund_position_task(retry_count: int = 0):
     """基金仓位自动抓取调度任务 (主备双通道 + 容灾降级)"""
-    _log(f"开始执行基金仓位抓取流水线 (重试层级: {retry_count})...")
+    logger.info(f"开始执行基金仓位抓取流水线 (重试层级: {retry_count})...")
     
     latest_date = None
     latest_pos = None
@@ -90,25 +88,25 @@ def update_aiae_fund_position_task(retry_count: int = 0):
     
     # 1. 尝试主通道 (同花顺 API)
     try:
-        _log("尝试 [同花顺 API] (主通道)...")
+        logger.info("尝试 [同花顺 API] (主通道)...")
         res = fetch_ths_position()
         latest_date = res["date"]
         latest_pos = res["position"]
         source = "ths_api"
-        _log(f"[SUCCESS] 主通道获取成功: {latest_pos}% (日期: {latest_date})")
+        logger.info(f"[SUCCESS] 主通道获取成功: {latest_pos}% (日期: {latest_date})")
     except Exception as e:
-        _log(f"[WARNING] 主通道抓取异常: {e}", "WARN")
+        logger.warning(f"主通道抓取异常: {e}")
         
         # 2. 尝试备用通道 (AKShare / 乐咕乐股)
         try:
-            _log("自动切换到 [AKShare/乐咕乐股] (备用通道)...")
+            logger.info("自动切换到 [AKShare/乐咕乐股] (备用通道)...")
             res = fetch_lg_position()
             latest_date = res["date"]
             latest_pos = res["position"]
             source = "lg_api"
-            _log(f"[SUCCESS] 备用通道获取成功: {latest_pos}% (日期: {latest_date})")
+            logger.info(f"[SUCCESS] 备用通道获取成功: {latest_pos}% (日期: {latest_date})")
         except Exception as lg_err:
-            _log(f"[FAIL] 备份通道也抓取失败: {lg_err}", "ERROR")
+            logger.error(f"备份通道也抓取失败: {lg_err}")
             
     # 3. 结果处理
     if latest_date is not None and latest_pos is not None:
@@ -123,29 +121,29 @@ def update_aiae_fund_position_task(retry_count: int = 0):
             
             # 判断是否产生数据更新
             if latest_date != current_date or abs(latest_pos - current_pos) > 0.01:
-                _log(f"检测到仓位数据变动: 原 [{current_pos}% ({current_date})] -> 新 [{latest_pos}% ({latest_date})]")
+                logger.info(f"检测到仓位数据变动: 原 [{current_pos}% ({current_date})] -> 新 [{latest_pos}% ({latest_date})]")
                 res_engine = engine.update_fund_position(latest_pos, latest_date, source=source)
                 if res_engine.get("success"):
-                    _log(f"[SUCCESS] 成功更新数据湖且已落库: {res_engine.get('message')}")
+                    logger.info(f"[SUCCESS] 成功更新数据湖且已落库: {res_engine.get('message')}")
                     # 强制重新加载，确保 API 与计算端点读到最新值
                     engine.refresh()
                 else:
-                    _log(f"[FAIL] 引擎接口更新失败: {res_engine.get('message')}", "ERROR")
+                    logger.error(f"引擎接口更新失败: {res_engine.get('message')}")
             else:
-                _log(f"当前数据湖中基金仓位 [{current_pos}% ({current_date})] 已经是最新，无增量变化")
+                logger.info(f"当前数据湖中基金仓位 [{current_pos}% ({current_date})] 已经是最新，无增量变化")
                 
                 # 如果获取到的是最新日期，但日期依旧不是今天，且处于定时任务触发时间点，执行延迟重试
                 today_str = datetime.today().strftime("%Y-%m-%d")
                 if latest_date != today_str and retry_count < 2:
-                    _log(f"未检测到今日 ({today_str}) 新数据，已注册 10 分钟后延迟重试")
+                    logger.info(f"未检测到今日 ({today_str}) 新数据，已注册 10 分钟后延迟重试")
                     run_delayed_retry(retry_count=retry_count + 1, delay_seconds=600)
                     
             return {"status": "success", "date": latest_date, "position": latest_pos, "source": source}
         except Exception as update_err:
-            _log(f"[WARNING] 处理抓取数据时发生异常: {update_err}", "WARN")
+            logger.warning(f"处理抓取数据时发生异常: {update_err}")
             return {"status": "degraded", "error": str(update_err)}
     else:
-        _log("[WARNING] 所有抓取通道全部不可用，已安全降级使用本地缓存，不阻塞系统运行", "WARN")
+        logger.warning("所有抓取通道全部不可用，已安全降级使用本地缓存，不阻塞系统运行")
         return {"status": "degraded", "error": "All channels failed"}
 
 if __name__ == "__main__":
