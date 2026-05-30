@@ -361,11 +361,80 @@ def audit_data_quality():
 
 
 # ═══════════════════════════════════════════════════════
-#  模块 2: 策略健康审计
+#  模块 2: 策略健康审计 V6.0 — 科学决策版
+#  升级点:
+#    1. 从 AUDIT_CFG 读取 strategy_fresh_days / strategy_stale_days (消灭硬编码)
+#    2. 线性衰减评分 (替代 100/70 两档阶梯)
+#    3. 策略加权平均 (按交易占比分配权重, 替代等权)
+#    4. 优先从 JSON 内部 generated_at/run_time 提取真实优化时间 (不依赖 mtime)
+#    5. 提取样本外质量指标 (combined_score / composite_score) 展示
+#    6. Regime 三态深度校验 (检查 BULL/RANGE/BEAR 完整性 + 关键参数字段)
 # ═══════════════════════════════════════════════════════
+def _extract_optimize_meta(fp, name):
+    """
+    从优化结果 JSON 提取元数据 (优化时间 + 质量分数)。
+    每种策略文件结构不同, 统一适配。
+    返回: (optimized_at_str|None, quality_score|None)
+    """
+    try:
+        with open(fp, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        opt_at = None
+        quality = None
+        if isinstance(data, dict):
+            # 均值回归: {"generated_at": "...", "combined_score": 0.49}
+            opt_at = data.get("generated_at") or data.get("run_time")
+            # ERP择时: {"meta": {"timestamp": "..."}}
+            if not opt_at and isinstance(data.get("meta"), dict):
+                opt_at = data["meta"].get("timestamp")
+            quality = data.get("combined_score") or data.get("composite_score")
+        elif isinstance(data, list) and len(data) > 0:
+            # 红利趋势: list, 取首条 final_score
+            quality = data[0].get("final_score") if isinstance(data[0], dict) else None
+        return opt_at, quality
+    except Exception:
+        return None, None
+
+
+def _optimized_age_days(opt_at_str, mtime_fallback):
+    """
+    优先用 JSON 内 optimized_at 计算天数, mtime 兜底。
+    返回: (age_days, date_display_str, source_label)
+    """
+    if opt_at_str:
+        try:
+            # 支持 ISO 格式: "2026-04-21T23:53:07.839750"
+            clean = opt_at_str.replace("T", " ").split(".")[0]
+            dt = datetime.strptime(clean, "%Y-%m-%d %H:%M:%S")
+            age = (datetime.now() - dt).total_seconds() / 86400
+            return max(0, age), dt.strftime("%Y-%m-%d"), "JSON元数据"
+        except Exception:
+            pass
+    # mtime 兜底
+    age = (time.time() - mtime_fallback) / 86400
+    return max(0, age), datetime.fromtimestamp(mtime_fallback).strftime("%Y-%m-%d"), "文件修改时间"
+
+
 def audit_strategy_health():
     checks = []
-    scores = []
+    check_scores = []   # (score, weight, name) 三元组
+    check_weights = []
+
+    # V6.0: 从 AUDIT_CFG 读取阈值 (修复 V5.0 硬编码遗留)
+    _fresh = AUDIT_CFG.get("strategy_fresh_days", 30)
+    _stale = AUDIT_CFG.get("strategy_stale_days", 60)
+
+    # V6.0: 策略权重 — 按实际交易占比 + 风险贡献分配
+    # 均值回归: 主力策略, 贡献 60%+ 交易信号 → 最高权重
+    # 行业动量: 中频轮动, 与 MR 互补 → 中等
+    # 红利趋势/ERP择时: 低频辅助 → 较低
+    STRATEGY_WEIGHTS = {
+        "均值回归":      0.35,
+        "红利趋势":      0.15,
+        "行业动量":      0.20,
+        "ERP择时":       0.15,
+        "_regime":        0.15,    # Regime 三态参数 (均值回归基础设施)
+    }
 
     # 策略参数解释映射
     STRATEGY_EXPLANATIONS = {
@@ -389,15 +458,16 @@ def audit_strategy_health():
 
     for name, filename in OPTIMIZATION_FILES.items():
         fp = os.path.join(PROJECT_ROOT, filename)
+        w = STRATEGY_WEIGHTS.get(name, 0.15)
+
         if os.path.exists(fp):
             mtime = os.path.getmtime(fp)
-            age_days = (time.time() - mtime) / 86400
-            mod_date = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d")
 
             # 读取文件大小验证非空
             fsize = os.path.getsize(fp)
             if fsize < 50:
-                scores.append(20)
+                check_scores.append(20)
+                check_weights.append(w)
                 strategy_exp = STRATEGY_EXPLANATIONS.get(name, {})
                 checks.append({
                     "name": f"{name} 参数文件",
@@ -405,72 +475,156 @@ def audit_strategy_health():
                     "detail": f"文件异常 ({fsize} bytes)",
                     "score": 20,
                     "explanation": f"{name}参数文件损坏或为空，策略引擎将使用默认参数运行，实盘表现可能严重偏离回测结果。",
-                    "threshold": "🟢 ≤30天: 参数有效 | 🟡 31-60天: 建议重新优化 | 🔴 >60天/损坏: 必须修复",
+                    "threshold": f"🟢 ≤{_fresh}天: 参数有效 | 🟡 {_fresh+1}-{_stale}天: 建议重优化 | 🔴 >{_stale}天/损坏: 必须修复",
                     "action": strategy_exp.get("action", "重新执行参数优化器"),
                 })
                 continue
 
-            if age_days <= 30:
+            # V6.0: 优先从 JSON 内部提取真实优化时间
+            opt_at_str, quality_score = _extract_optimize_meta(fp, name)
+            age_days, date_display, time_source = _optimized_age_days(opt_at_str, mtime)
+
+            # V6.0: 线性衰减评分 (替代 100/70 两档阶梯)
+            #   [0, _fresh] → 100
+            #   (_fresh, _stale] → 100 → 60 线性衰减
+            #   (_stale, ∞) → 60 → 20 缓衰减 (每天 -0.5)
+            if age_days <= _fresh:
                 s = 100
                 status = "pass"
-            elif age_days <= 60:
-                s = 70
+            elif age_days <= _stale:
+                decay_ratio = (age_days - _fresh) / (_stale - _fresh)
+                s = int(100 - decay_ratio * 40)   # 100 → 60
                 status = "warn"
             else:
-                s = max(20, 100 - int(age_days))
+                s = max(20, int(60 - (age_days - _stale) * 0.5))
                 status = "fail"
-            scores.append(s)
+
+            check_scores.append(s)
+            check_weights.append(w)
             strategy_exp = STRATEGY_EXPLANATIONS.get(name, {})
+
+            # 构建增强 meta: 质量分数 + 时间来源
+            meta_parts = [f"文件: {filename} ({fsize/1024:.1f}KB)"]
+            if quality_score is not None:
+                meta_parts.append(f"质量分: {quality_score:.3f}")
+            meta_parts.append(f"时间源: {time_source}")
+            meta_parts.append(f"权重: {int(w*100)}%")
+
             checks.append({
                 "name": f"{name}",
                 "status": status,
-                "detail": f"最后优化: {mod_date} ({int(age_days)}天前)",
-                "meta": f"文件: {filename} ({fsize/1024:.1f}KB)",
+                "detail": f"最后优化: {date_display} ({int(age_days)}天前)",
+                "meta": " · ".join(meta_parts),
                 "score": s,
                 "explanation": strategy_exp.get("explanation", f"{name}策略的核心参数文件，定期优化可确保策略与当前市场环境匹配。"),
-                "threshold": "🟢 ≤30天: 参数新鲜 | 🟡 31-60天: 建议重优化 | 🔴 >60天: 策略可能失效",
+                "threshold": f"🟢 ≤{_fresh}天: 参数新鲜 | 🟡 {_fresh+1}-{_stale}天: 线性衰减 | 🔴 >{_stale}天: 策略可能失效",
                 "action": strategy_exp.get("action", "执行对应策略的参数优化器"),
             })
         else:
-            scores.append(0)
+            check_scores.append(0)
+            check_weights.append(w)
             strategy_exp = STRATEGY_EXPLANATIONS.get(name, {})
             checks.append({
                 "name": f"{name}",
                 "status": "fail",
                 "detail": "参数文件不存在",
-                "meta": f"期望: {filename}",
+                "meta": f"期望: {filename} · 权重: {int(w*100)}%",
                 "score": 0,
                 "explanation": f"{name}参数文件缺失，该策略引擎无法运行。需先执行参数优化生成配置文件。",
-                "threshold": "🟢 ≤30天 | 🟡 31-60天 | 🔴 文件缺失",
+                "threshold": f"🟢 ≤{_fresh}天 | 🟡 {_fresh+1}-{_stale}天 | 🔴 文件缺失",
                 "action": strategy_exp.get("action", "执行对应策略的参数优化器"),
             })
 
-    # ── Regime 参数文件检查 ──
+    # ── Regime 参数文件深度校验 V6.0 ──
+    # 不仅检查数量, 还验证 BULL/RANGE/BEAR 每套参数的关键字段完整性
+    _REQUIRED_REGIMES = ("BULL", "RANGE", "BEAR")
+    _REQUIRED_PARAM_KEYS = {"N_trend", "rsi_period", "rsi_buy", "rsi_sell", "bias_buy", "stop_loss"}
+    regime_w = STRATEGY_WEIGHTS.get("_regime", 0.15)
+
     regime_fp = os.path.join(PROJECT_ROOT, "mr_per_regime_params.json")
     if os.path.exists(regime_fp):
         try:
             with open(regime_fp, "r", encoding="utf-8") as f:
-                params = json.load(f)
-            regime_count = len(params) if isinstance(params, (list, dict)) else 0
-            s = 100 if regime_count >= 3 else 60
-            scores.append(s)
+                regime_data = json.load(f)
+
+            # 支持两种结构: {"regimes": {"BULL": ...}} 或 {"BULL": ...}
+            regimes = regime_data.get("regimes", regime_data) if isinstance(regime_data, dict) else {}
+
+            regime_ok = 0
+            regime_issues = []
+            regime_details = []
+            for rname in _REQUIRED_REGIMES:
+                rblock = regimes.get(rname, {})
+                # 参数可能在 rblock 直接层或 rblock["params"] 子层
+                rparams = rblock.get("params", rblock) if isinstance(rblock, dict) else {}
+                if not rparams:
+                    regime_issues.append(f"{rname}: 空配置")
+                    continue
+                missing = _REQUIRED_PARAM_KEYS - set(rparams.keys())
+                if missing:
+                    regime_issues.append(f"{rname}: 缺少 {', '.join(sorted(missing))}")
+                else:
+                    regime_ok += 1
+                    # 提取质量摘要
+                    score_val = rblock.get("combined_score")
+                    if score_val is not None:
+                        regime_details.append(f"{rname}={score_val:.2f}")
+
+            # 评分: 3套完整=100, 2套=75, 1套=50, 0套=20
+            s = {3: 100, 2: 75, 1: 50, 0: 20}.get(regime_ok, 20)
+
+            # 检查时效性 (Regime 文件也有 generated_at)
+            regime_gen = regime_data.get("generated_at") if isinstance(regime_data, dict) else None
+            regime_age_info = ""
+            if regime_gen:
+                try:
+                    clean = str(regime_gen).replace("T", " ").split(".")[0]
+                    dt = datetime.strptime(clean, "%Y-%m-%d %H:%M:%S")
+                    r_age = (datetime.now() - dt).total_seconds() / 86400
+                    regime_age_info = f" · 优化于 {int(r_age)} 天前"
+                    # Regime 过期也扣分 (半衰期 90 天, 因为 regime 切换频率低)
+                    if r_age > 90:
+                        age_penalty = min(30, int((r_age - 90) * 0.3))
+                        s = max(20, s - age_penalty)
+                except Exception:
+                    pass
+
+            detail_str = f"{regime_ok}/3 套参数完整"
+            if regime_details:
+                detail_str += f" · 质量分: {', '.join(regime_details)}"
+            detail_str += regime_age_info
+            if regime_issues:
+                detail_str += f" · 问题: {'; '.join(regime_issues)}"
+
+            status = "pass" if regime_ok == 3 else ("warn" if regime_ok >= 1 else "fail")
+            check_scores.append(s)
+            check_weights.append(regime_w)
             checks.append({
                 "name": "Regime 三态参数",
-                "status": "pass" if regime_count >= 3 else "warn",
-                "detail": f"已配置 {regime_count} 套状态参数",
+                "status": status,
+                "detail": detail_str,
+                "meta": f"校验字段: {', '.join(sorted(_REQUIRED_PARAM_KEYS))} · 权重: {int(regime_w*100)}%",
                 "score": s,
-                "explanation": "市场存在牛市/熊市/震荡三种状态(Regime)，每种状态的最优参数差异巨大。例如震荡市的均值回归初始偏离阈值应更低、牛市应更宽松。缺少任一状态的参数会导致在该状态下策略表现退化。",
-                "threshold": "🟢 ≥3套: 全状态覆盖 | 🟡 1-2套: 部分状态缺失 | 🔴 0套: 必须配置",
+                "explanation": "市场存在牛市/熊市/震荡三种状态(Regime)，每种状态的最优参数差异巨大。V6.0 不仅检查数量，还验证每套参数的 6 个关键字段(N_trend/rsi_period/rsi_buy/rsi_sell/bias_buy/stop_loss)是否完整。",
+                "threshold": "🟢 3/3完整: 全状态覆盖 | 🟡 1-2套: 部分缺失 | 🔴 0套/损坏: 策略退化为单状态",
                 "action": "执行 python mr_per_regime_optimizer.py 生成三态参数",
             })
-        except:
-            scores.append(40)
-            checks.append({"name": "Regime 三态参数", "status": "fail", "detail": "解析失败", "score": 40, "explanation": "Regime 参数文件损坏，均值回归引擎将退化为单状态模式。", "threshold": "🟢 ≥3套 | 🟡 1-2套 | 🔴 损坏", "action": "删除损坏文件后执行 python mr_per_regime_optimizer.py"})
+        except Exception:
+            check_scores.append(40)
+            check_weights.append(regime_w)
+            checks.append({"name": "Regime 三态参数", "status": "fail", "detail": "JSON 解析失败", "score": 40, "explanation": "Regime 参数文件损坏，均值回归引擎将退化为单状态模式。", "threshold": "🟢 3/3完整 | 🟡 1-2套 | 🔴 损坏", "action": "删除损坏文件后执行 python mr_per_regime_optimizer.py"})
     else:
-        scores.append(30)
-        checks.append({"name": "Regime 三态参数", "status": "fail", "detail": "文件不存在", "score": 30, "explanation": "无 Regime 参数意味着均值回归策略无法自适应市场状态切换，在牛熊转换时可能产生大量错误信号。", "threshold": "🟢 ≥3套 | 🟡 1-2套 | 🔴 文件缺失", "action": "执行 python mr_per_regime_optimizer.py 生成三态参数"})
+        check_scores.append(30)
+        check_weights.append(regime_w)
+        checks.append({"name": "Regime 三态参数", "status": "fail", "detail": "文件不存在", "score": 30, "explanation": "无 Regime 参数意味着均值回归策略无法自适应市场状态切换，在牛熊转换时可能产生大量错误信号。", "threshold": "🟢 3/3完整 | 🟡 1-2套 | 🔴 文件缺失", "action": "执行 python mr_per_regime_optimizer.py 生成三态参数"})
 
-    final_score = int(np.mean(scores)) if scores else 0
+    # V6.0: 加权平均 (替代等权 np.mean)
+    if check_scores and check_weights:
+        total_w = sum(check_weights)
+        final_score = int(sum(s * w for s, w in zip(check_scores, check_weights)) / total_w) if total_w > 0 else 0
+    else:
+        final_score = 0
+
     return {
         "module": "strategy_health",
         "label": "⚙️ 策略健康",
