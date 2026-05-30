@@ -286,7 +286,8 @@ async def health_check():
             "erp_days": len(ac_db.get_erp_history(9999)),
             "snapshots": ac_db.get_portfolio_snapshot_count(),
         }
-    except Exception:
+    except Exception as e:
+        _logger.debug("Health: DB 统计查询异常: %s", e)
         db_info = {"backend": "unavailable"}
 
     # Batch 11: uptime
@@ -323,7 +324,8 @@ def _get_poller_status() -> dict:
         from services.realtime_poller import get_poller
         poller = get_poller()
         return poller.get_status() if poller else {"status": "not_initialized"}
-    except Exception:
+    except Exception as e:
+        _logger.debug("Health: Poller 状态查询异常: %s", e)
         return {"status": "error"}
 
 

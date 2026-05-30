@@ -42,3 +42,32 @@ const _hexToRgb = (hex) => {
 
 /** V22.0 O4: AC 就绪标志 — 供各模块在调用前快速检查依赖就绪状态 */
 window.AC_READY = typeof AC !== 'undefined';
+
+/**
+ * R6: 安全 fetch 封装 — 统一 resp.ok 检查 + 422/5xx 降级
+ * 替代裸 fetch() 调用, 返回 parsed JSON 或抛出带 status 的 Error
+ * 用法: const data = await _safeFetch(url, options);
+ */
+async function _safeFetch(url, options = {}) {
+    const resp = await fetch(url, options);
+    if (!resp.ok) {
+        let errMsg = `HTTP ${resp.status}`;
+        try {
+            const body = await resp.json();
+            if (body.detail && Array.isArray(body.detail)) {
+                errMsg = body.detail.map(d => {
+                    const field = (d.loc || []).slice(1).join('.');
+                    return field ? `${field}: ${d.msg}` : d.msg;
+                }).join('; ');
+            } else if (body.message) {
+                errMsg = body.message;
+            } else if (body.error) {
+                errMsg = body.error;
+            }
+        } catch (_) {}
+        const err = new Error(errMsg);
+        err.status = resp.status;
+        throw err;
+    }
+    return resp.json();
+}

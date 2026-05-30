@@ -592,8 +592,7 @@ async function fetchPositionPath() {
     body.innerHTML = '<div class="loading-spinner">⏳ 生成执行路径...</div>';
 
     try {
-        const resp = await fetch(`${API_BASE}/position-path`);
-        const data = await resp.json();
+        const data = await _safeFetch(`${API_BASE}/position-path`);
         if (data.status === 'success') {
             renderPositionPath(data);
         } else {
@@ -798,8 +797,7 @@ async function loadNarrative() {
     console.info('[Narrative] 加载叙事报告...');
 
     try {
-        const resp = await fetch(`${API_BASE}/narrative`);
-        const data = await resp.json();
+        const data = await _safeFetch(`${API_BASE}/narrative`);
         console.info('[Narrative] API 响应:', data.status, data.provider || 'N/A');
         if (data.status === 'success' && data.report) {
             renderNarrative(data);
@@ -902,11 +900,7 @@ async function generateNarrative() {
     if (body) body.innerHTML = '<div class="loading-spinner">🤖 AI 正在分析市场数据...</div>';
 
     try {
-        const headers = {};
-        const apiKey = localStorage.getItem('alphacore_api_key');
-        if (apiKey) headers['X-API-Key'] = apiKey;
-
-        const resp = await fetch(`${API_BASE}/narrative/generate`, { method: 'POST', headers });
+        const resp = await AC.secureFetch(`${API_BASE}/narrative/generate`, { method: 'POST' });
         const data = await resp.json();
         if (data.status === 'success') {
             renderNarrative(data);

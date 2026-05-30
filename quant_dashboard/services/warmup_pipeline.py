@@ -240,8 +240,8 @@ def warmup_global_aiae_cache():
             if cn_report.get('status') in ('success', 'fallback'):
                 cn_aiae_v1 = cn_report['current']['aiae_v1']
                 cn_regime = cn_report['current']['regime']
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("CN AIAE 引擎异常, 使用默认值: %s", e)
         us_v1 = us_report.get('current', {}).get('aiae_v1', 25.0)
         jp_v1 = jp_report.get('current', {}).get('aiae_v1', 17.0)
         hk_v1 = hk_report.get('current', {}).get('aiae_v1', 14.0)

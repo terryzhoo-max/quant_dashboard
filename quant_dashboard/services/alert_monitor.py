@@ -99,7 +99,8 @@ def _load_config() -> dict:
     try:
         with open(_CONFIG_PATH, "r", encoding="utf-8") as f:
             return json.load(f)
-    except Exception:
+    except Exception as e:
+        logger.debug("预警配置加载失败(%s), 使用默认配置", e)
         return {"channels_enabled": ["browser"]}
 
 
@@ -134,16 +135,16 @@ def scan_and_alert() -> list:
             curr_regime = snapshot.get("aiae_regime")
             if prev_regime is not None and curr_regime is not None and prev_regime != curr_regime:
                 snapshot["_regime_shifted"] = True
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Regime 切换检测异常: %s", e)
 
     # P4: 尾部风险注入
     try:
         from dashboard_modules.decision_engine import compute_risk_matrix
         risk = compute_risk_matrix()
         snapshot["tail_risk_score"] = risk.get("tail_risk", {}).get("score", 0)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("尾部风险注入异常: %s", e)
 
     # 3. 遍历规则
     triggered = []

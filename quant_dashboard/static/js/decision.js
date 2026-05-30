@@ -229,7 +229,8 @@ async function initDecisionHub() {
                 if (acc.status === 'success') renderAccuracy(acc);
             }).catch(e => console.warn('Accuracy load:', e));
         } else {
-            document.getElementById('jcs-value').textContent = '--';
+            const jcsEl = document.getElementById('jcs-value');
+            if (jcsEl) jcsEl.textContent = '--';
         }
     } catch (e) {
         if (e.name === 'AbortError') {
@@ -286,8 +287,7 @@ async function openParamCompare() {
 
     // 加载版本列表
     try {
-        const resp = await fetch(`${API_BASE}/param-versions`);
-        const data = await resp.json();
+        const data = await _safeFetch(`${API_BASE}/param-versions`);
         if (data.status === 'success') {
             _paramVersions = data.versions || [];
             _populateVersionSelects();
@@ -337,8 +337,9 @@ function _populateVersionSelects() {
     const checkReady = () => {
         if (btn) btn.disabled = !(selA.value && selB.value);
     };
-    selA.addEventListener('change', checkReady);
-    selB.addEventListener('change', checkReady);
+    // R6: 去重事件监听器 — 先移除再添加
+    selA.onchange = checkReady;
+    selB.onchange = checkReady;
 }
 
 async function saveParamSnapshot() {
@@ -349,16 +350,12 @@ async function saveParamSnapshot() {
     btn.disabled = true;
 
     try {
-        const headers = {};
-        const apiKey = localStorage.getItem('alphacore_api_key');
-        if (apiKey) headers['X-API-Key'] = apiKey;
-        const resp = await fetch(`${API_BASE}/param-snapshot`, { method: 'POST', headers });
+        const resp = await AC.secureFetch(`${API_BASE}/param-snapshot`, { method: 'POST' });
         const data = await resp.json();
         if (data.status === 'success') {
             btn.textContent = '✅ 已保存 ' + data.version_id;
             // 刷新列表
-            const listResp = await fetch(`${API_BASE}/param-versions`);
-            const listData = await listResp.json();
+            const listData = await _safeFetch(`${API_BASE}/param-versions`);
             if (listData.status === 'success') {
                 _paramVersions = listData.versions || [];
                 _populateVersionSelects();
@@ -389,8 +386,7 @@ async function runParamCompare() {
     result.innerHTML = '<div style="text-align:center;padding:20px;color:#94a3b8;">⏳ 对比中...</div>';
 
     try {
-        const resp = await fetch(`${API_BASE}/param-compare?v1=${encodeURIComponent(v1)}&v2=${encodeURIComponent(v2)}`);
-        const data = await resp.json();
+        const data = await _safeFetch(`${API_BASE}/param-compare?v1=${encodeURIComponent(v1)}&v2=${encodeURIComponent(v2)}`);
 
         if (data.status === 'success') {
             const jcsDiff = data.result_b.jcs_score - data.result_a.jcs_score;
@@ -496,8 +492,7 @@ let _shockNodes = {};
 // 加载冲击源列表 (页面初始化时调用)
 async function loadShockSources() {
     try {
-        const resp = await fetch(`${API_BASE}/shock-sources`);
-        const data = await resp.json();
+        const data = await _safeFetch(`${API_BASE}/shock-sources`);
         if (data.status === 'success') {
             _shockSources = data.sources || {};
             _shockNodes = data.nodes || {};
@@ -757,8 +752,7 @@ async function runSensitivityAnalysis() {
     result.innerHTML = '<div style="text-align:center;padding:20px;color:#94a3b8;">⏳ 敏感度分析中 (±5% 扰动)...</div>';
 
     try {
-        const resp = await fetch(`${API_BASE}/param-sensitivity`);
-        const data = await resp.json();
+        const data = await _safeFetch(`${API_BASE}/param-sensitivity`);
         if (data.status === 'success') {
             renderSensitivity(data);
         } else {
@@ -809,8 +803,7 @@ function renderSensitivity(data) {
 
 async function loadIntelligence() {
     try {
-        const resp = await fetch(`${API_BASE.replace('/decision', '/intelligence')}/latest`);
-        const data = await resp.json();
+        const data = await _safeFetch(`${API_BASE.replace('/decision', '/intelligence')}/latest`);
         if (data.status === 'success' && data.data) {
             renderIntelEvents(data.data);
         }
