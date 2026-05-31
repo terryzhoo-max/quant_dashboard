@@ -2424,6 +2424,78 @@
     border-radius: 2px;
     transition: width 0.8s ease;
 }
+/* ====================================================
+   V3: Warning Panel Multi-Zone Design
+   ==================================================== */
+.aiae-warn-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.aiae-warn-status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #10b981; transition: background 0.4s, box-shadow 0.4s;
+    box-shadow: 0 0 6px rgba(16,185,129,0.5);
+}
+.aiae-warning-card.warn-danger .aiae-warn-status-dot {
+    background: #ef4444; box-shadow: 0 0 8px rgba(239,68,68,0.6);
+    animation: aiae-dot-pulse 1.5s infinite;
+}
+.aiae-warning-card.warn-caution .aiae-warn-status-dot {
+    background: #f59e0b; box-shadow: 0 0 6px rgba(245,158,11,0.5);
+}
+@keyframes aiae-dot-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+.aiae-warn-value-row {
+    display: flex; align-items: baseline; gap: 6px; margin: 2px 0 6px;
+}
+.aiae-warn-value-row .aiae-warn-value {
+    font-size: 1.1rem; font-weight: 900;
+    font-variant-numeric: tabular-nums;
+    font-family: 'Outfit', sans-serif;
+}
+.aiae-warn-trend {
+    font-size: 0.6rem; font-weight: 600;
+    padding: 1px 5px; border-radius: 4px;
+    background: rgba(255,255,255,0.04);
+    white-space: nowrap; line-height: 1.4;
+}
+.aiae-warn-trend.trend-up { color: #f97316; background: rgba(249,115,22,0.12); }
+.aiae-warn-trend.trend-down { color: #10b981; background: rgba(16,185,129,0.12); }
+.aiae-warn-trend.trend-flat { color: #64748b; background: rgba(100,116,139,0.08); }
+
+.aiae-warn-zones { position: relative; margin: 0 0 6px; padding-top: 2px; }
+.aiae-warn-zone-bar {
+    display: flex; height: 6px; border-radius: 3px;
+    overflow: hidden; gap: 1px;
+}
+.aiae-zone-seg { border-radius: 2px; transition: opacity 0.3s; }
+.aiae-zone-safe { background: linear-gradient(90deg, rgba(16,185,129,0.4), rgba(16,185,129,0.18)); }
+.aiae-zone-caution { background: linear-gradient(90deg, rgba(245,158,11,0.4), rgba(245,158,11,0.18)); }
+.aiae-zone-danger { background: linear-gradient(90deg, rgba(239,68,68,0.4), rgba(239,68,68,0.18)); }
+
+.aiae-warn-zone-pointer {
+    position: absolute; top: 0; width: 3px; height: 10px;
+    background: #fff; border-radius: 1.5px;
+    box-shadow: 0 0 6px rgba(255,255,255,0.7), 0 0 2px rgba(255,255,255,0.9);
+    transition: left 0.8s cubic-bezier(0.25,0.8,0.25,1);
+    z-index: 2;
+}
+
+.aiae-warn-zone-labels {
+    display: flex; justify-content: space-between;
+    font-size: 0.48rem; color: #475569;
+    margin-top: 2px; user-select: none;
+    font-variant-numeric: tabular-nums;
+}
+.aiae-zone-mark { color: #64748b; font-weight: 600; }
+.aiae-zone-mark-danger { color: rgba(239,68,68,0.7); font-weight: 700; }
+
+.aiae-warn-note {
+    font-size: 0.55rem; color: #64748b;
+    margin-top: 2px; display: flex;
+    align-items: center; gap: 4px;
+    transition: color 0.3s;
+}
+.aiae-warning-card.warn-danger .aiae-warn-note { color: rgba(239,68,68,0.7); }
+.aiae-warning-card.warn-caution .aiae-warn-note { color: rgba(245,158,11,0.7); }
+
 
 /* ── 五档规则解读 tooltip ── */
 .aiae-regime-card .aiae-rc-tip {

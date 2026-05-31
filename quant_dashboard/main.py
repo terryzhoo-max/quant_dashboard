@@ -390,6 +390,7 @@ async def get_dashboard_data():
 # ═══════════════════════════════════════════════════════════════════
 
 from routers import portfolio, audit, aiae, market, industry, strategy, decision, slippage, ci, intelligence, assistant
+from routers import params_api  # V5.2: 参数同步 API
 app.include_router(portfolio.router)
 app.include_router(audit.router)
 app.include_router(aiae.router)
@@ -401,6 +402,7 @@ app.include_router(slippage.router)
 app.include_router(ci.router)
 app.include_router(intelligence.router)
 app.include_router(assistant.router)
+app.include_router(params_api.router)  # V5.2: 参数同步
 
 
 

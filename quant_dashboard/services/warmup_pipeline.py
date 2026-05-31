@@ -345,16 +345,8 @@ def warmup_gem_cache():
 sched_logger = get_logger("scheduler")
 
 
-def daily_warmup_callback():
-    """定时回调: 每日 15:35 收盘预热"""
-    sched_logger.info(f"⏰ 收盘真实主动预热流水线启动")
-    with_retry(warmup_erp_cache, "ERP_Warmup", 3, 60)
-    with_retry(warmup_aiae_cache, "AIAE_Warmup", 3, 60)
-    with_retry(warmup_industry_tracking, "Industry_Warmup", 2, 60)
-    with_retry(warmup_dashboard_cache, "Dashboard_Warmup", 3, 60)
-    with_retry(warmup_factor_data, "Factor_Sync", 3, 60)
-    with_retry(warmup_gem_cache, "GEM_Warmup", 2, 60)
-    # Batch 11: 收盘后自动存档组合净值快照
+def _ensure_daily_snapshot(source: str = "unknown"):
+    """V3.2: 确保当日 snapshot + decision_log 已写入 (幂等, 可从多个回调安全调用)"""
     try:
         from portfolio_engine import get_portfolio_engine
         from services import db as ac_db
@@ -370,16 +362,28 @@ def daily_warmup_callback():
                 total_pnl=val["total_pnl"],
                 position_count=val["position_count"],
             )
-            sched_logger.info(f"📸 组合快照已存档: {today} · 资产={val['total_asset']:,.0f}")
+            sched_logger.info(f"📸 [{source}] 组合快照已补录: {today} · 资产={val['total_asset']:,.0f}")
     except Exception as e:
-        sched_logger.warning(f"组合快照存档失败 (非致命): {e}")
-    # V16.0: 决策快照 (科学辅助决策模块)
+        sched_logger.debug(f"[{source}] 快照补录跳过: {e}")
     try:
         from dashboard_modules.decision_engine import log_daily_decision
         log_daily_decision()
-        sched_logger.info("📋 决策快照已存档")
+        sched_logger.info(f"📋 [{source}] 决策快照已补录")
     except Exception as e:
-        sched_logger.warning(f"决策快照存档失败 (非致命): {e}")
+        sched_logger.debug(f"[{source}] 决策补录跳过: {e}")
+
+
+def daily_warmup_callback():
+    """定时回调: 每日 15:35 收盘预热"""
+    sched_logger.info(f"⏰ 收盘真实主动预热流水线启动")
+    with_retry(warmup_erp_cache, "ERP_Warmup", 3, 60)
+    with_retry(warmup_aiae_cache, "AIAE_Warmup", 3, 60)
+    with_retry(warmup_industry_tracking, "Industry_Warmup", 2, 60)
+    with_retry(warmup_dashboard_cache, "Dashboard_Warmup", 3, 60)
+    with_retry(warmup_factor_data, "Factor_Sync", 3, 60)
+    with_retry(warmup_gem_cache, "GEM_Warmup", 2, 60)
+    # V3.2 DRY: 组合快照 + 决策日志 (统一入口, 幂等)
+    _ensure_daily_snapshot("daily_warmup")
     # V16.0 Phase 2: 准确率回填 (T+5 市场收益)
     try:
         from dashboard_modules.decision_engine import backfill_signal_accuracy
@@ -401,7 +405,10 @@ def morning_warmup_callback():
     with_retry(warmup_dashboard_cache, "Dashboard_Morning_Warmup", 3, 60)
     # V21.2: 信号预警扫描 (盘前检测)
     _run_alert_scan("morning_warmup")
+    # V3.2: 启动时自动补录 snapshot + decision_log (防止 15:35 回调缺失导致数据稀疏)
+    _ensure_daily_snapshot("morning_warmup")
     sched_logger.info("早间补偿流水线完成")
+
 
 
 def fred_daily_callback():

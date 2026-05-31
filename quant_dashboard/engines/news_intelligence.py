@@ -14,10 +14,10 @@ AlphaCore · NLP 情报引擎 (P2-C · DeepSeek)
 import json
 import hashlib
 import os
+import time
 import urllib.request
 import traceback
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional
 
 from services.logger import get_logger
 from services import db as ac_db
@@ -89,19 +89,11 @@ def _load_ai_config() -> dict:
     return get_ai_config()
 
 
-def _call_deepseek_json(prompt: str) -> list:
-    """调用 DeepSeek (OpenAI-compatible) 并解析 JSON 响应"""
-    cfg = _load_ai_config()
-    ds_cfg = cfg.get("deepseek", {})
-    api_key = ds_cfg.get("api_key", "")
-    model = ds_cfg.get("model", "deepseek-chat")
-    base_url = ds_cfg.get("base_url", "https://api.deepseek.com")
-    timeout = cfg.get("timeout_seconds", 30)
-
-    if not api_key or len(api_key) < 10:
-        logger.warning("[NLP] DeepSeek API key 未配置, 跳过")
-        return []
-
+def _call_deepseek_json_core(prompt: str, cfg: dict, timeout: int) -> list:
+    """DeepSeek Chat 核心提取调用，带柔性指数退避重试"""
+    api_key = cfg.get("api_key", "")
+    model = cfg.get("model", "deepseek-chat")
+    base_url = cfg.get("base_url", "https://api.deepseek.com")
     url = f"{base_url.rstrip('/')}/v1/chat/completions"
 
     payload = json.dumps({
@@ -123,32 +115,162 @@ def _call_deepseek_json(prompt: str) -> list:
         }
     )
 
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        result = json.loads(resp.read().decode("utf-8"))
+    max_retries = 3
+    retry_delay = 2.0
+    for attempt in range(max_retries):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+            
+            choices = result.get("choices", [])
+            if not choices:
+                return []
+            text = choices[0].get("message", {}).get("content", "").strip()
 
-    choices = result.get("choices", [])
-    if not choices:
-        return []
+            # 兼容 Markdown 代码块包裹解析
+            if text.startswith("```"):
+                text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
 
-    text = choices[0].get("message", {}).get("content", "")
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                return parsed
+            if isinstance(parsed, dict) and "events" in parsed:
+                return parsed["events"]
+            return []
+        except Exception as e:
+            if attempt == max_retries - 1:
+                logger.error("[NLP] DeepSeek 调用最终失败: %s", e)
+                raise e
+            logger.warning("[NLP] DeepSeek 异常: %s。将在 %.1fs 后重试 (%d/%d)", 
+                           e, retry_delay, attempt + 1, max_retries)
+            time.sleep(retry_delay)
+            retry_delay *= 2.0
+    return []
 
-    # 解析 JSON (兼容 markdown 代码块包裹)
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[-1]
-        text = text.rsplit("```", 1)[0]
 
-    try:
-        parsed = json.loads(text)
-        # DeepSeek JSON mode 可能返回 {"events": [...]} 或直接 [...]
-        if isinstance(parsed, list):
-            return parsed
-        if isinstance(parsed, dict) and "events" in parsed:
-            return parsed["events"]
-        return []
-    except json.JSONDecodeError:
-        logger.warning("[NLP] DeepSeek 返回非 JSON: %s...", text[:100])
-        return []
+def _call_gemini_json_core(prompt: str, cfg: dict, timeout: int) -> list:
+    """Gemini API JSON 模式原生调用，带柔性指数退避重试"""
+    api_key = cfg.get("api_key", "")
+    model = cfg.get("model", "gemini-2.0-flash")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+
+    payload = json.dumps({
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "temperature": 0.3,
+        }
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        url, data=payload, method="POST",
+        headers={"Content-Type": "application/json"}
+    )
+
+    max_retries = 3
+    retry_delay = 2.0
+    for attempt in range(max_retries):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+            
+            candidates = result.get("candidates", [])
+            if not candidates:
+                return []
+            parts = candidates[0].get("content", {}).get("parts", [])
+            if not parts:
+                return []
+            text = parts[0].get("text", "").strip()
+
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                return parsed
+            if isinstance(parsed, dict) and "events" in parsed:
+                return parsed["events"]
+            return []
+        except Exception as e:
+            if attempt == max_retries - 1:
+                logger.error("[NLP] Gemini 调用最终失败: %s", e)
+                raise e
+            logger.warning("[NLP] Gemini 异常: %s。将在 %.1fs 后重试 (%d/%d)", 
+                           e, retry_delay, attempt + 1, max_retries)
+            time.sleep(retry_delay)
+            retry_delay *= 2.0
+    return []
+
+
+def _deterministic_rule_extraction(filtered_news: list) -> list:
+    """大模型全军覆没时的确定性规则兜底提取，防信号断流"""
+    logger.warning("[NLP] 激活规则级保底方案，提取硬匹配新闻")
+    events = []
+    for item in filtered_news[:5]:
+        title = item.get("title", "")
+        content = item.get("content", "")
+        
+        # 简单匹配分类
+        category = "macro"
+        for kw in ["半导体", "芯片", "新能源", "光伏", "锂电", "AI", "算力", "医药", "科技"]:
+            if kw in title or kw in content:
+                category = "industry"
+                break
+        for kw in ["制裁", "关税", "贸易战", "地缘", "战争", "冲突", "暴雷", "违约", "爆仓", "黑天鹅", "恐慌", "VIX"]:
+            if kw in title or kw in content:
+                category = "risk"
+                break
+                
+        events.append({
+            "title": title[:15],
+            "category": category,
+            "impact_score": 5.0,  # 默认中性降级评分
+            "summary": title[:50],
+            "affected_assets": [],
+            "scenario_hint": ""
+        })
+    return events
+
+
+def _call_llm_json(prompt: str, filtered_news: list) -> list:
+    """高可用结构化提取核心 (支持自动灾备回退与规则兜底)"""
+    cfg = _load_ai_config()
+    provider = cfg.get("provider", "deepseek")
+    timeout = cfg.get("timeout_seconds", 30)
+
+    # 动态容灾回退链: 优先使用配置的 provider，再 fallback 到 deepseek, gemini
+    providers = [provider]
+    for p in ["deepseek", "gemini"]:
+        if p not in providers:
+            providers.append(p)
+
+    for p in providers:
+        p_cfg = cfg.get(p, {})
+        api_key = p_cfg.get("api_key", "")
+        if not api_key or len(api_key) < 10 or api_key == "ENV_VAR":
+            logger.debug("[NLP] Provider %s 未配置有效 API Key，跳过", p)
+            continue
+
+        try:
+            logger.info("[NLP] 尝试启动 %s 结构化提取...", p)
+            if p == "deepseek":
+                events = _call_deepseek_json_core(prompt, p_cfg, timeout)
+            elif p == "gemini":
+                events = _call_gemini_json_core(prompt, p_cfg, timeout)
+            else:
+                continue
+
+            if events is not None:
+                logger.info("[NLP] %s 提取成功，捕获事件 %d 条", p, len(events))
+                return events
+        except Exception as e:
+            logger.error("[NLP] %s 提取通道抛出致命异常: %s", p, e)
+            continue
+
+    # 全军覆没时实施规则兜底
+    return _deterministic_rule_extraction(filtered_news)
+
+
+def _call_deepseek_json(prompt: str) -> list:
+    """旧接口兼容包装 (测试用)"""
+    return _call_llm_json(prompt, [])
 
 
 def _keyword_filter(news_list: list) -> list:
@@ -194,54 +316,79 @@ def _generate_event_id(title: str, date_str: str) -> str:
 
 def scan_news() -> dict:
     """
-    主入口: 扫描新闻 → 预过滤 → DeepSeek 提取 → 持久化
-
+    主入口: 扫描新闻 → 预过滤 → 增量去重比对 → 容灾大模型/降级提取 → 持久化
+ 
     Returns:
         {"status": "success", "events_count": N, "events": [...]}
     """
     logger.info("═══ NLP 情报扫描启动 (DeepSeek) ═══")
     t0 = datetime.now()
-
+ 
     # 1. 拉取新闻
     raw_news = _fetch_news_tushare()
     if not raw_news:
         return {"status": "success", "events_count": 0, "events": [], "message": "无新闻数据"}
-
+ 
     # 2. 关键词预过滤
     filtered = _keyword_filter(raw_news)
     logger.info("[NLP] 关键词过滤: %d/%d 通过", len(filtered), len(raw_news))
-
+ 
     if not filtered:
         return {"status": "success", "events_count": 0, "events": [], "message": "无匹配关键词"}
 
+    # 2.5 增量去重扫描拦截机制 (Context Deduplication)
+    from services.cache_service import cache_manager
+    processed_hashes = cache_manager.get_json("processed_news_hashes") or []
+    
+    new_filtered = []
+    new_hashes = []
+    for item in filtered:
+        h = hashlib.md5(f"{item.get('title','')}:{item.get('pub_time','')}".encode('utf-8')).hexdigest()
+        if h not in processed_hashes:
+            new_filtered.append(item)
+            new_hashes.append(h)
+            
+    if not new_filtered:
+        logger.info("[NLP] 增量扫描：0 条新增舆情新闻，触发去重熔断拦截，不调用大模型 API")
+        return {
+            "status": "success",
+            "events_count": 0,
+            "events": [],
+            "message": "无新增舆情事件 (增量去重熔断)",
+        }
+        
+    logger.info("[NLP] 增量扫描：发现 %d 条新增舆情新闻，启动大模型进行舆情价值挖掘", len(new_filtered))
+    # 仅将新增的新闻喂给大模型提取 (最多取前 15 条，防止 token 溢出)
+    filtered_for_llm = new_filtered[:15]
+ 
     # 3. 拼接新闻文本 (截断到 3000 字, 控制 token)
     news_text = "\n\n".join([
         f"[{item.get('pub_time', '')}] {item.get('title', '')}\n{item.get('content', '')[:200]}"
-        for item in filtered[:15]
+        for item in filtered_for_llm
     ])
     if len(news_text) > 3000:
         news_text = news_text[:3000] + "\n...(截断)"
-
-    # 4. DeepSeek 提取
+ 
+    # 4. 高可用结构化提取 (支持自动灾备回退与规则兜底)
     try:
         prompt = _EXTRACTION_PROMPT.format(news_text=news_text)
-        raw_events = _call_deepseek_json(prompt)
+        raw_events = _call_llm_json(prompt, filtered_for_llm)
     except Exception as e:
-        logger.error("[NLP] DeepSeek 调用失败: %s\n%s", e, traceback.format_exc())
-        return {"status": "error", "message": f"DeepSeek 调用失败: {e}"}
-
+        logger.error("[NLP] 结构化提取全链路崩溃: %s\n%s", e, traceback.format_exc())
+        return {"status": "error", "message": f"结构化提取全链路崩溃: {e}"}
+ 
     # 5. 结构化 + 持久化
     today_str = datetime.now().strftime("%Y-%m-%d")
     saved_events = []
-
+ 
     for ev in raw_events:
         if not isinstance(ev, dict) or not ev.get("title"):
             continue
-
+ 
         event_id = _generate_event_id(ev["title"], today_str)
         scenario_hint = ev.get("scenario_hint", "")
         scenario_id = _SCENARIO_MAP.get(scenario_hint)
-
+ 
         structured = {
             "event_id": event_id,
             "title": ev.get("title", "")[:100],
@@ -253,21 +400,27 @@ def scan_news() -> dict:
             "source": "tushare+deepseek",
             "raw_text": "",
         }
-
+ 
         try:
             ac_db.save_news_event(structured)
             saved_events.append(structured)
         except Exception as e:
             logger.warning("[NLP] 事件保存失败: %s - %s", event_id, e)
-
+ 
     elapsed = (datetime.now() - t0).total_seconds()
     logger.info("═══ NLP 情报扫描完成: %d 事件 · %.1fs ═══", len(saved_events), elapsed)
+ 
+    # 更新去重新闻缓存 (滑窗最大 500 个，保留 7 天)
+    updated_hashes = (new_hashes + processed_hashes)[:500]
+    try:
+        cache_manager.set_json("processed_news_hashes", updated_hashes, ttl_seconds=86400 * 7)
+    except Exception:
+        pass
 
     # 6. 写入缓存 (供 Decision Hub 读取)
     #    保护策略: 0 事件时保留旧缓存, 避免空扫描清除有效情报
     if saved_events:
         try:
-            from services.cache_service import cache_manager
             cache_manager.set_json("news_intelligence", {
                 "status": "success",
                 "scan_time": datetime.now().isoformat(),
@@ -277,7 +430,7 @@ def scan_news() -> dict:
             pass
     else:
         logger.info("[NLP] 0 事件, 保留旧缓存")
-
+ 
     return {
         "status": "success",
         "events_count": len(saved_events),

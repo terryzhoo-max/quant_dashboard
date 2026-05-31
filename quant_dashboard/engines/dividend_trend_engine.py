@@ -111,8 +111,9 @@ DEFAULT_REGIME = "RANGE"
 # ====== 布林带周期（固定，各状态统一使用20日）======
 BOLL_N = 20
 
-# TTM 分红静态近似（方案A：固定阈值，快速落地）
-DIVIDEND_D_TTM = {
+# V5.2: TTM 分红动态获取 + 静态保底值
+# 24h缓存，API失败时自动降级为静态值（零破坏性）
+_DIVIDEND_D_TTM_FALLBACK = {
     '515100.SH': 0.082,
     '510880.SH': 0.165,
     '159545.SZ': 0.085,
@@ -122,6 +123,51 @@ DIVIDEND_D_TTM = {
     '513950.SH': 0.060,
     '159201.SZ': 0.055,
 }
+
+def _fetch_ttm_dividends() -> dict:
+    """从 Tushare 获取 ETF 近12个月累计分红 (24h缓存)"""
+    try:
+        from services.cache_service import cache_manager
+        cached = cache_manager.get_json("div_ttm_cache", None)
+        if cached and cached.get("_ts"):
+            ts_str = cached["_ts"]
+            cache_time = datetime.fromisoformat(ts_str)
+            if datetime.now() - cache_time < timedelta(hours=24):
+                return cached.get("data", _DIVIDEND_D_TTM_FALLBACK)
+    except Exception:
+        pass
+
+    try:
+        end = datetime.now().strftime("%Y%m%d")
+        start = (datetime.now() - timedelta(days=400)).strftime("%Y%m%d")
+        result = {}
+        for code in _DIVIDEND_D_TTM_FALLBACK:
+            try:
+                df = pro.fund_div(ts_code=code, start_date=start, end_date=end,
+                                  fields="ts_code,div_cash")
+                if df is not None and not df.empty:
+                    result[code] = round(float(df["div_cash"].sum()), 4)
+                else:
+                    result[code] = _DIVIDEND_D_TTM_FALLBACK[code]
+            except Exception:
+                result[code] = _DIVIDEND_D_TTM_FALLBACK[code]
+
+        # 写入缓存
+        try:
+            from services.cache_service import cache_manager
+            cache_manager.set_json("div_ttm_cache",
+                                   {"_ts": datetime.now().isoformat(), "data": result},
+                                   ttl_seconds=86400)
+            print(f"[红利引擎] TTM分红已动态更新: {result}")
+        except Exception:
+            pass
+        return result
+    except Exception as e:
+        print(f"[红利引擎] TTM分红获取失败, 使用静态保底值: {e}")
+        return _DIVIDEND_D_TTM_FALLBACK
+
+DIVIDEND_D_TTM = _fetch_ttm_dividends()
+
 
 # 股息率估值固定阈值（方案A）
 # high: TTM > 5%  → 高估值，具备安全边际

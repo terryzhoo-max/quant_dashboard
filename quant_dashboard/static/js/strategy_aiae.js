@@ -286,26 +286,26 @@ function renderAIAEGRCAlert(c, pd) {
         levelClass = 'alert-level-red';
         alertHtml = `🚨 <b>合规预警</b>：当前宏观定位为 <b style="color:${ri.color};">${ri.cn || '偏热'} (${regime}级)</b>。根据 GRC 一级防御铁律，<b>严禁在此状态下开新仓或追高进攻型标的！</b> 必须严格按照交易指令，每周强制降低总权益仓位上限至 ${ri.position || '25-40%'} 水平。`;
     } 
-    // 场景 2：实盘仓位严重超配超过硬顶的 110%
-    else if (gap !== null && gap > 8.0) {
+    // 场景 2：实盘仓位严重超配 (Critical Breach >15pt)
+    else if (gap !== null && gap > 10.0) {
         levelClass = 'alert-level-red';
-        alertHtml = `🚨 <b>合规违规</b>：当前仓位偏离度达 <b>+${gap.toFixed(1)} pt</b>，超出合规警示硬红线 (3.0pt)！属于<b>【严重超配违规】</b>，禁止因主观执念手动覆盖信号，请立即开启执行决策桌并启动 TWAP/VWAP 算法分拆减仓。`;
+        alertHtml = `🚨 <b>合规违规</b>：当前仓位偏离度达 <b>+${gap.toFixed(1)} pt</b>，超出合规警示硬红线 (10.0pt)！属于<b>【严重超配违规】</b>，禁止因主观执念手动覆盖信号，请立即开启执行决策桌并启动 TWAP/VWAP 算法分拆减仓。`;
     } 
     // 场景 3：大底机会建仓提示
-    else if (regime <= 2 && gap !== null && gap < -8.0) {
+    else if (regime <= 2 && gap !== null && gap < -10.0) {
         levelClass = 'alert-level-blue';
         alertHtml = `💡 <b>合规建仓提示</b>：当前市场处于配置性极佳的 <b style="color:${ri.color};">${ri.cn || '底部'} (${regime}级)</b>，但实盘偏离度为 <b>${gap.toFixed(1)} pt</b> (严重欠配)。依据一级防御 SOP，建议利用盘中日度回踩机会，被动买入宽基 ETF 完成补仓，禁止单日一步满仓。`;
     }
-    // 场景 4：常规超配或欠配警示（橙色警告，偏差处于 3 到 8pt 之间）
-    else if (gap !== null && (gap > 3.0 || gap < -3.0)) {
+    // 场景 4：常规超配或欠配警示（橙色警告，偏差处于 5 到 10pt 之间）
+    else if (gap !== null && (gap > 5.0 || gap < -5.0)) {
         levelClass = 'alert-level-orange';
         const typeStr = gap > 0 ? '超配偏离' : '欠配偏离';
-        alertHtml = `⚠️ <b>合规提示</b>：当前实盘处于常规 ${typeStr} 状态，偏离度为 <b>${gap > 0 ? '+' : ''}${gap.toFixed(1)} pt</b>，超出 3.0pt 软限限制。请投资经理与交易员密切监控，仓位调整建议利用执行桌算法分摊 1.5 - 2 天完成，禁止因主观情绪一步到位。`;
+        alertHtml = `⚠️ <b>合规提示</b>：当前实盘处于常规 ${typeStr} 状态，偏离度为 <b>${gap > 0 ? '+' : ''}${gap.toFixed(1)} pt</b>，超出 5.0pt 软限限制。请投资经理与交易员密切监控，仓位调整建议利用执行桌算法分摊 1.5 - 2 天完成，禁止因主观情绪一步到位。`;
     }
-    // 正常状态 (Gap 处于合规区间 [-3.0, 3.0]pt)
+    // 正常状态 (Gap 处于合规区间 [-5.0, 5.0]pt)
     else {
         levelClass = 'alert-level-green';
-        alertHtml = `🟢 <b>合规运行中</b>：当前实盘与宏观 AIAE 偏离度为 <b>${gap >= 0 ? '+' : ''}${gap !== null ? gap.toFixed(1) : '0.0'} pt</b>，处于合规偏差允许区间 [-3.0, +3.0]pt 内。系统风控与三层防御正常运转。`;
+        alertHtml = `🟢 <b>合规运行中</b>：当前实盘与宏观 AIAE 偏离度为 <b>${gap >= 0 ? '+' : ''}${gap !== null ? gap.toFixed(1) : '0.0'} pt</b>，处于合规偏差允许区间 [-5.0, +5.0]pt 内。系统风控与三层防御正常运转。`;
     }
 
     // 设置警示类名并显示
@@ -422,56 +422,107 @@ function renderAIAEUI(data) {
     try { renderAIAEGRCAlert(c, p); } catch(e) { console.warn('[AIAE GRC] GRC alert render error:', e); }
 }
 
-// ── Warning Indicators V2.1 (DOM 缓存) ──
+// ── Warning Indicators V3.0 (机构级多维信号) ──
 function renderAIAEWarnings(c) {
-    // Margin heat
+    // ── 辅助函数 ──
+    function _warnColor(val, t1, t2) { return val > t2 ? '#ef4444' : val > t1 ? '#f59e0b' : '#10b981'; }
+    function _warnClass(val, t1, t2) { return 'aiae-warning-card ' + (val > t2 ? 'warn-danger' : val > t1 ? 'warn-caution' : 'warn-ok'); }
+
+    // ── 1. 融资热度 (Margin Heat) ──
     const mVal = c.margin_heat || 0;
     const $mV = _aiaeDOM['warn-margin-val'];
-    const $mB = _aiaeDOM['warn-margin-bar'];
     const $mC = _aiaeDOM['warn-margin'];
-    if ($mV) { $mV.textContent = mVal + '%'; $mV.style.color = mVal > 3.5 ? '#ef4444' : mVal > 2.5 ? '#f59e0b' : '#10b981'; }
-    if ($mB) { $mB.style.width = Math.min(mVal / 5 * 100, 100) + '%'; $mB.style.background = mVal > 3.5 ? '#ef4444' : mVal > 2.5 ? '#f59e0b' : '#10b981'; }
-    if ($mC) { $mC.className = 'aiae-warning-card ' + (mVal > 3.5 ? 'warn-danger' : mVal > 2.5 ? 'warn-caution' : 'warn-ok'); }
+    const mColor = _warnColor(mVal, 2.5, 3.5);
+    if ($mV) { $mV.textContent = mVal + '%'; $mV.style.color = mColor; }
+    if ($mC) { $mC.className = _warnClass(mVal, 2.5, 3.5); }
+    // 指针定位: 0-5% 映射到 0-100%
+    const $mP = document.getElementById('aiae-warn-margin-pointer');
+    if ($mP) $mP.style.left = Math.min(mVal / 5 * 100, 100) + '%';
+    // 趋势方向
+    const $mT = document.getElementById('aiae-warn-margin-trend');
+    if ($mT) {
+        const sDir = c.slope?.direction;
+        if (sDir === 'rising') { $mT.textContent = '\u2197 \u5347'; $mT.className = 'aiae-warn-trend trend-up'; }
+        else if (sDir === 'falling') { $mT.textContent = '\u2198 \u964d'; $mT.className = 'aiae-warn-trend trend-down'; }
+        else { $mT.textContent = '\u2192 \u5e73'; $mT.className = 'aiae-warn-trend trend-flat'; }
+    }
+    // 语义注释
+    const $mN = document.getElementById('aiae-warn-margin-note');
+    if ($mN) {
+        if (mVal < 1.5) $mN.textContent = '\u6760\u6746\u51fa\u6e05 \u00b7 \u5e95\u90e8\u4fe1\u53f7';
+        else if (mVal < 2.5) $mN.textContent = '\u6760\u6746\u6c34\u4f4d\u6b63\u5e38 \u00b7 \u4e2d\u6027';
+        else if (mVal < 3.5) $mN.textContent = '\u6760\u6746\u6e29\u548c\u504f\u9ad8 \u00b7 \u5173\u6ce8';
+        else $mN.textContent = '\u6563\u6237\u6760\u6746\u6d8c\u5165 \u00b7 \u9ad8\u98ce\u9669';
+    }
 
-    // Slope
+    // ── 2. 月环比斜率 (Slope) ──
     const sVal = c.slope?.slope || 0;
     const absSlope = Math.abs(sVal);
     const $sV = _aiaeDOM['warn-slope-val'];
-    const $sB = _aiaeDOM['warn-slope-bar'];
     const $sC = _aiaeDOM['warn-slope'];
-    if ($sV) { $sV.textContent = (sVal > 0 ? '+' : '') + sVal; $sV.style.color = absSlope > 1.5 ? '#ef4444' : absSlope > 0.8 ? '#f59e0b' : '#10b981'; }
-    if ($sB) { $sB.style.width = Math.min(absSlope / 3 * 100, 100) + '%'; $sB.style.background = absSlope > 1.5 ? '#ef4444' : absSlope > 0.8 ? '#f59e0b' : '#10b981'; }
-    if ($sC) { $sC.className = 'aiae-warning-card ' + (absSlope > 1.5 ? 'warn-danger' : absSlope > 0.8 ? 'warn-caution' : 'warn-ok'); }
+    const sColor = _warnColor(absSlope, 0.8, 1.5);
+    if ($sV) { $sV.textContent = (sVal > 0 ? '+' : '') + sVal; $sV.style.color = sColor; }
+    if ($sC) { $sC.className = _warnClass(absSlope, 0.8, 1.5); }
+    // 指针: -3 to +3 映射到 0-100%
+    const $sP = document.getElementById('aiae-warn-slope-pointer');
+    if ($sP) $sP.style.left = Math.max(0, Math.min(100, (sVal + 3) / 6 * 100)) + '%';
+    // 趋势
+    const $sT = document.getElementById('aiae-warn-slope-trend');
+    if ($sT) {
+        const dir = c.slope?.direction || 'flat';
+        if (dir === 'rising') { $sT.textContent = '\u2197 \u52a0\u901f'; $sT.className = 'aiae-warn-trend trend-up'; }
+        else if (dir === 'falling') { $sT.textContent = '\u2198 \u51cf\u901f'; $sT.className = 'aiae-warn-trend trend-down'; }
+        else { $sT.textContent = '\u2192 \u6301\u5e73'; $sT.className = 'aiae-warn-trend trend-flat'; }
+    }
+    // 注释
+    const $sN = document.getElementById('aiae-warn-slope-note');
+    if ($sN) {
+        if (sVal > 1.5) $sN.textContent = '\u52a0\u901f\u8fc7\u70ed \u00b7 \u8d8b\u52bf\u6027\u6076\u5316';
+        else if (sVal > 0.8) $sN.textContent = '\u6e29\u548c\u4e0a\u884c \u00b7 \u4fdd\u6301\u89c2\u5bdf';
+        else if (sVal > -0.8) $sN.textContent = '\u52a0\u901f\u5ea6\u5e73\u7a33 \u00b7 \u5b89\u5168';
+        else if (sVal > -1.5) $sN.textContent = '\u6e29\u548c\u4e0b\u884c \u00b7 \u53bb\u6760\u6746';
+        else $sN.textContent = '\u5feb\u901f\u51b7\u5374 \u00b7 \u5e95\u90e8\u673a\u4f1a';
+    }
 
-    // Fund position + 过期告警
+    // ── 3. 基金仓位 (Fund Position) ──
     const fVal = c.fund_position || 0;
     const fDate = c.fund_position_date || '';
     const $fV = _aiaeDOM['warn-fund-val'];
-    const $fB = _aiaeDOM['warn-fund-bar'];
     const $fC = _aiaeDOM['warn-fund'];
-    if ($fV) { $fV.textContent = fVal + '%'; $fV.style.color = fVal > 90 ? '#ef4444' : fVal > 85 ? '#f59e0b' : '#10b981'; }
-    if ($fB) { $fB.style.width = Math.min(fVal / 100 * 100, 100) + '%'; $fB.style.background = fVal > 90 ? '#ef4444' : fVal > 85 ? '#f59e0b' : '#10b981'; }
-    if ($fC) { $fC.className = 'aiae-warning-card ' + (fVal > 90 ? 'warn-danger' : fVal > 85 ? 'warn-caution' : 'warn-ok'); }
+    const fColor = _warnColor(fVal, 85, 90);
+    if ($fV) { $fV.textContent = fVal + '%'; $fV.style.color = fColor; }
+    if ($fC) { $fC.className = _warnClass(fVal, 85, 90); }
+    // 指针: 60-100% 映射到 0-100%
+    const $fP = document.getElementById('aiae-warn-fund-pointer');
+    if ($fP) $fP.style.left = Math.max(0, Math.min(100, (fVal - 60) / 40 * 100)) + '%';
+    // 趋势 (基金仓位主要是过期告警)
+    const $fT = document.getElementById('aiae-warn-fund-trend');
 
-    // C1: 基金仓位过期告警 (>90天显示橙色⚠️)
+    // C1: 基金仓位过期告警 (>90天显示橙色)
     if (fDate) {
         const daysStaleFund = Math.floor((Date.now() - new Date(fDate).getTime()) / 86400000);
         const $fStale = _aiaeDOM['fund-stale-badge'];
         if ($fStale) {
             if (daysStaleFund > 90) {
                 $fStale.style.display = 'inline-flex';
-                $fStale.textContent = `⚠️ 数据滞后 ${daysStaleFund} 天`;
+                $fStale.textContent = '\u26a0 ' + daysStaleFund + '\u5929';
                 $fStale.style.color = daysStaleFund > 150 ? '#ef4444' : '#f59e0b';
             } else {
                 $fStale.style.display = 'none';
             }
         }
-        // 也在数据源卡片上追加日期信息
         const $dfLabel = _aiaeDOM['data-fund-date'];
         if ($dfLabel) {
             $dfLabel.textContent = fDate;
             $dfLabel.style.color = daysStaleFund > 90 ? '#f59e0b' : '#64748b';
         }
+        // 趋势标签复用为数据新鲜度指示
+        if ($fT) {
+            if (daysStaleFund > 90) { $fT.textContent = '\u26a0 \u8fc7\u671f'; $fT.className = 'aiae-warn-trend trend-up'; }
+            else { $fT.textContent = '\u2713 \u6709\u6548'; $fT.className = 'aiae-warn-trend trend-down'; }
+        }
+    } else if ($fT) {
+        $fT.textContent = ''; $fT.className = 'aiae-warn-trend';
     }
 }
 
@@ -1234,10 +1285,13 @@ function renderDeviationStats(dev) {
             const absGap = Math.abs(gap);
             let badgeClass = 'compliant';
             let badgeText = 'Compliant';
-            if (absGap > 8.0) {
+            if (absGap > 15.0) {
+                badgeClass = 'hard-breach';
+                badgeText = 'Critical Breach';
+            } else if (absGap > 10.0) {
                 badgeClass = 'hard-breach';
                 badgeText = 'Hard Breach';
-            } else if (absGap > 3.0) {
+            } else if (absGap > 5.0) {
                 badgeClass = 'soft-warning';
                 badgeText = 'Soft Limit';
             }
@@ -1261,6 +1315,16 @@ function renderDeviationStats(dev) {
     }
 
     // 🔬 交互式调仓执行建议与滑点估计 (ADV Desk)
+    // 核心 ETF 日均成交额 (RMB) — 与后端 slippage_engine.py 保持一致
+    const _ADV_DESK_ETF_ADV = {
+        '510300': 8e9, '510500': 3.5e9, '510880': 1.2e9, '159915': 1.8e9,
+        '513100': 1.5e9, '518880': 2.5e9, '511010': 5e9, '513500': 8e8,
+        '159919': 1e9, '512100': 5e8, '159845': 4e8,
+    };
+    const _ADV_DESK_DEFAULT_ADV = 2e8; // 个股默认 ADV: 2亿
+    const _ADV_DESK_COMMISSION = 0.00025; // 双向佣金
+    const _ADV_DESK_STAMP_TAX = 0.0005; // 印花税(卖出, ETF免)
+
     const $desk = _aiaeDOM['slippage-desk'];
     const $sSize = _aiaeDOM['slip-size'];
     const $sCost = _aiaeDOM['slip-cost'];
@@ -1276,29 +1340,36 @@ function renderDeviationStats(dev) {
             const portfolioSize = $sizeSelect ? parseFloat($sizeSelect.value) : 50000000;
             const tradeSize = (portfolioSize * Math.abs(gap) / 100);
             
-            // 经典的非线性滑点预估公式：基于绝对交易额相比于日均基准流量（设 ADV 盘中单批承载力为 250 万人民币）
-            // 经验模型: 1.5bps 固差 + 0.8 * (tradeSize / 2,500,000)^0.6 冲击系数
-            const estSlippageBps = 1.5 + 0.8 * Math.pow(tradeSize / 2500000, 0.6);
+            // 参照 Almgren-Chriss Square Root Market Impact Model (β=0.5)
+            // impact_bps = FIXED_SPREAD + ALPHA * sqrt(tradeSize / ADV) * 10000
+            const avgADV = 2.5e9; // 组合加权平均 ADV 估计
+            const participation = tradeSize / avgADV;
+            const impactBps = 1.5 + 0.1 * Math.sqrt(participation) * 10000;
             
-            // 交互式执行建议算法选择联动
+            // 交易成本: 佣金(双向) + 印花税(卖出方向, ETF免)
+            const commissionCost = tradeSize * _ADV_DESK_COMMISSION;
+            const txCostBps = _ADV_DESK_COMMISSION * 10000; // ~2.5 bps
+            
+            // 基于参与率 (participation rate) 的执行算法选择
             let algo = '主动盘中限价单 (Limit Order)';
-            if (tradeSize > 20000000) {
-                algo = '大额调仓：建议 VWAP 算法，分 2 天分批执行';
-            } else if (tradeSize > 5000000) {
-                algo = '建议 TWAP 算法，分 1 天内执行';
-            } else if (Math.abs(gap) > 8.0) {
+            if (participation > 0.30) {
+                algo = `IS + 暗池，分 ${Math.max(3, Math.round(participation / 0.10))} 天执行`;
+            } else if (participation > 0.15) {
                 algo = '建议 VWAP 算法，分 2 天分批执行';
-            } else if (Math.abs(gap) > 4.0) {
+            } else if (participation > 0.05) {
                 algo = '建议 TWAP 算法，分 1 天内执行';
-            } else if (Math.abs(gap) > 1.5) {
-                algo = '盘中主动分拆下单 (约 2-4 小时)';
+            } else if (participation > 0.01) {
+                algo = 'TWAP 半天内执行';
             }
             
             if ($sSize) $sSize.textContent = (tradeSize / 10000).toFixed(1) + ' 万 RMB';
-            if ($sCost) $sCost.textContent = `~${estSlippageBps.toFixed(1)} bps (${(tradeSize * estSlippageBps / 10000).toFixed(0)} 元)`;
+            if ($sCost) {
+                $sCost.innerHTML = `~${impactBps.toFixed(1)} bps (${(tradeSize * impactBps / 10000).toFixed(0)} 元)`
+                    + `<br><span style="font-size:0.7rem;color:#94a3b8;">交易成本 (佣金+税费): ~${txCostBps.toFixed(1)} bps (${commissionCost.toFixed(0)} 元)</span>`;
+            }
             if ($sAlgo) {
                 $sAlgo.textContent = algo;
-                $sAlgo.style.color = tradeSize > 20000000 || Math.abs(gap) > 8.0 ? '#ef4444' : (tradeSize > 5000000 || Math.abs(gap) > 4.0 ? '#f97316' : '#60a5fa');
+                $sAlgo.style.color = participation > 0.15 ? '#ef4444' : (participation > 0.05 ? '#f97316' : '#60a5fa');
             }
         } else {
             $desk.style.display = 'none';
@@ -1326,6 +1397,118 @@ function renderReductionList(rc) {
         </div>`
     ).join('');
 }
+
+function renderReconSummary(recon) {
+    const pos = recon.position_reconciliation;
+    const trades = recon.trade_analysis;
+    const maturity = recon.maturity;
+
+    const $gap = document.getElementById('recon-gap');
+    const $comp = document.getElementById('recon-compliance');
+    const $score = document.getElementById('recon-score');
+    const $bsr = document.getElementById('recon-bsr');
+
+    // V3.2: 数据成熟度检查 — 不足时显示降级提示，避免零值误导
+    if (maturity && !maturity.is_mature) {
+        const msg = maturity.message || '数据采集中';
+        const _gray = '#64748b';
+        if ($gap) { $gap.textContent = msg; $gap.style.color = _gray; $gap.style.fontSize = '0.7rem'; }
+        if ($comp) { $comp.textContent = '—'; $comp.style.color = _gray; }
+        if ($score) { $score.textContent = '—'; $score.style.color = _gray; }
+        if ($bsr) { $bsr.textContent = '—'; $bsr.style.color = _gray; }
+        return;
+    }
+
+    if (pos && pos.summary) {
+        const s = pos.summary;
+        // V3.3: 优先展示 EWMA 加权偏差 (近期权重更高)
+        const ewmaGap = s.ewma_gap_abs ?? s.avg_gap_abs ?? 0;
+        const simpleGap = s.avg_gap_abs ?? 0;
+        const recent7 = s.recent_7d_gap;
+        const trend = s.trend || 'stable';
+        const trendEmoji = trend === 'converging' ? ' ↘' : trend === 'diverging' ? ' ↗' : '';
+
+        if ($gap) {
+            // 主显示: EWMA, 小字标注近7天
+            $gap.textContent = ewmaGap.toFixed(1) + 'pt';
+            $gap.style.color = ewmaGap > 10 ? '#ef4444' : ewmaGap > 5 ? '#f59e0b' : '#10b981';
+            $gap.style.fontSize = '';
+            $gap.title = `EWMA=${ewmaGap.toFixed(1)}pt | 简均=${simpleGap.toFixed(1)}pt | 近7天=${recent7 != null ? recent7.toFixed(1) : '—'}pt`;
+        }
+        const compVal = s.compliance_rate_pct ?? 0;
+        if ($comp) {
+            $comp.textContent = compVal.toFixed(1) + '%';
+            $comp.style.color = compVal >= 80 ? '#10b981' : compVal >= 50 ? '#f59e0b' : '#ef4444';
+        }
+        const scoreVal = s.score ?? 0;
+        if ($score) {
+            $score.textContent = scoreVal + '/100' + trendEmoji;
+            $score.style.color = scoreVal >= 80 ? '#10b981' : scoreVal >= 60 ? '#60a5fa' : scoreVal >= 40 ? '#f59e0b' : '#ef4444';
+            $score.title = `趋势: ${trend === 'converging' ? '收敛改善中' : trend === 'diverging' ? '偏差扩大中' : '稳定'}`;
+        }
+    }
+    if (trades && trades.status === 'success') {
+        const bsrVal = trades.buy_sell_ratio;
+        if ($bsr) {
+            $bsr.textContent = bsrVal === Infinity ? '∞' : (typeof bsrVal === 'number' ? bsrVal.toFixed(2) : (bsrVal || '0.00'));
+            $bsr.style.color = '#a78bfa';
+        }
+    }
+
+    // V3.3: 偏差趋势迷你折线图 — 展示 gap 收敛/发散趋势
+    const records = (pos && pos.daily_records) ? pos.daily_records.filter(r => r.gap !== null) : [];
+    if (records.length >= 3 && typeof echarts !== 'undefined') {
+        const $container = document.getElementById('aiae-recon-summary');
+        if ($container) {
+            let $trendBox = document.getElementById('aiae-recon-trend');
+            if (!$trendBox) {
+                $trendBox = document.createElement('div');
+                $trendBox.id = 'aiae-recon-trend';
+                $trendBox.style.cssText = 'grid-column: 1 / -1; height: 100px; margin-top: 6px;';
+                $container.appendChild($trendBox);
+            }
+            try { window._reconTrend = AC.disposeChart(window._reconTrend); } catch(_) {}
+            window._reconTrend = AC.registerChart(echarts.init($trendBox));
+            const dates = records.map(r => r.date.slice(5)); // MM-DD
+            const gaps = records.map(r => r.gap);
+            window._reconTrend.setOption({
+                grid: { top: 16, right: 8, bottom: 20, left: 36 },
+                tooltip: {
+                    trigger: 'axis', backgroundColor: 'rgba(15,23,42,0.9)', borderColor: 'rgba(255,255,255,0.08)',
+                    textStyle: { fontSize: 10, color: '#e2e8f0' },
+                    formatter: function(params) {
+                        const p = params[0];
+                        const v = p.value;
+                        const sev = Math.abs(v) > 15 ? '🔴 Critical' : Math.abs(v) > 10 ? '🟠 Hard' : Math.abs(v) > 5 ? '🟡 Soft' : '🟢 OK';
+                        return `${p.name}<br/>偏差: <b>${v > 0 ? '+' : ''}${v.toFixed(1)}pt</b> ${sev}`;
+                    }
+                },
+                xAxis: { type: 'category', data: dates, axisLabel: { fontSize: 9, color: '#475569' }, axisLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } } },
+                yAxis: { type: 'value', axisLabel: { fontSize: 9, color: '#475569', formatter: '{value}pt' }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.04)' } } },
+                series: [{
+                    type: 'line', data: gaps, smooth: true, symbol: 'circle', symbolSize: 4,
+                    lineStyle: { width: 2, color: '#f59e0b' },
+                    itemStyle: { color: '#f59e0b' },
+                    areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                        colorStops: [{ offset: 0, color: 'rgba(245,158,11,0.15)' }, { offset: 1, color: 'rgba(245,158,11,0)' }]
+                    }},
+                    markLine: {
+                        silent: true, symbol: 'none',
+                        lineStyle: { type: 'dashed', width: 1 },
+                        data: [
+                            { yAxis: 5, lineStyle: { color: 'rgba(234,179,8,0.3)' }, label: { show: false } },
+                            { yAxis: -5, lineStyle: { color: 'rgba(234,179,8,0.3)' }, label: { show: false } },
+                            { yAxis: 10, lineStyle: { color: 'rgba(239,68,68,0.3)' }, label: { formatter: '±10pt', fontSize: 8, color: '#ef4444', position: 'end' } },
+                            { yAxis: -10, lineStyle: { color: 'rgba(239,68,68,0.3)' }, label: { show: false } },
+                            { yAxis: 0, lineStyle: { color: 'rgba(16,185,129,0.4)', type: 'solid' }, label: { show: false } },
+                        ]
+                    }
+                }]
+            });
+        }
+    }
+}
+
 
 function renderCrossMarketAlerts(data) {
     const regimeBar = document.getElementById('aiae-cross-regime-bar');
@@ -1417,25 +1600,6 @@ function renderCrossMarketAlerts(data) {
     }
 }
 
-function renderReconSummary(recon) {
-    const pos = recon.position_reconciliation;
-    const trades = recon.trade_analysis;
-
-    if (pos && pos.summary) {
-        const $gap = document.getElementById('recon-gap');
-        const $comp = document.getElementById('recon-compliance');
-        const $score = document.getElementById('recon-score');
-        // avg_gap_pt 可能为 null, 兼容 avg_gap
-        const gapVal = pos.summary.avg_gap_pt ?? pos.summary.avg_gap ?? 0;
-        if ($gap) $gap.textContent = (typeof gapVal === 'number' ? gapVal.toFixed(1) : gapVal) + 'pt';
-        if ($comp) $comp.textContent = pos.summary.compliance_rate_pct?.toFixed(1) + '%';
-        if ($score) $score.textContent = pos.summary.score + '/100';
-    }
-    if (trades && trades.status === 'success') {
-        const $bsr = document.getElementById('recon-bsr');
-        if ($bsr) $bsr.textContent = (trades.buy_sell_ratio || 0).toFixed(2);
-    }
-}
 
 // 页面首次加载时，如果AIAE是默认active tab则自动加载
 // V5.1: 等待 ECharts 就绪后再加载，解决 CDN 首次访问竞态
@@ -1446,4 +1610,10 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// Phase 2: resize 已由 alphacore_utils.js 注册中心统一处理
+// V3.3: Zone 7 ECharts resize — gauge/radar/trend 响应式
+window.addEventListener('resize', function() {
+    if (window._healthGauge) try { window._healthGauge.resize(); } catch(_) {}
+    if (window._healthRadar) try { window._healthRadar.resize(); } catch(_) {}
+    if (window._reconTrend) try { window._reconTrend.resize(); } catch(_) {}
+});
+

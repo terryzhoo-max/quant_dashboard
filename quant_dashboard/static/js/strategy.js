@@ -1,6 +1,18 @@
 // AlphaCore · 策略中心页面 JS
 const API_URL = '';
 
+// V5.2: 服务端参数同步 (替代前端硬编码)
+let _serverParams = null;
+(async function _loadServerParams() {
+    try {
+        const r = await fetch(`${API_URL}/api/v1/params/strategy-config`);
+        if (r.ok) {
+            _serverParams = await r.json();
+            console.log('[V5.2] 服务端参数已同步:', _serverParams.version);
+        }
+    } catch(e) { console.warn('[V5.2] 参数同步失败(降级为本地值):', e.message); }
+})();
+
 // ====== 通用折叠组件 (Phase 1 提取) ======
 function toggleAccordion(trigger) {
     const body = trigger.nextElementSibling;
@@ -657,7 +669,7 @@ function setSelectValue(id, val) {
  * 在 signal_score 字段缺失时作为兜底
  */
 function computeDivScore(s, regime) {
-    const envScore = { BULL: 20, RANGE: 12, BEAR: 5, CRASH: 0 }[regime] ?? 12;
+    const envScore = { BULL: 15, RANGE: 10, BEAR: 4, CRASH: 0 }[regime] ?? 10;  // V5.2: 与后端 score_etf() 对齐
 
     const rsi = s.rsi ?? 50;
     const rsiScore = rsi <= 30 ? 20 : rsi <= 35 ? 15 : rsi <= 40 ? 10 : rsi <= 50 ? 5 : 0;
@@ -878,7 +890,7 @@ function renderRegime(d) {
 
     // V4.2: 联动入场门槛决策台动态数字
     const regimeKey = (d.regime || 'RANGE');
-    const gateMap = { BULL: 75, RANGE: 68, BEAR: 78 };
+    const gateMap = { BULL: 60, RANGE: 68, BEAR: 78 };  // V5.2: 与后端 MR_SCORE_GATE 对齐
     const curGate = gateMap[regimeKey] || 68;
     const curHalf = Math.round(curGate * 0.85);
     const curFull = Math.min(curGate + 15, 95);
@@ -1086,9 +1098,25 @@ function renderExecutionDashboard(data, helpers) {
     safelySetHTML('exec-regime', `<span style="color:${regimeColor[g.regime] || '#3b82f6'}">${regimeMap[g.regime] || g.regime}</span>`);
     safelySetHTML('exec-buy-total', `<span style="color:#10b981">${g.total_buy || 0} 只</span>`);
     safelySetHTML('exec-sell-total', `<span style="color:#ef4444">${g.total_sell || 0} 只</span>`);
-    safelySetHTML('exec-consistency', g.consistency === 'high'
-        ? '<span style="color:#10b981">✅ 高一致</span>'
-        : '<span style="color:#f59e0b">⚠️ 分歧</span>');
+    // V5.2: 三级一致性 + 降级策略展示
+    const consistencyMap = {
+        'high':   '<span style="color:#10b981">✅ 高一致</span>',
+        'medium': '<span style="color:#eab308">⚠️ 轻度分歧</span>',
+        'low':    '<span style="color:#f59e0b">⛔ 严重分歧</span>',
+    };
+    safelySetHTML('exec-consistency', consistencyMap[g.consistency] || consistencyMap['high']);
+
+    // V5.2: 降级策略警示条
+    const degraded = g.degraded_strategies || [];
+    const degradedEl = document.getElementById('exec-degraded-banner');
+    if (degraded.length > 0 && degradedEl) {
+        const nameMap = {mr:'均值回归',div:'红利趋势',mom:'动量轮动',gem:'GEM双动量',erp:'ERP择时',aiae:'AIAE宏观'};
+        const names = degraded.map(s => nameMap[s] || s).join('、');
+        degradedEl.style.display = 'block';
+        degradedEl.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:10px 16px;border-radius:10px;border:1px solid rgba(239,68,68,0.25);background:rgba(239,68,68,0.06);font-size:0.82rem;"><span>⚠️</span><span style="color:#fca5a5;">策略降级: <strong>${names}</strong> 执行异常已隔离，其余策略正常输出</span></div>`;
+    } else if (degradedEl) {
+        degradedEl.style.display = 'none';
+    }
     safelySetText('exec-resonance-count', resonance.total_overlap || 0);
     safelySetHTML('exec-vol-alerts', risk.alert_count > 0
         ? `<span style="color:#ef4444">${risk.alert_count} 只</span>`

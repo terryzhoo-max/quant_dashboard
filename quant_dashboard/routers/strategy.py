@@ -516,9 +516,24 @@ async def run_all_strategies_api(override_cap: int = Query(default=None, ge=0, l
         erp_task  = loop.run_in_executor(executor, _run_erp_strategy)
         aiae_task = loop.run_in_executor(executor, _run_aiae_strategy)
 
-        mr_raw, div_raw, mom_raw, gem_raw, erp_raw, aiae_raw = await asyncio.gather(
-            mr_task, div_task, mom_task, gem_task, erp_task, aiae_task
+        results = await asyncio.gather(
+            mr_task, div_task, mom_task, gem_task, erp_task, aiae_task,
+            return_exceptions=True,
         )
+
+        # ── V5.2: 错误隔离 — 异常策略降级为空结果，不阻塞其他策略 ──
+        _FALLBACK = {"status": "error", "data": {"signals": [], "market_overview": {}}}
+        degraded = []
+        _names = ["mr", "div", "mom", "gem", "erp", "aiae"]
+        sanitized = []
+        for i, (sname, r) in enumerate(zip(_names, results)):
+            if isinstance(r, Exception):
+                logger.error(f"策略 {sname} 执行异常(已隔离): {r}")
+                degraded.append(sname)
+                sanitized.append(_FALLBACK.copy())
+            else:
+                sanitized.append(r)
+        mr_raw, div_raw, mom_raw, gem_raw, erp_raw, aiae_raw = sanitized
 
         from dashboard_modules.run_strategies import wrap_mr_results
         mr_result = wrap_mr_results(mr_raw) if isinstance(mr_raw, list) else mr_raw
@@ -620,18 +635,35 @@ async def run_all_strategies_api(override_cap: int = Query(default=None, ge=0, l
         elif erp_tier == "bear":
             regime_floor = max(regime_floor - 10, 0)
 
+        # V5.2: 零信号安全阀 — 全策略无买入信号时 floor 不应强推仓位
+        total_buy_signals = sum(1 for s in mr_signals + div_signals + mom_signals +
+                                gem_signals + aiae_signals if s.get("signal") == "buy")
+        if total_buy_signals == 0:
+            original_floor = regime_floor
+            regime_floor = round(regime_floor * 0.3)
+            logger.warning(f"零信号安全阀触发: 0买入信号, floor {original_floor}%→{regime_floor}%")
+
         avg_pos = max(avg_pos, regime_floor)
         logger.info(f"矩阵锚定: raw={raw_pos}% floor={regime_floor}%(R{aiae_regime}/{erp_tier}) cap={cap}% → final={avg_pos}%")
 
         erp_cap_active = False
 
-        regimes = [mr_regime]
+        # V5.2: 多策略 Regime 一致性增强 (MR+DIV+MOM 三维度)
         div_regime = div_result.get("data", {}).get("regime_params", {}).get("regime", "RANGE") if isinstance(div_result, dict) else "RANGE"
-        regimes.append(div_regime)
-        consistency = "high" if len(set(regimes)) == 1 else "low"
+        mom_regime = mom_result.get("data", {}).get("market_overview", {}).get("regime", "RANGE") if isinstance(mom_result, dict) else "RANGE"
+        aiae_regime_mapped = {1: "BULL", 2: "BULL", 3: "RANGE", 4: "BEAR", 5: "BEAR"}.get(aiae_regime, "RANGE")
+        regime_map = {"mr": mr_regime, "div": div_regime, "mom": mom_regime, "aiae_mapped": aiae_regime_mapped}
+        unique_regimes = set([mr_regime, div_regime, mom_regime])
+        if len(unique_regimes) == 1:
+            consistency = "high"
+        elif len(unique_regimes) == 2:
+            consistency = "medium"
+        else:
+            consistency = "low"
 
+        consistency_penalty = {"high": 1.0, "medium": 0.85, "low": 0.75}
         if consistency != "high" and not override_active:
-            avg_pos = max(round(avg_pos * 0.8), regime_floor)
+            avg_pos = max(round(avg_pos * consistency_penalty[consistency]), regime_floor)
 
         return {
             "status": "success", "timestamp": _dt.now().isoformat(),
@@ -639,7 +671,8 @@ async def run_all_strategies_api(override_cap: int = Query(default=None, ge=0, l
                 "global": {
                     "regime": mr_regime, "total_position": avg_pos,
                     "regime_cap": cap, "total_buy": total_buy, "total_sell": total_sell,
-                    "consistency": consistency, "strategy_count": 6,
+                    "consistency": consistency, "regime_map": regime_map, "strategy_count": 6,
+                    "degraded_strategies": degraded,
                     "erp_score": erp_score, "erp_cap_active": erp_cap_active,
                     "confidence": {
                         "mr": round(mr_conf), "div": round(div_conf), "mom": round(mom_conf),

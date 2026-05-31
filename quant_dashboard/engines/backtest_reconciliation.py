@@ -15,6 +15,7 @@ V1.0 2026-05-26
 
 import os
 import json
+import math
 import threading
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
@@ -105,15 +106,49 @@ class BacktestReconciliationEngine:
         compliant_days = sum(1 for r in daily_records if r["gap"] is not None and abs(r["gap"]) < 10)
         compliance_rate = round(compliant_days / max(matched_days, 1) * 100, 1)
 
-        # 对账评分
-        if avg_gap <= 5:
-            score = 95
-        elif avg_gap <= 10:
-            score = 80
-        elif avg_gap <= 15:
-            score = 60
+        # V3.3: EWMA 加权偏差 (half-life=7天, 近期权重更高)
+        # 机构标准: 执行纪律评估应侧重近期表现，而非被历史极端值主导
+        valid_gaps = [abs(r["gap"]) for r in daily_records if r["gap"] is not None]
+        if valid_gaps:
+            # math already imported at module level
+            hl = 7  # half-life 7 trading days
+            lam = math.log(2) / hl  # decay rate
+            n = len(valid_gaps)
+            weights = [math.exp(-lam * (n - 1 - i)) for i in range(n)]
+            w_sum = sum(weights)
+            ewma_gap = round(sum(g * w for g, w in zip(valid_gaps, weights)) / w_sum, 1)
         else:
-            score = 40
+            ewma_gap = avg_gap
+
+        # V3.3: 趋势检测 (近7天 vs 前7天)
+        recent_7 = valid_gaps[-7:] if len(valid_gaps) >= 7 else valid_gaps
+        prior_7 = valid_gaps[-14:-7] if len(valid_gaps) >= 14 else valid_gaps[:max(len(valid_gaps)//2, 1)]
+        avg_recent = sum(recent_7) / max(len(recent_7), 1)
+        avg_prior = sum(prior_7) / max(len(prior_7), 1)
+        if avg_prior > 0 and (avg_prior - avg_recent) / avg_prior > 0.2:
+            trend = "converging"
+        elif avg_recent > 0 and (avg_recent - avg_prior) / max(avg_prior, 1) > 0.2:
+            trend = "diverging"
+        else:
+            trend = "stable"
+
+        # 对账评分 (基于 EWMA 加权偏差, 更反映当前执行质量)
+        if ewma_gap <= 5:
+            score = 95
+        elif ewma_gap <= 10:
+            score = 80
+        elif ewma_gap <= 15:
+            score = 60
+        elif ewma_gap <= 25:
+            score = 45
+        else:
+            score = 30
+
+        # 趋势加分/减分 (±5分, 鼓励改善)
+        if trend == "converging":
+            score = min(100, score + 5)
+        elif trend == "diverging":
+            score = max(0, score - 5)
 
         return {
             "status": "success",
@@ -121,9 +156,12 @@ class BacktestReconciliationEngine:
                 "total_decision_days": len(decisions),
                 "matched_days": matched_days,
                 "avg_gap_abs": avg_gap,
+                "ewma_gap_abs": ewma_gap,
                 "max_gap_abs": round(max_gap, 1),
+                "recent_7d_gap": round(avg_recent, 1),
                 "compliance_rate_pct": compliance_rate,
                 "score": score,
+                "trend": trend,
             },
             "daily_records": daily_records[-30:],  # 最近 30 天
         }
@@ -290,11 +328,24 @@ class BacktestReconciliationEngine:
 
         overall_score = round(sum(scores) / max(len(scores), 1)) if scores else None
 
+        # V3.2: 数据成熟度元数据 — 前端据此决定显示真实数据还是 "采集中" 提示
+        decision_days = position.get("summary", {}).get("total_decision_days", 0) if position.get("status") == "success" else 0
+        matched_days = position.get("summary", {}).get("matched_days", 0) if position.get("status") == "success" else 0
+        min_required = 15
+        maturity = {
+            "decision_days": decision_days,
+            "matched_days": matched_days,
+            "min_required": min_required,
+            "is_mature": matched_days >= min_required,
+            "message": "数据充分" if matched_days >= min_required else f"数据采集中 · {matched_days}/{min_required}天",
+        }
+
         return {
             "status": "success",
             "engine_version": self.VERSION,
             "computed_at": datetime.now().isoformat(),
             "overall_score": overall_score,
+            "maturity": maturity,
             "position_reconciliation": position,
             "trade_analysis": trades,
             "regime_accuracy": regime,

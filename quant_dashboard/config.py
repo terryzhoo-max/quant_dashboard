@@ -36,6 +36,12 @@ def _patched_post(url, **kwargs):
     # Intercept requests to waditu and forward to the reliable tushare.pro root endpoint
     if 'api.waditu.com' in url or 'api.tushare.pro' in url:
         url = 'http://api.tushare.pro'
+        # V5.2: 全局限频 — 防止6引擎32+并发线程超限
+        try:
+            from services.tushare_limiter import tushare_limiter
+            tushare_limiter.acquire()
+        except Exception:
+            pass  # 限频器不可用时降级为无限频
         
         max_retries = 3
         for i in range(max_retries):
@@ -46,6 +52,7 @@ def _patched_post(url, **kwargs):
                     raise e
                 time.sleep(1.5)
     return _orig_post(url, **kwargs)
+
 
 tushare.pro.client.requests.post = _patched_post
 # ==========================================

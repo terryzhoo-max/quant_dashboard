@@ -217,12 +217,16 @@ def compute_atr_trailing_stop(code: str, current_price: float,
 
         multi = {"BULL": 2.0, "RANGE": 2.5, "BEAR": 3.0, "CRASH": 3.5}.get(regime, 2.5)
         stop_price = current_price - multi * atr
-        stop_pct = round((stop_price / current_price - 1) * 100, 1)
+        # V5.2: stop_pct 基于建仓价计算浮盈保护 (entry_price=current_price时退化为原行为)
+        ref_price = entry_price if entry_price > 0 else current_price
+        stop_pct = round((stop_price / ref_price - 1) * 100, 1)
+        unrealized_pnl = round((current_price / ref_price - 1) * 100, 1) if ref_price > 0 else 0.0
 
         return {
             "atr_value": round(atr, 3),
             "trailing_stop_price": round(stop_price, 2),
             "stop_pct": stop_pct,
+            "unrealized_pnl": unrealized_pnl,
             "atr_multiplier": multi,
             "method": "ATR(14)",
         }
@@ -755,8 +759,19 @@ def _fetch_and_calc_mr(code, regime_info, start_date, end_date, pro):
         # V22.0: 动态仓位 + ATR 追踪止盈
         regime = indicators.get("regime", "RANGE")
         dyn_cap = dynamic_position_cap(code, name, regime)
+        # V5.2: 从持仓缓存读取实际建仓成本价 (无持仓时退化为当前价)
+        _entry_price = indicators["close"]
+        try:
+            from services.cache_service import cache_manager as _cm
+            _portfolio = _cm.get_json("portfolio_store", {})
+            for _h in _portfolio.get("holdings", []):
+                if _h.get("code", "").startswith(code.split(".")[0]):
+                    _entry_price = float(_h.get("cost_price", indicators["close"]))
+                    break
+        except Exception:
+            pass
         atr_stop = compute_atr_trailing_stop(code, indicators["close"],
-                                             indicators["close"], regime)
+                                             _entry_price, regime)
 
         return {
             "ts_code":       code,
