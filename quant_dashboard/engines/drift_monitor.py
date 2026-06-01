@@ -254,12 +254,14 @@ def check_regime_transition() -> dict:
         if aiae_simple is None:
             return {"status": "insufficient_data", "label": "AIAE_简 不可用"}
 
-        # V5 阈值
+        # V5.2: 从 aiae_params 动态读取阈值 (消灭硬编码)
+        from engines.aiae_params import V5_REGIME_THRESHOLDS
+        _t = V5_REGIME_THRESHOLDS
         thresholds = [
-            (22.8, 1, 2, "极低估→低估"),
-            (24.0, 2, 3, "低估→中性"),
-            (26.5, 3, 4, "中性→偏高"),
-            (28.3, 4, 5, "偏高→过热"),
+            (_t[0], 1, 2, "极低估→低估"),
+            (_t[1], 2, 3, "低估→中性"),
+            (_t[2], 3, 4, "中性→偏高"),
+            (_t[3], 4, 5, "偏高→过热"),
         ]
 
         # V5 仓位影响参考 (ERP_4_6 行, 最常见情况)
@@ -281,7 +283,7 @@ def check_regime_transition() -> dict:
                 "status": "critical",
                 "label": f"R5 极度过热 (AIAE={aiae_simple:.1f}%)",
                 "detail": f"AIAE_简={aiae_simple:.1f}% 处于 Ⅴ级过热区。建议仓位 ≤15%，禁止开新仓。"
-                          f" 需连续观察至 AIAE_简 回落至 {28.3}% 以下方可恢复。",
+                          f" 需连续观察至 AIAE_简 回落至 {_t[3]}% 以下方可恢复。",
                 "aiae_simple": aiae_simple,
                 "regime": regime,
                 "nearest_threshold": nearest[0] if nearest else None,

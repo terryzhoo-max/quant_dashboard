@@ -284,8 +284,8 @@ function renderAlerts(alerts) {
 //  V17.5 K: AIAE 宏观仓位管控仪表
 // ═══════════════════════════════════════════════════
 
-// R5 P0-2: 默认阈值 (后端 regime_thresholds 可覆盖)
-const _DEFAULT_REGIME_THRESHOLDS = [22.8, 24, 26.5, 28.3];
+// R5 P0-2: 默认阈值 (后端 regime_thresholds 可覆盖) — V5.2 H1回测对齐
+const _DEFAULT_REGIME_THRESHOLDS = [22.0, 24, 27.0, 29.0];
 
 const _REGIME_DEFS_BASE = [
     { r: 1, emoji: '🟢', name: 'Ⅰ级', cn: '极低估值', pos: '60-80%', color: '#10b981' },
