@@ -25,7 +25,8 @@ import aiae_params as AP
 # ═══════════════════════════════════════════════════
 
 @pytest.fixture
-def engine():
+def engine(monkeypatch):
+    monkeypatch.setattr("aiae_params.V5_ENABLED", False)
     with patch("engines.aiae_engine.os.path.exists", return_value=True), \
          patch("builtins.open", MagicMock()), \
          patch("engines.aiae_engine.json.load", return_value={
@@ -364,8 +365,8 @@ class TestT9Robustness:
 
     def test_margin_heat_extreme(self, engine):
         for rzye in [0, 0.001, 10.0, 100.0]:
-            result = engine.compute_margin_heat({"rzye_wan_yi": rzye}, 100.0)
-            assert result >= 0
+            result = engine.compute_margin_heat({"rzye_wan_yi": rzye}, {"total_mv_wan_yi": 100.0})
+            assert result["value"] >= 0
 
     def test_v1_with_edge_fund_positions(self, engine):
         """基金仓位在验证区间 [50, 100] 边缘"""
@@ -383,3 +384,47 @@ class TestT9Robustness:
         assert r["signal"] is not None
         r2 = engine.compute_slope(5.0, 50.0)
         assert r2["direction"] == "falling"
+
+
+# ═══════════════════════════════════════════════════
+#  V5.2: 针对精简双因子模式与自适应阈值的单元测试
+# ═══════════════════════════════════════════════════
+
+class TestV5DecisionLogic:
+    @pytest.fixture
+    def v5_engine(self, monkeypatch):
+        monkeypatch.setattr("aiae_params.V5_ENABLED", True)
+        with patch("engines.aiae_engine.os.path.exists", return_value=True), \
+             patch("builtins.open", MagicMock()), \
+             patch("engines.aiae_engine.json.load", return_value={
+                 "value": 82.0, "date": "2025-12-31", "source": "test"
+             }), \
+             patch("engines.aiae_engine.ac_db"):
+            from engines.aiae_engine import AIAEEngine
+            eng = AIAEEngine()
+        return eng
+
+    def test_v5_regime_classification(self, v5_engine):
+        """验证 V5 下分类算法使用 V5.2 阈值"""
+        # thresholds: [22.0, 24.0, 27.0, 29.0]
+        assert v5_engine.classify_regime(10.0, aiae_simple=21.0) == 1  # <22.0
+        assert v5_engine.classify_regime(10.0, aiae_simple=23.0) == 2  # 22.0-24.0
+        assert v5_engine.classify_regime(10.0, aiae_simple=25.0) == 3  # 24.0-27.0
+        assert v5_engine.classify_regime(10.0, aiae_simple=28.0) == 4  # 27.0-29.0
+        assert v5_engine.classify_regime(10.0, aiae_simple=30.0) == 5  # >29.0
+
+    def test_v5_report_payload_alignment(self, v5_engine):
+        """验证生成报告中 basis_val 和阈值线的一致性"""
+        with patch.object(v5_engine, "_fetch_total_market_cap", return_value={"total_mv_wan_yi": 95.0}), \
+             patch.object(v5_engine, "_fetch_m2", return_value={"m2_wan_yi": 330.0}), \
+             patch.object(v5_engine, "_fetch_margin_data", return_value={"rzye_wan_yi": 2.2, "trade_date": "20260601"}), \
+             patch.object(v5_engine, "_get_erp_value", return_value=4.5), \
+             patch.object(v5_engine, "_load_monthly_history", return_value=[]), \
+             patch.object(v5_engine, "_append_monthly_history", MagicMock()):
+            report = v5_engine.generate_report()
+            assert report["status"] == "success"
+            curr = report["current"]
+            # 确认 basis_value 为 aiae_simple
+            assert curr["regime_basis_value"] == curr["aiae_simple"]
+            # 确认 regime_thresholds 为 V5 阈值
+            assert curr["regime_thresholds"] == [22.0, 24.0, 27.0, 29.0]

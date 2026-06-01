@@ -322,27 +322,29 @@ function renderAIAEUI(data) {
     const p = data.position;
     const cv = data.cross_validation;
     const ri = c.regime_info;
+    const basisVal = c.regime_basis_value !== undefined ? c.regime_basis_value : c.aiae_v1;
+    const thresholds = c.regime_thresholds || [12.5, 17, 23, 30];
 
     // ── Hero Stats (使用 DOM 缓存) ──
     const $v = _aiaeDOM['hero-value'];
     const $r = _aiaeDOM['hero-regime'];
     const $p = _aiaeDOM['hero-position'];
     const $e = _aiaeDOM['hero-erp'];
-    if ($v) $v.textContent = c.aiae_v1 + '%';
+    if ($v) $v.textContent = basisVal + '%';
     if ($r) { $r.textContent = `${ri.emoji} ${ri.cn}`; $r.style.color = ri.color; }
     if ($p) $p.textContent = p.matrix_position + '%';
     if ($e) { $e.textContent = cv.verdict; $e.style.color = cv.color; }
 
     // ── ZONE 1: ECharts Gauge (V5.1: 异步等待 ECharts 就绪) ──
-    var _gaugeArgs = [c.aiae_v1, c.regime, ri];
+    var _gaugeArgs = [basisVal, c.regime, ri, thresholds];
     try {
-        if (typeof echarts !== 'undefined') { renderAIAEGauge(_gaugeArgs[0], _gaugeArgs[1], _gaugeArgs[2]); }
-        else { _waitForECharts(function() { renderAIAEGauge(_gaugeArgs[0], _gaugeArgs[1], _gaugeArgs[2]); }); }
+        if (typeof echarts !== 'undefined') { renderAIAEGauge(_gaugeArgs[0], _gaugeArgs[1], _gaugeArgs[2], _gaugeArgs[3]); }
+        else { _waitForECharts(function() { renderAIAEGauge(_gaugeArgs[0], _gaugeArgs[1], _gaugeArgs[2], _gaugeArgs[3]); }); }
     } catch(e) { console.warn('[AIAE] gauge skip:', e); }
     const $gl = _aiaeDOM['gauge-label'];
     const $gr = _aiaeDOM['gauge-regime'];
     const $sl = _aiaeDOM['slope-indicator'];
-    if ($gl) $gl.textContent = c.aiae_v1;
+    if ($gl) $gl.textContent = basisVal;
     if ($gr) { $gr.textContent = `${ri.emoji} ${ri.name}`; $gr.style.color = ri.color; }
     if ($sl) {
         const slope = c.slope;
@@ -400,16 +402,16 @@ function renderAIAEUI(data) {
 
     // ── ZONE 3: History chart (V5.1: 异步等待 ECharts 就绪) ──
     if (data.chart) {
-        var _chartData = data.chart, _chartV1 = c.aiae_v1;
+        var _chartData = data.chart, _chartBasis = basisVal;
         try {
-            if (typeof echarts !== 'undefined') { renderAIAEHistoryChart(_chartData, _chartV1); }
-            else { _waitForECharts(function() { renderAIAEHistoryChart(_chartData, _chartV1); }); }
+            if (typeof echarts !== 'undefined') { renderAIAEHistoryChart(_chartData, _chartBasis, thresholds); }
+            else { _waitForECharts(function() { renderAIAEHistoryChart(_chartData, _chartBasis, thresholds); }); }
         } catch(e) { console.warn('[AIAE] chart skip:', e); }
     }
 
     // ── History summary current value (DOM 缓存) ──
     const $hc = _aiaeDOM['hist-current'];
-    if ($hc) $hc.textContent = c.aiae_v1 + '%';
+    if ($hc) $hc.textContent = basisVal + '%';
 
     // ── ZONE 4: Signals ──
     renderAIAESignals(data.signals);
@@ -689,13 +691,14 @@ function renderAIAEActionDashboard(regime, ri, matrixPos) {
 }
 
 // ── ECharts Gauge V2.0 ──
-function renderAIAEGauge(value, regime, ri) {
+function renderAIAEGauge(value, regime, ri, thresholds) {
     const container = document.getElementById('aiae-gauge-container');
     if (!container || typeof echarts === 'undefined') return;
     try { window._aiaeGaugeChart = AC.disposeChart(window._aiaeGaugeChart); } catch(_) {}
     window._aiaeGaugeChart = AC.registerChart(echarts.init(container));
 
     const v = Math.min(Math.max(value, 0), 50);
+    const t = thresholds || [12.5, 17, 23, 30];
 
     window._aiaeGaugeChart.setOption({
         series: [{
@@ -720,11 +723,11 @@ function renderAIAEGauge(value, regime, ri) {
                 lineStyle: {
                     width: 14,
                     color: [
-                        [0.25, '#10b981'],   // Ⅰ: 0-12.5
-                        [0.34, '#3b82f6'],   // Ⅱ: 12.5-17
-                        [0.46, '#eab308'],   // Ⅲ: 17-23
-                        [0.60, '#f97316'],   // Ⅳ: 23-30
-                        [1, '#ef4444']       // Ⅴ: 30-50
+                        [t[0] / 50, '#10b981'],
+                        [t[1] / 50, '#3b82f6'],
+                        [t[2] / 50, '#eab308'],
+                        [t[3] / 50, '#f97316'],
+                        [1, '#ef4444']
                     ]
                 }
             },
@@ -744,7 +747,11 @@ function renderAIAEGauge(value, regime, ri) {
                 color: '#64748b',
                 fontSize: 9,
                 formatter: function(val) {
-                    var map = {0: '0', 10: '10', 13: 'Ⅰ', 17: 'Ⅱ', 20: '20', 23: 'Ⅲ', 30: 'Ⅳ', 40: '40', 50: '50'};
+                    var map = {0: '0', 10: '10', 20: '20', 40: '40', 50: '50'};
+                    map[Math.round(t[0])] = 'Ⅰ';
+                    map[Math.round(t[1])] = 'Ⅱ';
+                    map[Math.round(t[2])] = 'Ⅲ';
+                    map[Math.round(t[3])] = 'Ⅳ';
                     return map[val] || '';
                 }
             },
@@ -757,31 +764,36 @@ function renderAIAEGauge(value, regime, ri) {
 }
 
 // ── History Chart V2.0 (五档 markArea 色带) ──
-function renderAIAEHistoryChart(chart, currentValue) {
+function renderAIAEHistoryChart(chart, currentValue, thresholds) {
     const container = document.getElementById('aiae-history-chart');
     if (!container || typeof echarts === 'undefined') return;
     try {
         try { if (window._aiaeHistChart) AC.disposeChart(window._aiaeHistChart); } catch(_) {}
         window._aiaeHistChart = AC.registerChart(echarts.init(container));
 
+        const t = thresholds || [12.5, 17, 23, 30];
+
         // 五档区间色带
         const markAreaData = [
-            [{ yAxis: 0, itemStyle: { color: 'rgba(16,185,129,0.06)' } }, { yAxis: 12.5 }],   // Ⅰ
-            [{ yAxis: 12.5, itemStyle: { color: 'rgba(59,130,246,0.05)' } }, { yAxis: 17 }],   // Ⅱ
-            [{ yAxis: 17, itemStyle: { color: 'rgba(234,179,8,0.05)' } }, { yAxis: 23 }],    // Ⅲ
-            [{ yAxis: 23, itemStyle: { color: 'rgba(249,115,22,0.06)' } }, { yAxis: 30 }],   // Ⅳ
-            [{ yAxis: 30, itemStyle: { color: 'rgba(239,68,68,0.06)' } }, { yAxis: 50 }],    // Ⅴ
+            [{ yAxis: 0, itemStyle: { color: 'rgba(16,185,129,0.06)' } }, { yAxis: t[0] }],   // Ⅰ
+            [{ yAxis: t[0], itemStyle: { color: 'rgba(59,130,246,0.05)' } }, { yAxis: t[1] }],   // Ⅱ
+            [{ yAxis: t[1], itemStyle: { color: 'rgba(234,179,8,0.05)' } }, { yAxis: t[2] }],    // Ⅲ
+            [{ yAxis: t[2], itemStyle: { color: 'rgba(249,115,22,0.06)' } }, { yAxis: t[3] }],   // Ⅳ
+            [{ yAxis: t[3], itemStyle: { color: 'rgba(239,68,68,0.06)' } }, { yAxis: 50 }],    // Ⅴ
         ];
 
         // 分界参考线
-        const markLines = [12.5, 17, 23, 30].map(val => ({
-            yAxis: val,
-            lineStyle: { color: val <= 17 ? '#3b82f644' : (val <= 23 ? '#eab30844' : '#ef444444'), type: 'dashed', width: 1 },
-            label: {
-                formatter: val === 12.5 ? 'Ⅰ|Ⅱ' : (val === 17 ? 'Ⅱ|Ⅲ' : (val === 23 ? 'Ⅲ|Ⅳ' : 'Ⅳ|Ⅴ')),
-                position: 'end', color: '#64748b', fontSize: 9
-            }
-        }));
+        const markLines = t.map((val, idx) => {
+            const labels = ['Ⅰ|Ⅱ', 'Ⅱ|Ⅲ', 'Ⅲ|Ⅳ', 'Ⅳ|Ⅴ'];
+            return {
+                yAxis: val,
+                lineStyle: { color: val <= t[1] ? '#3b82f644' : (val <= t[2] ? '#eab30844' : '#ef444444'), type: 'dashed', width: 1 },
+                label: {
+                    formatter: labels[idx] || '',
+                    position: 'end', color: '#64748b', fontSize: 9
+                }
+            };
+        });
 
             // V3.1: 根据数据密度自适应标记大小和标签显示
             const isSparse = chart.values.length <= 12;
@@ -800,10 +812,10 @@ function renderAIAEHistoryChart(chart, currentValue) {
                         const label = idx >= 0 && chart.labels[idx] ? chart.labels[idx] : '';
                         const val = p.value;
                         let tierLabel = '';
-                        if (val < 12.5) tierLabel = '<span style="color:#10b981">Ⅰ级 极度恐慌</span>';
-                        else if (val < 17) tierLabel = '<span style="color:#3b82f6">Ⅱ级 低配置区</span>';
-                        else if (val < 23) tierLabel = '<span style="color:#eab308">Ⅲ级 中性均衡</span>';
-                        else if (val < 30) tierLabel = '<span style="color:#f97316">Ⅳ级 偏热区域</span>';
+                        if (val < t[0]) tierLabel = '<span style="color:#10b981">Ⅰ级 极度恐慌</span>';
+                        else if (val < t[1]) tierLabel = '<span style="color:#3b82f6">Ⅱ级 低配置区</span>';
+                        else if (val < t[2]) tierLabel = '<span style="color:#eab308">Ⅲ级 中性均衡</span>';
+                        else if (val < t[3]) tierLabel = '<span style="color:#f97316">Ⅳ级 偏热区域</span>';
                         else tierLabel = '<span style="color:#ef4444">Ⅴ级 极度过热</span>';
                         return '<b>' + p.axisValue + '</b><br/>' +
                             '<span style="color:#f59e0b">●</span> AIAE: <b>' + p.value + '%</b><br/>' +

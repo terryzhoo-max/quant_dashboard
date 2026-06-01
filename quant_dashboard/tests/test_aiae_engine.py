@@ -17,8 +17,9 @@ import aiae_params as AP
 # ═══════════════════════════════════════════════════
 
 @pytest.fixture
-def engine():
+def engine(monkeypatch):
     """创建 AIAEEngine 实例, mock 掉文件系统和网络"""
+    monkeypatch.setattr("aiae_params.V5_ENABLED", False)
     with patch("engines.aiae_engine.os.path.exists", return_value=True), \
          patch("builtins.open", MagicMock()), \
          patch("engines.aiae_engine.json.load", return_value={
@@ -131,12 +132,12 @@ class TestComputeAIAEV1:
 
 class TestMarginHeat:
     def test_normal_ratio(self, engine):
-        result = engine.compute_margin_heat({"rzye_wan_yi": 1.85}, 100.0)
-        assert 1.5 < result < 2.5
+        result = engine.compute_margin_heat({"rzye_wan_yi": 1.85}, {"total_mv_wan_yi": 100.0})
+        assert 1.5 < result["value"] < 2.5
 
     def test_zero_market_cap(self, engine):
-        result = engine.compute_margin_heat({"rzye_wan_yi": 1.85}, 0)
-        assert result == 2.0  # fallback
+        result = engine.compute_margin_heat({"rzye_wan_yi": 1.85}, {"total_mv_wan_yi": 0})
+        assert result["value"] == 2.0  # fallback
 
 
 # ═══════════════════════════════════════════════════

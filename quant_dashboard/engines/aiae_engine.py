@@ -269,6 +269,22 @@ class AIAEEngine:
     VERSION = AP.VERSION
 
     def __init__(self):
+        # V5 动态修改 REGIMES 全局变量以适应当前开启的模式
+        is_v5 = getattr(AP, 'V5_ENABLED', False)
+        t = AP.V5_REGIME_THRESHOLDS if is_v5 else AP.REGIME_THRESHOLDS
+        pos_limits = {
+            1: ("90-95%" if not is_v5 else "60-80%"),
+            2: ("70-85%" if not is_v5 else "50-75%"),
+            3: ("50-65%" if not is_v5 else "35-65%"),
+            4: ("25-40%" if not is_v5 else "15-40%"),
+            5: ("0-15%"  if not is_v5 else "0-15%"),
+        }
+        REGIMES[1].update({"range": f"<{t[0]}%",   "position": pos_limits[1], "pos_min": 90 if not is_v5 else 60, "pos_max": 95 if not is_v5 else 80})
+        REGIMES[2].update({"range": f"{t[0]}-{t[1]}%", "position": pos_limits[2], "pos_min": 70 if not is_v5 else 50, "pos_max": 85 if not is_v5 else 75})
+        REGIMES[3].update({"range": f"{t[1]}-{t[2]}%", "position": pos_limits[3], "pos_min": 50 if not is_v5 else 35, "pos_max": 65 if not is_v5 else 65})
+        REGIMES[4].update({"range": f"{t[2]}-{t[3]}%", "position": pos_limits[4], "pos_min": 25 if not is_v5 else 15, "pos_max": 40 if not is_v5 else 40})
+        REGIMES[5].update({"range": f">{t[3]}%",   "position": pos_limits[5], "pos_min": 0  if not is_v5 else 0,  "pos_max": 15 if not is_v5 else 15})
+
         # C1: 基金仓位从持久化文件加载，降级为硬编码默认值
         fp_data = self._load_fund_position()
         self._fund_position = fp_data["value"]
@@ -727,10 +743,10 @@ class AIAEEngine:
         V5.0: V5_ENABLED 时使用 aiae_simple + V5 阈值 (百分位分档)
         """
         # V5 模式: 用 AIAE_简 直接百分位分档
-        if getattr(AP, 'V5_ENABLED', False) and aiae_simple is not None:
+        if getattr(AP, 'V5_ENABLED', False):
             t = AP.V5_REGIME_THRESHOLDS
             H = getattr(AP, 'V5_REGIME_HYSTERESIS', 0.5)
-            value = aiae_simple
+            value = aiae_simple if aiae_simple is not None else aiae_value
         else:
             t = AP.REGIME_THRESHOLDS  # [12.5, 17, 23, 30]
             H = getattr(AP, 'REGIME_HYSTERESIS', 0.5)
@@ -960,12 +976,12 @@ class AIAEEngine:
                 pass
         return []
 
-    def _append_monthly_history(self, aiae_v1: float, regime: int):
+    def _append_monthly_history(self, aiae_value: float, regime: int):
         """C2: 追加当月 AIAE 值 (SQLite + JSON 双写)"""
         current_month = datetime.now().strftime("%Y-%m")
         # SQLite 主写入
         try:
-            ac_db.upsert_aiae_monthly(current_month, aiae_v1, regime)
+            ac_db.upsert_aiae_monthly(current_month, aiae_value, regime)
         except Exception as e:
             _log(f"SQLite upsert_aiae_monthly 失败: {e}", "WARN")
         # JSON 备份写入
@@ -979,7 +995,7 @@ class AIAEEngine:
                 pass
         decomposition = getattr(self, '_last_decomposition', None)
         if history and history[-1].get("month") == current_month:
-            history[-1]["aiae_v1"] = aiae_v1
+            history[-1]["aiae_v1"] = aiae_value
             history[-1]["regime"] = regime
             history[-1]["updated_at"] = datetime.now().isoformat()
             if decomposition:
@@ -987,7 +1003,7 @@ class AIAEEngine:
         else:
             entry = {
                 "month": current_month,
-                "aiae_v1": aiae_v1,
+                "aiae_v1": aiae_value,
                 "regime": regime,
                 "recorded_at": datetime.now().isoformat(),
                 "updated_at": datetime.now().isoformat(),
@@ -1161,8 +1177,8 @@ class AIAEEngine:
         values = [static_points[d]["value"] for d in dates]
         labels = [static_points[d]["label"] for d in dates]
 
-        # 五档区间线 (V3.0: 从参数中心读取, 消除硬编码漂移)
-        _t = AP.REGIME_THRESHOLDS  # [12.5, 17, 23, 30]
+        # 五档区间线 (V3.0: 从参数中心读取, 消除硬编码漂移; V5.0: 自适应 V5 阈值)
+        _t = AP.V5_REGIME_THRESHOLDS if getattr(AP, 'V5_ENABLED', False) else AP.REGIME_THRESHOLDS
         bands = [
             {"name": "Ⅰ级上限", "value": _t[0], "color": "#10b981"},
             {"name": "Ⅱ级上限", "value": _t[1], "color": "#3b82f6"},
@@ -1234,15 +1250,18 @@ class AIAEEngine:
                                           aiae_simple=aiae_simple)
             regime_info = REGIMES[regime]
 
+            # V5 开启时核心指标统一为 aiae_simple，V3 下统一为 aiae_v1
+            basis_val = aiae_simple if getattr(AP, 'V5_ENABLED', False) else aiae_v1
+
             # V2.1: 月度历史冷启动修复
             try:
-                self._seed_monthly_history_if_needed(aiae_v1, regime)
+                self._seed_monthly_history_if_needed(basis_val, regime)
             except Exception as e:
                 _log(f"月度历史预填失败 (non-fatal): {e}", "WARN")
 
             # 4. 斜率
             prev_aiae = self._get_prev_month_aiae()
-            slope_info = self.compute_slope(aiae_v1, prev_aiae)
+            slope_info = self.compute_slope(basis_val, prev_aiae)
 
             # 5. ERP 交叉
             erp_value = self._get_erp_value()
@@ -1256,14 +1275,14 @@ class AIAEEngine:
             allocations = self.allocate_sub_strategies(regime, matrix_position)
 
             # 7. 信号
-            signals = self.generate_signals(aiae_v1, regime, slope_info, margin_heat)
+            signals = self.generate_signals(basis_val, regime, slope_info, margin_heat)
 
             # 8. 图表数据 (H3: 传入实时 AIAE 值替换末尾估算点)
-            chart_data = self.get_chart_data(live_aiae=aiae_v1)
+            chart_data = self.get_chart_data(live_aiae=basis_val)
 
             # C2: 追加月度历史记录
             try:
-                self._append_monthly_history(aiae_v1, regime)
+                self._append_monthly_history(basis_val, regime)
             except Exception as e:
                 _log(f"月度历史记录写入失败: {e}", "WARN")
 
