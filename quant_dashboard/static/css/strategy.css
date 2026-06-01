@@ -3563,3 +3563,95 @@
 
 
 
+/* ================================================
+   AIAE V5.1 · 温度计面板打磨 (P1 响应式 + 样式提取)
+   ================================================ */
+
+/* ── 温度计仪表盘容器 ── */
+.aiae-thermo-gauge-wrap {
+    text-align: center;
+    background: rgba(0,0,0,0.15);
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.03);
+}
+
+/* ── 温度计数据来源卡片 (替代 inline style) ── */
+.aiae-thermo-data-card {
+    padding: 8px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(0,0,0,0.15);
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.03);
+    transition: border-color 0.2s, transform 0.2s;
+}
+.aiae-thermo-data-card:hover {
+    border-color: rgba(245,158,11,0.15);
+    transform: translateY(-1px);
+}
+
+/* ── 温度计布局网格 ── */
+.aiae-thermo-grid {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    gap: 16px;
+    align-items: center;
+}
+
+/* ── 基金更新表单面板 ── */
+.aiae-fund-update-panel {
+    display: none;
+    margin-top: 10px;
+    padding: 12px 16px;
+    background: rgba(15,23,42,0.6);
+    border: 1px solid rgba(245,158,11,0.2);
+    border-radius: 8px;
+}
+.aiae-fund-update-grid {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr auto;
+    gap: 8px;
+    align-items: end;
+}
+
+/* ── 基金更新提醒 Banner ── */
+.aiae-fund-reminder {
+    display: none;
+    margin-top: 12px;
+    padding: 10px 14px;
+    background: linear-gradient(135deg, rgba(245,158,11,0.08), rgba(217,119,6,0.04));
+    border: 1px solid rgba(245,158,11,0.25);
+    border-radius: 8px;
+    border-left: 3px solid #f59e0b;
+}
+
+/* ── 响应式断点: 温度计面板 ── */
+@media (max-width: 900px) {
+    .aiae-thermo-grid {
+        grid-template-columns: 1fr;
+    }
+    .aiae-thermo-gauge-wrap {
+        max-width: 200px;
+        margin: 0 auto;
+    }
+    .aiae-warning-panel {
+        grid-template-columns: 1fr !important;
+    }
+    .aiae-row-grid {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+@media (max-width: 600px) {
+    .aiae-action-dashboard {
+        grid-template-columns: 1fr !important;
+    }
+    .aiae-regime-grid {
+        grid-template-columns: repeat(3, 1fr) !important;
+    }
+    .aiae-fund-update-grid {
+        grid-template-columns: 1fr;
+    }
+}

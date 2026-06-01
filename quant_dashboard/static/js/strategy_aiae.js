@@ -365,6 +365,17 @@ function renderAIAEUI(data) {
     if ($dm) $dm.textContent = c.margin_heat + '%';
     if ($df) $df.textContent = c.fund_position + '%';
 
+    // P0 Fix: 数据卡颜色与警示卡同步 (同一数据点颜色语义一致)
+    if ($ds) $ds.style.color = ri.color;  // 跟随 regime 颜色
+    if ($dm) {
+        const mh = c.margin_heat || 0;
+        $dm.style.color = mh > 3.5 ? '#ef4444' : mh > 2.5 ? '#f59e0b' : '#10b981';
+    }
+    if ($df) {
+        const fp = c.fund_position || 0;
+        $df.style.color = fp > 90 ? '#ef4444' : fp > 85 ? '#f59e0b' : '#10b981';
+    }
+
     // ── ZONE 2: Matrix highlight ──
     renderAIAEMatrix(p, cv);
 
@@ -563,6 +574,16 @@ function renderAIAEFundReminder(staleWarnings) {
     } else {
         banner.style.animation = 'none';
         banner.style.borderColor = 'rgba(245,158,11,0.3)';
+    }
+
+    // P1: 基金更新 toggle 按钮事件绑定 (替代 inline onclick)
+    const toggleBtn = document.getElementById('aiae-fund-update-toggle');
+    if (toggleBtn && !toggleBtn._bound) {
+        toggleBtn.addEventListener('click', () => {
+            const panel = document.getElementById('aiae-fund-update-panel');
+            if (panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        });
+        toggleBtn._bound = true;
     }
 }
 
