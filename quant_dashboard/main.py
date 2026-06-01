@@ -417,7 +417,10 @@ async def root():
 # P1 安全加固: HTML 页面白名单 (防止 /../ 路径穿越和任意文件读取)
 _ALLOWED_PAGES = {
     "index", "decision", "portfolio", "audit", "strategy",
-    "factor", "settings", "optimizer", "rebalance",
+    "factor", "industry", "backtest", "treasury", "report",
+    "smic_audit", "zijin_audit", "byd_audit", "eastmoney_audit",
+    "fii_audit", "wus_audit", "scc_audit",
+    "settings", "optimizer", "rebalance",
     "erp_timing", "global_analysis", "market_sentiment",
 }
 
