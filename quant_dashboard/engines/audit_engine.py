@@ -374,7 +374,7 @@ def _extract_optimize_meta(fp, name):
     """
     从优化结果 JSON 提取元数据 (优化时间 + 质量分数)。
     每种策略文件结构不同, 统一适配。
-    返回: (optimized_at_str|None, quality_score|None)
+    返回: (optimized_at_str|None, quality_score|None, is_corrupted|Bool)
     """
     try:
         with open(fp, "r", encoding="utf-8") as f:
@@ -391,9 +391,10 @@ def _extract_optimize_meta(fp, name):
         elif isinstance(data, list) and len(data) > 0:
             # 红利趋势: list, 取首条 final_score
             quality = data[0].get("final_score") if isinstance(data[0], dict) else None
-        return opt_at, quality
-    except Exception:
-        return None, None
+        return opt_at, quality, False
+    except Exception as e:
+        logger.error("Audit: 解析参数文件 %s 失败 (可能文件已损坏): %s", fp, e)
+        return None, None, True
 
 
 def _optimized_age_days(opt_at_str, mtime_fallback):
@@ -420,9 +421,38 @@ def audit_strategy_health():
     check_scores = []   # (score, weight, name) 三元组
     check_weights = []
 
-    # V6.0: 从 AUDIT_CFG 读取阈值 (修复 V5.0 硬编码遗留)
-    _fresh = AUDIT_CFG.get("strategy_fresh_days", 30)
-    _stale = AUDIT_CFG.get("strategy_stale_days", 60)
+    # V6.1 生产级差异化时效阈值 (生存期 TTL)
+    # 高频/波动敏感策略收紧周期，宏观/低频策略放宽周期，彻底杜绝警报疲劳
+    STRATEGY_TTLS = {
+        "均值回归": {
+            "fresh": AUDIT_CFG.get("strategy_fresh_days_mr", 14),
+            "stale": AUDIT_CFG.get("strategy_stale_days_mr", 30)
+        },
+        "行业动量": {
+            "fresh": AUDIT_CFG.get("strategy_fresh_days_mom", 60),
+            "stale": AUDIT_CFG.get("strategy_stale_days_mom", 90)
+        },
+        "红利趋势": {
+            "fresh": AUDIT_CFG.get("strategy_fresh_days_div", 90),
+            "stale": AUDIT_CFG.get("strategy_stale_days_div", 180)
+        },
+        "ERP择时": {
+            "fresh": AUDIT_CFG.get("strategy_fresh_days_erp", 180),
+            "stale": AUDIT_CFG.get("strategy_stale_days_erp", 360)
+        }
+    }
+
+    _fresh_default = AUDIT_CFG.get("strategy_fresh_days", 30)
+    _stale_default = AUDIT_CFG.get("strategy_stale_days", 60)
+
+    # V6.2 各策略参数的质量分参考基准 (用于将 Quality 因子融入时效衰减)
+    # 若 quality_score 高于基准，表示参数稳健，折算 age 变小，衰减减慢；反之加速衰减。
+    STRATEGY_QUALITY_BENCHMARKS = {
+        "均值回归": 0.50,
+        "行业动量": 0.50,
+        "红利趋势": 0.50,
+        "ERP择时":  0.50,
+    }
 
     # V6.0: 策略权重 — 按实际交易占比 + 风险贡献分配
     # 均值回归: 主力策略, 贡献 60%+ 交易信号 → 最高权重
@@ -459,6 +489,11 @@ def audit_strategy_health():
     for name, filename in OPTIMIZATION_FILES.items():
         fp = os.path.join(PROJECT_ROOT, filename)
         w = STRATEGY_WEIGHTS.get(name, 0.15)
+        
+        # 获取该策略的差异化 TTL
+        ttl = STRATEGY_TTLS.get(name, {"fresh": _fresh_default, "stale": _stale_default})
+        s_fresh = ttl["fresh"]
+        s_stale = ttl["stale"]
 
         if os.path.exists(fp):
             mtime = os.path.getmtime(fp)
@@ -475,49 +510,93 @@ def audit_strategy_health():
                     "detail": f"文件异常 ({fsize} bytes)",
                     "score": 20,
                     "explanation": f"{name}参数文件损坏或为空，策略引擎将使用默认参数运行，实盘表现可能严重偏离回测结果。",
-                    "threshold": f"🟢 ≤{_fresh}天: 参数有效 | 🟡 {_fresh+1}-{_stale}天: 建议重优化 | 🔴 >{_stale}天/损坏: 必须修复",
+                    "threshold": f"🟢 ≤{s_fresh}天: 参数有效 | 🟡 {s_fresh+1}-{s_stale}天: 建议重优化 | 🔴 >{s_stale}天/损坏: 必须修复",
                     "action": strategy_exp.get("action", "重新执行参数优化器"),
                 })
                 continue
 
-            # V6.0: 优先从 JSON 内部提取真实优化时间
-            opt_at_str, quality_score = _extract_optimize_meta(fp, name)
+            # V6.3: 优先从 JSON 内部提取真实优化时间与损坏标记
+            opt_at_str, quality_score, is_corrupted = _extract_optimize_meta(fp, name)
+
+            # 机构级风控加固：如果参数文件存在但 JSON 解析异常，直接 20分 FAIL 熔断，禁止降级
+            if is_corrupted:
+                check_scores.append(20)
+                check_weights.append(w)
+                strategy_exp = STRATEGY_EXPLANATIONS.get(name, {})
+                checks.append({
+                    "name": f"{name}",
+                    "status": "fail",
+                    "detail": "参数文件已损坏 (JSON解析失败)",
+                    "meta": f"文件: {filename} · 权重: {int(w*100)}%",
+                    "score": 20,
+                    "explanation": f"{name}参数文件格式破损，策略加载将直接崩溃，触发风控一票否决机制。",
+                    "threshold": "🟢 解析成功 | 🔴 语法损坏",
+                    "action": strategy_exp.get("action", "重新执行参数优化器"),
+                })
+                continue
+
             age_days, date_display, time_source = _optimized_age_days(opt_at_str, mtime)
 
-            # V6.0: 线性衰减评分 (替代 100/70 两档阶梯)
-            #   [0, _fresh] → 100
-            #   (_fresh, _stale] → 100 → 60 线性衰减
-            #   (_stale, ∞) → 60 → 20 缓衰减 (每天 -0.5)
-            if age_days <= _fresh:
+            # V6.2 质量-时效二维折算 (Quality-Adjusted Age Decay)
+            # 基准折算：quality_mult = benchmark / quality_score
+            # 限幅在 [0.6, 1.8] 区间，防止异常数据造成时间失真
+            quality_mult = 1.0
+            if quality_score is not None and quality_score > 0:
+                benchmark = STRATEGY_QUALITY_BENCHMARKS.get(name, 0.50)
+                quality_mult = min(1.8, max(0.6, benchmark / quality_score))
+            
+            adjusted_age = age_days * quality_mult
+
+            # V6.2: 线性衰减评分基于折算天数 (adjusted_age)
+            #   [0, s_fresh] → 100
+            #   (s_fresh, s_stale] → 100 → 60 线性衰减
+            #   (s_stale, ∞) → 60 → 20 缓衰减 (每天 -0.5)
+            if adjusted_age <= s_fresh:
                 s = 100
                 status = "pass"
-            elif age_days <= _stale:
-                decay_ratio = (age_days - _fresh) / (_stale - _fresh)
+            elif adjusted_age <= s_stale:
+                decay_ratio = (adjusted_age - s_fresh) / (s_stale - s_fresh)
                 s = int(100 - decay_ratio * 40)   # 100 → 60
                 status = "warn"
             else:
-                s = max(20, int(60 - (age_days - _stale) * 0.5))
+                s = max(20, int(60 - (adjusted_age - s_stale) * 0.5))
                 status = "fail"
+
+            # V6.1 生产级安全加固：mtime 降级防瞒报惩罚
+            if time_source == "文件修改时间":
+                s = min(s, 80)
+                if status == "pass":
+                    status = "warn"
 
             check_scores.append(s)
             check_weights.append(w)
             strategy_exp = STRATEGY_EXPLANATIONS.get(name, {})
 
-            # 构建增强 meta: 质量分数 + 时间来源
+            # 构建增强 meta: 质量分数 + 时间来源 (包含瞒报风控警告与折算系数)
             meta_parts = [f"文件: {filename} ({fsize/1024:.1f}KB)"]
             if quality_score is not None:
                 meta_parts.append(f"质量分: {quality_score:.3f}")
-            meta_parts.append(f"时间源: {time_source}")
+            if time_source == "文件修改时间":
+                meta_parts.append("时间源: mtime(未解析到生成时间,强制封顶80分)")
+            else:
+                meta_parts.append(f"时间源: {time_source}")
+                if quality_score is not None:
+                    meta_parts.append(f"折算系数: {quality_mult:.2f}x")
             meta_parts.append(f"权重: {int(w*100)}%")
+
+            # 增强 detail 显示真实天数与折算有效天数
+            detail_str = f"最后优化: {date_display} ({int(age_days)}天前)"
+            if abs(quality_mult - 1.0) > 0.02 and time_source != "文件修改时间":
+                detail_str += f" · 有效折算: {int(adjusted_age)}天"
 
             checks.append({
                 "name": f"{name}",
                 "status": status,
-                "detail": f"最后优化: {date_display} ({int(age_days)}天前)",
+                "detail": detail_str,
                 "meta": " · ".join(meta_parts),
                 "score": s,
                 "explanation": strategy_exp.get("explanation", f"{name}策略的核心参数文件，定期优化可确保策略与当前市场环境匹配。"),
-                "threshold": f"🟢 ≤{_fresh}天: 参数新鲜 | 🟡 {_fresh+1}-{_stale}天: 线性衰减 | 🔴 >{_stale}天: 策略可能失效",
+                "threshold": f"🟢 ≤{s_fresh}天: 参数新鲜 | 🟡 {s_fresh+1}-{s_stale}天: 线性衰减 | 🔴 >{s_stale}天: 策略可能失效",
                 "action": strategy_exp.get("action", "执行对应策略的参数优化器"),
             })
         else:
@@ -531,7 +610,7 @@ def audit_strategy_health():
                 "meta": f"期望: {filename} · 权重: {int(w*100)}%",
                 "score": 0,
                 "explanation": f"{name}参数文件缺失，该策略引擎无法运行。需先执行参数优化生成配置文件。",
-                "threshold": f"🟢 ≤{_fresh}天 | 🟡 {_fresh+1}-{_stale}天 | 🔴 文件缺失",
+                "threshold": f"🟢 ≤{s_fresh}天 | 🟡 {s_fresh+1}-{s_stale}天 | 🔴 文件缺失",
                 "action": strategy_exp.get("action", "执行对应策略的参数优化器"),
             })
 

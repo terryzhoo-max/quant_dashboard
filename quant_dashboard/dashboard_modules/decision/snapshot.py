@@ -105,6 +105,10 @@ def _build_snapshot_from_cache() -> dict:
         snapshot["decision_locked"] = aiae_ctx.get("decision_locked", False)
         snapshot["fund_position_source"] = aiae_ctx.get("fund_position_source", "manual_update")
         snapshot["fund_position_date"] = aiae_ctx.get("fund_position_date", "")
+        # V5 dynamic metadata
+        snapshot["regime_basis_value"] = aiae_ctx.get("regime_basis_value", aiae_ctx.get("aiae_v1", 22.0))
+        snapshot["regime_thresholds"] = aiae_ctx.get("regime_thresholds", [])
+        snapshot["regime_mode"] = aiae_ctx.get("regime_mode", "V3_composite")
 
     # 策略结果
     strategy_results = cache_manager.get_json("strategy_results") or {}

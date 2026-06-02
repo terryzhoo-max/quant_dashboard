@@ -13,20 +13,18 @@ AlphaCore · 全球市场温度聚合
 
 from services.cache_service import cache_manager
 
-# V3.0 加固: CN 分界线从参数中心派生, 消除硬编码漂移
-try:
-    from aiae_params import REGIME_THRESHOLDS as _CN_THRESHOLDS
-except ImportError:
-    _CN_THRESHOLDS = [12.5, 17, 23, 30]
+import aiae_params as AP
+is_v5 = getattr(AP, 'V5_ENABLED', False)
+_CN_THRESHOLDS = AP.V5_REGIME_THRESHOLDS if is_v5 else AP.REGIME_THRESHOLDS
 
 # 各市场 AIAE 五档定义 (从各引擎同步, 用于 action 文案)
 _GLOBAL_REGIMES = {
     "cn": {
-        1: {"cn": "极度恐慌", "emoji": "🟢", "color": "#10b981", "action": "满配进攻", "range": f"<{_CN_THRESHOLDS[0]}%", "pos": "90-95%"},
-        2: {"cn": "低配置区", "emoji": "🔵", "color": "#3b82f6", "action": "标准建仓", "range": f"{_CN_THRESHOLDS[0]}-{_CN_THRESHOLDS[1]}%", "pos": "70-85%"},
-        3: {"cn": "中性均衡", "emoji": "🟡", "color": "#eab308", "action": "均衡持有", "range": f"{_CN_THRESHOLDS[1]}-{_CN_THRESHOLDS[2]}%", "pos": "50-65%"},
-        4: {"cn": "偏热区域", "emoji": "🟠", "color": "#f97316", "action": "系统减仓", "range": f"{_CN_THRESHOLDS[2]}-{_CN_THRESHOLDS[3]}%", "pos": "25-40%"},
-        5: {"cn": "极度过热", "emoji": "🔴", "color": "#ef4444", "action": "清仓防守", "range": f">{_CN_THRESHOLDS[3]}%", "pos": "0-15%"},
+        1: {"cn": "极度恐慌", "emoji": "🟢", "color": "#10b981", "action": "满配进攻" if not is_v5 else "极度低估区全力买入", "range": f"<{_CN_THRESHOLDS[0]}%", "pos": "90-95%" if not is_v5 else "60-80%"},
+        2: {"cn": "低配置区", "emoji": "🔵", "color": "#3b82f6", "action": "标准建仓" if not is_v5 else "低估区标准建仓", "range": f"{_CN_THRESHOLDS[0]}-{_CN_THRESHOLDS[1]}%", "pos": "70-85%" if not is_v5 else "50-75%"},
+        3: {"cn": "中性均衡", "emoji": "🟡", "color": "#eab308", "action": "均衡持有", "range": f"{_CN_THRESHOLDS[1]}-{_CN_THRESHOLDS[2]}%", "pos": "50-65%" if not is_v5 else "35-65%"},
+        4: {"cn": "偏热区域", "emoji": "🟠", "color": "#f97316", "action": "系统减仓" if not is_v5 else "偏热区禁止新开仓并每周减仓", "range": f"{_CN_THRESHOLDS[2]}-{_CN_THRESHOLDS[3]}%", "pos": "25-40%" if not is_v5 else "15-40%"},
+        5: {"cn": "极度过热", "emoji": "🔴", "color": "#ef4444", "action": "清仓防守" if not is_v5 else "极度过热区清仓防守", "range": f">{_CN_THRESHOLDS[3]}%", "pos": "0-15%" if not is_v5 else "0-15%"},
     },
     "us": {
         1: {"cn": "极度恐慌", "emoji": "🟢", "color": "#10b981", "action": "满配进攻", "range": "<15%", "pos": "90-95%"},
@@ -53,14 +51,14 @@ _GLOBAL_REGIMES = {
 
 # Cap lookup (erp_4_6 行中位值, 用于全球温度聚合)
 try:
-    from aiae_params import POSITION_MATRIX as _PM2
+    _PM2 = AP.V5_POSITION_MATRIX if is_v5 else AP.POSITION_MATRIX
     _REGIME_CAP_LOOKUP = {i+1: _PM2["erp_4_6"][i] for i in range(5)}
-except ImportError:
+except Exception:
     _REGIME_CAP_LOOKUP = {1: 90, 2: 80, 3: 60, 4: 35, 5: 10}
 
 # 各市场 AIAE gauge 色带阈值 (用于 ECharts)
 _GLOBAL_GAUGE_BANDS = {
-    "cn": _CN_THRESHOLDS + [40],  # 前4个从参数中心派生, 最后一个为 gauge 满刻度
+    "cn": list(_CN_THRESHOLDS) + [40],  # 前4个从参数中心派生, 最后一个为 gauge 满刻度
     "us": [15, 20, 27, 34, 45],
     "hk": [8, 12, 18, 25, 35],
     "jp": [10, 14, 20, 28, 40],

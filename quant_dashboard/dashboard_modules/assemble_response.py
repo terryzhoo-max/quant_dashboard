@@ -438,23 +438,34 @@ def assemble_dashboard_response(
 
 def _build_aiae_thermometer(aiae_report, aiae_v1_value, aiae_regime, aiae_regime_cn, aiae_cap):
     """构建 AIAE 温度计数据"""
+    import aiae_params as AP
+    is_v5 = getattr(AP, 'V5_ENABLED', False)
+    fallback_thresholds = list(AP.V5_REGIME_THRESHOLDS) if is_v5 else list(AP.REGIME_THRESHOLDS)
+    fallback_mode = "V5_simple" if is_v5 else "V3_composite"
+
     if aiae_report:
         r = aiae_report
+        curr = r.get("current", {})
+        basis_val = curr.get("regime_basis_value", curr.get("aiae_v1", aiae_v1_value))
         return {
-            "aiae_v1": r.get("current", {}).get("aiae_v1", aiae_v1_value),
-            "regime": r.get("current", {}).get("regime", aiae_regime),
-            "regime_cn": r.get("current", {}).get("regime_info", {}).get("cn", aiae_regime_cn),
-            "regime_emoji": r.get("current", {}).get("regime_info", {}).get("emoji", "🟡"),
-            "regime_color": r.get("current", {}).get("regime_info", {}).get("color", "#eab308"),
-            "regime_name": r.get("current", {}).get("regime_info", {}).get("name", "Regime III"),
+            "aiae_v1": basis_val,
+            "regime": curr.get("regime", aiae_regime),
+            "regime_cn": curr.get("regime_info", {}).get("cn", aiae_regime_cn),
+            "regime_emoji": curr.get("regime_info", {}).get("emoji", "🟡"),
+            "regime_color": curr.get("regime_info", {}).get("color", "#eab308"),
+            "regime_name": curr.get("regime_info", {}).get("name", "Regime III"),
             "cap": r.get("position", {}).get("matrix_position", aiae_cap),
-            "slope": r.get("current", {}).get("slope", {}).get("slope", 0),
-            "slope_direction": r.get("current", {}).get("slope", {}).get("direction", "flat"),
-            "margin_heat": r.get("current", {}).get("margin_heat", 0),
-            "fund_position": r.get("current", {}).get("fund_position", 0),
-            "aiae_simple": r.get("current", {}).get("aiae_simple", 0),
+            "slope": curr.get("slope", {}).get("slope", 0),
+            "slope_direction": curr.get("slope", {}).get("direction", "flat"),
+            "margin_heat": curr.get("margin_heat", 0),
+            "fund_position": curr.get("fund_position", 0),
+            "aiae_simple": curr.get("aiae_simple", 0),
             "erp_value": r.get("position", {}).get("erp_value", 0),
             "status": r.get("status", "fallback"),
+            # V5 dynamic metadata
+            "regime_basis_value": basis_val,
+            "regime_thresholds": curr.get("regime_thresholds", fallback_thresholds),
+            "regime_mode": curr.get("regime_mode", fallback_mode),
         }
     return {
         "aiae_v1": aiae_v1_value, "regime": aiae_regime, "regime_cn": aiae_regime_cn,
@@ -462,4 +473,8 @@ def _build_aiae_thermometer(aiae_report, aiae_v1_value, aiae_regime, aiae_regime
         "cap": aiae_cap, "slope": 0, "slope_direction": "flat",
         "margin_heat": 0, "fund_position": 0, "aiae_simple": 0,
         "erp_value": 0, "status": "fallback",
+        # V5 dynamic metadata
+        "regime_basis_value": aiae_v1_value,
+        "regime_thresholds": fallback_thresholds,
+        "regime_mode": fallback_mode,
     }

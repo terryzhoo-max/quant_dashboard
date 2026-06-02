@@ -890,6 +890,7 @@ function renderAIAEThermometer(d) {
             if (_aiaeThermGauge) _aiaeThermGauge = AC.disposeChart(_aiaeThermGauge);
             _aiaeThermGauge = AC.registerChart(echarts.init(gaugeEl));
             const rc = d.regime_color || '#eab308';
+            const t = d.regime_thresholds || [12.5, 17, 23, 30];
             _aiaeThermGauge.setOption({
                 series: [{
                     type: 'gauge',
@@ -910,8 +911,11 @@ function renderAIAEThermometer(d) {
                         lineStyle: {
                             width: 12,
                             color: [
-                                [0.24, '#10b981'], [0.32, '#3b82f6'],
-                                [0.48, '#eab308'], [0.64, '#f97316'], [1, '#ef4444']
+                                [t[0] / 50, '#10b981'],
+                                [t[1] / 50, '#3b82f6'],
+                                [t[2] / 50, '#eab308'],
+                                [t[3] / 50, '#f97316'],
+                                [1, '#ef4444']
                             ]
                         }
                     },
@@ -922,6 +926,10 @@ function renderAIAEThermometer(d) {
                         distance: -30, color: '#64748b', fontSize: 8,
                         formatter: function(val) {
                             var m = {0:'0',10:'10',20:'20',30:'30',40:'40',50:'50'};
+                            m[Math.round(t[0])] = 'Ⅰ';
+                            m[Math.round(t[1])] = 'Ⅱ';
+                            m[Math.round(t[2])] = 'Ⅲ';
+                            m[Math.round(t[3])] = 'Ⅳ';
                             return m[val] || '';
                         }
                     },
@@ -1748,7 +1756,7 @@ async function fetchAndRenderIntelligenceFeed() {
 
 let _aiaeSparklineChart = null;
 
-function renderAIAESparkline(history) {
+function renderAIAESparkline(history, thresholds) {
     const dom = el('aiae-sparkline-chart');
     if (!dom || typeof echarts === 'undefined') return;
     if (!history || history.length < 2) return;
@@ -1758,6 +1766,7 @@ function renderAIAESparkline(history) {
 
     const dates = history.map(h => h.date || h.month || '');
     const values = history.map(h => h.aiae_v1 || h.value || 0);
+    const t = thresholds || [12.5, 17, 23, 30];
 
     _aiaeSparklineChart.setOption({
         grid: { top: 6, bottom: 6, left: 4, right: 4 },
@@ -1793,18 +1802,18 @@ function renderAIAESparkline(history) {
             markArea: {
                 silent: true,
                 data: [
-                    [{ yAxis: 0, itemStyle: { color: 'rgba(16,185,129,0.06)' } }, { yAxis: 12.5 }],
-                    [{ yAxis: 12.5, itemStyle: { color: 'rgba(59,130,246,0.04)' } }, { yAxis: 17 }],
-                    [{ yAxis: 17, itemStyle: { color: 'transparent' } }, { yAxis: 23 }],
-                    [{ yAxis: 23, itemStyle: { color: 'rgba(249,115,22,0.04)' } }, { yAxis: 30 }],
-                    [{ yAxis: 30, itemStyle: { color: 'rgba(239,68,68,0.06)' } }, { yAxis: 50 }],
+                    [{ yAxis: 0, itemStyle: { color: 'rgba(16,185,129,0.06)' } }, { yAxis: t[0] }],
+                    [{ yAxis: t[0], itemStyle: { color: 'rgba(59,130,246,0.04)' } }, { yAxis: t[1] }],
+                    [{ yAxis: t[1], itemStyle: { color: 'transparent' } }, { yAxis: t[2] }],
+                    [{ yAxis: t[2], itemStyle: { color: 'rgba(249,115,22,0.04)' } }, { yAxis: t[3] }],
+                    [{ yAxis: t[3], itemStyle: { color: 'rgba(239,68,68,0.06)' } }, { yAxis: 50 }],
                 ]
             },
             markLine: {
                 silent: true, symbol: 'none',
                 lineStyle: { type: 'dotted', width: 0.5, color: 'rgba(255,255,255,0.1)' },
                 data: [
-                    { yAxis: 12.5 }, { yAxis: 17 }, { yAxis: 23 }, { yAxis: 30 }
+                    { yAxis: t[0] }, { yAxis: t[1] }, { yAxis: t[2] }, { yAxis: t[3] }
                 ],
                 label: { show: false }
             }
@@ -1821,18 +1830,19 @@ function renderAIAESparkline(history) {
         _origRenderThermo(d);
 
         // 尝试从 AIAE 报告中获取历史数据
+        const thresholds = d ? d.regime_thresholds : null;
         if (d && d.history && d.history.length >= 2) {
-            renderAIAESparkline(d.history);
+            renderAIAESparkline(d.history, thresholds);
         } else {
             // 尝试异步获取
-            _fetchAIAEHistory();
+            _fetchAIAEHistory(thresholds);
         }
     };
 })();
 
 let _aiaeHistoryFetched = false;
 
-async function _fetchAIAEHistory() {
+async function _fetchAIAEHistory(thresholds) {
     if (_aiaeHistoryFetched) return;
     _aiaeHistoryFetched = true;
 
@@ -1865,7 +1875,7 @@ async function _fetchAIAEHistory() {
         }
 
         if (history && history.length >= 2) {
-            renderAIAESparkline(history);
+            renderAIAESparkline(history, thresholds);
         }
     } catch (e) {
         console.warn('[AIAE Sparkline] 历史数据获取失败:', e.message);

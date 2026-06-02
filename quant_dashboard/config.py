@@ -171,9 +171,17 @@ AUDIT_CONFIG = {
     "erp_stale_warn_days": 3,
     "erp_stale_fail_days": 7,
 
-    # 策略参数新鲜期
-    "strategy_fresh_days": 30,          # ≤30天 = 新鲜
-    "strategy_stale_days": 60,          # >60天 = 过期
+    # 策略参数新鲜期 (V6.1 生产级差异化时效)
+    "strategy_fresh_days": 30,          # 通用新鲜期兜底
+    "strategy_stale_days": 60,          # 通用过期期兜底
+    "strategy_fresh_days_mr": 14,       # 均值回归新鲜期 (高频波动率策略)
+    "strategy_stale_days_mr": 30,       # 均值回归过期期
+    "strategy_fresh_days_mom": 60,      # 行业动量新鲜期 (中频行业轮动)
+    "strategy_stale_days_mom": 90,      # 行业动量过期期
+    "strategy_fresh_days_div": 90,      # 红利趋势新鲜期 (季度基本面更新)
+    "strategy_stale_days_div": 180,     # 红利趋势过期期
+    "strategy_fresh_days_erp": 180,     # ERP宏观择时新鲜期 (低频宏观因子)
+    "strategy_stale_days_erp": 360,     # ERP宏观择时过期期
 }
 
 # ── 执行器配置 (带枪保安核心) ──

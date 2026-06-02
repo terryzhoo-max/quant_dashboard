@@ -188,6 +188,10 @@ _SHOCK_SOURCES = {
     },
 }
 
+import aiae_params as AP
+_is_v5 = getattr(AP, 'V5_ENABLED', False)
+_T = AP.V5_REGIME_THRESHOLDS if _is_v5 else AP.REGIME_THRESHOLDS
+
 _SNAPSHOT_DELTA_MAP = {
     "erp_val":     lambda v: v * 0.8,
     "erp_score":   lambda v: v * 15,
@@ -195,8 +199,8 @@ _SNAPSHOT_DELTA_MAP = {
     "vix_score":   lambda v: v * (-12),
     "aiae_v1":     lambda v: v * (-3),
     "aiae_regime": lambda aiae_v1: (
-        1 if aiae_v1 < 12.5 else (2 if aiae_v1 < 17 else
-        3 if aiae_v1 < 23 else (4 if aiae_v1 < 30 else 5))
+        1 if aiae_v1 < _T[0] else (2 if aiae_v1 < _T[1] else
+        3 if aiae_v1 < _T[2] else (4 if aiae_v1 < _T[3] else 5))
     ),
     "mr_regime":   lambda shock: (
         "CRASH" if shock < -1.2 else ("BEAR" if shock < -0.5 else

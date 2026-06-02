@@ -199,10 +199,11 @@ async def _build_dashboard_data_full():
         aiae_regime_cn = "中性均衡"
         if aiae_report.get("status") == "success":
             aiae_regime = aiae_report["current"]["regime"]
-            aiae_v1_value = aiae_report["current"]["aiae_v1"]
+            # Under V5, use regime_basis_value (aiae_simple) as the representative value to keep consistency
+            aiae_v1_value = aiae_report["current"].get("regime_basis_value", aiae_report["current"]["aiae_v1"])
             aiae_cap = aiae_report["position"]["matrix_position"]
             aiae_regime_cn = aiae_report["current"]["regime_info"]["cn"]
-            logger.info(f"AIAE注入成功: V1={aiae_v1_value:.1f}% Regime={aiae_regime} Cap={aiae_cap}%")
+            logger.info(f"AIAE注入成功: BasisValue={aiae_v1_value:.2f}% Regime={aiae_regime} Cap={aiae_cap}%")
         else:
             logger.warning(f"AIAE降级: {aiae_report.get('message', 'unknown')}")
 
@@ -240,13 +241,17 @@ async def _build_dashboard_data_full():
             liquidity_score=liquidity_score,
         )
 
+        import aiae_params as AP
+        is_v5 = getattr(AP, 'V5_ENABLED', False)
+        fallback_thresholds = list(AP.V5_REGIME_THRESHOLDS) if is_v5 else list(AP.REGIME_THRESHOLDS)
+
         # P0-1: 构建并缓存原始 aiae_ctx (供 Hot-Refresh 复用)
         _full_aiae_ctx = {
             "regime": aiae_regime,
             "regime_cn": aiae_regime_cn,
             "regime_info": AIAE_REGIMES.get(aiae_regime, AIAE_REGIMES[3]),
             "cap": aiae_cap,
-            "aiae_v1": round(aiae_v1_value, 1),
+            "aiae_v1": round(aiae_v1_value, 2),
             "slope": aiae_report.get("current", {}).get("slope", {}).get("slope", 0),
             "slope_direction": aiae_report.get("current", {}).get("slope", {}).get("direction", "flat"),
             "erp_val": round(temp_data["erp_val"], 2),
@@ -259,6 +264,10 @@ async def _build_dashboard_data_full():
             "decision_locked": aiae_report.get("decision_locked", False),
             "fund_position_source": aiae_report.get("current", {}).get("fund_position_source", "manual_update"),
             "fund_position_date": aiae_report.get("current", {}).get("fund_position_date", ""),
+            # V5 dynamic metadata
+            "regime_basis_value": aiae_report.get("current", {}).get("regime_basis_value", aiae_v1_value),
+            "regime_thresholds": aiae_report.get("current", {}).get("regime_thresholds", fallback_thresholds),
+            "regime_mode": aiae_report.get("current", {}).get("regime_mode", "V5_simple" if is_v5 else "V3_composite"),
         }
 
         # 更新缓存 (P0-2: 原子写入, R7: 智能 TTL 防陈旧)

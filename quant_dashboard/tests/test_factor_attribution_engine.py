@@ -212,9 +212,9 @@ class TestFactorAttributionIntegration:
         mock_pe = MagicMock()
         mock_pe.get_valuation.return_value = {
             "positions": [
-                {"ts_code": "600519.SH", "name": "贵州茅台", "market_value": 50000, "industry": "食品饮料"},
-                {"ts_code": "000858.SZ", "name": "五粮液", "market_value": 30000, "industry": "食品饮料"},
-                {"ts_code": "601318.SH", "name": "中国平安", "market_value": 20000, "industry": "银行"},
+                {"ts_code": "600519.SH", "name": "贵州茅台", "market_value": 50000, "weight": 50.0, "industry": "食品饮料"},
+                {"ts_code": "000858.SZ", "name": "五粮液", "market_value": 30000, "weight": 30.0, "industry": "食品饮料"},
+                {"ts_code": "601318.SH", "name": "中国平安", "market_value": 20000, "weight": 20.0, "industry": "银行"},
             ]
         }
         mock_pe_func.return_value = mock_pe

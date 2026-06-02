@@ -45,9 +45,11 @@ _JCS_WEIGHTS_V4 = {
 
 # AIAE Regime → Cap 映射
 try:
-    from aiae_params import POSITION_MATRIX as _PM
+    import aiae_params as AP
+    _is_v5 = getattr(AP, 'V5_ENABLED', False)
+    _PM = AP.V5_POSITION_MATRIX if _is_v5 else AP.POSITION_MATRIX
     _REGIME_CAP_MAP = {i+1: _PM["erp_2_4"][i] for i in range(5)}
-except ImportError:
+except Exception:
     _REGIME_CAP_MAP = {1: 85, 2: 70, 3: 50, 4: 25, 5: 5}
 
 _REGIME_CN_MAP = {1: "极度恐慌", 2: "低配置区", 3: "中性均衡", 4: "偏热区域", 5: "极度过热"}
