@@ -29,7 +29,7 @@ IMAGE_NAME="quant_dashboard-quant_dashboard"
 LOCK_FILE="/tmp/alphacore_update.lock"
 LOG_FILE="/root/backups/update.log"
 HEALTH_URL="http://localhost:8000/health"
-HEALTH_TIMEOUT=60       # 健康检查最大等待秒数
+HEALTH_TIMEOUT=240      # 健康检查最大等待秒数（Dashboard 预热默认 120s 后才开始）
 HEALTH_INTERVAL=3       # 检查间隔
 MIN_DISK_MB=2048        # 最低剩余磁盘 (2 GB)
 
