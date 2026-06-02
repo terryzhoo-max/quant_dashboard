@@ -25,6 +25,7 @@ from mean_reversion_engine import detect_regime, get_all_regime_params, needs_re
 # Batch 7: 统一缓存层 — 消除 cache_store 双写, 全部走 cache_manager
 from services.cache_service import cache_manager
 from services.dashboard_builder import _get_global_aiae_ttl
+from services.fred_guard import fred_get_series
 
 _AIAE_GLOBAL_LOCK = threading.Lock()
 
@@ -446,7 +447,13 @@ async def diagnose_aiae_data_sources():
     try:
         from fredapi import Fred
         fred = Fred(api_key=_fk)
-        series = fred.get_series("DGS10", observation_start=datetime.now() - __import__('datetime').timedelta(days=7))
+        series = fred_get_series(
+            "DGS10",
+            lambda: fred.get_series(
+                "DGS10",
+                observation_start=datetime.now() - __import__('datetime').timedelta(days=7),
+            ),
+        )
         if series is not None and not series.empty:
             results["checks"]["fred_api"] = {"status": "ok", "latest_10y": float(series.dropna().iloc[-1])}
         else:

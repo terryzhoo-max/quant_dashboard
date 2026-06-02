@@ -25,6 +25,7 @@ import time
 from datetime import datetime, timedelta
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from services.fred_guard import fred_get_series
 
 # ====== Tushare 初始化 ======
 from config import TUSHARE_TOKEN
@@ -219,7 +220,10 @@ def fetch_vix() -> float:
         from fredapi import Fred
         from config import FRED_API_KEY
         fred = Fred(api_key=FRED_API_KEY)
-        series = fred.get_series("VIXCLS", observation_start=(datetime.now() - timedelta(days=10)))
+        series = fred_get_series(
+            "VIXCLS",
+            lambda: fred.get_series("VIXCLS", observation_start=(datetime.now() - timedelta(days=10))),
+        )
         if series is not None and not series.empty:
             val = float(series.dropna().iloc[-1])
             print(f"  [OK] VIX from FRED: {val:.2f}")

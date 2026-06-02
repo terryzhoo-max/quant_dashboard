@@ -32,6 +32,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 from config import FRED_API_KEY as CONFIG_FRED_API_KEY
+from services.fred_guard import fred_get_series, should_retry_fred_error
 
 FRED_API_KEY = os.environ.get("FRED_API_KEY", CONFIG_FRED_API_KEY)
 CACHE_DIR = "data_lake"
@@ -54,6 +55,8 @@ def retry_with_backoff(max_retries=3, base_delay=2.0):
                 try:
                     return func(*args, **kwargs)
                 except Exception as e:
+                    if not should_retry_fred_error(e):
+                        raise
                     if i == max_retries - 1:
                         raise e
                     print(f"[Retry] {func.__name__} failed: {e}. Retrying in {delay}s...")
@@ -230,7 +233,10 @@ class AIAEJPEngine:
                     start_dt = datetime.now() - timedelta(days=30)
                     @retry_with_backoff(max_retries=2, base_delay=1.0)
                     def _call_fred():
-                        return fred.get_series("NIKKEI225", observation_start=start_dt)
+                        return fred_get_series(
+                            "NIKKEI225",
+                            lambda: fred.get_series("NIKKEI225", observation_start=start_dt),
+                        )
                     series = _call_fred()
                     if series is not None and not series.empty:
                         series = series.dropna()
@@ -325,7 +331,10 @@ class AIAEJPEngine:
                     start_dt = datetime.now() - timedelta(days=180)
                     @retry_with_backoff(max_retries=2, base_delay=1.0)
                     def _call_fred():
-                        return fred.get_series("MYAGM2JPM189N", observation_start=start_dt)
+                        return fred_get_series(
+                            "MYAGM2JPM189N",
+                            lambda: fred.get_series("MYAGM2JPM189N", observation_start=start_dt),
+                        )
                     series = _call_fred()
                     if series is not None and not series.empty:
                         series = series.dropna()

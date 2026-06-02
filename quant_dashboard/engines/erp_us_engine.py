@@ -23,6 +23,7 @@ import json
 import threading
 
 from config import FRED_API_KEY
+from services.fred_guard import fred_get_series
 from erp_signal_enhancer import adaptive_weights, multi_timeframe_confirmation
 import erp_params
 
@@ -207,7 +208,10 @@ class USERPTimingEngine:
         try:
             fred = _get_fred()
             if fred:
-                sp500 = fred.get_series("SP500", observation_start=datetime.now() - timedelta(days=10))
+                sp500 = fred_get_series(
+                    "SP500",
+                    lambda: fred.get_series("SP500", observation_start=datetime.now() - timedelta(days=10)),
+                )
                 if sp500 is not None and not sp500.empty:
                     index_price = float(sp500.dropna().iloc[-1])
                     pe = index_price / ESTIMATED_INDEX_EPS
@@ -259,7 +263,10 @@ class USERPTimingEngine:
             if fred:
                 try:
                     start_dt = datetime.now() - timedelta(days=years * 365)
-                    sp500 = fred.get_series("SP500", observation_start=start_dt)
+                    sp500 = fred_get_series(
+                        "SP500",
+                        lambda: fred.get_series("SP500", observation_start=start_dt),
+                    )
                     if sp500 is not None and not sp500.empty:
                         sp500 = sp500.dropna()
                         df = pd.DataFrame({
@@ -301,7 +308,10 @@ class USERPTimingEngine:
             if fred:
                 try:
                     start_dt = datetime.now() - timedelta(days=years * 365)
-                    series = fred.get_series("DGS10", observation_start=start_dt)
+                    series = fred_get_series(
+                        "DGS10",
+                        lambda: fred.get_series("DGS10", observation_start=start_dt),
+                    )
                     if series is not None and not series.empty:
                         series = series.dropna()
                         df = pd.DataFrame({
@@ -328,7 +338,10 @@ class USERPTimingEngine:
             if fred:
                 try:
                     start_dt = datetime.now() - timedelta(days=years * 365)
-                    series = fred.get_series("VIXCLS", observation_start=start_dt)
+                    series = fred_get_series(
+                        "VIXCLS",
+                        lambda: fred.get_series("VIXCLS", observation_start=start_dt),
+                    )
                     if series is not None and not series.empty:
                         series = series.dropna()
                         df = pd.DataFrame({
@@ -355,7 +368,10 @@ class USERPTimingEngine:
             if fred:
                 try:
                     start_dt = datetime.now() - timedelta(days=years * 365)
-                    series = fred.get_series("DTB3", observation_start=start_dt)
+                    series = fred_get_series(
+                        "DTB3",
+                        lambda: fred.get_series("DTB3", observation_start=start_dt),
+                    )
                     if series is not None and not series.empty:
                         series = series.dropna()
                         df = pd.DataFrame({
@@ -382,7 +398,10 @@ class USERPTimingEngine:
             if fred:
                 try:
                     start_dt = datetime.now() - timedelta(days=365)
-                    series = fred.get_series("BAMLH0A0HYM2", observation_start=start_dt)
+                    series = fred_get_series(
+                        "BAMLH0A0HYM2",
+                        lambda: fred.get_series("BAMLH0A0HYM2", observation_start=start_dt),
+                    )
                     if series is not None and not series.empty:
                         series = series.dropna()
                         spread_now = float(series.iloc[-1])  # 直接是百分比: 3.28 = 3.28%

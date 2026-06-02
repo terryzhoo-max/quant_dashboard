@@ -32,6 +32,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 from config import FRED_API_KEY as CONFIG_FRED_API_KEY
+from services.fred_guard import fred_get_series, should_retry_fred_error
 
 FRED_API_KEY = os.environ.get("FRED_API_KEY", CONFIG_FRED_API_KEY)
 CACHE_DIR = "data_lake"
@@ -56,6 +57,8 @@ def retry_with_backoff(max_retries=3, base_delay=2.0):
                 try:
                     return func(*args, **kwargs)
                 except Exception as e:
+                    if not should_retry_fred_error(e):
+                        raise
                     if i == max_retries - 1:
                         raise e
                     print(f"[Retry] {func.__name__} failed: {e}. Retrying in {delay}s...")
@@ -317,8 +320,13 @@ class AIAEUSEngine:
                     from datetime import timedelta as _td
                     @retry_with_backoff(max_retries=2, base_delay=2.0)
                     def _call_fred():
-                        return fred.get_series("BOGZ1FL073164003Q",
-                                               observation_start=datetime.now() - _td(days=400))
+                        return fred_get_series(
+                            "BOGZ1FL073164003Q",
+                            lambda: fred.get_series(
+                                "BOGZ1FL073164003Q",
+                                observation_start=datetime.now() - _td(days=400),
+                            ),
+                        )
                     series = _call_fred()
                     if series is not None and not series.empty:
                         series = series.dropna()
@@ -384,7 +392,10 @@ class AIAEUSEngine:
                     start_dt = datetime.now() - timedelta(days=180)
                     @retry_with_backoff(max_retries=2, base_delay=1.0)
                     def _call_fred():
-                        return fred.get_series("M2SL", observation_start=start_dt)
+                        return fred_get_series(
+                            "M2SL",
+                            lambda: fred.get_series("M2SL", observation_start=start_dt),
+                        )
                     series = _call_fred()
                     if series is not None and not series.empty:
                         series = series.dropna()
@@ -426,7 +437,10 @@ class AIAEUSEngine:
                     start_dt = datetime.now() - timedelta(days=400)
                     @retry_with_backoff(max_retries=2, base_delay=1.0)
                     def _call_fred():
-                        return fred.get_series("BOGZ1FL663067003Q", observation_start=start_dt)
+                        return fred_get_series(
+                            "BOGZ1FL663067003Q",
+                            lambda: fred.get_series("BOGZ1FL663067003Q", observation_start=start_dt),
+                        )
                     series = _call_fred()
                     if series is not None and not series.empty:
                         series = series.dropna()
@@ -531,8 +545,13 @@ class AIAEUSEngine:
         try:
             fred = _get_fred()
             if fred:
-                series = fred.get_series("UMCSENT",
-                                         observation_start=datetime.now() - timedelta(days=90))
+                series = fred_get_series(
+                    "UMCSENT",
+                    lambda: fred.get_series(
+                        "UMCSENT",
+                        observation_start=datetime.now() - timedelta(days=90),
+                    ),
+                )
                 if series is not None and not series.empty:
                     series = series.dropna()
                     umich = float(series.iloc[-1])

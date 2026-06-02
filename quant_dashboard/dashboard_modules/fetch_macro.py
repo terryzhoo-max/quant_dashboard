@@ -8,6 +8,7 @@ import requests
 import re
 import logging
 from datetime import datetime, timedelta
+from services.fred_guard import fred_get_series
 
 logger = logging.getLogger("alphacore.fetch_macro")
 
@@ -18,7 +19,10 @@ def fetch_vix_for_dashboard():
         from fredapi import Fred
         from config import FRED_API_KEY
         fred = Fred(api_key=FRED_API_KEY)
-        s = fred.get_series("VIXCLS", observation_start=(datetime.now() - timedelta(days=10)))
+        s = fred_get_series(
+            "VIXCLS",
+            lambda: fred.get_series("VIXCLS", observation_start=(datetime.now() - timedelta(days=10))),
+        )
         if s is not None and not s.empty:
             s = s.dropna()
             if len(s) >= 2:

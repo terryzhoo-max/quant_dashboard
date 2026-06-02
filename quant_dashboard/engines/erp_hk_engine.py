@@ -37,6 +37,7 @@ from typing import Optional, Dict
 import threading
 
 from config import FRED_API_KEY
+from services.fred_guard import fred_get_series
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
 from erp_signal_enhancer import adaptive_weights, multi_timeframe_confirmation
@@ -459,7 +460,10 @@ class HKERPTimingEngine:
             if fred:
                 try:
                     start_dt = datetime.now() - timedelta(days=years * 365)
-                    series = fred.get_series("DGS10", observation_start=start_dt)
+                    series = fred_get_series(
+                        "DGS10",
+                        lambda: fred.get_series("DGS10", observation_start=start_dt),
+                    )
                     if series is not None and not series.empty:
                         series = series.dropna()
                         df = pd.DataFrame({
@@ -558,7 +562,10 @@ class HKERPTimingEngine:
             if fred:
                 try:
                     start_dt = datetime.now() - timedelta(days=years * 365)
-                    series = fred.get_series("INTDSRCNM193N", observation_start=start_dt)
+                    series = fred_get_series(
+                        "INTDSRCNM193N",
+                        lambda: fred.get_series("INTDSRCNM193N", observation_start=start_dt),
+                    )
                     if series is not None and not series.empty:
                         df = pd.DataFrame({
                             "trade_date": series.index.tz_localize(None) if series.index.tz else series.index,

@@ -29,6 +29,13 @@ from services.logger import get_logger
 
 _logger = get_logger("main")
 
+
+def _env_int(name: str, default: int, min_value: int = 1) -> int:
+    try:
+        return max(min_value, int(_env_os.getenv(name, str(default))))
+    except (TypeError, ValueError):
+        return default
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -73,7 +80,9 @@ async def lifespan(app: FastAPI):
     # ── V21.2 Fix: 分层启动预热 (防止 shutdown 竞态) ──
     # 使用受控线程池替代 8 个裸 daemon Thread
     import atexit
-    _startup_pool = _SchedPoolExecutor(max_workers=4, thread_name_prefix="warmup")
+    _warmup_workers = _env_int("STARTUP_WARMUP_WORKERS", 1, min_value=1)
+    _warmup_stagger = _env_int("STARTUP_WARMUP_STAGGER_SECONDS", 60, min_value=0)
+    _startup_pool = _SchedPoolExecutor(max_workers=_warmup_workers, thread_name_prefix="warmup")
     app.state._startup_pool = _startup_pool
 
     def _safe_warmup(fn, name):
@@ -88,15 +97,42 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             _logger.warning("预热异常 [%s]: %s", name, e)
 
-    # Phase 1: 核心预热 (立即启动)
-    _startup_pool.submit(_safe_warmup, warmup_erp_cache, "ERP")
-    _startup_pool.submit(_safe_warmup, warmup_rates_cache, "Rates")
-    _startup_pool.submit(_safe_warmup, lambda: get_aiae_engine().generate_report(), "AIAE")
-    _startup_pool.submit(_safe_warmup, warmup_dashboard_cache, "Dashboard")
+    def _submit_after_delay(fn, name, delay_seconds=0):
+        def _runner():
+            if delay_seconds > 0:
+                time.sleep(delay_seconds)
+            _safe_warmup(fn, name)
+        try:
+            _startup_pool.submit(_runner)
+        except RuntimeError:
+            _logger.debug("预热提交跳过 [%s]: pool unavailable", name)
 
-    # Phase 2: 非核心预热 (延迟 3 秒, 降低并发冲突)
+    def _schedule_after_delay(fn, name, delay_seconds=0):
+        def _submit():
+            try:
+                _startup_pool.submit(_safe_warmup, fn, name)
+            except RuntimeError:
+                _logger.debug("warmup submit skipped [%s]: pool unavailable", name)
+
+        if delay_seconds <= 0:
+            _submit()
+            return
+
+        def _delayed_submit():
+            time.sleep(delay_seconds)
+            _submit()
+
+        threading.Thread(target=_delayed_submit, name=f"warmup-delay-{name}", daemon=True).start()
+
+    # Phase 1: core warmups. Stagger FRED-heavy tasks to avoid startup bursts.
+    _schedule_after_delay(warmup_erp_cache, "ERP", 0)
+    _schedule_after_delay(lambda: get_aiae_engine().generate_report(), "AIAE", 0)
+    _schedule_after_delay(warmup_rates_cache, "Rates", _warmup_stagger)
+    _schedule_after_delay(warmup_dashboard_cache, "Dashboard", _warmup_stagger * 2)
+
+    # Phase 2: non-core warmups. Queue them gradually after core warmups.
     def _phase2():
-        time.sleep(3)
+        time.sleep(max(30, _warmup_stagger * 2))
         for fn, name in [
             (warmup_global_aiae_cache, "Global_AIAE"),
             (warmup_hk_erp_cache, "HK_ERP"),
@@ -104,7 +140,8 @@ async def lifespan(app: FastAPI):
             (warmup_swing_guard, "SwingGuard"),
         ]:
             try:
-                _startup_pool.submit(_safe_warmup, fn, name)
+                _schedule_after_delay(fn, name, _warmup_stagger)
+                time.sleep(_warmup_stagger)
             except RuntimeError:
                 break  # Pool 已 shutdown, 放弃后续任务
         # V25.2 A-4: 启动时触发准确率回填 (force_recalc 修正旧逻辑记录)
@@ -315,6 +352,9 @@ async def health_check():
         "scheduler": scheduler_info,
         "poller": _get_poller_status(),
         "breakers": _get_breaker_summary(),
+        "external_sources": {
+            "fred": _get_fred_guard_status(),
+        },
         "timestamp": datetime.now().isoformat(),
     }
 
@@ -335,6 +375,14 @@ def _get_breaker_summary() -> dict:
         statuses = get_all_breaker_status()
         open_count = sum(1 for s in statuses if s["state"] == "open")
         return {"total": len(statuses), "open": open_count, "healthy": open_count == 0}
+    except Exception:
+        return {"status": "error"}
+
+
+def _get_fred_guard_status() -> dict:
+    try:
+        from services.fred_guard import get_fred_guard_status
+        return get_fred_guard_status()
     except Exception:
         return {"status": "error"}
 

@@ -29,6 +29,7 @@ import threading
 
 # FRED API for all Japan data
 from config import FRED_API_KEY
+from services.fred_guard import fred_get_series
 
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
@@ -191,7 +192,10 @@ class JPERPTimingEngine:
         try:
             fred = _get_jp_fred()
             if fred:
-                nk = fred.get_series("NIKKEI225", observation_start=datetime.now() - timedelta(days=10))
+                nk = fred_get_series(
+                    "NIKKEI225",
+                    lambda: fred.get_series("NIKKEI225", observation_start=datetime.now() - timedelta(days=10)),
+                )
                 if nk is not None and not nk.empty:
                     price = float(nk.dropna().iloc[-1])
                     estimated_eps = _get_dynamic_eps_jp()  # O1: 动态EPS
@@ -229,7 +233,10 @@ class JPERPTimingEngine:
             if fred:
                 try:
                     start_dt = datetime.now() - timedelta(days=years * 365)
-                    nk = fred.get_series("NIKKEI225", observation_start=start_dt)
+                    nk = fred_get_series(
+                        "NIKKEI225",
+                        lambda: fred.get_series("NIKKEI225", observation_start=start_dt),
+                    )
                     if nk is not None and not nk.empty:
                         nk = nk.dropna()
                         df = pd.DataFrame({
@@ -270,7 +277,10 @@ class JPERPTimingEngine:
             if fred:
                 try:
                     start_dt = datetime.now() - timedelta(days=years * 365)
-                    series = fred.get_series("IRLTLT01JPM156N", observation_start=start_dt)
+                    series = fred_get_series(
+                        "IRLTLT01JPM156N",
+                        lambda: fred.get_series("IRLTLT01JPM156N", observation_start=start_dt),
+                    )
                     if series is not None and not series.empty:
                         df = pd.DataFrame({
                             "trade_date": series.index.tz_localize(None) if series.index.tz else series.index,
@@ -306,7 +316,10 @@ class JPERPTimingEngine:
             if fred:
                 try:
                     start_dt = datetime.now() - timedelta(days=years * 365)
-                    series = fred.get_series("DEXJPUS", observation_start=start_dt)
+                    series = fred_get_series(
+                        "DEXJPUS",
+                        lambda: fred.get_series("DEXJPUS", observation_start=start_dt),
+                    )
                     if series is not None and not series.empty:
                         series = series.dropna()
                         df = pd.DataFrame({
@@ -333,7 +346,10 @@ class JPERPTimingEngine:
             if fred:
                 try:
                     start_dt = datetime.now() - timedelta(days=years * 365)
-                    series = fred.get_series("NIKKEI225", observation_start=start_dt)
+                    series = fred_get_series(
+                        "NIKKEI225",
+                        lambda: fred.get_series("NIKKEI225", observation_start=start_dt),
+                    )
                     if series is not None and not series.empty:
                         series = series.dropna()
                         df = pd.DataFrame({

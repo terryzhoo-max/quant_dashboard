@@ -13,6 +13,7 @@ import threading
 from datetime import datetime, timedelta
 
 from services.cache_service import cache_manager
+from services.fred_guard import should_retry_fred_error
 from services.logger import get_logger
 
 logger = get_logger("warmup")
@@ -29,6 +30,9 @@ def with_retry(func, name, max_retries=3, delay=5):
             func()
             return True
         except Exception as e:
+            if not should_retry_fred_error(e):
+                logger.warning(f"{name} FRED guard open/rate-limited; skip retries: {e}")
+                return False
             backoff = delay * (3 ** i)  # 指数退避: 5 → 15 → 45
             if i < max_retries - 1:
                 logger.warning(f"{name} 失败: {e}。等待 {backoff}s 重试 ({i+1}/{max_retries})")

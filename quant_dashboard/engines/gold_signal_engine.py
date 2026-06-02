@@ -29,6 +29,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict
 
 from services.logger import get_logger
+from services.fred_guard import fred_get_series
 
 logger = get_logger("ac.gold_signal")
 
@@ -83,7 +84,10 @@ def _fetch_fred_series(series_id: str, lookback_days: int = 365) -> Optional[pd.
     if fred:
         try:
             start = (datetime.now() - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
-            data = fred.get_series(series_id, observation_start=start)
+            data = fred_get_series(
+                series_id,
+                lambda: fred.get_series(series_id, observation_start=start),
+            )
             data = data.dropna()
             
             # 写入磁盘缓存

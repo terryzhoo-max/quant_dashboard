@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 AlphaCore 深度审计引擎 V5.0 — "带枪保安" 架构
 五维审计: 数据质量 · 策略健康 · 风控合规 · 因子衰减 · 系统状态
@@ -13,6 +14,15 @@ import traceback
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+
+# ── 日志初始化 (带安全兜底) ──
+try:
+    from services.logger import get_logger
+    logger = get_logger("ac.audit")
+except ImportError:
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger("ac.audit")
 
 # ── 路径常量 ──
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))       # engines/
@@ -704,6 +714,16 @@ def audit_strategy_health():
     else:
         final_score = 0
 
+    # V6.1 生产级致命指标联锁 (Critical Path Interlocking)
+    # 均值回归是高频交易主力策略，Regime 三态是其关键基石。
+    # 若这两项中任意一项得分低于 60 (fail 状态)，说明核心决策引擎处于失控边缘。
+    # 此时，即使低频辅助策略分数再高，总评分也将一票否决，强制压制在不及格线 (59分) 以下，避免策略裸跑。
+    mr_score = next((c["score"] for c in checks if c["name"] == "均值回归"), 100)
+    regime_score = next((c["score"] for c in checks if c["name"] == "Regime 三态参数"), 100)
+    if mr_score < 60 or regime_score < 60:
+        if final_score >= 60:
+            final_score = 59
+
     return {
         "module": "strategy_health",
         "label": "⚙️ 策略健康",
@@ -1145,27 +1165,45 @@ def audit_risk_control():
     mr_fp = os.path.join(PROJECT_ROOT, "mr_optimization_results.json")
     if os.path.exists(mr_fp):
         try:
+            # 引入对参数文件时效性的校验以处罚过期数据
+            mtime = os.path.getmtime(mr_fp)
+            opt_at_str, _, _ = _extract_optimize_meta(mr_fp, "均值回归")
+            age_days, _, _ = _optimized_age_days(opt_at_str, mtime)
+            is_stale = age_days > 30
+
             with open(mr_fp, "r", encoding="utf-8") as f:
                 mr = json.load(f)
             max_dd = mr.get("max_drawdown", mr.get("validation", {}).get("max_drawdown", None))
             if max_dd is not None:
                 max_dd = abs(float(max_dd))
                 s = 100 if max_dd < 5 else (80 if max_dd < 10 else (60 if max_dd < 20 else 30))
+                
+                # 机构级时效关联处罚：若回撤数据源参数文件已过期，得分封顶 80 分，且强制不能为 pass
+                if is_stale:
+                    s = min(s, 80)
+                    status = "warn"
+                else:
+                    status = "pass" if max_dd < 10 else ("warn" if max_dd < 20 else "fail")
+
                 scores.append(s)
+                meta_str = "来源: mr_optimization_results.json"
+                if is_stale:
+                    meta_str += f" (文件过期 {int(age_days)}天，数据时效性存疑封顶80分)"
+
                 checks.append({
                     "name": "历史最大回撤",
-                    "status": "pass" if max_dd < 10 else ("warn" if max_dd < 20 else "fail"),
+                    "status": status,
                     "detail": f"回测最大回撤: -{max_dd:.2f}%",
-                    "meta": "来源: mr_optimization_results.json",
+                    "meta": meta_str,
                     "score": s,
                     "explanation": "最大回撤是策略风险的终极指标。超过20%可能触发客户赎回潮。专业基金通常将回撤控制在<10%。",
                     "threshold": "🟢 <10%: 优秀 | 🟡 10-20%: 可接受但需关注 | 🔴 >20%: 必须重新审视策略",
-                    "action": "检查回撤期间的市场环境，考虑添加最大回撤硬约束或优化参数",
+                    "action": "检查回撤期间的市场环境，考虑添加最大回撤硬约束或优化参数" if not is_stale else "重新执行均值回归参数优化以刷新最大回撤指标",
                 })
         except:
             pass
 
-    # ── V22.0: 合规引擎就绪 (独立 try/except, 不影响其他检查) ──
+    # ── V22.0: 合规引擎就绪 (独立 try/except, 拓宽异常隔离) ──
     try:
         from engines.compliance_engine import COMPLIANCE_RULES
         rule_count = len(COMPLIANCE_RULES)
@@ -1176,7 +1214,7 @@ def audit_risk_control():
             "detail": f"{rule_count} 条合规规则就绪 · 含硬阻断+软警告+提示三级",
             "score": 100,
             "explanation": "合规引擎在每次交易决策输出前执行6条规则检查：单票上限20%、板块集中度40%、AIAE过热限制、JCS门槛、VIX紧急刹车、最低分散持仓。硬阻断会禁止违规操作执行。",
-            "threshold": "🟢 ≥5规则就绪 | 🔴 引擎缺失",
+            "threshold": "🟢 ≥5规则就绪 | 🔴 引擎阻断",
         })
     except ImportError:
         scores.append(50)
@@ -1189,8 +1227,31 @@ def audit_risk_control():
             "threshold": "🟢 就绪 | 🔴 缺失",
             "action": "检查 engines/compliance_engine.py 文件完整性",
         })
+    except Exception as e:
+        logger.error("Audit: 加载合规引擎崩溃 (排除ImportError外的其它RuntimeError): %s", e)
+        scores.append(40)
+        checks.append({
+            "name": "V22.0 合规引擎",
+            "status": "fail",
+            "detail": f"合规引擎损坏 ({type(e).__name__})",
+            "score": 40,
+            "explanation": "合规引擎文件虽存在，但内部存在语法错误或运行时初始化崩溃，导致合规校验完全瘫痪。",
+            "threshold": "🟢 就绪 | 🔴 损坏",
+            "action": "立即排查 engines/compliance_engine.py 的语法与逻辑错误",
+        })
 
     final_score = int(np.mean(scores)) if scores else 0
+
+    # ── V6.4 生产级风控致命指标硬红线联锁 (Risk Interlocking) ──
+    # 止损合规是资产安全底线，单票集中度是极端非系统性风险防线。
+    # 任意一项若处于 FAIL 状态 (得分 < 60)，说明投资组合的合规风控纪律彻底崩溃。
+    # 此时，即使其他分散性指标得满分，风控合规总评也必须一票否决，强制压制在不及格线 (59分) 以下。
+    sc_score = next((c["score"] for c in checks if "持仓集中度" in c["name"]), 100)
+    sl_score = next((c["score"] for c in checks if "止损合规" in c["name"]), 100)
+    if sc_score < 60 or sl_score < 60:
+        if final_score >= 60:
+            final_score = 59
+
     return {
         "module": "risk_control",
         "label": "🛡️ 风控合规",

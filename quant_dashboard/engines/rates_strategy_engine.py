@@ -25,6 +25,7 @@ logger = logging.getLogger("alphacore.rates")
 
 # FRED API Key: 优先从环境变量读取，fallback 到内置默认值
 from config import FRED_API_KEY
+from services.fred_guard import fred_get_series
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
@@ -335,7 +336,10 @@ class RatesStrategyEngine:
             if fred:
                 try:
                     start_dt = datetime.now() - timedelta(days=years * 365)
-                    series = fred.get_series(series_id, observation_start=start_dt)
+                    series = fred_get_series(
+                        series_id,
+                        lambda: fred.get_series(series_id, observation_start=start_dt),
+                    )
                     if series is not None and not series.empty:
                         series = series.dropna()
                         df = pd.DataFrame({
@@ -1161,11 +1165,10 @@ class RatesStrategyEngine:
             "stats": stats,
         }
 
-    # ========== V2.0: 并行数据预取 ==========
+    # ========== V2.1: Guarded data prefetch ==========
 
     def _prefetch_all_data(self) -> dict:
-        """并行获取所有FRED序列, 避免串行延迟 (5x200ms→1x200ms)"""
-        from concurrent.futures import ThreadPoolExecutor, as_completed
+        """Fetch all FRED-backed series through the global FRED guard."""
         results = {}
         fetchers = {
             "df_10y": self._fetch_10y,
@@ -1174,15 +1177,12 @@ class RatesStrategyEngine:
             "df_bei": self._fetch_breakeven,
             "df_3m": self._fetch_tbill_3m,
         }
-        with ThreadPoolExecutor(max_workers=5) as pool:
-            futures = {pool.submit(fn): key for key, fn in fetchers.items()}
-            for f in as_completed(futures):
-                key = futures[f]
-                try:
-                    results[key] = f.result()
-                except Exception as e:
-                    logger.warning(f"Prefetch {key} failed: {e}")
-                    results[key] = pd.DataFrame()
+        for key, fn in fetchers.items():
+            try:
+                results[key] = fn()
+            except Exception as e:
+                logger.warning(f"Prefetch {key} failed: {e}")
+                results[key] = pd.DataFrame()
         return results
 
     # ========== 主报告 ==========
