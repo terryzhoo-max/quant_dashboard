@@ -307,9 +307,13 @@ function renderModuleCards(data) {
                 <span class="mod-worst-score" style="color:${wColor}">${worst.score ?? 0}</span>
             </div>`;
         }
+        // V6.6: 断路器/联锁状态检测
+        const cb = mod.circuit_breaker;
+        const cbTag = cb ? `<span class="circuit-breaker-tag" title="原始加权分 ${cb.original} → 封顶 ${cb.cap} (${cb.reason})">⚡${cb.reason}</span>` : '';
+        const cbTitle = cb ? ` · ⚡断路器: ${cb.original}→${cb.cap}` : '';
         return `
         <div class="module-card${failC > 0 ? ' has-fail' : ''}" style="--mod-color:${meta.color}" onclick="toggleDetail('${key}')" id="card-${key}"
-            title="${meta.label} ${score}/${grade} · ${passC}通过 ${warnC}警告 ${failC}失败 · 权重${meta.weight}">
+            title="${meta.label} ${score}/${grade} · ${passC}通过 ${warnC}警告 ${failC}失败 · 权重${meta.weight}${cbTitle}">
             <div class="mod-header">
                 <span class="mod-label">${meta.icon} ${meta.label}</span>
                 <div class="mod-score-ring">
@@ -328,6 +332,7 @@ function renderModuleCards(data) {
                 ${warnC > 0 ? `<span style="color:#fbbf24">⚠️ ${warnC}</span> ` : ''}
                 ${failC > 0 ? `<span style="color:#f87171">❌ ${failC}</span> ` : ''}
                 <span class="weight-tag">权重 ${meta.weight}</span>
+                ${cbTag}
             </div>
             ${worstHtml}
         </div>`;
@@ -358,7 +363,8 @@ function toggleDetail(key, noScroll = false) {
     const meta = MODULE_META[key];
     const mod = auditData.modules[key];
     if (!mod) return;
-    document.getElementById('detail-title').textContent = `${meta.icon} ${meta.label} · ${mod.score}/100 (${mod.grade}级)`;
+    document.getElementById('detail-title').textContent = `${meta.icon} ${meta.label} · ${mod.score}/100 (${mod.grade}级)` +
+        (mod.circuit_breaker ? ` · ⚡${mod.circuit_breaker.reason}: ${mod.circuit_breaker.original}→${mod.circuit_breaker.cap}` : '');
 
     const body = document.getElementById('detail-body');
     body.innerHTML = (mod.checks || []).map((c, idx) => {

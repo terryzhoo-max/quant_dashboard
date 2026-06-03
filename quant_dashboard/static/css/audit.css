@@ -789,6 +789,20 @@
     border: 1px solid rgba(255,255,255,0.03);
 }
 
+/* V6.6: Circuit Breaker Tag */
+.circuit-breaker-tag {
+    font-size: 0.56rem;
+    font-weight: 700;
+    color: #fbbf24;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(245,158,11,0.12);
+    border: 1px solid rgba(245,158,11,0.25);
+    cursor: help;
+    animation: btnPulse 2.5s ease-in-out infinite;
+    white-space: nowrap;
+}
+
 /* ══════════════════════════════════════════ */
 /*  5. Check Detail Panel V6.0              */
 /* ══════════════════════════════════════════ */

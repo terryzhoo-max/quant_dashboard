@@ -282,7 +282,7 @@ def enforce_stop_loss(pos_list, stop_loss_stock=-12.0, stop_loss_etf=-8.0):
 # ═══════════════════════════════════════════════════════
 def enforce_trade_block_on_stale_data(audit_report, stale_block_days=5):
     """
-    检查审计报告中的数据新鲜度，若过期则写入交易阻断标志。
+    检查审计报告中的数据新鲜度，若过期则返回阻断状态和原因 (V9.0 重构: 无写盘副作用)。
     """
     dq = audit_report.get("modules", {}).get("data_quality", {})
     checks = dq.get("checks", [])
@@ -297,13 +297,7 @@ def enforce_trade_block_on_stale_data(audit_report, stale_block_days=5):
             days = int(m.group(1)) if m else 999
 
             if days >= stale_block_days:
-                set_trade_block(True, f"日线数据过期 {days} 天 (阈值: {stale_block_days}天)")
-                return True, f"日线数据过期 {days} 天，交易已阻断"
-
-    # 数据正常 → 解除阻断
-    blocked, _ = is_trade_blocked()
-    if blocked:
-        set_trade_block(False, "数据恢复正常，自动解除阻断")
+                return True, f"日线数据过期 {days} 天 (阈值: {stale_block_days}天)"
 
     return False, ""
 
@@ -314,6 +308,7 @@ def enforce_trade_block_on_stale_data(audit_report, stale_block_days=5):
 def run_post_audit_enforcement(audit_report):
     """
     审计完毕后的统一执行入口。
+    V9.0: 统一收集过期、风控合规、因子可用性多维度状态并做硬限联锁阻断决策。
     返回: {
         "enforcer_enabled": bool,
         "actions": [...],
@@ -376,14 +371,41 @@ def run_post_audit_enforcement(audit_report):
             stop_actions = enforce_stop_loss(pos_list, sl_stock, sl_etf)
             result["actions"].extend(stop_actions)
 
-    # ── 2. 数据过期 → 交易阻断 ──
+    # ── 2. 多维度联锁阻断综合判定 ──
+    need_block = False
+    block_reason = ""
+
+    # A. 检查数据过期
     if enforcer_cfg.get("block_trade_on_stale_data", True):
         stale_days = enforcer_cfg.get("stale_data_block_days", 5)
-        blocked, reason = enforce_trade_block_on_stale_data(audit_report, stale_days)
-        result["trade_blocked"] = blocked
-        result["trade_block_reason"] = reason
+        blocked_stale, reason_stale = enforce_trade_block_on_stale_data(audit_report, stale_days)
+        if blocked_stale:
+            need_block = True
+            block_reason = reason_stale
 
-    # 更新当前阻断状态
+    # B. 检查风控红线 (V9.0)
+    rc_module = audit_report.get("modules", {}).get("risk_control", {})
+    rc_score = rc_module.get("score", 100)
+    if rc_score < 60:
+        need_block = True
+        block_reason = f"风控合规审计 FAIL ({rc_score}分) 触发硬红线联锁熔断"
+
+    # C. 检查因子池损坏 (V9.0)
+    fd_module = audit_report.get("modules", {}).get("factor_decay", {})
+    fd_score = fd_module.get("score", 100)
+    if fd_score < 40:
+        need_block = True
+        block_reason = f"因子可用性审计崩溃 ({fd_score}分) 触发交易阻断"
+
+    # 执行阻断/解除阻断
+    if need_block:
+        set_trade_block(True, block_reason)
+    else:
+        currently_blocked, _ = is_trade_blocked()
+        if currently_blocked:
+            set_trade_block(False, "系统审计指标全部恢复正常，自动解除交易阻断")
+
+    # 更新返回数据中的当前阻断状态
     blocked, reason = is_trade_blocked()
     result["trade_blocked"] = blocked
     result["trade_block_reason"] = reason

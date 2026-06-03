@@ -10,6 +10,7 @@ import json
 import time
 import glob
 import re
+import random
 import traceback
 import pandas as pd
 import numpy as np
@@ -67,12 +68,17 @@ def _load_audit_cfg():
 # V5.0: 模块加载时立即读取配置 (全局单例)
 AUDIT_CFG = _load_audit_cfg()
 
+# V6.5: Tushare 探测结果内存级缓存
+_TS_CHECK_CACHE = None
+
 
 def _today_str():
     return datetime.now().strftime("%Y%m%d")
 
 
-# V5.0: 中国法定假日列表 (每年初更新)
+# V6.6: 交易日历自维护 (替代硬编码假期列表)
+# 优先从 data_lake/trading_calendar.json 加载 Tushare trade_cal 缓存
+# 缓存未命中时降级到硬编码假期列表 (兜底)
 _CN_HOLIDAYS_2026 = {
     (1,1),(1,2),(1,3),           # 元旦
     (1,26),(1,27),(1,28),(1,29),(1,30),(1,31),(2,1),  # 春节
@@ -83,8 +89,32 @@ _CN_HOLIDAYS_2026 = {
     (10,1),(10,2),(10,3),(10,4),(10,5),(10,6),(10,7),  # 国庆
 }
 
+_TRADING_CAL_CACHE = None
+
+def _load_trading_calendar():
+    """V6.6: 从 data_lake/trading_calendar.json 加载交易日集合。
+    缓存格式: ["20260102", "20260103", ...] (仅开市日)
+    由 data_manager.py 每日同步时写入。
+    """
+    global _TRADING_CAL_CACHE
+    if _TRADING_CAL_CACHE is not None:
+        return _TRADING_CAL_CACHE
+    cal_path = os.path.join(DATA_LAKE, "trading_calendar.json")
+    if os.path.exists(cal_path):
+        try:
+            with open(cal_path, "r", encoding="utf-8") as f:
+                _TRADING_CAL_CACHE = set(json.load(f))
+            return _TRADING_CAL_CACHE
+        except Exception:
+            pass
+    return None  # 降级到硬编码
+
 def _is_trading_day(dt):
-    """V5.0: 排除周末 + 中国法定假日"""
+    """V6.6: 交易日判定 — 优先用日历缓存, 降级到周末+假期过滤"""
+    cal = _load_trading_calendar()
+    if cal is not None:
+        return dt.strftime("%Y%m%d") in cal
+    # 降级: 周末 + 硬编码假期兜底
     if dt.weekday() >= 5:
         return False
     if (dt.month, dt.day) in _CN_HOLIDAYS_2026:
@@ -154,7 +184,9 @@ def audit_data_quality():
     if daily_files:
         latest_dates = []
         stale_count = 0
-        for f in daily_files[:30]:  # 抽样前30只
+        # V7.0: 蒙特卡洛随机抽样，消除排序带来的幸存者偏差
+        sampled_daily = random.sample(daily_files, min(len(daily_files), 30))
+        for f in sampled_daily:
             try:
                 df = pd.read_parquet(f, columns=["trade_date"])
                 if not df.empty:
@@ -194,7 +226,9 @@ def audit_data_quality():
     fina_files = glob.glob(os.path.join(FINA_DIR, "*.parquet"))
     if fina_files:
         fina_latest = []
-        for f in fina_files[:10]:
+        # V7.0: 蒙特卡洛随机抽样，消除排序带来的幸存者偏差
+        sampled_fina = random.sample(fina_files, min(len(fina_files), 10))
+        for f in sampled_fina:
             try:
                 df = pd.read_parquet(f)
                 if not df.empty and "ann_date" in df.columns:
@@ -291,30 +325,85 @@ def audit_data_quality():
         scores.append(0)
         checks.append({"name": "FRED 利率数据", "status": "fail", "detail": "无利率数据", "score": 0, "explanation": "无美债利率数据将导致ERP计算缺失利率端，海外策略模块完全瘫痪。", "threshold": "🟢 ≤3天 | 🟡 4-7天 | 🔴 无数据", "action": "检查网络连通性后执行利率数据同步脚本"})
 
-    # ── 1.5 数据完整性抽检 ──
+    # ── 1.5 数据完整性与异常值抽检 ──
     if daily_files:
-        sample_file = daily_files[0]
-        try:
-            df = pd.read_parquet(sample_file)
-            total_rows = len(df)
-            zero_vol = (df["vol"] == 0).sum() if "vol" in df.columns else 0
-            anomaly_pct = zero_vol / max(total_rows, 1) * 100
+        # V7.0: 随机抽样 5 只股票进行多样本联合质量抽检，防止单股偏误与脏数据漏网
+        sample_size = min(len(daily_files), 5)
+        sampled_files = random.sample(daily_files, sample_size)
+        total_rows_all = 0
+        total_bad_rows = 0
+        zero_vol_all = 0
+        bad_price_all = 0
+        read_success = 0
+        sample_names = []
+        
+        for f in sampled_files:
+            try:
+                df = pd.read_parquet(f)
+                if df.empty:
+                    continue
+                read_success += 1
+                sample_names.append(os.path.basename(f))
+                
+                rows = len(df)
+                total_rows_all += rows
+                
+                # 初始化本文件异常行掩码
+                bad_mask = pd.Series(False, index=df.index)
+                
+                # 1. 零成交行数
+                if "vol" in df.columns:
+                    vol_mask = (df["vol"] == 0)
+                    zero_vol_all += vol_mask.sum()
+                    bad_mask |= vol_mask
+                
+                # 2. 负价格/零价格
+                price_cols = [c for c in ["open", "high", "low", "close"] if c in df.columns]
+                for col in price_cols:
+                    p_mask = (df[col] <= 0)
+                    bad_price_all += p_mask.sum()
+                    bad_mask |= p_mask
+                
+                # 3. 未除权价格跳空巨震 (单日涨跌幅绝对值 > 31%, 且成交量 > 0)
+                if "close" in df.columns:
+                    close_prev = df["close"].shift(1)
+                    jump_mask = (df["close"] / close_prev - 1).abs() > 0.31
+                    if "vol" in df.columns:
+                        jump_mask &= (df["vol"] > 0)
+                    bad_price_all += jump_mask.sum()
+                    bad_mask |= jump_mask
+                
+                total_bad_rows += bad_mask.sum()
+            except Exception:
+                pass
+                
+        if read_success > 0:
+            total_rows_all = max(total_rows_all, 1)
+            anomaly_pct = total_bad_rows / total_rows_all * 100
             s = max(0, 100 - int(anomaly_pct * 10))
             status = "pass" if anomaly_pct < 1 else ("warn" if anomaly_pct < 5 else "fail")
             scores.append(s)
             checks.append({
-                "name": "数据完整性 (抽检)",
+                "name": "数据完整性与异常值",
                 "status": status,
-                "detail": f"零成交天数: {zero_vol}/{total_rows} ({anomaly_pct:.1f}%)",
-                "meta": f"样本: {os.path.basename(sample_file)}",
+                "detail": f"异常占比: {total_bad_rows}/{total_rows_all} ({anomaly_pct:.1f}%) [零成交:{zero_vol_all}行, 价格异常:{bad_price_all}行]",
+                "meta": f"联合抽检 {read_success} 只样本: {', '.join(sample_names[:3])}",
                 "score": s,
-                "explanation": "零成交日(停牌/涨跌停封板)会导致均值回归的偏离度计算失真、动量排名被污染。占比过高说明样本池可能包含退市股或长期停牌股，需清理。",
-                "threshold": "🟢 <1%: 数据干净 | 🟡 1-5%: 少量噪声可接受 | 🔴 >5%: 需清理样本池",
-                "action": "检查 data_lake/daily_prices/ 中的异常标的并清除长期停牌股",
+                "explanation": "零成交日(停牌)、非正价格(脏数据)或未除权跳空巨幅异动(单日变动>31%)会严重带偏量化因子的统计分布。使用多样本联合抽查，可以全面覆盖脏数据盲区。",
+                "threshold": "🟢 <1%: 数据完整干净 | 🟡 1-5%: 少量偏误 | 🔴 >5%: 存在严重脏数据",
+                "action": "执行数据清洗脚本, 剔除退市/长期停牌股，并重新拉取未复权异常数据",
             })
-        except:
-            scores.append(70)
-            checks.append({"name": "数据完整性 (抽检)", "status": "warn", "detail": "抽检异常", "score": 70, "explanation": "数据文件存在但读取失败，可能是文件损坏或格式异常。", "threshold": "🟢 <1% | 🟡 1-5% | 🔴 >5%/读取失败", "action": "删除损坏文件后重新同步"})
+        else:
+            scores.append(0)
+            checks.append({
+                "name": "数据完整性与异常值",
+                "status": "fail",
+                "detail": "多样本抽检全部失败",
+                "score": 0,
+                "explanation": "随机选择 of 5 只股票 Parquet 文件均无法正确读取，这提示底层数据湖格式可能发生大面积损坏。",
+                "threshold": "🟢 <1% | 🟡 1-5% | 🔴 全部损坏",
+                "action": "检查 Parquet 库依赖或清空 data_lake/ 重新同步"
+            })
 
     # ── V22.0: 新增数据完整性检查 ──
     # 资产参数矩阵
@@ -714,6 +803,22 @@ def audit_strategy_health():
     else:
         final_score = 0
 
+    # V6.6: Fail 数量断路器 (Circuit Breaker)
+    # 防止加权均值掩盖结构性问题：1个高分策略不应拉高3个fail的模块
+    # 机构级风控标准：多数检查失败时，评分必须反映真实风险
+    fail_count = sum(1 for c in checks if c.get("status") == "fail")
+    circuit_breaker = None
+    if fail_count >= 3:
+        cap = 50
+        if final_score > cap:
+            circuit_breaker = {"reason": f"{fail_count}项检查失败", "cap": cap, "original": final_score}
+            final_score = cap
+    elif fail_count >= 2:
+        cap = 65
+        if final_score > cap:
+            circuit_breaker = {"reason": f"{fail_count}项检查失败", "cap": cap, "original": final_score}
+            final_score = cap
+
     # V6.1 生产级致命指标联锁 (Critical Path Interlocking)
     # 均值回归是高频交易主力策略，Regime 三态是其关键基石。
     # 若这两项中任意一项得分低于 60 (fail 状态)，说明核心决策引擎处于失控边缘。
@@ -722,15 +827,20 @@ def audit_strategy_health():
     regime_score = next((c["score"] for c in checks if c["name"] == "Regime 三态参数"), 100)
     if mr_score < 60 or regime_score < 60:
         if final_score >= 60:
+            if not circuit_breaker:
+                circuit_breaker = {"reason": "核心路径联锁", "cap": 59, "original": final_score}
             final_score = 59
 
-    return {
+    result = {
         "module": "strategy_health",
         "label": "⚙️ 策略健康",
         "score": final_score,
         "grade": _grade(final_score),
         "checks": checks,
     }
+    if circuit_breaker:
+        result["circuit_breaker"] = circuit_breaker
+    return result
 
 
 # ═══════════════════════════════════════════════════════
@@ -1315,48 +1425,86 @@ def audit_factor_decay():
         "action": "执行 python data_manager.py 扩大样本池",
     })
 
-    # V5.0: 因子可用性真实验证 (替代旧版恒满分检查)
+    # V8.0: 因子可用性真实验证 (双通道随机抽样 + NaN 穿透校验)
     factor_types = {
         "基本面": ["roe", "eps", "netprofit_margin", "bps", "debt_to_assets"],
         "技术面": ["momentum_20d", "volatility_20d", "turnover_rate"],
     }
     total_factors = sum(len(v) for v in factor_types.values())
 
-    # 实际验证: 抽检财务文件是否包含关键列
-    fina_columns_ok = False
-    fina_sample = glob.glob(os.path.join(FINA_DIR, "*.parquet"))[:1]
-    if fina_sample:
-        try:
-            df_test = pd.read_parquet(fina_sample[0])
-            required_cols = {"roe", "eps", "bps"}
-            found_cols = required_cols.intersection(set(df_test.columns))
-            fina_columns_ok = len(found_cols) >= 2  # 至少2个关键列存在
-        except Exception:
-            pass
+    # 1. 基本面财务数据验证
+    fina_files = glob.glob(os.path.join(FINA_DIR, "*.parquet"))
+    fina_ok_ratio = 0.0
+    fina_checks_run = 0
+    if fina_files:
+        sampled_fina = random.sample(fina_files, min(len(fina_files), 3))
+        for f in sampled_fina:
+            try:
+                df = pd.read_parquet(f)
+                required_cols = {"roe", "eps", "bps"}
+                found_cols = required_cols.intersection(set(df.columns))
+                if len(found_cols) >= 2:
+                    non_nan_sum = 0
+                    for col in found_cols:
+                        total_cnt = len(df)
+                        non_nan_sum += df[col].notna().sum() / max(total_cnt, 1)
+                    avg_non_nan = non_nan_sum / len(found_cols)
+                    fina_ok_ratio += avg_non_nan
+                fina_checks_run += 1
+            except Exception:
+                pass
+    fina_score_ratio = fina_ok_ratio / max(fina_checks_run, 1)
 
-    if fina_columns_ok:
-        s = 90  # 有真实数据验证通过，但不给满分(留空间给更深度检测)
+    # 2. 技术面日线数据验证
+    daily_files = glob.glob(os.path.join(DAILY_DIR, "*.parquet"))
+    daily_ok_ratio = 0.0
+    daily_checks_run = 0
+    if daily_files:
+        sampled_daily = random.sample(daily_files, min(len(daily_files), 3))
+        for f in sampled_daily:
+            try:
+                df = pd.read_parquet(f)
+                required_cols = {"vol", "close", "pct_chg"}
+                found_cols = required_cols.intersection(set(df.columns))
+                if len(found_cols) >= 2:
+                    non_nan_sum = 0
+                    for col in found_cols:
+                        total_cnt = len(df)
+                        non_nan_sum += df[col].notna().sum() / max(total_cnt, 1)
+                    avg_non_nan = non_nan_sum / len(found_cols)
+                    daily_ok_ratio += avg_non_nan
+                daily_checks_run += 1
+            except Exception:
+                pass
+    daily_score_ratio = daily_ok_ratio / max(daily_checks_run, 1)
+
+    # 3. 计分逻辑
+    fina_valid = (fina_score_ratio >= 0.50) if fina_checks_run > 0 else False
+    daily_valid = (daily_score_ratio >= 0.90) if daily_checks_run > 0 else False
+
+    if fina_valid and daily_valid:
+        s = 95
         status = "pass"
-        detail = f"共 {total_factors} 个因子定义 · 基本面列验证通过"
-    elif fina_count >= 10:
-        s = 65
+        detail = f"基本面(可用率{fina_score_ratio*100:.0f}%) + 技术面(可用率{daily_score_ratio*100:.0f}%) 验证通过"
+    elif fina_count >= 10 and daily_count >= 30:
+        s = 60
         status = "warn"
-        detail = f"共 {total_factors} 个因子定义 · 基本面数据列未验证"
+        detail = f"因子定义就绪但数据不达标 [基本面可用率:{fina_score_ratio*100:.0f}%, 技术面可用率:{daily_score_ratio*100:.0f}%]"
     else:
         s = 30
         status = "fail"
-        detail = f"因子定义 {total_factors} 个 · 数据不足无法验证"
+        detail = "因子定义就绪 · 样本数据不足，无法完成基本验证"
 
     scores.append(s)
     checks.append({
         "name": "因子池可用性",
         "status": status,
         "detail": detail,
-        "meta": "基本面+技术面双覆盖 · 按需运行深度 IC 衰减审计",
+        "meta": f"随机抽检 {fina_checks_run}只财务 + {daily_checks_run}只日线Parquet",
         "score": s,
-        "explanation": "多因子选股需要同时覆盖基本面(ROE/EPS/资产负债率)和技术面(动量/波动率/换手率)，且底层数据须包含对应列。仅有因子定义但无数据支撑=虚假覆盖。",
-        "threshold": "🟢 因子定义+数据验证通过: 可信 | 🟡 有定义但数据未验证: 需确认 | 🔴 数据不足: 因子分析不可用",
-        "action": "执行 python data_manager.py 确保财务数据包含 ROE/EPS/BPS 列",
+        "explanation": "多因子分析需要数据湖中不仅有字段列，还要求列中没有大面积空值(NaN)。基本面财务数据非空率须≥50%，技术面交易日线非空率须≥90%。",
+        "threshold": "🟢 基本面≥50%+技术面≥90%: 因子高可用 | 🟡 字段存在但空值过多: 降级警告 | 🔴 字段缺失/文件破损",
+        "action": "运行数据同步或重新计算技术面因子，填充 NaN 缺失值",
     })
 
     final_score = int(np.mean(scores)) if scores else 0
@@ -1374,38 +1522,116 @@ def audit_factor_decay():
 #  模块 5: 系统状态审计
 # ═══════════════════════════════════════════════════════
 def audit_system_status():
+    global _TS_CHECK_CACHE
     checks = []
     scores = []
 
     # ── 5.1 Tushare API 连通性 ──
-    try:
-        import tushare as ts
-        pro = ts.pro_api()
-        t0 = time.time()
-        cal = pro.trade_cal(exchange='SSE', start_date='20260101', end_date='20260110')
-        latency = (time.time() - t0) * 1000
-        s = 100 if latency < 2000 else (70 if latency < 5000 else 40)
+    now_ts = time.time()
+    use_cache = False
+    if _TS_CHECK_CACHE is not None:
+        cache_age = now_ts - _TS_CHECK_CACHE.get("timestamp", 0)
+        if cache_age < 120:
+            use_cache = True
+
+    if use_cache:
+        latency = _TS_CHECK_CACHE["latency"]
+        s = _TS_CHECK_CACHE["score"]
+        status = _TS_CHECK_CACHE["status"]
+        detail = _TS_CHECK_CACHE["detail"]
+        if " (缓存读取)" not in detail:
+            detail += " (缓存读取)"
         scores.append(s)
         checks.append({
             "name": "Tushare API",
-            "status": "pass" if latency < 3000 else "warn",
-            "detail": f"连通 · 延迟 {latency:.0f}ms",
+            "status": status,
+            "detail": detail,
             "score": s,
-            "explanation": "Tushare 是全部A股数据的入口，提供日线、财务、交易日历等。API离线意味着所有数据同步停止，系统将逐渐依赖过期缓存。延迟>3秒可能是网络问题或 API 配额耗尽。",
-            "threshold": "🟢 <2秒: 正常 | 🟡 2-5秒: 偏慢 | 🔴 >5秒/连接失败: 系统瘫痪",
-            "action": "检查网络连接和 Tushare Token 是否过期",
+            "explanation": _TS_CHECK_CACHE.get("explanation", ""),
+            "threshold": _TS_CHECK_CACHE.get("threshold", ""),
+            "action": _TS_CHECK_CACHE.get("action", ""),
         })
-    except Exception as e:
-        scores.append(0)
-        checks.append({
-            "name": "Tushare API",
-            "status": "fail",
-            "detail": f"连接失败: {str(e)[:50]}",
-            "score": 0,
-            "explanation": "Tushare API 无法连接，所有数据同步停止。可能是网络问题、Token 过期或 Tushare 服务器维护。",
-            "threshold": "🟢 <2秒 | 🟡 2-5秒 | 🔴 连接失败",
-            "action": "检查网络 + config.py 中的 Tushare Token",
-        })
+    else:
+        import requests
+        original_post = requests.post
+        try:
+            def timeout_patched_post(url, **kwargs):
+                kwargs['timeout'] = 2.5
+                if 'api.waditu.com' in url or 'api.tushare.pro' in url:
+                    url = 'http://api.tushare.pro'
+                    try:
+                        from services.tushare_limiter import tushare_limiter
+                        tushare_limiter.acquire()
+                    except Exception:
+                        pass
+                return original_post(url, **kwargs)
+                
+            requests.post = timeout_patched_post
+            
+            import tushare as ts
+            pro = ts.pro_api()
+            t0 = time.time()
+            cal = pro.trade_cal(exchange='SSE', start_date='20260101', end_date='20260110')
+            latency = (time.time() - t0) * 1000
+            s = 100 if latency < 2000 else (70 if latency < 5000 else 40)
+            status = "pass" if latency < 3000 else "warn"
+            detail = f"连通 · 延迟 {latency:.0f}ms"
+            explanation = "Tushare 是全部A股数据的入口，提供日线、财务、交易日历等。API离线意味着所有数据同步停止，系统将逐渐依赖过期缓存。延迟>3秒可能是网络问题或 API 配额耗尽。"
+            threshold = "🟢 <2秒: 正常 | 🟡 2-5秒: 偏慢 | 🔴 >5秒/连接失败: 系统瘫痪"
+            action = "检查网络连接和 Tushare Token 是否过期"
+            
+            scores.append(s)
+            checks.append({
+                "name": "Tushare API",
+                "status": status,
+                "detail": detail,
+                "score": s,
+                "explanation": explanation,
+                "threshold": threshold,
+                "action": action,
+            })
+            
+            _TS_CHECK_CACHE = {
+                "timestamp": now_ts,
+                "latency": latency,
+                "score": s,
+                "status": status,
+                "detail": detail,
+                "explanation": explanation,
+                "threshold": threshold,
+                "action": action,
+            }
+        except Exception as e:
+            s = 0
+            status = "fail"
+            detail = f"连接失败: {str(e)[:50]}"
+            explanation = "Tushare API 无法连接，所有数据同步停止。可能是网络问题、Token 过期或 Tushare 服务器维护。"
+            threshold = "🟢 <2秒 | 🟡 2-5秒 | 🔴 连接失败"
+            action = "检查网络 + config.py 中的 Tushare Token"
+            
+            scores.append(s)
+            checks.append({
+                "name": "Tushare API",
+                "status": status,
+                "detail": detail,
+                "score": s,
+                "explanation": explanation,
+                "threshold": threshold,
+                "action": action,
+            })
+            
+            _TS_CHECK_CACHE = {
+                "timestamp": now_ts,
+                "latency": 999999.0,
+                "score": s,
+                "status": status,
+                "detail": detail,
+                "explanation": explanation,
+                "threshold": threshold,
+                "action": action,
+            }
+        finally:
+            requests.post = original_post
 
     # ── 5.2 数据湖统计 ──
     total_files = 0

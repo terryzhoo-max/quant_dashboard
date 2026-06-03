@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-06-03T21:08:56.186558",
-  "next_optimize_after": "2026-08-02",
+  "generated_at": "2026-04-21T23:53:07.839750",
+  "next_optimize_after": "2026-06-20",
   "regimes": {
     "BEAR": {
       "regime": "BEAR",
@@ -15,15 +15,15 @@
       },
       "train_kpi": {
         "valid": true,
-        "ann_ret": -4.99,
+        "ann_ret": -6.45,
         "ann_bm": -28.93,
-        "alpha": 23.95,
-        "max_dd": -3.85,
-        "sharpe": -2.254,
-        "calmar": -1.296,
-        "ir": 2.078,
-        "coverage": 30.1,
-        "opt_score": 0.6808
+        "alpha": 22.49,
+        "max_dd": -4.38,
+        "sharpe": -2.485,
+        "calmar": -1.473,
+        "ir": 1.97,
+        "coverage": 30.8,
+        "opt_score": 0.6781
       },
       "valid_kpi": {
         "valid": true,
@@ -37,8 +37,8 @@
         "coverage": 0.0,
         "opt_score": 0.15
       },
-      "combined_score": 0.3358,
-      "optimized_at": "2026-06-03T21:08:48.775743"
+      "combined_score": 0.3348,
+      "optimized_at": "2026-04-21T23:52:52.906938"
     },
     "RANGE": {
       "regime": "RANGE",
@@ -76,7 +76,7 @@
         "opt_score": 0.45
       },
       "combined_score": 0.431,
-      "optimized_at": "2026-06-03T21:08:52.243142"
+      "optimized_at": "2026-04-21T23:53:03.334625"
     },
     "BULL": {
       "regime": "BULL",
@@ -103,18 +103,18 @@
       },
       "valid_kpi": {
         "valid": true,
-        "ann_ret": 10.04,
+        "ann_ret": 10.09,
         "ann_bm": 18.72,
-        "alpha": -8.68,
-        "max_dd": -9.33,
-        "sharpe": 0.715,
-        "calmar": 1.077,
-        "ir": -0.551,
+        "alpha": -8.63,
+        "max_dd": -9.29,
+        "sharpe": 0.718,
+        "calmar": 1.086,
+        "ir": -0.548,
         "coverage": 49.4,
-        "opt_score": 0.4967
+        "opt_score": 0.4977
       },
-      "combined_score": 0.4461,
-      "optimized_at": "2026-06-03T21:08:56.186558"
+      "combined_score": 0.4468,
+      "optimized_at": "2026-04-21T23:53:07.839750"
     }
   },
   "summary": {
@@ -127,9 +127,9 @@
         "bias_buy": -3.0,
         "stop_loss": 0.05
       },
-      "train_alpha": 23.95,
+      "train_alpha": 22.49,
       "valid_alpha": -65.25,
-      "score": 0.3358
+      "score": 0.3348
     },
     "RANGE": {
       "params": {
@@ -154,8 +154,8 @@
         "stop_loss": 0.08
       },
       "train_alpha": -30.0,
-      "valid_alpha": -8.68,
-      "score": 0.4461
+      "valid_alpha": -8.63,
+      "score": 0.4468
     }
   }
 }

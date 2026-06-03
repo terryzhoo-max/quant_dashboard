@@ -2,6 +2,7 @@ import pandas as pd
 import tushare as ts
 import os
 import time
+import json
 from datetime import datetime, timedelta
 from typing import List, Optional
 
@@ -233,10 +234,33 @@ class FactorDataManager:
         self.sync_daily_prices(ts_codes)
         # 同步财务指标 (增量)
         self.sync_financial_indicators(ts_codes)
+        # V6.6: 同步交易日历 (供审计引擎 Holiday 自维护使用)
+        self.sync_trading_calendar()
         # 重新检查
         new_freshness = self.check_data_freshness(ts_codes)
         print(f"[SmartSync] 同步完成, 最新日线: {new_freshness['daily_latest']}")
         return {'synced': True, 'freshness': new_freshness}
+
+    def sync_trading_calendar(self, years: int = 2):
+        """V6.6: 同步 SSE 交易日历到 data_lake/trading_calendar.json
+        供审计引擎 _is_trading_day() 使用，消除硬编码假期的年度维护。
+        默认拉取当年 ± years 范围。
+        """
+        cal_path = os.path.join(DATA_DIR, "trading_calendar.json")
+        try:
+            now = datetime.now()
+            start = f"{now.year - years}0101"
+            end = f"{now.year + 1}1231"
+            df = pro.trade_cal(exchange='SSE', start_date=start, end_date=end)
+            if df is not None and not df.empty:
+                open_days = df[df['is_open'] == 1]['cal_date'].tolist()
+                with open(cal_path, 'w', encoding='utf-8') as f:
+                    json.dump(open_days, f)
+                print(f"[SmartSync] 交易日历已同步: {len(open_days)} 个交易日 ({start}~{end})")
+            else:
+                print(f"[SmartSync] 交易日历 API 返回空, 保留旧缓存")
+        except Exception as e:
+            print(f"[SmartSync] 交易日历同步失败 (不影响核心功能): {e}")
 
 
 if __name__ == "__main__":

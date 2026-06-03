@@ -423,9 +423,15 @@ def run_full_optimization():
 
     best = results[0]
 
-    # 保存结果
+    # V6.6: 包装为 dict 并写入 generated_at (供审计引擎读取, 消除 mtime 封顶)
+    output = {
+        "generated_at": datetime.now().isoformat(),
+        "combined_score": best["final_score"],
+        "best_params": best["params"],
+        "results": results,
+    }
     with open("dividend_optimization_results.json", "w", encoding="utf-8") as f:
-        json.dump(results, f, ensure_ascii=False, indent=2)
+        json.dump(output, f, ensure_ascii=False, indent=2)
     print("\n[保存] 完整结果 → dividend_optimization_results.json")
 
     # 全期回测（2022-2026）
