@@ -1097,7 +1097,7 @@ function renderRatesEncyclopedia(enc) {
     // V1.5: 百科已改为tooltip模式，此函数保留但不渲染
 }
 
-// === V2.0: 买卖决策汇总区 (含迷你分位条 + 分位数上下文) ===
+// === V2.1: 买卖决策汇总区 (D1视觉强化 + B1得分构成 + D3响应式 + D4自适应) ===
 function renderRatesDecisionZone(bsz) {
     const el = document.getElementById('rates-decision-zone');
     if (!el || !bsz) return;
@@ -1114,15 +1114,35 @@ function renderRatesDecisionZone(bsz) {
             '<span style="font-size:0.5rem;color:#64748b;flex-shrink:0;">P'+p.toFixed(0)+'</span>';
     };
 
+    // D1: 已触发条件高亮 + 未触发弱化
     const renderConds = (items, color) => items.map(c => {
         const icon = c.met ? '<span style="color:#10b981;">✅</span>' : '<span style="color:#475569;">❌</span>';
         const valStyle = c.met ? 'color:#fbbf24;font-weight:600;' : 'color:#64748b;';
-        return '<div style="display:flex;align-items:center;gap:5px;padding:3px 0;">' +
-            icon + '<span style="color:#cbd5e1;font-size:0.66rem;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + c.cond + '</span>' +
+        const rowBg = c.met ? 'background:rgba(16,185,129,0.06);border-radius:4px;margin:1px -4px;padding:3px 4px;' : 'opacity:0.6;padding:3px 0;';
+        return '<div style="display:flex;align-items:center;gap:5px;'+rowBg+'">' +
+            icon + '<span style="color:' + (c.met ? '#e2e8f0' : '#64748b') + ';font-size:0.66rem;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' + (c.met ? 'font-weight:500;' : '') + '">' + c.cond + '</span>' +
             miniPctBar(c) +
             '<span style="'+valStyle+'font-size:0.63rem;flex-shrink:0;">' + c.val + '</span>' +
             '<span style="font-size:0.52rem;color:#64748b;flex-shrink:0;">' + c.why + '</span></div>';
     }).join('');
+
+    // B1: 得分构成条 (紧凑单行)
+    const bd = bsz.score_breakdown || [];
+    const breakdownHtml = bd.length > 0
+        ? '<div style="margin-top:8px;padding:6px 10px;background:rgba(192,132,252,0.03);border:1px solid rgba(192,132,252,0.1);border-radius:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
+          '<span style="font-size:0.6rem;color:#c084fc;font-weight:600;flex-shrink:0;">📊 得分构成</span>' +
+          bd.map(d => {
+              const barW = Math.max(2, Math.min(100, d.score));
+              const barC = d.score >= 65 ? '#10b981' : d.score >= 50 ? '#f59e0b' : d.score >= 35 ? '#f97316' : '#ef4444';
+              return '<span style="font-size:0.55rem;color:#94a3b8;display:inline-flex;align-items:center;gap:3px;" title="'+d.dim+': '+d.score+'×'+d.weight+'%='+d.contrib+'">' +
+                  d.dim.substring(0,2) + ' ' +
+                  '<span style="display:inline-block;width:24px;height:3px;background:rgba(30,41,59,0.8);border-radius:1px;overflow:hidden;vertical-align:middle;">' +
+                  '<span style="display:block;width:'+barW+'%;height:100%;background:'+barC+';border-radius:1px;"></span></span> ' +
+                  '<span style="color:'+barC+';font-weight:600;">'+d.contrib+'</span></span>';
+          }).join('') +
+          '<span style="font-size:0.55rem;color:#c084fc;font-weight:600;margin-left:auto;">Σ=' + bd.reduce((a,b) => a+b.contrib, 0).toFixed(1) + '</span>' +
+          '</div>'
+        : '';
 
     const pctFooter = pct.current_zone_label
         ? '<div style="margin-top:10px;padding:8px 12px;background:rgba(192,132,252,0.04);border:1px solid rgba(192,132,252,0.12);border-radius:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
@@ -1135,11 +1155,14 @@ function renderRatesDecisionZone(bsz) {
           '</div>'
         : '';
 
+    // D3: 结论badge flex-wrap, 窄屏自动换行
+    const cc = bsz.conclusion_color||'#94a3b8';
     el.innerHTML = 
-        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:6px;">' +
         '<span style="font-size:0.82rem;font-weight:700;color:#c084fc;">📊 买卖决策汇总</span>' +
-        '<div style="padding:4px 14px;border-radius:20px;font-size:0.72rem;font-weight:700;background:'+(bsz.conclusion_color||'#94a3b8')+'22;color:'+(bsz.conclusion_color||'#94a3b8')+';border:1px solid '+(bsz.conclusion_color||'#94a3b8')+'44;">'+bsz.conclusion+'</div></div>' +
-        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">' +
+        '<div style="padding:4px 14px;border-radius:20px;font-size:0.72rem;font-weight:700;background:'+cc+'22;color:'+cc+';border:1px solid '+cc+'44;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+bsz.conclusion+'</div></div>' +
+        // D4: 用class控制grid响应式
+        '<div class="rates-decision-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">' +
         // 债券买入区
         '<div style="background:rgba(16,185,129,0.04);border:1px solid rgba(16,185,129,0.15);border-radius:8px;padding:10px;">' +
         '<div style="font-size:0.7rem;font-weight:600;color:#10b981;margin-bottom:6px;">🟢 债券买入区 <span style="font-size:0.6rem;color:#64748b;">'+bsz.bond_met+'/'+bsz.bond_buy.length+'</span></div>' +
@@ -1153,6 +1176,7 @@ function renderRatesDecisionZone(bsz) {
         '<div style="font-size:0.7rem;font-weight:600;color:#ef4444;margin-bottom:6px;">🔴 避险防御区 <span style="font-size:0.6rem;color:#64748b;">'+bsz.defense_met+'/'+bsz.defense.length+'</span></div>' +
         renderConds(bsz.defense, '#ef4444') + '</div>' +
         '</div>' +
+        breakdownHtml +
         pctFooter;
 }
 

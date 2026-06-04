@@ -865,6 +865,8 @@ class RatesStrategyEngine:
     def _generate_buy_sell_zones(self, dims, snap, signal, pct_stats=None) -> dict:
         """生成买入/卖出/避险条件汇总 — 自适应分位数阈值
         V2.0: 利率水平条件从硬编码改为5年滚动分位数自适应
+        V2.1: A1 结论交叉引用得分 | A2 阈值精度.2f | A3 骤变拆分方向
+              A4 同值单位区分 | B1 得分构成透明化
         """
         y10 = snap.get("yield_10y", 4.0)
         spread_bps = dims.get("curve_shape", {}).get("curve_info", {}).get("spread_bps", 50)
@@ -881,31 +883,35 @@ class RatesStrategyEngine:
         stock_thresh = pct_stats["stock_tilt"]     # P25 → 股票超配门槛
         y10_pct = pct_stats.get("current_pct", 50)
 
+        # A2: 阈值精度 .1f → .2f | A4: bps值追加(动量)/(利差)标注消除歧义
         bond_buy = [
-            {"cond": f"10Y > P75({bond_thresh:.1f}%)", "met": bool(y10 > bond_thresh),
-             "val": f"{y10:.2f}%", "why": "高于5年75%分位", "pct": round(y10_pct, 1)},
+            {"cond": f"10Y > P75({bond_thresh:.2f}%)", "met": bool(y10 > bond_thresh),
+             "val": f"{y10:.2f}%", "why": "高于5年75%分位(动态)", "pct": round(y10_pct, 1)},
             {"cond": "实际利率 > 1.5%", "met": bool(real_yield > 1.5),
              "val": f"{real_yield:.2f}%", "why": "TIPS/长债配置价值"},
             {"cond": "Fed在降息", "met": fed_dir in ("fast_easing","easing","mild_easing"),
              "val": _regime_cn(fed_dir), "why": "降息→债牛"},
             {"cond": "利率3M下行>30bps", "met": bool(chg_3m_bps < -30),
-             "val": f"{chg_3m_bps:+.0f}bps", "why": "动量确认宽松"},
+             "val": f"{chg_3m_bps:+.0f}bps(动量)", "why": "动量确认宽松"},
             {"cond": "曲线倒挂(<0bps)", "met": bool(spread_bps < 0),
-             "val": f"{spread_bps:+.0f}bps", "why": "降息预期→债牛在即"},
+             "val": f"{spread_bps:+.0f}bps(利差)", "why": "降息预期→债牛在即"},
         ]
         stock_buy = [
-            {"cond": f"10Y < P25({stock_thresh:.1f}%)", "met": bool(y10 < stock_thresh),
-             "val": f"{y10:.2f}%", "why": "低于5年25%分位", "pct": round(y10_pct, 1)},
+            {"cond": f"10Y < P25({stock_thresh:.2f}%)", "met": bool(y10 < stock_thresh),
+             "val": f"{y10:.2f}%", "why": "低于5年25%分位(动态)", "pct": round(y10_pct, 1)},
             {"cond": "实际利率 < 0%", "met": bool(real_yield < 0),
              "val": f"{real_yield:.2f}%", "why": "负利率→资产泡沫"},
             {"cond": "曲线陡峭化(>50bps)", "met": bool(spread_bps > 50),
-             "val": f"{spread_bps:+.0f}bps", "why": "经济复苏信号"},
+             "val": f"{spread_bps:+.0f}bps(利差)", "why": "经济复苏信号"},
         ]
+        # A3: 拆分3M骤变为方向性条件 — 上行=利率冲击, 下行=恐慌避险
         defense = [
             {"cond": "曲线深度倒挂(<-50bps)", "met": bool(spread_bps < -50),
-             "val": f"{spread_bps:+.0f}bps", "why": "衰退在即→长债锁定"},
-            {"cond": "3M利率骤变>60bps", "met": bool(abs(chg_3m_bps) > 60),
-             "val": f"{chg_3m_bps:+.0f}bps", "why": "市场剧烈波动"},
+             "val": f"{spread_bps:+.0f}bps(利差)", "why": "衰退在即→长债锁定"},
+            {"cond": "3M利率飙升>60bps", "met": bool(chg_3m_bps > 60),
+             "val": f"{chg_3m_bps:+.0f}bps(动量)", "why": "利率冲击→减持长债"},
+            {"cond": "3M利率骤降>60bps", "met": bool(chg_3m_bps < -60),
+             "val": f"{chg_3m_bps:+.0f}bps(动量)", "why": "恐慌避险→超配长债"},
             {"cond": "通胀预期>2.5%", "met": bool(bei > 2.5),
              "val": f"{bei:.2f}%", "why": "通胀焦虑，利空"},
         ]
@@ -917,7 +923,8 @@ class RatesStrategyEngine:
         # 综合得分 (用于决策badge)
         composite_score = signal.get("score", 0)
 
-        # 决策文字 (V2.0: 追加得分)
+        # A1: 结论判定 — 交叉引用综合得分方向，消除信号矛盾
+        # 优先级: 避险(defense≥2) > 强信号(bond≥3/stock≥2) > 偏向(交叉验证) > 均衡
         if defense_met >= 2:
             conclusion = f"🔴 避险模式 · 防御{defense_met}条触发 · 得分{composite_score} · {signal.get('position','')}"
             conclusion_color = "#ef4444"
@@ -925,11 +932,32 @@ class RatesStrategyEngine:
             conclusion = f"🟢 债券买入窗口 · {bond_met}/{len(bond_buy)}条 · 得分{composite_score} · {signal.get('position','')}"
             conclusion_color = "#10b981"
         elif stock_met >= 2:
-            conclusion = f"🟠 股票超配区 · {stock_met}/3条 · 得分{composite_score} · {signal.get('position','')}"
+            conclusion = f"🟠 股票超配区 · {stock_met}/{len(stock_buy)}条 · 得分{composite_score} · {signal.get('position','')}"
             conclusion_color = "#f97316"
+        elif bond_met >= 2 and composite_score > 50:
+            # A1: 条件区偏债 + 得分偏债 → 一致性偏债信号
+            conclusion = f"🔵 偏债窗口 · 债{bond_met}/{len(bond_buy)}条+得分{composite_score} · {signal.get('position','')}"
+            conclusion_color = "#3b82f6"
+        elif stock_met >= 1 and composite_score < 45:
+            # A1: 条件区偏股 + 得分偏股 → 一致性偏股信号
+            conclusion = f"🟡 偏股信号 · 股{stock_met}/{len(stock_buy)}条+得分{composite_score} · {signal.get('position','')}"
+            conclusion_color = "#f59e0b"
         else:
             conclusion = f"⚪ 均衡配置 · 无极端信号 · 得分{composite_score} · {signal.get('position','')}"
             conclusion_color = "#94a3b8"
+
+        # B1: 得分构成透明化 — 前端可展示各维度贡献
+        score_breakdown = []
+        for dim_key in self.W:
+            dim = dims.get(dim_key, {})
+            w = self.W[dim_key]
+            s = dim.get("score", 50)
+            score_breakdown.append({
+                "dim": dim.get("label", dim_key),
+                "score": round(s, 1),
+                "weight": round(w * 100),
+                "contrib": round(s * w, 1),
+            })
 
         return {
             "bond_buy": bond_buy,
@@ -942,6 +970,7 @@ class RatesStrategyEngine:
             "conclusion_color": conclusion_color,
             "regime_label": f"{_regime_cn(dims.get('yield_level',{}).get('yield_info',{}).get('regime',''))}利率·{signal.get('label','')}",
             "percentile_stats": pct_stats,  # V2.0: 前端可展示分位数上下文
+            "score_breakdown": score_breakdown,  # B1: 得分构成
         }
 
     # ========== 警示系统 ==========

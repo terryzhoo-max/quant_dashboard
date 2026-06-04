@@ -177,6 +177,7 @@
     .gaiae-dual-grid { grid-template-columns: 1fr; }
     .gaiae-3way-grid { grid-template-columns: repeat(2, 1fr); }
     .gaiae-action-zone { grid-template-columns: repeat(2, 1fr); }
+    .rates-decision-grid { grid-template-columns: 1fr 1fr !important; }
 }
 @media (max-width: 768px) {
     .gaiae-hero-grid { grid-template-columns: repeat(2, 1fr); }
@@ -185,4 +186,5 @@
     .gaiae-warn-panel { grid-template-columns: 1fr; }
     .gaiae-3way-grid { grid-template-columns: 1fr; }
     .gaiae-action-zone { grid-template-columns: 1fr; }
+    .rates-decision-grid { grid-template-columns: 1fr !important; }
 }
