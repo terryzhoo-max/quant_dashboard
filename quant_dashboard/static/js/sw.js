@@ -1,14 +1,15 @@
 /**
- * AlphaCore · Service Worker V1.0
+ * AlphaCore · Service Worker V2.0
  * ================================
  * 策略:
- *   - 静态资源 (CSS/JS/Font): Cache-First (版本号哈希控制更新)
+ *   - 本站静态资源 (CSS/JS): NetworkFirst (保证版本更新立即生效)
+ *   - 字体文件 (woff/woff2/ttf): Cache-First (不常变)
  *   - API 请求 (/api/v1/*): NetworkFirst, 失败回 IndexedDB 快照
  *   - HTML 页面: NetworkFirst, 离线回 app shell
  *   - CDN 资源 (ECharts/Fonts): Cache-First (长期缓存)
  */
 
-const CACHE_VERSION = 'alphacore-v4';
+const CACHE_VERSION = 'alphacore-v5';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const API_CACHE = `${CACHE_VERSION}-api`;
 
@@ -69,19 +70,25 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 3. 静态资源 (本站 CSS/JS): Cache-First
-  if (url.pathname.startsWith('/static/')) {
+  // 3. 本站字体文件: Cache-First (不常变)
+  if (url.pathname.startsWith('/static/') && /\.(woff2?|ttf|eot)$/i.test(url.pathname)) {
     event.respondWith(cacheFirst(event.request, STATIC_CACHE));
     return;
   }
 
-  // 4. HTML 页面: NetworkFirst
+  // 4. 本站 CSS/JS/图片: NetworkFirst (保证版本更新立即生效，离线回退缓存)
+  if (url.pathname.startsWith('/static/')) {
+    event.respondWith(networkFirst(event.request, STATIC_CACHE));
+    return;
+  }
+
+  // 5. HTML 页面: NetworkFirst
   if (event.request.mode === 'navigate') {
     event.respondWith(networkFirst(event.request, STATIC_CACHE));
     return;
   }
 
-  // 5. 其他: 走网络
+  // 6. 其他: 走网络
   event.respondWith(fetch(event.request));
 });
 

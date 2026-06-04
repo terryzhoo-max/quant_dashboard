@@ -323,7 +323,7 @@ function renderAIAEUI(data) {
     const cv = data.cross_validation;
     const ri = c.regime_info;
     const basisVal = c.regime_basis_value !== undefined ? c.regime_basis_value : c.aiae_v1;
-    const thresholds = c.regime_thresholds || [12.5, 17, 23, 30];
+    const thresholds = c.regime_thresholds || [22.0, 24.0, 27.0, 29.0];
 
     // ── Hero Stats (使用 DOM 缓存) ──
     const $v = _aiaeDOM['hero-value'];
@@ -379,7 +379,7 @@ function renderAIAEUI(data) {
     }
 
     // ── ZONE 2: Matrix highlight ──
-    renderAIAEMatrix(p, cv);
+    renderAIAEMatrix(p, cv, p.matrix, thresholds);
 
     // ── Allocations ──
     renderAIAEAllocs(p.allocations, p.matrix_position);
@@ -641,23 +641,23 @@ async function submitFundPositionUpdate() {
 function renderAIAEActionDashboard(regime, ri, matrixPos) {
     const actionData = {
         1: {
-            buy: ['<b style="color:#10b981">AIAE<12% 满仓进攻模式</b>','分3批建仓，越跌越买','优先宽基ETF: 300/50/500/创业板','红利ETF同步配置底仓'],
-            hold: ['每批完成后等待3-5天观察','不追高，只在下跌日建仓','总仓位控制在90-95%内'],
+            buy: ['<b style="color:#10b981">AIAE_简<22% 重仓进攻模式</b>','分3批建仓，越跌越买','优先宽基ETF: 300/50/500/创业板','红利ETF同步配置底仓'],
+            hold: ['每批完成后等待3-5天观察','不追高，只在下跌日建仓','总仓位控制在60-80%内'],
             sell: ['此档位禁止任何卖出操作','除非触发组合级-25%强制止损','耐心持有，等待市场修复']
         },
         2: {
-            buy: ['<b style="color:#3b82f6">AIAE 12-16% 标准建仓区</b>','按节奏建仓，总目标仓位70-85%','宽基+红利均衡配置','ERP>4%时加大买入力度'],
+            buy: ['<b style="color:#3b82f6">AIAE_简 22-24% 标准建仓区</b>','按节奏建仓，总目标仓位50-75%','宽基+红利均衡配置','ERP>4%时加大买入力度'],
             hold: ['已建仓位坚定持有','不因短期波动减仓','定期检查子策略配额是否到位'],
             sell: ['此档位不主动卖出','仅止损触发时被动减仓','子策略止损线: MR-8% DIV-5% MOM-7%']
         },
         3: {
             buy: ['<b style="color:#eab308">Ⅲ级不主动加仓</b>','仅在子策略出现强烈买入信号时小幅加仓','新增仓位限制在总仓5%以内'],
-            hold: ['维持均衡仓位50-65%','有纪律持有，到目标价就卖','以宽基+红利为主，减少进攻型标的'],
-            sell: ['到达止盈目标的标的及时卖出','密切监控AIAE是否向24%靠近','若接近24%开始做减仓准备']
+            hold: ['维持均衡仓位35-65%','有纪律持有，到目标价就卖','以宽基+红利为主，减少进攻型标的'],
+            sell: ['到达止盈目标的标的及时卖出','密切监控AIAE_简是否向27%靠近','若接近27%开始做减仓准备']
         },
         4: {
             buy: ['<b style="color:#f97316">Ⅳ级禁止新开仓</b>','不追涨任何进攻型标的','仅保留现有红利型标的'],
-            hold: ['总仓位压缩至25-40%','红利ETF可继续持有','进攻型标的逐步清退'],
+            hold: ['总仓位压缩至15-40%','红利ETF可继续持有','进攻型标的逐步清退'],
             sell: ['<b style="color:#ef4444">每周减5%总仓位</b>','优先清退高波动标的','3-4周完成减仓至目标水位']
         },
         5: {
@@ -698,7 +698,7 @@ function renderAIAEGauge(value, regime, ri, thresholds) {
     window._aiaeGaugeChart = AC.registerChart(echarts.init(container));
 
     const v = Math.min(Math.max(value, 0), 50);
-    const t = thresholds || [12.5, 17, 23, 30];
+    const t = thresholds || [22.0, 24.0, 27.0, 29.0];
 
     window._aiaeGaugeChart.setOption({
         series: [{
@@ -771,7 +771,7 @@ function renderAIAEHistoryChart(chart, currentValue, thresholds) {
         try { if (window._aiaeHistChart) AC.disposeChart(window._aiaeHistChart); } catch(_) {}
         window._aiaeHistChart = AC.registerChart(echarts.init(container));
 
-        const t = thresholds || [12.5, 17, 23, 30];
+        const t = thresholds || [22.0, 24.0, 27.0, 29.0];
 
         // 五档区间色带
         const markAreaData = [
@@ -867,11 +867,34 @@ function renderAIAEHistoryChart(chart, currentValue, thresholds) {
 }
 
 
-function renderAIAEMatrix(pos, cv) {
+function renderAIAEMatrix(pos, cv, apiMatrix, thresholds) {
     const table = document.getElementById('aiae-matrix-table');
     if (!table) return;
 
-    // Heatmap color function: 高仓位=绿, 低仓位=红
+    // ── 从 API matrix dict 构建 posValues 二维数组 (行序: erp_gt6 → erp_lt2) ──
+    const erpKeys = ['erp_gt6', 'erp_4_6', 'erp_2_4', 'erp_lt2'];
+    const fallbackMatrix = {erp_gt6:[80,75,65,40,15], erp_4_6:[75,70,60,35,10], erp_2_4:[70,60,50,25,5], erp_lt2:[60,50,35,15,0]};
+    const mx = apiMatrix || fallbackMatrix;
+    const posValues = erpKeys.map(k => mx[k] || fallbackMatrix[k]);
+
+    // ── 从 API thresholds 动态生成列头 ──
+    const t = thresholds || [22.0, 24.0, 27.0, 29.0];
+    const thead = table.querySelector('thead tr');
+    if (thead) {
+        const thLabels = [
+            '<' + t[0] + '%',
+            t[0] + '-' + t[1] + '%',
+            t[1] + '-' + t[2] + '%',
+            t[2] + '-' + t[3] + '%',
+            '>' + t[3] + '%'
+        ];
+        const regimeLabels = ['Ⅰ级','Ⅱ级','Ⅲ级','Ⅳ级','Ⅴ级'];
+        thead.innerHTML = '<th></th>' + regimeLabels.map((r, i) =>
+            '<th>' + r + '<br><span style="font-size:0.55rem;">' + thLabels[i] + '</span></th>'
+        ).join('');
+    }
+
+    // ── 动态填充格子文本 + 热力图着色 ──
     function posColor(v) {
         if (v >= 80) return 'rgba(16,185,129,0.2)';
         if (v >= 60) return 'rgba(52,211,153,0.12)';
@@ -880,20 +903,20 @@ function renderAIAEMatrix(pos, cv) {
         return 'rgba(239,68,68,0.15)';
     }
 
-    // 清除旧高亮 + 添加热力图
-    const posValues = [[95,85,65,40,15],[90,80,60,35,10],[85,70,50,25,5],[75,55,35,15,0]];
     const rows = table.querySelectorAll('tbody tr');
     rows.forEach((row, ri) => {
         const cells = row.querySelectorAll('td');
         cells.forEach((td, ci) => {
             td.classList.remove('aiae-matrix-active');
-            if (ci > 0 && posValues[ri]) { // skip row label
-                td.style.background = posColor(posValues[ri][ci-1]);
+            if (ci > 0 && posValues[ri]) {
+                const val = posValues[ri][ci - 1];
+                td.textContent = val + '%';
+                td.style.background = posColor(val);
             }
         });
     });
 
-    // 确定当前交叉位置并高亮
+    // ── 高亮当前交叉位置 ──
     const erpMap = { 'erp_gt6': 0, 'erp_4_6': 1, 'erp_2_4': 2, 'erp_lt2': 3 };
     const rowIdx = erpMap[pos.erp_level] ?? 2;
     const colIdx = Math.min(pos.regime - 1, 4);
@@ -902,12 +925,17 @@ function renderAIAEMatrix(pos, cv) {
         if (cells[colIdx + 1]) cells[colIdx + 1].classList.add('aiae-matrix-active');
     }
 
+    // ── verdict (含平滑修正透明度) ──
     const regimeNames = {1:'Ⅰ', 2:'Ⅱ', 3:'Ⅲ', 4:'Ⅳ', 5:'Ⅴ'};
     const $verdict = document.getElementById('aiae-matrix-verdict');
     if ($verdict) {
+        const rawCell = posValues[rowIdx] ? posValues[rowIdx][colIdx] : null;
+        const smoothNote = (rawCell !== null && rawCell !== pos.matrix_position)
+            ? ' <span style="font-size:0.62rem;color:#94a3b8;">(含分界线平滑修正，原始格值' + rawCell + '%)</span>'
+            : '';
         $verdict.innerHTML = '当前: <b style="color:#f59e0b">' + regimeNames[pos.regime] + '级</b>' +
             ' × <b style="color:#60a5fa">ERP ' + pos.erp_value + '%</b>' +
-            ' → 建议总仓位 <b style="color:#10b981;font-size:1.1rem;">' + pos.matrix_position + '%</b>';
+            ' → 建议总仓位 <b style="color:#10b981;font-size:1.1rem;">' + pos.matrix_position + '%</b>' + smoothNote;
     }
 }
 

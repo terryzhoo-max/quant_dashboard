@@ -1463,7 +1463,7 @@ class AIAEEngine:
                     "erp_value": erp_value,
                     "erp_level": erp_level,
                     "regime": regime,
-                    "matrix": POSITION_MATRIX,
+                    "matrix": AP.V5_POSITION_MATRIX if getattr(AP, 'V5_ENABLED', False) else POSITION_MATRIX,
                     "allocations": allocations,
                     "decision_locked": decision_locked,
                 },
@@ -1601,7 +1601,7 @@ class AIAEEngine:
             },
             "position": {
                 "matrix_position": 55, "erp_value": 3.5, "erp_level": "erp_2_4",
-                "regime": 3, "matrix": POSITION_MATRIX,
+                "regime": 3, "matrix": AP.V5_POSITION_MATRIX if getattr(AP, 'V5_ENABLED', False) else POSITION_MATRIX,
                 "allocations": self.allocate_sub_strategies(3, 55),
             },
             "signals": [{"type": "fallback", "level": "warning",

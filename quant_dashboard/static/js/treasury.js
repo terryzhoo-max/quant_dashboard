@@ -1533,8 +1533,19 @@ function renderGAIAEMatrix(region, data) {
     const rowIdx = erpMap[pos.erp_level] ?? 2;
     const colIdx = Math.min((pos.regime||3) - 1, 4);
 
-    // Color all cells
-    const posValues = [[95,85,70,45,20],[90,80,65,40,15],[85,70,55,30,10],[75,60,40,20,5]];
+    // ── 从 API pos.matrix 动态构建 posValues (消除硬编码) ──
+    const erpKeysMap = {
+        us: ['erp_gt5', 'erp_3_5', 'erp_1_3', 'erp_lt1'],
+        jp: ['erp_gt4', 'erp_2_4', 'erp_0_2', 'erp_lt0'],
+        hk: ['erp_gt5', 'erp_3_5', 'erp_1_3', 'erp_lt1']
+    };
+    const fallbackMatrix = {erp_gt5:[95,85,70,45,20], erp_3_5:[90,80,65,40,15], erp_1_3:[85,70,55,30,10], erp_lt1:[75,60,40,20,5],
+                            erp_gt4:[95,85,70,45,20], erp_2_4:[90,80,65,40,15], erp_0_2:[85,70,55,30,10], erp_lt0:[75,60,40,20,5]};
+    const mx = pos.matrix || fallbackMatrix;
+    const erpKeys = erpKeysMap[region] || erpKeysMap.us;
+    const posValues = erpKeys.map(k => mx[k] || fallbackMatrix[k]);
+
+    // Color all cells + dynamic text
     function posColor(v) {
         if (v >= 80) return 'rgba(16,185,129,0.15)';
         if (v >= 60) return 'rgba(52,211,153,0.08)';
@@ -1547,7 +1558,11 @@ function renderGAIAEMatrix(region, data) {
         const cells = row.querySelectorAll('td');
         cells.forEach((td, ci) => {
             td.classList.remove('gaiae-cell-active');
-            if (ci > 0 && posValues[ri]) { td.style.background = posColor(posValues[ri][ci-1]); }
+            if (ci > 0 && posValues[ri]) {
+                const val = posValues[ri][ci - 1];
+                td.textContent = val + '%';
+                td.style.background = posColor(val);
+            }
         });
     });
     if (rows[rowIdx]) {

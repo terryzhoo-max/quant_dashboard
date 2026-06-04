@@ -890,7 +890,7 @@ function renderAIAEThermometer(d) {
             if (_aiaeThermGauge) _aiaeThermGauge = AC.disposeChart(_aiaeThermGauge);
             _aiaeThermGauge = AC.registerChart(echarts.init(gaugeEl));
             const rc = d.regime_color || '#eab308';
-            const t = d.regime_thresholds || [12.5, 17, 23, 30];
+            const t = d.regime_thresholds || [22.0, 24.0, 27.0, 29.0];
             _aiaeThermGauge.setOption({
                 series: [{
                     type: 'gauge',
@@ -1766,7 +1766,7 @@ function renderAIAESparkline(history, thresholds) {
 
     const dates = history.map(h => h.date || h.month || '');
     const values = history.map(h => h.aiae_v1 || h.value || 0);
-    const t = thresholds || [12.5, 17, 23, 30];
+    const t = thresholds || [22.0, 24.0, 27.0, 29.0];
 
     _aiaeSparklineChart.setOption({
         grid: { top: 6, bottom: 6, left: 4, right: 4 },
