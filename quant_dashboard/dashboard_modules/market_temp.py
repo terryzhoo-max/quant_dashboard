@@ -13,10 +13,13 @@ import tushare as ts
 import numpy as np
 import math
 import time
+import logging
 from datetime import datetime, timedelta
 from erp_timing_engine import get_erp_engine
 from erp_hk_engine import get_hk_erp_engine
 from aiae_engine import get_aiae_engine, REGIMES as AIAE_REGIMES
+
+logger = logging.getLogger("alphacore.market_temp")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -53,9 +56,9 @@ def tushare_retry(fn, *args, max_retries=3, base_delay=1.0, **kwargs):
                 raise  # 非网络错误 or 已耗尽重试次数 → 直接抛出
             last_err = e
             delay = base_delay * (2 ** attempt)
-            print(f"[Retry] {fn.__name__ if hasattr(fn, '__name__') else 'api_call'} "
-                  f"attempt {attempt+1}/{max_retries} failed: {err_str[:80]}... "
-                  f"retrying in {delay:.1f}s")
+            logger.warning("[Retry] %s attempt %d/%d failed: %s... retrying in %.1fs",
+                          fn.__name__ if hasattr(fn, '__name__') else 'api_call',
+                          attempt + 1, max_retries, err_str[:80], delay)
             time.sleep(delay)
     raise last_err  # 理论上不会到这里
 
@@ -79,11 +82,11 @@ def _find_latest_trade_date(pro, date_str, api_fn, max_lookback=7, **api_kwargs)
         try:
             df = tushare_retry(api_fn, trade_date=try_date, **api_kwargs)
         except Exception as e:
-            print(f"[Fallback] {fn_name}: {try_date} API error: {str(e)[:60]}, skip")
+            logger.debug("Fallback %s: %s API error: %s, skip", fn_name, try_date, str(e)[:60])
             continue
         if df is not None and not df.empty:
             if offset > 0:
-                print(f"[Fallback] {fn_name}: {date_str} no data, fell back to {try_date}")
+                logger.info("Fallback %s: %s no data, fell back to %s", fn_name, date_str, try_date)
             return df, try_date
     return None, None
 
@@ -97,7 +100,7 @@ def get_margin_risk_ratio(pro, date_str):
     try:
         df, actual_date = _find_latest_trade_date(pro, date_str, pro.margin_detail)
         if df is None:
-            print(f"[Margin] 最近7日均无融资数据, 降级")
+            logger.warning("Margin: 最近7日均无融资数据, 降级")
             return 50.0, True
         df_index, _ = _find_latest_trade_date(pro, actual_date, pro.index_daily, ts_code='000001.SH')
         if df_index is None:
@@ -111,7 +114,7 @@ def get_margin_risk_ratio(pro, date_str):
         percentile = round(100.0 / (1.0 + math.exp(-x)), 1)
         return percentile, False
     except Exception as e:
-        print(f"[Margin] 融资数据异常, 降级中性: {e}")
+        logger.warning("Margin: 融资数据异常, 降级中性: %s", e)
         return 50.0, True
 
 
@@ -126,7 +129,7 @@ def get_market_breadth(pro, date_str):
             _start = (datetime.strptime(date_str, '%Y%m%d') - timedelta(days=30)).strftime('%Y%m%d')
             df_cons = tushare_retry(pro.index_weight, index_code='399300.SZ', start_date=_start, end_date=date_str)
         if df_cons is None or df_cons.empty:
-            print(f"[Breadth] 沪深300成分股数据缺失, 降级50.0")
+            logger.warning("Breadth: 沪深300成分股数据缺失, 降级50.0")
             return 50.0
         codes = df_cons['con_code'].unique().tolist()
 
@@ -148,14 +151,14 @@ def get_market_breadth(pro, date_str):
                 continue
 
         if valid_count < 10:
-            print(f"[Breadth] 有效样本不足({valid_count}只), 降级50.0")
+            logger.warning("Breadth: 有效样本不足(%d只), 降级50.0", valid_count)
             return 50.0
 
         breadth = round(above_count / valid_count * 100, 1)
-        print(f"[Breadth] 沪深300采样 {valid_count}只, 站上250MA: {above_count}只 ({breadth}%)")
+        logger.info("Breadth: 沪深300采样 %d只, 站上250MA: %d只 (%.1f%%)", valid_count, above_count, breadth)
         return breadth
     except Exception as e:
-        print(f"[Breadth] 市场宽度计算异常, 降级中性: {e}")
+        logger.warning("Breadth: 市场宽度计算异常, 降级中性: %s", e)
         return 50.0
 
 
@@ -173,7 +176,7 @@ def get_real_turnover_score(pro, date_str):
             fields='ts_code,trade_date,turnover_rate'
         )
         if df is None:
-            print(f"[Turnover] 最近7日均无换手率数据, 降级")
+            logger.warning("Turnover: 最近7日均无换手率数据, 降级")
             return 50.0, True
 
         today_median_turnover = df['turnover_rate'].median()
@@ -192,10 +195,10 @@ def get_real_turnover_score(pro, date_str):
         else:
             score = min(100, max(0, (today_median_turnover - 0.5) / 3.0 * 100))
 
-        print(f"[Turnover] 换手率中位数: {today_median_turnover:.2f}% (date={actual_date}) → score={score:.1f}")
+        logger.info("Turnover: 换手率中位数: %.2f%% (date=%s) → score=%.1f", today_median_turnover, actual_date, score)
         return round(score, 1), False
     except Exception as e:
-        print(f"[Turnover] 换手率计算异常, 降级中性: {e}")
+        logger.warning("Turnover: 换手率计算异常, 降级中性: %s", e)
         return 50.0, True
 
 
@@ -249,7 +252,8 @@ def get_real_erp_data():
             erp_score = min(100, max(0, erp_pct))
             _blend_note = f" [PCT_EXTREME w=0.3/0.7]" if pct_extreme else ""
             _conflict_note = f" [DIM_CONFLICT abs={abs_tier} pct={pct_tier}]" if dimension_conflict else ""
-            print(f"[ERP Real] ERP={erp_val:.2f}% Pct={erp_pct:.1f}% AbsTier={abs_tier} PctTier={pct_tier} Blended={blended_tier:.1f} Label={vlabel} Signal={sig['label']}{_blend_note}{_conflict_note}")
+            logger.info("ERP Real: ERP=%.2f%% Pct=%.1f%% AbsTier=%d PctTier=%d Blended=%.1f Label=%s Signal=%s%s%s",
+                       erp_val, erp_pct, abs_tier, pct_tier, blended_tier, vlabel, sig['label'], _blend_note, _conflict_note)
             return {
                 'erp_val': round(erp_val, 2), 'erp_z': round(erp_z, 2),
                 'erp_pct': round(erp_pct, 1), 'valuation_label': vlabel,
@@ -261,7 +265,7 @@ def get_real_erp_data():
                 'status': 'success'
             }
     except Exception as e:
-        print(f"[ERP Real] engine error, fallback: {e}")
+        logger.error("ERP Real: engine error, fallback: %s", e)
     return {
         'erp_val': 4.5, 'erp_z': 0.0, 'erp_pct': 50.0,
         'valuation_label': 'fallback', 'abs_label': '降级', 'pct_label': '降级',
@@ -280,7 +284,7 @@ def get_liquidity_crisis_signal(pro, today_str):
         ratio = limit_down / len(df)
         return ratio > 0.10
     except Exception as e:
-        print(f"[LiqCrisis] 跌停监控异常: {e}")
+        logger.warning("LiqCrisis: 跌停监控异常: %s", e)
         return False
 
 
@@ -308,7 +312,7 @@ def get_ah_premium_adj(pro, date_str):
         _start = (datetime.strptime(date_str, '%Y%m%d') - timedelta(days=365)).strftime('%Y%m%d')
         df = tushare_retry(pro.index_daily, ts_code='H50066.CSI', start_date=_start, end_date=date_str)
         if df is None or df.empty:
-            print(f"[AH Premium] H50066.CSI no data, degraded")
+            logger.warning("AH Premium: H50066.CSI no data, degraded")
             return 1.0, True
         df = df.sort_values('trade_date')
         latest_val = df.iloc[-1]['close']
@@ -319,10 +323,10 @@ def get_ah_premium_adj(pro, date_str):
             adj = 0.85  # 溢价偏低 → H股吸引力弱
         else:
             adj = 1.0   # 中性区间
-        print(f"[AH Premium] H50066.CSI={latest_val:.1f} (date={latest_date}) thresholds=[{H50066_LOW},{H50066_HIGH}] -> adj={adj}")
+        logger.info("AH Premium: H50066.CSI=%.1f (date=%s) thresholds=[%d,%d] -> adj=%s", latest_val, latest_date, H50066_LOW, H50066_HIGH, adj)
         return adj, False
     except Exception as e:
-        print(f"[AH Premium] error, degraded: {e}")
+        logger.warning("AH Premium: error, degraded: %s", e)
         return 1.0, True
 
 
@@ -337,10 +341,10 @@ def get_hk_erp_score():
         hk_signal = hk_engine.compute_signal()
         if hk_signal.get("status") in ("success", "fallback"):
             score = hk_signal["signal"]["score"]
-            print(f"[HK ERP] HSI score={score} (live)")
+            logger.info("HK ERP: HSI score=%s (live)", score)
             return float(score)
     except Exception as e:
-        print(f"[HK ERP] 降级到硬编码 65.0: {e}")
+        logger.warning("HK ERP: 降级到硬编码 65.0: %s", e)
     return 65.0
 
 
@@ -482,13 +486,13 @@ def compute_market_temperature(pro, today_str, latest_vix, latest_cny, liquidity
     _deg_count = len(_degraded)
     if _deg_count >= 3:
         temp_confidence = "low"
-        print(f"[MarketTemp] WARN: {_deg_count}/6 degraded ({', '.join(_degraded)}) -> confidence=LOW")
+        logger.warning("MarketTemp: %d/6 degraded (%s) -> confidence=LOW", _deg_count, ', '.join(_degraded))
     elif _deg_count >= 1:
         temp_confidence = "medium"
-        print(f"[MarketTemp] INFO: {_deg_count}/6 degraded ({', '.join(_degraded)}) -> confidence=MEDIUM")
+        logger.info("MarketTemp: %d/6 degraded (%s) -> confidence=MEDIUM", _deg_count, ', '.join(_degraded))
     else:
         temp_confidence = "high"
-        print(f"[MarketTemp] OK: 0/6 degraded -> confidence=HIGH")
+        logger.info("MarketTemp OK: 0/6 degraded -> confidence=HIGH")
 
     # 最终合成温度 + PAT
     base_temp = round(score_a * 0.6 + score_hk * 0.4, 1)
@@ -501,7 +505,7 @@ def compute_market_temperature(pro, today_str, latest_vix, latest_cny, liquidity
         _aiae_engine = get_aiae_engine()
         weights_5, erp_tier = _aiae_engine.get_run_all_weights(aiae_regime, erp_score)
     except Exception as e:
-        print(f"[Dashboard Matrix Error] {e}")
+        logger.error("Dashboard Matrix Error: %s", e)
         weights_5 = {"mr": 0.15, "div": 0.30, "mom": 0.10, "erp": 0.15, "aiae_etf": 0.30}
         erp_tier = "neutral"
 

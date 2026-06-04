@@ -193,7 +193,7 @@ def fetch_jpx_margin() -> Optional[Dict]:
         return _load_margin_cache()
     except Exception as e:
         _log(f"JPX Margin 取得失敗: {e}", "ERROR")
-        import traceback; traceback.print_exc()
+        logger.debug("Traceback", exc_info=True)
         return _load_margin_cache()
 
 
@@ -362,7 +362,7 @@ def fetch_jpx_foreign_flow() -> Optional[Dict]:
         return _load_foreign_cache()
     except Exception as e:
         _log(f"JPX Foreign 取得失敗: {e}", "ERROR")
-        import traceback; traceback.print_exc()
+        logger.debug("Traceback", exc_info=True)
         return _load_foreign_cache()
 
 

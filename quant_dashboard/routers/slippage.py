@@ -140,7 +140,7 @@ async def create_order(req: CreateOrderRequest):
 
         return R.ok({"order_id": order_id}, "指令已创建")
     except Exception as e:
-        traceback.print_exc()
+        logger.debug("Traceback", exc_info=True)
         return R.error(str(e), "ERR_SLIP_CREATE")
 
 

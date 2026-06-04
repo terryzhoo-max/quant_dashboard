@@ -908,7 +908,7 @@ class AIAEHKEngine:
 
         except Exception as e:
             _log(f"generate_report 异常: {e}", "ERROR")
-            import traceback; traceback.print_exc()
+            logger.debug("Traceback", exc_info=True)
             return self._fallback_report(str(e))
 
     def _fallback_report(self, reason: str) -> Dict:

@@ -136,7 +136,7 @@ async def import_portfolio(file: UploadFile = File(...)):
         else:
             return R.error("导入解析失败", "ERR_IMPORT", data=result)
     except Exception as e:
-        traceback.print_exc()
+        logger.debug("Traceback", exc_info=True)
         return R.error(str(e), "ERR_IMPORT")
 
 @router.post("/portfolio/reset")

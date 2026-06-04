@@ -30,6 +30,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import json
+import logging
 import threading
 from functools import wraps
 from concurrent.futures import ThreadPoolExecutor
@@ -37,6 +38,8 @@ from config import TUSHARE_TOKEN as CONFIG_TOKEN
 from erp_signal_enhancer import adaptive_weights, multi_timeframe_confirmation
 import erp_params
 from services import db as ac_db
+
+logger = logging.getLogger("alphacore.erp_timing")
 
 TUSHARE_TOKEN = os.environ.get("TUSHARE_TOKEN", CONFIG_TOKEN)
 ts.set_token(TUSHARE_TOKEN)
@@ -57,7 +60,7 @@ def retry_with_backoff(max_retries=3, base_delay=2.0):
                 except Exception as e:
                     if i == max_retries - 1:
                         raise e
-                    print(f"[Retry] {func.__name__} failed: {e}. Retrying in {delay}s...")
+                    logger.warning("Retry %s failed: %s. Retrying in %ss...", func.__name__, e, delay)
                     time.sleep(delay)
                     delay *= 2
             return None
@@ -81,10 +84,10 @@ def atomic_write_parquet(df, filepath):
                 time.sleep(0.5 * (attempt + 1))
             else:
                 # 最终失败也不崩溃 — 下次请求会重新拉取
-                print(f"[atomic_write] 写入失败(3次重试): {filepath}, 跳过缓存更新")
+                logger.warning("atomic_write 写入失败(3次重试): %s, 跳过缓存更新", filepath)
         except RuntimeError as e:
             # V21.2 fix: interpreter shutdown 期间 pyarrow 线程池已关闭
-            print(f"[atomic_write] RuntimeError (shutdown?): {e}, 跳过缓存更新")
+            logger.warning("atomic_write RuntimeError (shutdown?): %s, 跳过缓存更新", e)
             break
         except Exception as e:
             if os.path.exists(tmp_path):
@@ -112,7 +115,7 @@ def _refresh_cache(key: str, fetcher):
             _cache[key] = (time.time(), data)
         return data
     except Exception as e:
-        print(f"[ERP Engine] 后台缓存刷新失败 ({key}): {e}")
+        logger.warning("后台缓存刷新失败 (%s): %s", key, e)
         with _cache_lock:
             if key in _cache:
                 return _cache[key][1]
@@ -257,9 +260,9 @@ class ERPTimingEngine:
                 if attempt < max_retries - 1:
                     time.sleep(0.3 * (attempt + 1))
                 else:
-                    print(f"[ERP Engine] 保存状态失败(文件锁, {max_retries}次重试): {filepath}")
+                    logger.warning("保存状态失败(文件锁, %d次重试): %s", max_retries, filepath)
             except Exception as e:
-                print(f"[ERP Engine] 保存状态失败: {e}")
+                logger.error("保存状态失败: %s", e)
                 break
         # 清理残留 tmp
         if os.path.exists(tmp_path):
@@ -298,7 +301,7 @@ class ERPTimingEngine:
                     df = pd.concat(dfs).drop_duplicates(subset='trade_date', keep='last')
                 df = df.sort_values('trade_date').reset_index(drop=True)
                 atomic_write_parquet(df, cache_file)
-                print(f"[ERP] PE-TTM cached: {len(df)} rows")
+                logger.info("PE-TTM cached: %d rows", len(df))
             elif existing is not None:
                 df = existing
             else:
@@ -338,7 +341,7 @@ class ERPTimingEngine:
                             all_dfs.append(chunk_10y)
                             batch_count += 1
                 except Exception as e:
-                    print(f"[ERP] yield batch {s_str}-{e_str}: {e}")
+                    logger.warning("yield batch %s-%s: %s", s_str, e_str, e)
                 chunk_start = chunk_end + timedelta(days=1)
                 time.sleep(1.0)  # Rate limit safety
             if all_dfs:
@@ -350,7 +353,7 @@ class ERPTimingEngine:
                 df = pd.concat(dfs).drop_duplicates(subset='trade_date', keep='last') if len(dfs) > 1 else (dfs[0] if dfs else new_df)
                 df = df.sort_values('trade_date').reset_index(drop=True)
                 atomic_write_parquet(df, cache_file)
-                print(f"[ERP] 10Y yield cached: {len(df)} rows ({batch_count} batches)")
+                logger.info("10Y yield cached: %d rows (%d batches)", len(df), batch_count)
             elif existing is not None:
                 df = existing
             else:
@@ -379,13 +382,13 @@ class ERPTimingEngine:
                         pass  # 写入失败不影响返回
                     return df
             except Exception as e:
-                print(f"[ERP] M1 API失败: {e}")
+                logger.warning("M1 API失败: %s", e)
 
             # 降级: 读磁盘缓存
             if os.path.exists(cache_file):
                 try:
                     df = pd.read_parquet(cache_file)
-                    print(f"[ERP] M1 使用磁盘缓存: {len(df)} rows")
+                    logger.info("M1 使用磁盘缓存: %d rows", len(df))
                     return df.sort_values('month').reset_index(drop=True)
                 except Exception:
                     pass
@@ -1065,8 +1068,7 @@ class ERPTimingEngine:
             }
 
         except Exception as e:
-            print(f"[ERP Engine V2] compute_signal 异常: {e}")
-            import traceback; traceback.print_exc()
+            logger.error("compute_signal 异常: %s", e, exc_info=True)
             return self._fallback_signal(str(e))
 
     def _build_diagnosis(self, erp, pe, y10, pct, m1, vol, credit, trade) -> list:
@@ -1173,7 +1175,7 @@ class ERPTimingEngine:
                         else:
                             m1_vals[i] = last_v
             except Exception as e:
-                print(f"[ERP Chart] M1 overlay failed: {e}")
+                logger.debug("M1 overlay failed: %s", e)
 
             erp_mean = float(erp_df['erp'].mean())
             erp_std = float(erp_df['erp'].std())
@@ -1221,7 +1223,7 @@ class ERPTimingEngine:
                 }
             }
         except Exception as e:
-            print(f"[ERP Engine] chart error: {e}")
+            logger.error("chart error: %s", e)
             return {"status": "error", "message": str(e)}
 
     def generate_report(self) -> dict:
@@ -1232,7 +1234,7 @@ class ERPTimingEngine:
         try:
             position_layer = self._compute_position_layer(signal_data)
         except Exception as e:
-            print(f"[ERP V3.4] position_layer 降级: {e}")
+            logger.warning("position_layer 降级: %s", e)
             position_layer = {"status": "degraded", "message": str(e)}
         return {**signal_data, "chart": chart_data, "position_layer": position_layer,
                 "engine_version": self.VERSION, "index": self.INDEX_CODE,

@@ -256,7 +256,7 @@ def _swr_compute_sync(cache_key: str, compute_fn):
     except Exception as e:
         _logger.error(f"SWR 同步计算失败 {cache_key}: {e}")
         import traceback
-        traceback.print_exc()
+        logger.debug("Traceback", exc_info=True)
         return {"status": "error", "error": str(e)}
 
 

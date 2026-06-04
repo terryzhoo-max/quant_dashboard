@@ -34,6 +34,7 @@ import json
 from datetime import datetime, timedelta
 from typing import Optional, Dict
 
+import logging
 import threading
 
 from config import FRED_API_KEY
@@ -42,6 +43,8 @@ CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
 from erp_signal_enhancer import adaptive_weights, multi_timeframe_confirmation
 import erp_params
+
+logger = logging.getLogger("alphacore.erp_hk")
 
 # O1: 动态EPS估算配置 (替代MARKET_CONFIG中的硬编码eps_est)
 EPS_CONFIG_HK = {
@@ -58,7 +61,7 @@ def _get_dynamic_eps_hk(market: str) -> float:
     quarters_elapsed = (datetime.now() - base_date).days / 91.25
     adjusted = cfg["base_eps"] * (1 + cfg["annual_growth"]) ** (quarters_elapsed / 4)
     if quarters_elapsed >= 3:
-        print(f"[HK-ERP] ⚠️ {market} EPS估算基于{cfg['as_of_quarter']}，已过期{quarters_elapsed:.0f}个季度")
+        logger.warning("%s EPS估算基于%s，已过期%.0f个季度", market, cfg['as_of_quarter'], quarters_elapsed)
     return round(adjusted, 1)
 
 # FRED API
@@ -70,7 +73,7 @@ def _get_hk_fred():
             from fredapi import Fred
             _hk_fred = Fred(api_key=FRED_API_KEY)
         except Exception as e:
-            print(f"[HK-ERP] FRED init failed: {e}")
+            logger.warning("FRED init failed: %s", e)
     return _hk_fred
 
 _hk_cache = {}
@@ -86,7 +89,7 @@ def _hk_cached(key: str, ttl_seconds: int, fetcher):
         _hk_cache[key] = (now, data)
         return data
     except Exception as e:
-        print(f"[HK-ERP] cache fail ({key}): {e}")
+        logger.warning("cache fail (%s): %s", key, e)
         if key in _hk_cache:
             return _hk_cache[key][1]
         raise
@@ -225,7 +228,7 @@ class HKERPTimingEngine:
                 json.dump(data, f, ensure_ascii=False)
             os.replace(tmp_path, filepath)
         except Exception as e:
-            print(f"[HK-ERP-{self.market}] 保存状态失败: {e}")
+            logger.warning("保存状态失败 (%s): %s", self.market, e)
             if os.path.exists(tmp_path):
                 try:
                     os.remove(tmp_path)
@@ -255,7 +258,7 @@ class HKERPTimingEngine:
             
             df = pro.moneyflow_hsgt(start_date=start_date, end_date=end_date, limit=40)
             if df is None or df.empty:
-                print("[HK-ERP] Tushare moneyflow_hsgt: 无数据")
+                logger.warning("Tushare moneyflow_hsgt: 无数据")
                 return None
             
             df = df.sort_values('trade_date', ascending=True).reset_index(drop=True)
@@ -270,7 +273,7 @@ class HKERPTimingEngine:
             df = df.dropna(subset=['daily_net_wan'])
             
             if df.empty:
-                print("[HK-ERP] Tushare 南向: 差分后无有效数据")
+                logger.warning("Tushare 南向: 差分后无有效数据")
                 return None
             
             # south_money 单位已是亿元 (对照东方财富累计5251亿 ≈ Tushare 53573)
@@ -297,11 +300,11 @@ class HKERPTimingEngine:
             with open(SOUTHBOUND_FILE, 'w', encoding='utf-8') as f:
                 json.dump(result, f, ensure_ascii=False, indent=2)
             
-            print(f"[HK-ERP] 南向资金(Tushare自动): weekly={weekly:+.1f}亿, monthly={monthly:+.1f}亿 ({latest_date})")
+            logger.info("南向资金(Tushare自动): weekly=%+.1f亿, monthly=%+.1f亿 (%s)", weekly, monthly, latest_date)
             return result
             
         except Exception as e:
-            print(f"[HK-ERP] Tushare南向拉取失败: {e}")
+            logger.warning("Tushare南向拉取失败: %s", e)
             return None
 
     def _load_southbound(self) -> Dict:
@@ -328,13 +331,13 @@ class HKERPTimingEngine:
                 with open(SOUTHBOUND_FILE, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                 src = data.get('source', 'unknown')
-                print(f"[HK-ERP] 南向资金(缓存/{src}): weekly={data.get('weekly_net_buy_billion_rmb', 0):.1f}亿")
+                logger.info("南向资金(缓存/%s): weekly=%.1f亿", src, data.get('weekly_net_buy_billion_rmb', 0))
                 return data
             except Exception:
                 pass
         
         # Tier 3: 默认值
-        print("[HK-ERP] 南向资金: 使用默认值")
+        logger.warning("南向资金: 使用默认值")
         return DEFAULT_SOUTHBOUND.copy()
 
     def update_southbound(self, weekly_net: float, monthly_net: float = None, cumulative_12m: float = None):
@@ -351,7 +354,7 @@ class HKERPTimingEngine:
         with open(SOUTHBOUND_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         self._southbound = data
-        print(f"[HK-ERP] 南向资金更新: weekly={weekly_net:.1f}B")
+        logger.info("南向资金更新: weekly=%.1fB", weekly_net)
 
     # ========== 数据获取层 ==========
 
@@ -373,10 +376,10 @@ class HKERPTimingEngine:
                 pe = max(pe_min, min(pe_max, pe))
                 with open(pe_cache_file, "w") as f:
                     json.dump({"pe": round(pe, 2), "price": price, "source": f"cnbc/{cnbc_sym}", "ts": datetime.now().isoformat()}, f)
-                print(f"[HK-ERP] {self.market} PE from CNBC: {pe:.1f}x (price={price:.0f})")
+                logger.info("%s PE from CNBC: %.1fx (price=%.0f)", self.market, pe, price)
                 return float(pe)
         except Exception as e:
-            print(f"[HK-ERP] CNBC PE failed: {e}")
+            logger.warning("CNBC PE failed: %s", e)
 
         # Tier 2: 磁盘缓存
         if os.path.exists(pe_cache_file):
@@ -386,13 +389,13 @@ class HKERPTimingEngine:
                 cached_ts = datetime.fromisoformat(cached["ts"])
                 if (datetime.now() - cached_ts).days < 7:
                     pe = cached["pe"]
-                    print(f"[HK-ERP] {self.market} PE from cache: {pe:.1f}x")
+                    logger.info("%s PE from cache: %.1fx", self.market, pe)
                     return float(pe)
             except Exception:
                 pass
 
         # Tier 3: 硬编码兜底
-        print(f"[HK-ERP] {self.market} PE fallback: {self.cfg['pe_fallback']}x")
+        logger.warning("%s PE fallback: %sx", self.market, self.cfg['pe_fallback'])
         return self.cfg["pe_fallback"]
 
     def _fetch_price_history(self, years: int = 5) -> pd.DataFrame:
@@ -406,7 +409,7 @@ class HKERPTimingEngine:
                     cached_df = pd.read_parquet(cache_file)
                     cache_age_days = (datetime.now() - pd.Timestamp(cached_df['trade_date'].iloc[-1])).days
                     if cache_age_days < 3:  # 3天内直接用缓存
-                        print(f"[HK-ERP] {self.market}: using disk cache ({len(cached_df)} rows, {cache_age_days}d old)")
+                        logger.info("%s: using disk cache (%d rows, %dd old)", self.market, len(cached_df), cache_age_days)
                         return cached_df
                 except Exception:
                     pass
@@ -420,7 +423,7 @@ class HKERPTimingEngine:
                 price_str = quote.get('last', '0').replace(',', '')
                 cnbc_price = float(price_str)
                 if cnbc_price > 1000:
-                    print(f"[HK-ERP] {self.market}: CNBC price={cnbc_price:.0f}, generating synthetic history")
+                    logger.info("%s: CNBC price=%.0f, generating synthetic history", self.market, cnbc_price)
                     n_days = years * 252
                     dates = pd.bdate_range(end=datetime.now(), periods=n_days)
                     daily_vol = 0.015 if self.market == "HSI" else 0.020
@@ -439,18 +442,18 @@ class HKERPTimingEngine:
                     df = pd.DataFrame({"trade_date": dates, "close": prices, "eps": eps_list})
                     df["pe_ttm"] = (df["close"] / df["eps"]).clip(*self.cfg["pe_range"])
                     df.to_parquet(cache_file)
-                    print(f"[HK-ERP] {self.market}: bootstrapped {n_days} rows from CNBC, PE≈{current_pe:.1f}")
+                    logger.info("%s: bootstrapped %d rows from CNBC, PE≈%.1f", self.market, n_days, current_pe)
                     return df
             except Exception as e:
-                print(f"[HK-ERP] CNBC bootstrap failed: {e}")
+                logger.warning("CNBC bootstrap failed: %s", e)
 
             # Tier 3: 旧磁盘缓存 (任意年龄)
             if os.path.exists(cache_file):
-                print(f"[HK-ERP] {self.market}: using stale disk cache")
+                logger.warning("%s: using stale disk cache", self.market)
                 return pd.read_parquet(cache_file)
 
             raise ValueError(f"{self.market} data unavailable")
-        return _hk_cached(f"hk_{self.market.lower()}_price", 30 * 60, _fetch)
+        return _hk_cached(f"hk_{self.market.lower()}_price", 4 * 3600, _fetch)
 
     def _fetch_us10y_history(self, years: int = 5) -> pd.DataFrame:
         """US 10Y Treasury (复用FRED DGS10)"""
@@ -471,12 +474,12 @@ class HKERPTimingEngine:
                             "us10y": series.values,
                         })
                         df.to_parquet(cache_file)
-                        print(f"[HK-ERP] US10Y: {len(df)} rows, latest={df['us10y'].iloc[-1]:.2f}%")
+                        logger.info("US10Y: %d rows, latest=%.2f%%", len(df), df['us10y'].iloc[-1])
                         return df
                 except Exception as e:
-                    print(f"[HK-ERP] FRED DGS10 error: {e}")
+                    logger.warning("FRED DGS10 error: %s", e)
             if os.path.exists(cache_file):
-                print(f"[HK-ERP] US10Y: using disk cache ({cache_file})")
+                logger.info("US10Y: using disk cache")
                 return pd.read_parquet(cache_file)
             # Fallback: try US ERP engine's or Rates engine's cache
             for alt_file in [os.path.join(CACHE_DIR, "erp_us_treasury_10y.parquet"),
@@ -490,16 +493,16 @@ class HKERPTimingEngine:
                                 alt_df = alt_df.rename(columns={col: 'us10y'})
                                 break
                         if 'us10y' in alt_df.columns and 'trade_date' in alt_df.columns:
-                            print(f"[HK-ERP] US10Y: fallback to {os.path.basename(alt_file)}")
+                            logger.info("US10Y: fallback to %s", os.path.basename(alt_file))
                             return alt_df[['trade_date', 'us10y']]
                     except Exception:
                         pass
             # Last resort: generate synthetic constant series
-            print("[HK-ERP] US10Y: all sources failed, using 4.3% constant")
+            logger.warning("US10Y: all sources failed, using 4.3%% constant")
             dates = pd.date_range(end=datetime.now(), periods=years * 252, freq="B")
             df = pd.DataFrame({"trade_date": dates, "us10y": np.full(len(dates), 4.3)})
             return df
-        return _hk_cached("hk_us10y", 30 * 60, _fetch)
+        return _hk_cached("hk_us10y", 4 * 3600, _fetch)
 
     def _fetch_cn10y_history(self, years: int = 5) -> pd.DataFrame:
         """CN 10Y 数据源优先级 (P1审计修正):
@@ -531,13 +534,13 @@ class HKERPTimingEngine:
                     if not df_10y.empty:
                         cn10y_val = float(df_10y.iloc[0]['yield'])
                         if 0.5 < cn10y_val < 8.0:
-                            print(f"[HK-ERP] CN10Y from Tushare: {cn10y_val:.2f}%")
+                            logger.info("CN10Y from Tushare: %.2f%%", cn10y_val)
                             dates = pd.date_range(end=datetime.now(), periods=years * 252, freq="B")
                             df = pd.DataFrame({"trade_date": dates, "cn10y": np.full(len(dates), cn10y_val)})
                             df.to_parquet(cache_file)
                             return df
             except Exception as e:
-                print(f"[HK-ERP] Tushare CN10Y error: {e}")
+                logger.warning("Tushare CN10Y error: %s", e)
 
             # Tier 1: CNBC 实时中国10Y国债 (准确, 实时)
             try:
@@ -549,13 +552,13 @@ class HKERPTimingEngine:
                     if match:
                         cn10y_val = float(match.group(1))
                         if 0.5 < cn10y_val < 8.0:
-                            print(f"[HK-ERP] CN10Y from CNBC: {cn10y_val:.2f}% (Tier 1)")
+                            logger.info("CN10Y from CNBC: %.2f%% (Tier 1)", cn10y_val)
                             dates = pd.date_range(end=datetime.now(), periods=years * 252, freq="B")
                             df = pd.DataFrame({"trade_date": dates, "cn10y": np.full(len(dates), cn10y_val)})
                             df.to_parquet(cache_file)
                             return df
             except Exception as e:
-                print(f"[HK-ERP] CNBC CN10Y error: {e}")
+                logger.warning("CNBC CN10Y error: %s", e)
 
             # Tier 2: FRED INTDSRCNM193N (央行贴现率, ⚠️ 非真实CN10Y, 偏高~1.2%)
             fred = _get_hk_fred()
@@ -576,23 +579,23 @@ class HKERPTimingEngine:
                         # ⚠️ 审计修正: 贴现率 → CN10Y估算 (下调1.0%近似真实CN10Y)
                         df["cn10y"] = (df["cn10y"] - 1.0).clip(lower=0.5)
                         df.to_parquet(cache_file)
-                        print(f"[HK-ERP] CN10Y proxy (INTDSRCNM193N-1.0%): {len(df)} rows, adjusted={df['cn10y'].iloc[-1]:.2f}%")
+                        logger.info("CN10Y proxy (INTDSRCNM193N-1.0%%): %d rows, adjusted=%.2f%%", len(df), df['cn10y'].iloc[-1])
                         return df
                 except Exception as e:
-                    print(f"[HK-ERP] FRED INTDSRCNM193N error: {e}")
+                    logger.warning("FRED INTDSRCNM193N error: %s", e)
 
             # Tier 3: 磁盘缓存 (任何年龄)
             if os.path.exists(cache_file):
-                print("[HK-ERP] CN10Y: using disk cache")
+                logger.info("CN10Y: using disk cache")
                 return pd.read_parquet(cache_file)
 
             # Tier 4: 硬编码 (更新为当前市场水平)
-            print("[HK-ERP] CN10Y fallback: 1.70%")
+            logger.warning("CN10Y fallback: 1.70%%")
             dates = pd.date_range(end=datetime.now(), periods=years * 252, freq="B")
             df = pd.DataFrame({"trade_date": dates, "cn10y": np.full(len(dates), 1.70)})
             df.to_parquet(cache_file)
             return df
-        return _hk_cached("hk_cn10y", 60 * 60, _fetch)
+        return _hk_cached("hk_cn10y", 4 * 3600, _fetch)
 
     def _fetch_hsi_volatility(self) -> Dict:
         """HSI 实现波动率 (60日滚动)"""
@@ -616,7 +619,7 @@ class HKERPTimingEngine:
 
             return {"current": round(vol_60d, 1), "pct": round(vol_pct, 1), "regime": regime}
         except Exception as e:
-            print(f"[HK-ERP] volatility calc error: {e}")
+            logger.warning("volatility calc error: %s", e)
             return {"current": 22.0, "pct": 50, "regime": "normal"}
 
     # ========== 核心计算层 ==========
@@ -1089,7 +1092,7 @@ class HKERPTimingEngine:
                 "alerts": alerts, "diagnosis": diagnosis, "encyclopedia": ENCYCLOPEDIA_HK,
             }
         except Exception as e:
-            import traceback; traceback.print_exc()
+            logger.debug("Traceback", exc_info=True)
             return self._fallback_signal(str(e))
 
     def get_erp_chart_data(self) -> dict:

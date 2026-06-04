@@ -22,10 +22,14 @@ import numpy as np
 import tushare as ts
 import os
 import time
+import logging
 from datetime import datetime, timedelta
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from services.fred_guard import fred_get_series
+
+
+logger = logging.getLogger("alphacore.momentum")
 
 # ====== Tushare 初始化 ======
 from config import TUSHARE_TOKEN
@@ -179,7 +183,7 @@ def fetch_etf_data(days: int = 60) -> dict:
     """
     full_pool = MOMENTUM_POOL_OFFENSE + MOMENTUM_POOL_DEFENSE
     total = len(full_pool)
-    print(f"[动量引擎] 开始并发获取{days}天历史数据 ({total}只)...")
+    logger.info("开始并发获取%d天历史数据 (%d只)...", days, total)
     end_date = datetime.now().strftime("%Y%m%d")
     start_date = (datetime.now() - timedelta(days=int(days * 2.0))).strftime("%Y%m%d")
 
@@ -192,13 +196,13 @@ def fetch_etf_data(days: int = 60) -> dict:
             if df is not None:
                 etf_data[code] = df
 
-    print(f"[动量引擎] 数据获取完成: {len(etf_data)}/{total} 只")
+    logger.info("数据获取完成: %d/%d 只", len(etf_data), total)
     return etf_data
 
 
 def fetch_hs300_data(days: int = 150) -> pd.DataFrame:
     """获取沪深300指数数据用于市场环境判断"""
-    print("[动量引擎] 获取沪深300指数数据...")
+    logger.info("获取沪深300指数数据...")
     try:
         end_date = datetime.now().strftime("%Y%m%d")
         start_date = (datetime.now() - timedelta(days=int(days * 2.0))).strftime("%Y%m%d")
@@ -374,7 +378,7 @@ def assess_market_environment(hs300_df, etf_data: dict) -> dict:
                     _age = (_time.time() - datetime.fromisoformat(
                         str(_ts)).timestamp()) / 3600
                     if _age > 24:
-                        print(f"[动量引擎] aiae_ctx 缓存过期 ({_age:.0f}h), 降级为 R3")
+                        logger.warning("aiae_ctx 缓存过期 (%.0fh), 降级为 R3", _age)
                         aiae_regime = 3
             except Exception:
                 pass
@@ -390,13 +394,13 @@ def assess_market_environment(hs300_df, etf_data: dict) -> dict:
 
     env["regime_label"] = REGIME_PARAMS[env["regime"]]["label"]
 
-    print(f"[动量引擎] 环境评估: {env['regime']}")
-    print(f"  L1(趋势): {env['layer1_trend']} → {env['layer1_cap']}%")
-    print(f"  L2(VIX): {env['layer2_vix']} → {env['layer2_cap']}%")
-    print(f"  L3(极端): crash={env['layer3_crash']} → {env['layer3_cap']}%")
+    logger.info("环境评估: %s", env['regime'])
+    logger.info("  L1(趋势): %s → %d%%", env['layer1_trend'], env['layer1_cap'])
+    logger.info("  L2(VIX): %.1f → %d%%", env['layer2_vix'], env['layer2_cap'])
+    logger.info("  L3(极端): crash=%s → %d%%", env['layer3_crash'], env['layer3_cap'])
     if env["aiae_cap_info"]:
-        print(f"  L4(AIAE): {env['aiae_cap_info']}")
-    print(f"  最终仓位上限: {env['final_cap']}%")
+        logger.info("  L4(AIAE): %s", env['aiae_cap_info'])
+    logger.info("  最终仓位上限: %d%%", env['final_cap'])
 
     return env
 
@@ -709,7 +713,7 @@ def _save_holdings(holdings: dict):
         from services.cache_service import cache_manager
         cache_manager.set_json(_MOM_HOLDINGS_KEY, holdings)
     except Exception as e:
-        print(f"[动量引擎] 持仓缓存写入失败: {e}")
+        logger.warning("持仓缓存写入失败: %s", e)
 
 
 def _check_cumulative_stop(ts_code: str, current_price: float, regime: str,
@@ -850,7 +854,7 @@ def generate_signals(etf_data: dict, env: dict) -> dict:
             })
         except Exception as e:
             errors.append({"code": code, "name": item["name"], "error": str(e)})
-            traceback.print_exc()
+            logger.debug("Traceback", exc_info=True)
 
     if not all_results:
         return {"signals": [], "buy_signals": [], "sell_signals": [],
@@ -914,7 +918,7 @@ def generate_signals(etf_data: dict, env: dict) -> dict:
             buy_candidates = [c for c in buy_candidates if c["ts_code"] != ts_code]
             # 从holdings中移除
             holdings.pop(ts_code, None)
-            print(f"  [STOP] {r['name']}({ts_code}): {stop_check['message']}")
+            logger.warning("[STOP] %s(%s): %s", r['name'], ts_code, stop_check['message'])
 
     # Step 5: 分散化约束
     buy_signals = apply_diversification(buy_candidates, params)
@@ -958,7 +962,7 @@ def generate_signals(etf_data: dict, env: dict) -> dict:
                 "name": s["name"],
             }
     _save_holdings(new_holdings)
-    print(f"  [持仓] 追踪{len(new_holdings)}只, 止损{len(stop_loss_events)}只")
+    logger.info("[持仓] 追踪%d只, 止损%d只", len(new_holdings), len(stop_loss_events))
 
     # Step 8: 注入持仓天数 T+N (逐资产)
     rebalance_days = params.get("rebalance_days", 10)
@@ -1060,7 +1064,7 @@ def _empty_overview(env):
 
 def run_momentum_strategy() -> dict:
     """运行完整行业动量轮动策略 V3.1（回测验证同步版）"""
-    print("[动量引擎] ========= 行业动量轮动策略 V3.1 启动 =========")
+    logger.info("========= 行业动量轮动策略 V3.1 启动 =========")
 
     # 1. 获取ETF数据（含防御型标的）
     etf_data = fetch_etf_data(days=60)
@@ -1077,9 +1081,9 @@ def run_momentum_strategy() -> dict:
             close_arr = hs300_df["close"].astype(float).values
             regime_meta = _classify_regime_from_series(close_arr)
             unified_regime = regime_meta.get("regime", "RANGE")
-            print(f"[动量引擎] 统一Regime: {unified_regime} ({regime_meta.get('regime_cn', '')})")
+            logger.info("统一Regime: %s (%s)", unified_regime, regime_meta.get('regime_cn', ''))
         except Exception as e:
-            print(f"[动量引擎] Regime识别失败，使用默认RANGE: {e}")
+            logger.warning("Regime识别失败，使用默认RANGE: %s", e)
 
     # 4. 三层市场环境评估（Layer2 VIX + Layer3 极端风险保留独立运算）
     env = assess_market_environment(hs300_df, etf_data)
@@ -1092,7 +1096,7 @@ def run_momentum_strategy() -> dict:
 
     # 6. CRASH 熔断 + 极端风险 → 直接空仓
     if unified_regime == "CRASH" or env["layer3_crash"]:
-        print("[动量引擎] ! CRASH/极端风险 ! 空仓避险")
+        logger.warning("! CRASH/极端风险 ! 空仓避险")
         return {
             "status": "success",
             "timestamp": datetime.now().isoformat(),
@@ -1108,12 +1112,12 @@ def run_momentum_strategy() -> dict:
     # 7. 信号生成
     result = generate_signals(etf_data, env)
 
-    print(f"[动量引擎] 完成: {result['market_overview']['total_etfs']}只有信号, "
-          f"{len(result['errors'])}只异常")
-    print(f"[动量引擎] Regime:{unified_regime} "
-          f"买入:{result['market_overview']['buy_count']} "
-          f"卖出:{result['market_overview']['sell_count']} "
-          f"建议总仓:{result['market_overview']['total_suggested_pos']}%")
+    logger.info("完成: %d只有信号, %d只异常",
+          result['market_overview']['total_etfs'], len(result['errors']))
+    logger.info("Regime:%s 买入:%d 卖出:%d 建议总仓:%.0f%%",
+          unified_regime, result['market_overview']['buy_count'],
+          result['market_overview']['sell_count'],
+          result['market_overview']['total_suggested_pos'])
 
     return {
         "status": "success",

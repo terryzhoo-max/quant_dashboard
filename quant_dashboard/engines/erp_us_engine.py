@@ -20,12 +20,15 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import json
+import logging
 import threading
 
 from config import FRED_API_KEY
 from services.fred_guard import fred_get_series
 from erp_signal_enhancer import adaptive_weights, multi_timeframe_confirmation
 import erp_params
+
+logger = logging.getLogger("alphacore.erp_us")
 
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
@@ -47,7 +50,7 @@ def _get_dynamic_eps_us() -> float:
     quarters_elapsed = (datetime.now() - base_date).days / 91.25
     adjusted = cfg["base_eps"] * (1 + cfg["annual_growth"]) ** (quarters_elapsed / 4)
     if quarters_elapsed >= 3:
-        print(f"[US-ERP] ⚠️ EPS估算基于{cfg['as_of_quarter']}，已过期{quarters_elapsed:.0f}个季度，请更新EPS_CONFIG_US")
+        logger.warning("EPS估算基于%s，已过期%.0f个季度，请更新EPS_CONFIG_US", cfg['as_of_quarter'], quarters_elapsed)
     return round(adjusted, 1)
 
 # FRED API 初始化
@@ -59,7 +62,7 @@ def _get_fred():
             from fredapi import Fred
             _fred_instance = Fred(api_key=FRED_API_KEY)
         except Exception as e:
-            print(f"[US-ERP] FRED init failed: {e}")
+            logger.warning("FRED init failed: %s", e)
     return _fred_instance
 
 def _finnhub_quote(symbol: str) -> Optional[float]:
@@ -68,7 +71,7 @@ def _finnhub_quote(symbol: str) -> Optional[float]:
         from finnhub_client import get_price
         return get_price(symbol)
     except Exception as e:
-        print(f"[US-ERP] Finnhub {symbol} failed: {e}")
+        logger.warning("Finnhub %s failed: %s", symbol, e)
         return None
 
 # ===== TTL 缓存 (复用中国版架构) =====
@@ -85,7 +88,7 @@ def _us_cached(key: str, ttl_seconds: int, fetcher):
         _us_cache[key] = (now, data)
         return data
     except Exception as e:
-        print(f"[US-ERP] cache fail ({key}): {e}")
+        logger.warning("cache fail (%s): %s", key, e)
         if key in _us_cache:
             return _us_cache[key][1]
         raise
@@ -183,7 +186,7 @@ class USERPTimingEngine:
                 json.dump(data, f, ensure_ascii=False)
             os.replace(tmp_path, filepath)
         except Exception as e:
-            print(f"[US-ERP] 保存状态失败: {e}")
+            logger.warning("保存状态失败: %s", e)
             if os.path.exists(tmp_path):
                 try:
                     os.remove(tmp_path)
@@ -218,10 +221,10 @@ class USERPTimingEngine:
                     pe = max(12, min(45, pe))
                     with open(pe_cache_file, "w") as f:
                         json.dump({"pe": round(pe, 2), "source": "FRED/SP500", "ts": datetime.now().isoformat()}, f)
-                    print(f"[US-ERP] PE from FRED SP500: {pe:.1f}x (index={index_price:.0f}, est_EPS=${ESTIMATED_INDEX_EPS:.0f})")
+                    logger.info("PE from FRED SP500: %.1fx (index=%.0f, est_EPS=$%.0f)", pe, index_price, ESTIMATED_INDEX_EPS)
                     return float(pe)
         except Exception as e:
-            print(f"[US-ERP] FRED SP500 PE failed: {e}")
+            logger.warning("FRED SP500 PE failed: %s", e)
         
         # Tier 2: Finnhub SPY ETF价格 × 10 估算指数 (SPY ≈ SP500/10)
         try:
@@ -232,10 +235,10 @@ class USERPTimingEngine:
                 pe = max(12, min(45, pe))
                 with open(pe_cache_file, "w") as f:
                     json.dump({"pe": round(pe, 2), "source": "finnhub/SPY*10", "ts": datetime.now().isoformat()}, f)
-                print(f"[US-ERP] PE from Finnhub SPY: {pe:.1f}x (SPY=${price:.0f}*10={approx_index:.0f}, EPS=${ESTIMATED_INDEX_EPS:.0f})")
+                logger.info("PE from Finnhub SPY: %.1fx (SPY=$%.0f*10=%.0f, EPS=$%.0f)", pe, price, approx_index, ESTIMATED_INDEX_EPS)
                 return float(pe)
         except Exception as e:
-            print(f"[US-ERP] Finnhub PE failed: {e}")
+            logger.warning("Finnhub PE failed: %s", e)
         
         # Tier 3: 磁盘缓存 (7天内有效)
         if os.path.exists(pe_cache_file):
@@ -245,12 +248,12 @@ class USERPTimingEngine:
                 cached_ts = datetime.fromisoformat(cached["ts"])
                 if (datetime.now() - cached_ts).days < 7:
                     pe = cached["pe"]
-                    print(f"[US-ERP] PE from disk cache: {pe:.1f}x (cached {cached['ts'][:10]})")
+                    logger.info("PE from disk cache: %.1fx (cached %s)", pe, cached['ts'][:10])
                     return float(pe)
             except:
                 pass
         
-        print("[US-ERP] PE fallback to 27.0x (all sources failed)")
+        logger.warning("PE fallback to 27.0x (all sources failed)")
         return 27.0
 
     def _fetch_spy_pe_history(self, years: int = 5) -> pd.DataFrame:
@@ -287,17 +290,17 @@ class USERPTimingEngine:
                         df["pe_ttm"] = df["close"] / df["eps"]
                         df["pe_ttm"] = df["pe_ttm"].clip(8, 60)
                         df.to_parquet(cache_file)
-                        print(f"[US-ERP] SP500 PE (FRED): {len(df)} rows, PE≈{current_pe:.1f}")
+                        logger.info("SP500 PE (FRED): %d rows, PE≈%.1f", len(df), current_pe)
                         return df
                 except Exception as e:
-                    print(f"[US-ERP] FRED SP500 error: {e}")
+                    logger.warning("FRED SP500 error: %s", e)
 
             # Fallback: 磁盘缓存
             if os.path.exists(cache_file):
-                print("[US-ERP] SP500 PE: using disk cache")
+                logger.info("SP500 PE: using disk cache")
                 return pd.read_parquet(cache_file)
             raise ValueError("SP500 data unavailable")
-        return _us_cached("us_spy_pe", 30 * 60, _fetch)
+        return _us_cached("us_spy_pe", 4 * 3600, _fetch)
 
     def _fetch_us10y_history(self, years: int = 5) -> pd.DataFrame:
         """US 10Y Treasury (FRED DGS10 — 日频数据)"""
@@ -319,15 +322,15 @@ class USERPTimingEngine:
                             "yield_10y": series.values,
                         })
                         df.to_parquet(cache_file)
-                        print(f"[US-ERP] 10Y UST (FRED): {len(df)} rows, latest={df['yield_10y'].iloc[-1]:.2f}%")
+                        logger.info("10Y UST (FRED): %d rows, latest=%.2f%%", len(df), df['yield_10y'].iloc[-1])
                         return df
                 except Exception as e:
-                    print(f"[US-ERP] FRED DGS10 error: {e}")
+                    logger.warning("FRED DGS10 error: %s", e)
 
             if os.path.exists(cache_file):
                 return pd.read_parquet(cache_file)
             raise ValueError("US 10Y data unavailable")
-        return _us_cached("us_10y", 30 * 60, _fetch)
+        return _us_cached("us_10y", 4 * 3600, _fetch)
 
     def _fetch_vix_history(self, years: int = 5) -> pd.DataFrame:
         """VIX (FRED VIXCLS — 日频数据)"""
@@ -349,15 +352,15 @@ class USERPTimingEngine:
                             "vix": series.values,
                         })
                         df.to_parquet(cache_file)
-                        print(f"[US-ERP] VIX (FRED): {len(df)} rows, latest={df['vix'].iloc[-1]:.1f}")
+                        logger.info("VIX (FRED): %d rows, latest=%.1f", len(df), df['vix'].iloc[-1])
                         return df
                 except Exception as e:
-                    print(f"[US-ERP] FRED VIXCLS error: {e}")
+                    logger.warning("FRED VIXCLS error: %s", e)
 
             if os.path.exists(cache_file):
                 return pd.read_parquet(cache_file)
             raise ValueError("VIX data unavailable")
-        return _us_cached("us_vix", 30 * 60, _fetch)
+        return _us_cached("us_vix", 2 * 3600, _fetch)
 
     def _fetch_tbill_3m(self, years: int = 3) -> pd.DataFrame:
         """3M T-Bill (FRED DTB3 — 日频数据)"""
@@ -379,15 +382,15 @@ class USERPTimingEngine:
                             "rate_3m": series.values,
                         })
                         df.to_parquet(cache_file)
-                        print(f"[US-ERP] 3M T-Bill (FRED): {len(df)} rows, latest={df['rate_3m'].iloc[-1]:.2f}%")
+                        logger.info("3M T-Bill (FRED): %d rows, latest=%.2f%%", len(df), df['rate_3m'].iloc[-1])
                         return df
                 except Exception as e:
-                    print(f"[US-ERP] FRED DTB3 error: {e}")
+                    logger.warning("FRED DTB3 error: %s", e)
 
             if os.path.exists(cache_file):
                 return pd.read_parquet(cache_file)
             raise ValueError("3M T-Bill data unavailable")
-        return _us_cached("us_3m_tbill", 60 * 60, _fetch)
+        return _us_cached("us_3m_tbill", 4 * 3600, _fetch)
 
     def _fetch_credit_spread(self) -> dict:
         """信用利差 (FRED BAMLH0A0HYM2 — ICE BofA HY OAS)
@@ -410,14 +413,14 @@ class USERPTimingEngine:
                         # === A2修复: 不再 /100! FRED直接返回百分比 ===
                         result = {"spread": round(spread_now, 2), "trend": trend,
                                   "raw_bps": round(spread_now * 100, 0)}
-                        print(f"[US-ERP] HY OAS (FRED): {spread_now:.2f}% = {spread_now*100:.0f}bps ({trend})")
+                        logger.info("HY OAS (FRED): %.2f%% = %.0fbps (%s)", spread_now, spread_now*100, trend)
                         return result
                 except Exception as e:
-                    print(f"[US-ERP] FRED BAMLH0A0HYM2 error: {e}")
+                    logger.warning("FRED BAMLH0A0HYM2 error: %s", e)
 
             # Fallback: 合理默认值
             return {"spread": 3.5, "trend": "unknown", "raw_bps": 350}
-        return _us_cached("us_credit_spread", 2 * 3600, _fetch)
+        return _us_cached("us_credit_spread", 6 * 3600, _fetch)
 
     # ========== 核心计算层 ==========
 
@@ -889,7 +892,7 @@ class USERPTimingEngine:
                 "alerts": alerts, "diagnosis": diagnosis, "encyclopedia": ENCYCLOPEDIA_US,
             }
         except Exception as e:
-            import traceback; traceback.print_exc()
+            logger.debug("Traceback", exc_info=True)
             return self._fallback_signal(str(e))
 
     def get_erp_chart_data(self) -> dict:

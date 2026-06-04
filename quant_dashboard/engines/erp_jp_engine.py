@@ -25,6 +25,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import json
+import logging
 import threading
 
 # FRED API for all Japan data
@@ -35,6 +36,8 @@ CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
 from erp_signal_enhancer import adaptive_weights, multi_timeframe_confirmation
 import erp_params
+
+logger = logging.getLogger("alphacore.erp_jp")
 
 # O1: 动态EPS估算配置 (替代硬编码¥2500)
 EPS_CONFIG_JP = {
@@ -52,7 +55,7 @@ def _get_dynamic_eps_jp() -> float:
     quarters_elapsed = (datetime.now() - base_date).days / 91.25
     adjusted = cfg["base_eps"] * (1 + cfg["annual_growth"]) ** (quarters_elapsed / 4)
     if quarters_elapsed >= 3:
-        print(f"[JP-ERP] ⚠️ EPS估算基于{cfg['as_of_quarter']}，已过期{quarters_elapsed:.0f}个季度，请更新EPS_CONFIG_JP")
+        logger.warning("EPS估算基于%s，已过期%.0f个季度，请更新EPS_CONFIG_JP", cfg['as_of_quarter'], quarters_elapsed)
     return round(adjusted, 1)
 
 _jp_fred = None
@@ -63,7 +66,7 @@ def _get_jp_fred():
             from fredapi import Fred
             _jp_fred = Fred(api_key=FRED_API_KEY)
         except Exception as e:
-            print(f"[JP-ERP] FRED init failed: {e}")
+            logger.warning("FRED init failed: %s", e)
     return _jp_fred
 
 _jp_cache = {}
@@ -79,7 +82,7 @@ def _jp_cached(key: str, ttl_seconds: int, fetcher):
         _jp_cache[key] = (now, data)
         return data
     except Exception as e:
-        print(f"[JP-ERP] cache fail ({key}): {e}")
+        logger.warning("cache fail (%s): %s", key, e)
         if key in _jp_cache:
             return _jp_cache[key][1]
         raise
@@ -174,7 +177,7 @@ class JPERPTimingEngine:
                 json.dump(data, f, ensure_ascii=False)
             os.replace(tmp_path, filepath)
         except Exception as e:
-            print(f"[JP-ERP] 保存状态失败: {e}")
+            logger.warning("保存状态失败: %s", e)
             if os.path.exists(tmp_path):
                 try:
                     os.remove(tmp_path)
@@ -203,10 +206,10 @@ class JPERPTimingEngine:
                     pe = max(10, min(35, pe))
                     with open(pe_cache_file, "w") as f:
                         json.dump({"pe": round(pe, 2), "source": "FRED/NIKKEI225", "ts": datetime.now().isoformat()}, f)
-                    print(f"[JP-ERP] PE from FRED NIKKEI225: {pe:.1f}x (price=¥{price:.0f}, est_EPS=¥2500)")
+                    logger.info("PE from FRED NIKKEI225: %.1fx (price=¥%.0f, est_EPS=¥2500)", pe, price)
                     return float(pe)
         except Exception as e:
-            print(f"[JP-ERP] FRED PE failed: {e}")
+            logger.warning("FRED PE failed: %s", e)
 
         # Tier 2: 磁盘缓存 (7天内有效)
         if os.path.exists(pe_cache_file):
@@ -216,12 +219,12 @@ class JPERPTimingEngine:
                 cached_ts = datetime.fromisoformat(cached["ts"])
                 if (datetime.now() - cached_ts).days < 7:
                     pe = cached["pe"]
-                    print(f"[JP-ERP] PE from disk cache: {pe:.1f}x (cached {cached['ts'][:10]})")
+                    logger.info("PE from disk cache: %.1fx (cached %s)", pe, cached['ts'][:10])
                     return float(pe)
             except Exception:
                 pass
 
-        print("[JP-ERP] PE fallback to 16.0x (all sources failed)")
+        logger.warning("PE fallback to 16.0x (all sources failed)")
         return 16.0
 
     def _fetch_topix_pe_history(self, years: int = 5) -> pd.DataFrame:
@@ -256,16 +259,16 @@ class JPERPTimingEngine:
                         df["pe_ttm"] = df["close"] / df["eps"]
                         df["pe_ttm"] = df["pe_ttm"].clip(8, 40)
                         df.to_parquet(cache_file)
-                        print(f"[JP-ERP] Nikkei PE (FRED): {len(df)} rows, PE≈{current_pe:.1f}")
+                        logger.info("Nikkei PE (FRED): %d rows, PE≈%.1f", len(df), current_pe)
                         return df
                 except Exception as e:
-                    print(f"[JP-ERP] FRED NIKKEI225 error: {e}")
+                    logger.warning("FRED NIKKEI225 error: %s", e)
 
             if os.path.exists(cache_file):
-                print("[JP-ERP] Nikkei PE: using disk cache")
+                logger.info("Nikkei PE: using disk cache")
                 return pd.read_parquet(cache_file)
             raise ValueError("Nikkei data unavailable")
-        return _jp_cached("jp_topix_pe", 30 * 60, _fetch)
+        return _jp_cached("jp_topix_pe", 4 * 3600, _fetch)
 
 
     def _fetch_jgb_10y_history(self, years: int = 5) -> pd.DataFrame:
@@ -289,23 +292,23 @@ class JPERPTimingEngine:
                         df = df.dropna()
                         df = df.set_index("trade_date").resample("D").ffill().reset_index()
                         df.to_parquet(cache_file)
-                        print(f"[JP-ERP] JGB 10Y (FRED): {len(df)} rows, latest={df['yield_10y'].iloc[-1]:.3f}%")
+                        logger.info("JGB 10Y (FRED): %d rows, latest=%.3f%%", len(df), df['yield_10y'].iloc[-1])
                         return df
                 except Exception as e:
-                    print(f"[JP-ERP] FRED JGB error: {e}")
+                    logger.warning("FRED JGB error: %s", e)
 
             if os.path.exists(cache_file):
                 return pd.read_parquet(cache_file)
 
             # 最终降级: 用近似值
-            print("[JP-ERP] JGB fallback: proxy values")
+            logger.warning("JGB fallback: proxy values")
             dates = pd.date_range(end=datetime.now(), periods=years * 252, freq="B")
             jgb_vals = np.interp(range(len(dates)), [0, len(dates)//3, len(dates)*2//3, len(dates)-1], [0.1, 0.3, 0.7, 1.0])
             jgb_vals = np.clip(jgb_vals + np.random.normal(0, 0.05, len(dates)), 0.0, 2.0)
             df = pd.DataFrame({"trade_date": dates, "yield_10y": jgb_vals})
             df.to_parquet(cache_file)
             return df
-        return _jp_cached("jp_jgb_10y", 60 * 60, _fetch)
+        return _jp_cached("jp_jgb_10y", 4 * 3600, _fetch)
 
     def _fetch_usdjpy_history(self, years: int = 3) -> pd.DataFrame:
         """USDJPY (FRED DEXJPUS — 日频)"""
@@ -327,15 +330,15 @@ class JPERPTimingEngine:
                             "usdjpy": series.values,
                         })
                         df.to_parquet(cache_file)
-                        print(f"[JP-ERP] USDJPY (FRED): {len(df)} rows, latest={df['usdjpy'].iloc[-1]:.2f}")
+                        logger.info("USDJPY (FRED): %d rows, latest=%.2f", len(df), df['usdjpy'].iloc[-1])
                         return df
                 except Exception as e:
-                    print(f"[JP-ERP] FRED DEXJPUS error: {e}")
+                    logger.warning("FRED DEXJPUS error: %s", e)
 
             if os.path.exists(cache_file):
                 return pd.read_parquet(cache_file)
             raise ValueError("USDJPY data unavailable")
-        return _jp_cached("jp_usdjpy", 30 * 60, _fetch)
+        return _jp_cached("jp_usdjpy", 4 * 3600, _fetch)
 
     def _fetch_nikkei_history(self, years: int = 5) -> pd.DataFrame:
         """日经225历史 (FRED NIKKEI225)"""
@@ -359,12 +362,12 @@ class JPERPTimingEngine:
                         df.to_parquet(cache_file)
                         return df
                 except Exception as e:
-                    print(f"[JP-ERP] FRED NIKKEI225 error: {e}")
+                    logger.warning("FRED NIKKEI225 error: %s", e)
 
             if os.path.exists(cache_file):
                 return pd.read_parquet(cache_file)
             raise ValueError("Nikkei data unavailable")
-        return _jp_cached("jp_nikkei", 30 * 60, _fetch)
+        return _jp_cached("jp_nikkei", 4 * 3600, _fetch)
 
     # ========== 核心计算层 ==========
 
@@ -797,7 +800,7 @@ class JPERPTimingEngine:
                 "alerts": alerts, "diagnosis": diagnosis, "encyclopedia": ENCYCLOPEDIA_JP,
             }
         except Exception as e:
-            import traceback; traceback.print_exc()
+            logger.debug("Traceback", exc_info=True)
             return self._fallback_signal(str(e))
 
     def get_erp_chart_data(self) -> dict:

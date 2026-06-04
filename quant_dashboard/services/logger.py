@@ -102,6 +102,24 @@ except Exception:
     _file_handler = None  # 文件系统不可用时静默降级
 
 
+# ── 引擎命名空间统一注册 ──────────────────────────────
+# 引擎模块使用 logging.getLogger("alphacore.*") 命名空间。
+# 在父 logger 上注册 handler, 所有子 logger 自动继承格式/级别/文件轮转。
+def _setup_namespace(ns: str):
+    """为指定命名空间的父 logger 注册统一 handler"""
+    parent = logging.getLogger(ns)
+    if not parent.handlers:
+        parent.addHandler(_handler)
+        if _file_handler:
+            parent.addHandler(_file_handler)
+        parent.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
+        parent.propagate = False
+
+_setup_namespace("alphacore")
+_setup_namespace("ac")
+
+
+
 def get_logger(name: str) -> logging.Logger:
     """获取命名日志器 (统一 ac.xxx 命名空间)
 

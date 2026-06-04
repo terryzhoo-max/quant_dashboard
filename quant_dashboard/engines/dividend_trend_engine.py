@@ -25,9 +25,13 @@ import numpy as np
 import tushare as ts
 import os
 import time
+import logging
 from datetime import datetime, timedelta
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+
+logger = logging.getLogger("alphacore.dividend")
 
 # ====== Tushare 初始化 ======
 from config import TUSHARE_TOKEN
@@ -158,12 +162,12 @@ def _fetch_ttm_dividends() -> dict:
             cache_manager.set_json("div_ttm_cache",
                                    {"_ts": datetime.now().isoformat(), "data": result},
                                    ttl_seconds=86400)
-            print(f"[红利引擎] TTM分红已动态更新: {result}")
+            logger.info("TTM分红已动态更新: %s", result)
         except Exception:
             pass
         return result
     except Exception as e:
-        print(f"[红利引擎] TTM分红获取失败, 使用静态保底值: {e}")
+        logger.warning("TTM分红获取失败, 使用静态保底值: %s", e)
         return _DIVIDEND_D_TTM_FALLBACK
 
 DIVIDEND_D_TTM = _fetch_ttm_dividends()
@@ -207,7 +211,7 @@ def fetch_etf_data_by_code(days: int = 150) -> dict:
     """
     V5.0: 并发拉取历史数据并引入本地 Parquet 降级保护
     """
-    print(f"[红利引擎] 开始并发获取{days}天历史数据...")
+    logger.info("开始并发获取%d天历史数据...", days)
 
     end_date   = datetime.now().strftime("%Y%m%d")
     start_date = (datetime.now() - timedelta(days=int(days * 2.0))).strftime("%Y%m%d")
@@ -221,7 +225,7 @@ def fetch_etf_data_by_code(days: int = 150) -> dict:
             if df is not None:
                 etf_data[code] = df
 
-    print(f"[红利引擎] 数据获取完成，共{len(etf_data)}/8只ETF有数据")
+    logger.info("数据获取完成，共%d/8只ETF有数据", len(etf_data))
     return etf_data
 
 
@@ -506,10 +510,10 @@ def run_dividend_strategy(regime: str = None) -> dict:
             from mean_reversion_engine import detect_regime
             regime_info = detect_regime()
             regime = regime_info.get("regime", DEFAULT_REGIME)
-            print(f"[红利引擎] 自动识别 Regime: {regime} ({regime_info.get('regime_cn', '')})")
+            logger.info("自动识别 Regime: %s (%s)", regime, regime_info.get('regime_cn', ''))
         except Exception as e:
             regime = DEFAULT_REGIME
-            print(f"[红利引擎] Regime自动识别失败，使用默认{DEFAULT_REGIME}: {e}")
+            logger.warning("Regime自动识别失败，使用默认%s: %s", DEFAULT_REGIME, e)
     else:
         regime = regime.upper()
 
@@ -518,11 +522,11 @@ def run_dividend_strategy(regime: str = None) -> dict:
 
     p = REGIME_PARAMS[regime]
 
-    print(f"[红利引擎] ========= 红利趋势策略 V3.2 启动 =========")
-    print(f"[红利引擎] 市场状态: {regime} | {p['note']}")
-    print(f"[红利引擎] 参数: MA趋势={p['ma_trend']}d RSI≤{p['rsi_buy']}/≥{p['rsi_sell']} "
-          f"BIAS≤{p['bias_buy']}%/≥{p['bias_sell']}% Defend=MA{p['ma_defend']} "
-          f"仓位上限={int(p['pos_cap']*100)}%")
+    logger.info("========= 红利趋势策略 V3.2 启动 =========")
+    logger.info("市场状态: %s | %s", regime, p['note'])
+    logger.info("参数: MA趋势=%dd RSI≤%d/≥%d BIAS≤%.1f%%/≥%.1f%% Defend=MA%d 仓位上限=%d%%",
+          p['ma_trend'], p['rsi_buy'], p['rsi_sell'],
+          p['bias_buy'], p['bias_sell'], p['ma_defend'], int(p['pos_cap']*100))
 
     etf_data = fetch_etf_data_by_code(days=150)
 
@@ -572,7 +576,7 @@ def run_dividend_strategy(regime: str = None) -> dict:
 
         except Exception as e:
             errors.append({"code": code, "name": item['name'], "error": str(e)})
-            traceback.print_exc()
+            logger.debug("Traceback", exc_info=True)
 
     # 市场概览统计
     buy_count       = len([r for r in results if r['signal'] == 'buy'])
@@ -618,15 +622,15 @@ def run_dividend_strategy(regime: str = None) -> dict:
                 old_pos = total_pos
                 total_pos = min(total_pos, aiae_cap_pct)
                 if total_pos < old_pos:
-                    print(f"[红利引擎] AIAE V5 配额约束: R{aiae_regime} div配额={aiae_cap_pct}%, "
-                          f"仓位 {old_pos}% → {total_pos}%")
+                    logger.info("AIAE V5 配额约束: R%s div配额=%s%%, 仓位 %d%% → %d%%",
+                          aiae_regime, aiae_cap_pct, old_pos, total_pos)
     except Exception as e:
-        print(f"[红利引擎] AIAE配额读取失败(non-fatal): {e}")
+        logger.warning("AIAE配额读取失败(non-fatal): %s", e)
 
-    print(f"[红利引擎] 完成: {len(results)}只有信号, {len(errors)}只异常")
-    print(f"[红利引擎] 趋势向上:{trend_up_count}, 买入:{buy_count}, 卖出:{sell_count}, "
-          f"仓位:{total_pos}%（Regime上限{pos_cap_pct}%"
-          f"{', AIAE配额' + str(aiae_cap_pct) + '%' if aiae_cap_pct else ''}）")
+    logger.info("完成: %d只有信号, %d只异常", len(results), len(errors))
+    aiae_info = f", AIAE配额{aiae_cap_pct}%" if aiae_cap_pct else ""
+    logger.info("趋势向上:%d, 买入:%d, 卖出:%d, 仓位:%d%%（Regime上限%d%%%s）",
+          trend_up_count, buy_count, sell_count, total_pos, pos_cap_pct, aiae_info)
 
     return {
         "status":    "success",

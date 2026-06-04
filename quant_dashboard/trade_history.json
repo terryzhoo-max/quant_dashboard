@@ -922,5 +922,16 @@
         "total": 0.0,
         "success": true,
         "message": "从券商TXT文件覆盖导入 23 只持仓，可用资金 ¥254.84"
+    },
+    {
+        "timestamp": "2026-06-04 16:22:16",
+        "action": "import",
+        "ts_code": "SYSTEM",
+        "name": "TXT导入 23 只持仓",
+        "amount": 23,
+        "price": 0,
+        "total": 0.0,
+        "success": true,
+        "message": "从券商TXT文件覆盖导入 23 只持仓，可用资金 ¥254.84"
     }
 ]
