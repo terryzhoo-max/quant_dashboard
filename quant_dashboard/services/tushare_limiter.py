@@ -40,12 +40,14 @@ class TushareLimiter:
         """获取一个请求令牌，必要时阻塞等待"""
         self._semaphore.acquire()
         try:
+            # P1-3: 锁内只计算等待时间, 锁外 sleep (消除持锁串行瓶颈)
             with self._lock:
                 now = time.monotonic()
                 wait = self._interval - (now - self._last_call)
-                if wait > 0:
-                    self._throttled_calls += 1
-                    time.sleep(wait)
+            if wait > 0:
+                self._throttled_calls += 1
+                time.sleep(wait)
+            with self._lock:
                 self._last_call = time.monotonic()
                 self._total_calls += 1
         finally:

@@ -9,11 +9,15 @@ AlphaCore · 统一缓存服务 (恢复自 __pycache__ 字节码逆向)
 于 2026-04-22 通过 cpython-312.pyc 字节码完整逆向恢复。
 """
 
+import copy
 import json
 import os
 import logging
 import threading
 import time as _time
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
+
 import redis
 from datetime import datetime
 
@@ -38,9 +42,8 @@ class CacheService:
 
     def _init(self):
         """初始化: 尝试连接 Redis，失败则降级为内存模式"""
-        self._memory_cache = {}      # key → (value, expire_at|None)
+        self._memory_cache = OrderedDict()  # key → (value, expire_at|None), LRU 顺序
         self._mem_maxsize = 200       # R5 P1-6: 内存缓存容量上限 (LRU 驱逐)
-        self._mem_access_order = []   # LRU 追踪: [最近访问的 key, ...]
         self._memory_lock = threading.Lock()
         self.use_redis = False
 
@@ -60,7 +63,7 @@ class CacheService:
             _logger.info(f"Redis 连接失败 ({e}) · 降为内存缓存模式")
 
     def _mem_get(self, key, default=None):
-        """内存缓存读取 (带 TTL 惰性淘汰), 调用方须已持有 _memory_lock"""
+        """内存缓存读取 (带 TTL 惰性淘汰 + LRU 提升), 调用方须已持有 _memory_lock"""
         entry = self._memory_cache.get(key)
         if entry is None:
             return default
@@ -68,19 +71,19 @@ class CacheService:
         if expire_at is not None and _time.time() > expire_at:
             del self._memory_cache[key]
             return default
+        # LRU: move_to_end O(1)
+        self._memory_cache.move_to_end(key)
         return value
 
     def _mem_set(self, key, value, ttl_seconds=None):
         """内存缓存写入 (带 LRU 驱逐), 调用方须已持有 _memory_lock"""
         expire_at = (_time.time() + ttl_seconds) if ttl_seconds else None
+        if key in self._memory_cache:
+            self._memory_cache.move_to_end(key)  # O(1) LRU 提升
         self._memory_cache[key] = (value, expire_at)
-        # R5 P1-6: LRU 驱逐
-        if key in self._mem_access_order:
-            self._mem_access_order.remove(key)
-        self._mem_access_order.append(key)
+        # LRU 驱逐: OrderedDict 头部是最久未访问的
         while len(self._memory_cache) > self._mem_maxsize:
-            evict_key = self._mem_access_order.pop(0)
-            self._memory_cache.pop(evict_key, None)
+            self._memory_cache.popitem(last=False)  # O(1) 驱逐最旧
 
     def get_json(self, key: str, default=None):
         """获取 JSON 反序列化后的缓存值"""
@@ -136,6 +139,14 @@ class CacheService:
 
     def stats(self) -> dict:
         """V25.0: 缓存统计信息 (运维可观测性)"""
+        if self.use_redis:
+            try:
+                info = self.redis_client.info(section="keyspace")
+                db_info = info.get(f"db{REDIS_DB}", {})
+                total = db_info.get("keys", 0) if isinstance(db_info, dict) else 0
+                return {"backend": "redis", "total_keys": total, "expired_pending": 0}
+            except Exception:
+                pass
         with self._memory_lock:
             now = _time.time()
             total = len(self._memory_cache)
@@ -161,6 +172,8 @@ cache_manager = CacheService()
 _swr_refreshing: dict[str, float] = {}  # key → start_time
 _swr_refresh_lock = threading.Lock()
 _SWR_REFRESH_TIMEOUT = 300  # 5 分钟超时自动清除
+# P1-7: 受控线程池替代无界裸线程 (上限 4 路并发刷新)
+_swr_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="swr")
 
 
 def stale_while_revalidate(cache_key: str, compute_fn, fresh_ttl=3600, stale_ttl=21600):
@@ -185,16 +198,16 @@ def stale_while_revalidate(cache_key: str, compute_fn, fresh_ttl=3600, stale_ttl
     if cached and "timestamp" in cached:
         age = _time.time() - cached["timestamp"]
         
-        # Tier 1: Fresh — 直接返回
+        # Tier 1: Fresh — 直接返回 (浅拷贝防污染)
         if age < fresh_ttl:
-            result = cached["data"]
+            result = copy.copy(cached["data"]) if isinstance(cached["data"], dict) else cached["data"]
             result["_cache"] = {"cached": True, "stale": False, "age_seconds": int(age)}
             return result
         
-        # Tier 2: Stale — 返回旧数据 + 后台刷新
+        # Tier 2: Stale — 返回旧数据 + 后台刷新 (浅拷贝防污染)
         if age < stale_ttl:
             _trigger_bg_refresh(cache_key, compute_fn)
-            result = cached["data"]
+            result = copy.copy(cached["data"]) if isinstance(cached["data"], dict) else cached["data"]
             result["_cache"] = {"cached": True, "stale": True, "age_seconds": int(age)}
             return result
     
@@ -226,7 +239,10 @@ def _trigger_bg_refresh(cache_key: str, compute_fn):
             with _swr_refresh_lock:
                 _swr_refreshing.pop(cache_key, None)
     
-    threading.Thread(target=_do_refresh, daemon=True).start()
+    try:
+        _swr_pool.submit(_do_refresh)
+    except RuntimeError:
+        _logger.debug("SWR pool shutdown, skip refresh for %s", cache_key)
 
 
 def _swr_compute_sync(cache_key: str, compute_fn):

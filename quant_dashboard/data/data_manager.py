@@ -3,8 +3,11 @@ import tushare as ts
 import os
 import time
 import json
+import logging
 from datetime import datetime, timedelta
 from typing import List, Optional
+
+logger = logging.getLogger("alphacore.data_manager")
 
 import config  # 导入config以触发Tushare全局连接修复(Monkey Patch)
 
@@ -31,10 +34,10 @@ class FactorDataManager:
         """获取全市场 A 股列表"""
         cache_path = os.path.join(DATA_DIR, "stock_list.parquet")
         if os.path.exists(cache_path):
-            print(f"[DataManager] 加载本地股票列表缓存...")
+            logger.debug("加载本地股票列表缓存")
             return pd.read_parquet(cache_path)
         
-        print(f"[DataManager] 正在从 Tushare 获取全市场股票列表...")
+        logger.info("从 Tushare 获取全市场股票列表")
         df = pro.stock_basic(exchange='', list_status='L', fields='ts_code,symbol,name,area,industry,list_date')
         df.to_parquet(cache_path)
         return df
@@ -58,7 +61,7 @@ class FactorDataManager:
                     # 增量: 只拉取最后公告年份至今的数据
                     start_year = max(start_year, last_year)
 
-            print(f"[DataManager] 正在{'增量' if existing_df is not None else '全量'}拉取 {code} 的 PIT 财务数据 ({start_year}-{current_year})...")
+            logger.info("%s拉取 %s PIT 财务数据 (%d-%d)", '增量' if existing_df is not None else '全量', code, start_year, current_year)
             all_indicators = []
             
             for year in range(start_year, current_year + 1):
@@ -68,7 +71,7 @@ class FactorDataManager:
                         all_indicators.append(df)
                     time.sleep(0.5)
                 except Exception as e:
-                    print(f"  [ERROR] {code} {year}年获取失败: {e}")
+                    logger.error("%s %d年获取失败: %s", code, year, e)
                     break
             
             if all_indicators:
@@ -82,9 +85,9 @@ class FactorDataManager:
                 else:
                     full_df = new_df.drop_duplicates().sort_values('ann_date')
                 full_df.to_parquet(file_path)
-                print(f"  [SUCCESS] {code} 同步完成 ({len(full_df)} 条记录)")
+                logger.info("%s 同步完成 (%d 条记录)", code, len(full_df))
             elif existing_df is not None:
-                print(f"  [INFO] {code} 无新增财务数据")
+                logger.debug("%s 无新增财务数据", code)
 
     def get_factor_payload(self, ts_code: str, factor_names: List[str]) -> pd.DataFrame:
         """
@@ -120,10 +123,10 @@ class FactorDataManager:
                     start_sync_date = (last_dt + timedelta(days=1)).strftime("%Y%m%d")
             
             if start_sync_date > end_date:
-                print(f"[DataManager] {code} 数据已是最新 ({start_sync_date} > {end_date})")
+                logger.debug("%s 数据已是最新 (%s > %s)", code, start_sync_date, end_date)
                 continue
                 
-            print(f"[DataManager] 正在增量拉取 {code} 行情 ({start_sync_date} -> {end_date})...")
+            logger.info("增量拉取 %s 行情 (%s -> %s)", code, start_sync_date, end_date)
             try:
                 new_df = ts.pro_bar(ts_code=code, asset=asset, adj='qfq', start_date=start_sync_date, end_date=end_date)
                 if new_df is not None and not new_df.empty:
@@ -134,12 +137,12 @@ class FactorDataManager:
                     else:
                         combined_df = new_df
                     combined_df.to_parquet(file_path)
-                    print(f"  [SUCCESS] {code} 增量更新完成")
+                    logger.info("%s 增量更新完成", code)
                 else:
-                    print(f"  [INFO] {code} 无新数据")
+                    logger.debug("%s 无新数据", code)
                 time.sleep(0.2)
             except Exception as e:
-                print(f"  [ERROR] {code} 行情获取失败: {e}")
+                logger.error("%s 行情获取失败: %s", code, e)
 
     def get_last_sync_date(self, ts_codes: List[str]) -> str:
         """获取这些股票里最晚的一个交易日期"""
@@ -226,10 +229,10 @@ class FactorDataManager:
         """
         freshness = self.check_data_freshness(ts_codes)
         if not freshness['is_stale'] and not force:
-            print(f"[SmartSync] 数据新鲜 (最新日线: {freshness['daily_latest']}), 跳过同步")
+            logger.info("数据新鲜 (最新日线: %s), 跳过同步", freshness['daily_latest'])
             return {'synced': False, 'freshness': freshness}
 
-        print(f"[SmartSync] 数据过期 {freshness['stale_days']} 天, 开始同步...")
+        logger.info("数据过期 %d 天, 开始同步", freshness['stale_days'])
         # 同步日线行情
         self.sync_daily_prices(ts_codes)
         # 同步财务指标 (增量)
@@ -238,7 +241,7 @@ class FactorDataManager:
         self.sync_trading_calendar()
         # 重新检查
         new_freshness = self.check_data_freshness(ts_codes)
-        print(f"[SmartSync] 同步完成, 最新日线: {new_freshness['daily_latest']}")
+        logger.info("同步完成, 最新日线: %s", new_freshness['daily_latest'])
         return {'synced': True, 'freshness': new_freshness}
 
     def sync_trading_calendar(self, years: int = 2):
@@ -256,19 +259,20 @@ class FactorDataManager:
                 open_days = df[df['is_open'] == 1]['cal_date'].tolist()
                 with open(cal_path, 'w', encoding='utf-8') as f:
                     json.dump(open_days, f)
-                print(f"[SmartSync] 交易日历已同步: {len(open_days)} 个交易日 ({start}~{end})")
+                logger.info("交易日历已同步: %d 个交易日 (%s~%s)", len(open_days), start, end)
             else:
-                print(f"[SmartSync] 交易日历 API 返回空, 保留旧缓存")
+                logger.warning("交易日历 API 返回空, 保留旧缓存")
         except Exception as e:
-            print(f"[SmartSync] 交易日历同步失败 (不影响核心功能): {e}")
+            logger.warning("交易日历同步失败 (不影响核心功能): %s", e)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     manager = FactorDataManager()
     
     # 演示：同步前10只股票作为测试
     stocks = manager.get_all_stocks()
     test_codes = stocks["ts_code"].head(10).tolist()
     
-    print(f"开始测试同步 {len(test_codes)} 只标的的财务数据...")
+    logger.info("开始测试同步 %d 只标的的财务数据", len(test_codes))
     manager.sync_financial_indicators(test_codes)

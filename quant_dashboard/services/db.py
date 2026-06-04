@@ -945,6 +945,14 @@ def get_unread_alert_count() -> int:
     return row["c"] if row else 0
 
 
+def ack_all_alerts() -> int:
+    """P1-2: 一键全部已读 (事务安全版本), 返回受影响行数"""
+    conn = _get_conn()
+    cur = conn.execute("UPDATE signal_alerts SET acknowledged = 1 WHERE acknowledged = 0")
+    conn.commit()
+    return cur.rowcount
+
+
 # ══════════════════════════════════════════════════════════
 #  V22.0: 审计日志持久化
 # ══════════════════════════════════════════════════════════

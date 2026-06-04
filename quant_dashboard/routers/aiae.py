@@ -24,7 +24,7 @@ from erp_hk_engine import get_hk_erp_engine
 from mean_reversion_engine import detect_regime, get_all_regime_params, needs_reoptimize
 # Batch 7: 统一缓存层 — 消除 cache_store 双写, 全部走 cache_manager
 from services.cache_service import cache_manager
-from services.dashboard_builder import _get_global_aiae_ttl
+from services.cache_store import get_global_aiae_ttl as _get_global_aiae_ttl
 from services.fred_guard import fred_get_series
 
 _AIAE_GLOBAL_LOCK = threading.Lock()

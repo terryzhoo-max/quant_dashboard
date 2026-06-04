@@ -510,10 +510,8 @@ async def acknowledge_all_alerts():
     """一键全部已读"""
     try:
         from services import db as ac_db
-        conn = ac_db._get_conn()
-        conn.execute("UPDATE signal_alerts SET acknowledged = 1 WHERE acknowledged = 0")
-        conn.commit()
-        return {"status": "ok"}
+        count = ac_db.ack_all_alerts()
+        return {"status": "ok", "acknowledged": count}
     except Exception as e:
         return {"status": "error", "error": f"批量确认失败: {str(e)[:200]}"}
 

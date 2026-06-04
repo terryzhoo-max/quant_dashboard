@@ -1,8 +1,10 @@
 """AlphaCore 市场/ERP/利率/个股查询 API — 从 main.py 提取"""
 import asyncio
 import time
+import threading
 import traceback
 import logging
+from collections import OrderedDict
 from datetime import datetime
 from typing import Dict
 from concurrent.futures import ThreadPoolExecutor
@@ -17,8 +19,9 @@ router = APIRouter(prefix="/api/v1", tags=["market"])
 executor = ThreadPoolExecutor(max_workers=4)
 logger = logging.getLogger("alphacore.market")
 
-# 个股名称本地缓存 (LRU: 防止无限膨胀, 最多缓存 500 条)
-_NAME_CACHE: Dict[str, str] = {}
+# P1-5: 线程安全的个股名称 LRU 缓存
+_NAME_CACHE: OrderedDict[str, str] = OrderedDict()
+_NAME_CACHE_LOCK = threading.Lock()
 _NAME_CACHE_MAXSIZE = 500
 
 
@@ -185,16 +188,20 @@ async def get_stock_name(ts_code: str):
     """查询单只标的的中文名称，支持 A 股和场内 ETF"""
     ts_code = ts_code.strip().upper()[:20]  # 防超长字符串
 
-    if ts_code in _NAME_CACHE:
-        return {"ts_code": ts_code, "name": _NAME_CACHE[ts_code], "type": "cached"}
+    # P1-5: 线程安全的缓存读取
+    with _NAME_CACHE_LOCK:
+        if ts_code in _NAME_CACHE:
+            _NAME_CACHE.move_to_end(ts_code)  # LRU 提升
+            return {"ts_code": ts_code, "name": _NAME_CACHE[ts_code], "type": "cached"}
 
     def _cache_put(key, val):
-        """LRU 驱逐: 超限时清除最旧的一半"""
-        if len(_NAME_CACHE) >= _NAME_CACHE_MAXSIZE:
-            keys = list(_NAME_CACHE.keys())[:_NAME_CACHE_MAXSIZE // 2]
-            for k in keys:
-                _NAME_CACHE.pop(k, None)
-        _NAME_CACHE[key] = val
+        """O(1) LRU 驱逐 (线程安全)"""
+        with _NAME_CACHE_LOCK:
+            if key in _NAME_CACHE:
+                _NAME_CACHE.move_to_end(key)
+            _NAME_CACHE[key] = val
+            while len(_NAME_CACHE) > _NAME_CACHE_MAXSIZE:
+                _NAME_CACHE.popitem(last=False)
 
     def do_lookup():
         pro = ts.pro_api(TUSHARE_TOKEN)

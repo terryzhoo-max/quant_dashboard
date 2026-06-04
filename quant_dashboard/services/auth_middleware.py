@@ -25,6 +25,16 @@ logger = get_logger("auth")
 
 # 从环境变量读取 API Key (生产环境必须设置)
 API_SECRET_KEY = os.getenv("API_SECRET_KEY", "")
+_IS_PRODUCTION = os.getenv("ALPHACORE_ENV", "development").lower() in ("production", "prod")
+
+# P1-1: 启动时强制提醒 API Key 未配置风险
+if not API_SECRET_KEY:
+    _level = "CRITICAL" if _IS_PRODUCTION else "WARNING"
+    logger.log(
+        50 if _IS_PRODUCTION else 30,
+        "⚠️ API_SECRET_KEY 未设置! %s。请在 .env 中配置 API_SECRET_KEY。",
+        "生产模式下所有写入操作将被拒绝" if _IS_PRODUCTION else "开发模式下写入操作将免认证放行",
+    )
 
 # 始终免认证的路径 (精确匹配)
 _PUBLIC_PATHS = {
@@ -71,10 +81,23 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
 
         # 3. 检查 API Key 是否已配置
         if not API_SECRET_KEY:
-            # 未配置 API Key 时，记录警告但放行 (开发环境兼容)
+            # P1-1: 生产环境 fail-closed — 拒绝所有未认证写入
+            if _IS_PRODUCTION:
+                logger.error(
+                    "生产模式 API_SECRET_KEY 未配置, 拒绝写入: %s %s",
+                    request.method, path,
+                )
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "status": "error",
+                        "message": "服务未正确配置认证密钥，写入操作不可用。",
+                    },
+                )
+            # 开发模式: 放行但记录警告
             logger.warning(
-                f"API_SECRET_KEY 未设置! 写入操作 {request.method} {path} 未经认证放行。"
-                "请在 .env 中配置 API_SECRET_KEY。"
+                "API_SECRET_KEY 未设置! 写入操作 %s %s 未经认证放行 (开发模式)。",
+                request.method, path,
             )
             return await call_next(request)
 

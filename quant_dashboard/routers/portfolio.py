@@ -108,7 +108,15 @@ async def execute_trade(req: TradeRequest):
 async def import_portfolio(file: UploadFile = File(...)):
     """接收券商导出的 资金股份查询.txt，解析并覆盖当前持仓"""
     try:
+        # P1-6: 限制上传文件大小 (1MB), 防止内存耗尽
+        MAX_UPLOAD_SIZE = 1 * 1024 * 1024  # 1MB
         content = await file.read()
+        if len(content) > MAX_UPLOAD_SIZE:
+            return R.error(
+                f"文件过大 ({len(content) / 1024:.0f}KB > {MAX_UPLOAD_SIZE // 1024}KB 限制)",
+                "ERR_FILE_TOO_LARGE",
+            )
+
         text = None
         for enc in ['gbk', 'gb18030', 'utf-8']:
             try:

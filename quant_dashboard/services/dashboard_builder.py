@@ -1,15 +1,5 @@
-"""
-AlphaCore · Dashboard 数据构建器
-=================================
-Batch 7 架构解耦: 从 main.py 提取
-
-职责:
-  - _build_dashboard_data_full()  — 全量仪表盘构建 (由 warmup_pipeline 调用)
-  - _hot_data_reactor_tick()      — 盘中 VIX/CNY 热刷新
-  - 智能缓存 TTL 计算
-"""
-
 import asyncio
+import copy
 import time
 import threading
 import traceback
@@ -23,6 +13,7 @@ from services.logger import get_logger
 
 logger = get_logger("dashboard")
 from services.cache_service import cache_manager
+from services.cache_store import get_cache_ttl as _get_cache_ttl, get_global_aiae_ttl as _get_global_aiae_ttl
 from services.position_engine import (
     get_vix_analysis, get_position_path, get_tomorrow_plan,
     get_institutional_mindset,
@@ -31,50 +22,19 @@ from aiae_engine import get_aiae_engine, REGIMES as AIAE_REGIMES
 
 executor = ThreadPoolExecutor(max_workers=10)
 
-# 线程安全锁 (原 main.py 的 _STRATEGY_LOCK)
+# P0-4: 统一策略缓存写入锁 (Single Source of Truth, 供 main.py / strategy.py 共用)
 _STRATEGY_LOCK = threading.Lock()
 
 CACHE_TTL = 3600  # 向下兼容
 
-
-def _get_cache_ttl() -> int:
-    """智能缓存 TTL：盘中5分钟 / 盘后1小时 / 周末24小时"""
-    now = datetime.now()
-    weekday = now.weekday()  # 0=周一 ... 6=周日
-    if weekday >= 5:               # 周末
-        return 86400
-    h, m = now.hour, now.minute
-    in_session = (h == 9 and m >= 30) or (10 <= h < 15)  # 09:30-15:00
-    return 300 if in_session else 3600
+def _get_cache_ttl_compat() -> int:
+    """P2-1: 统一使用 cache_store 的 TTL 计算 (DRY)"""
+    return _get_cache_ttl()
 
 
-def _get_global_aiae_ttl() -> int:
-    """海外AIAE缓存TTL: 三时区感知 (UTC+8)
-    
-    任一海外市场盘中 → 30min | 全部盘后 → 4h | 周末 → 24h
-    
-    交易时段 (北京时间):
-      🇯🇵 日股:  08:00 ~ 14:30 (含午休, 不细分)
-      🇭🇰 港股:  09:30 ~ 16:00
-      🇺🇸 美股:  21:30 ~ 04:00 (次日)
-    """
-    now = datetime.now()
-    if now.weekday() >= 5:
-        return 86400    # 周末 24h
-    h, m = now.hour, now.minute
-    hm = h * 100 + m  # e.g. 09:30 → 930
-
-    # 日股盘中: 08:00 ~ 14:30
-    if 800 <= hm < 1430:
-        return 1800
-    # 港股盘中: 09:30 ~ 16:00
-    if 930 <= hm < 1600:
-        return 1800
-    # 美股盘中: 21:30 ~ 04:00 (次日)
-    if hm >= 2130 or hm < 400:
-        return 1800
-
-    return 14400        # 全部盘后 4h
+def _get_global_aiae_ttl_compat() -> int:
+    """P2-1: 统一使用 cache_store 的海外 AIAE TTL (DRY)"""
+    return _get_global_aiae_ttl()
 
 
 def _hot_data_reactor_tick():
@@ -95,7 +55,8 @@ def _hot_data_reactor_tick():
             hot_vix_analysis = get_vix_analysis(hot_vix)
 
             with _STRATEGY_LOCK:
-                hot_data = cache_manager.get_json("dashboard_data")
+                # P0-3: deepcopy 防止并发读取半修改状态
+                hot_data = copy.deepcopy(cache_manager.get_json("dashboard_data"))
                 _hot_aiae_ctx = cache_manager.get_json("aiae_ctx")
 
             if not hot_data or not isinstance(hot_data, dict):

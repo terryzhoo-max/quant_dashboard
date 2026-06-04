@@ -66,6 +66,7 @@ class FredGuard:
         self._rate_limited_count = 0
 
     def call(self, series_id: str, fn: Callable[[], T]) -> T:
+        # Phase 1: 持锁检查速率状态 + 等待间隔
         with self._lock:
             now = self._time()
             if now < self._blocked_until:
@@ -82,9 +83,11 @@ class FredGuard:
             self._last_series = series_id
             self._total_calls += 1
 
-            try:
-                return fn()
-            except Exception as exc:
+        # Phase 2: 释放锁后执行网络请求 (P0-2: 消除全局串行瓶颈)
+        try:
+            return fn()
+        except Exception as exc:
+            with self._lock:
                 if self._is_rate_limit_error(exc):
                     self._rate_limited_count += 1
                     self._blocked_until = self._time() + self.cooldown_seconds
@@ -96,7 +99,7 @@ class FredGuard:
                     )
                     raise FredRateLimitError(str(exc)) from exc
                 self._last_error = str(exc)
-                raise
+            raise
 
     def get_status(self) -> Dict[str, object]:
         now = self._time()

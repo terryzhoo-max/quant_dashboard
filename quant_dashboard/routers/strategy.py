@@ -29,10 +29,11 @@ from dual_momentum_engine import run_gem_strategy
 from erp_timing_engine import get_erp_engine
 from aiae_engine import get_aiae_engine, REGIMES as AIAE_REGIMES
 from services.cache_service import cache_manager, stale_while_revalidate
+# P0-4: 使用统一的策略缓存写入锁 (与 dashboard_builder / main.py 共享同一实例)
+from services.dashboard_builder import _STRATEGY_LOCK
 
 router = APIRouter(prefix="/api/v1", tags=["strategy"])
 executor = ThreadPoolExecutor(max_workers=10)
-_STRATEGY_LOCK = threading.Lock()
 
 
 # ─────────────────────────────────────────────
