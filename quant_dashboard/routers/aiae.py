@@ -3,7 +3,7 @@ import asyncio
 import time
 import json
 import os
-import threading
+
 import traceback
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
@@ -26,8 +26,9 @@ from mean_reversion_engine import detect_regime, get_all_regime_params, needs_re
 from services.cache_service import cache_manager
 from services.cache_store import get_global_aiae_ttl as _get_global_aiae_ttl
 from services.fred_guard import fred_get_series
+from services.locks import AIAE_GLOBAL_LOCK as _AIAE_GLOBAL_LOCK
+from services.aiae_normalizer import normalize_temp, get_region_thresholds, compute_global_position, REGION_NAMES
 
-_AIAE_GLOBAL_LOCK = threading.Lock()
 
 router = APIRouter(prefix="/api/v1", tags=["aiae"])
 executor = ThreadPoolExecutor(max_workers=6)
@@ -279,73 +280,19 @@ async def get_aiae_global_report():
         jp_regime = jp_report.get("current", {}).get("regime", 3)
         hk_regime = hk_report.get("current", {}).get("regime", 3)
 
-        # ── P0 修复: 跨区域归一化温度 (各区域 AIAE 标度不同, 不可直接比较) ──
-        # 用各区域五档阈值做分段线性插值, 映射到统一 0-100 温度标尺
-        # Ⅰ/Ⅱ边界→20, Ⅱ/Ⅲ→40, Ⅲ/Ⅳ→60, Ⅳ/Ⅴ→80
-        # P2 修复: CN 阈值从 aiae_params 动态读取 (Single Source of Truth)
-        import aiae_params as _AP
-        _REGION_THRESHOLDS = {
-            "cn": list(_AP.V5_REGIME_THRESHOLDS) if getattr(_AP, 'V5_ENABLED', False) else list(_AP.REGIME_THRESHOLDS),
-            "us": [15, 20, 27, 34],     # REGIMES_US 阈值
-            "jp": [10, 14, 20, 28],     # REGIMES_JP 阈值
-            "hk": [8, 12, 18, 25],      # REGIMES_HK 阈值
-        }
-        def _normalize_temp(aiae_val: float, region: str) -> float:
-            """将区域 AIAE 值归一化到 0-100 统一温度标尺"""
-            t = _REGION_THRESHOLDS[region]
-            # 分段线性插值: (阈值, 归一化值) 锚点
-            anchors = [(t[0], 20), (t[1], 40), (t[2], 60), (t[3], 80)]
-            if aiae_val <= anchors[0][0]:
-                # 低于Ⅰ/Ⅱ边界: 线性外推到 0
-                return max(0, 20 * aiae_val / anchors[0][0]) if anchors[0][0] > 0 else 0
-            for i in range(len(anchors) - 1):
-                lo_v, lo_n = anchors[i]
-                hi_v, hi_n = anchors[i + 1]
-                if aiae_val <= hi_v:
-                    return lo_n + (hi_n - lo_n) * (aiae_val - lo_v) / (hi_v - lo_v)
-            # 高于Ⅳ/Ⅴ边界: 线性外推到 100
-            return min(100, 80 + 20 * (aiae_val - anchors[-1][0]) / max(anchors[-1][0] * 0.3, 1))
-
+        # 跨区域归一化温度 — 委托 services.aiae_normalizer
+        _thresholds = get_region_thresholds()
         raw_vals = {"cn": cn_aiae_v1, "us": us_v1, "jp": jp_v1, "hk": hk_v1}
-        norm_vals = {r: round(_normalize_temp(v, r), 1) for r, v in raw_vals.items()}
+        norm_vals = {r: round(normalize_temp(v, r, _thresholds), 1) for r, v in raw_vals.items()}
         coldest = min(norm_vals, key=norm_vals.get)
         hottest = max(norm_vals, key=norm_vals.get)
-        region_names = {"cn": "A股", "us": "美股", "jp": "日股", "hk": "港股"}
-        recommendation = f"当前{region_names[coldest]}(标准温度={norm_vals[coldest]:.0f}°)配置热度最低, 相对超配优先; {region_names[hottest]}(标准温度={norm_vals[hottest]:.0f}°)最高, 谨慎配置"
+        recommendation = f"当前{REGION_NAMES[coldest]}(标准温度={norm_vals[coldest]:.0f}°)配置热度最低, 相对超配优先; {REGION_NAMES[hottest]}(标准温度={norm_vals[hottest]:.0f}°)最高, 谨慎配置"
 
-        # P2: 全局权益总仓位 — 基于四市场均等加权归一化温度
+        # 全局权益总仓位 — 委托 services.aiae_normalizer
         avg_temp = sum(norm_vals.values()) / 4.0
         regimes = {"cn": cn_regime, "us": us_regime, "jp": jp_regime, "hk": hk_regime}
-        if avg_temp >= 80:
-            gp_label, gp_position, gp_color, gp_emoji = "极度过热·清仓", "0-15%", "#ef4444", "🔴"
-            gp_equity_pct = 8
-        elif avg_temp >= 65:
-            gp_label, gp_position, gp_color, gp_emoji = "偏热·系统减配", "20-35%", "#f97316", "🟠"
-            gp_equity_pct = 28
-        elif avg_temp >= 50:
-            gp_label, gp_position, gp_color, gp_emoji = "中性·均衡持有", "45-60%", "#eab308", "🟡"
-            gp_equity_pct = 52
-        elif avg_temp >= 35:
-            gp_label, gp_position, gp_color, gp_emoji = "偏冷·标准建仓", "65-80%", "#3b82f6", "🔵"
-            gp_equity_pct = 72
-        elif avg_temp >= 20:
-            gp_label, gp_position, gp_color, gp_emoji = "极冷·积极加仓", "80-95%", "#10b981", "🟢"
-            gp_equity_pct = 88
-        else:
-            gp_label, gp_position, gp_color, gp_emoji = "历史级底部·满配", "90-100%", "#10b981", "🟢🟢"
-            gp_equity_pct = 95
+        global_position = compute_global_position(avg_temp, regimes)
 
-        # P5: 极端告警 — 标记Ⅴ级市场
-        extreme_warnings = [r for r, reg in regimes.items() if reg == 5]
-
-        global_position = {
-            "avg_temp": round(avg_temp, 1),
-            "label": gp_label, "position": gp_position,
-            "color": gp_color, "emoji": gp_emoji,
-            "equity_pct": gp_equity_pct,
-            "cash_pct": 100 - gp_equity_pct,
-            "extreme_warnings": extreme_warnings,
-        }
 
         data = {
             "status": "success",
