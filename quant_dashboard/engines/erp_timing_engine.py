@@ -32,7 +32,6 @@ from typing import Optional
 import json
 import logging
 import threading
-from functools import wraps
 from concurrent.futures import ThreadPoolExecutor
 from config import TUSHARE_TOKEN as CONFIG_TOKEN
 from erp_signal_enhancer import adaptive_weights, multi_timeframe_confirmation
@@ -48,24 +47,8 @@ pro = ts.pro_api()
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
-# ===== 工业级重试装饰器 =====
-def retry_with_backoff(max_retries=3, base_delay=2.0):
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            delay = base_delay
-            for i in range(max_retries):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    if i == max_retries - 1:
-                        raise e
-                    logger.warning("Retry %s failed: %s. Retrying in %ss...", func.__name__, e, delay)
-                    time.sleep(delay)
-                    delay *= 2
-            return None
-        return wrapper
-    return decorator
+# ===== 工业级重试装饰器 (统一至 services.retry) =====
+from services.retry import retry_with_backoff
 
 # ===== 原子性文件写入 (V2.1: 线程安全 + Windows文件锁重试) =====
 def atomic_write_parquet(df, filepath):
@@ -103,42 +86,13 @@ def atomic_write_parquet(df, filepath):
         except OSError:
             pass
 
-# ===== 线程安全 + SWR 后台缓存 =====
-_cache = {}
-_cache_lock = threading.Lock()
-_bg_executor = ThreadPoolExecutor(max_workers=3)
-
-def _refresh_cache(key: str, fetcher):
-    try:
-        data = fetcher()
-        with _cache_lock:
-            _cache[key] = (time.time(), data)
-        return data
-    except Exception as e:
-        logger.warning("后台缓存刷新失败 (%s): %s", key, e)
-        with _cache_lock:
-            if key in _cache:
-                return _cache[key][1]
-        raise
+# ===== 线程安全 + SWR 后台缓存 (V26.1: 迁移至统一 EngineCache) =====
+from services.engine_cache import EngineCache
+_engine_cache = EngineCache("erp", max_workers=3)
 
 def _cached(key: str, ttl_seconds: int, fetcher):
-    """线程安全 TTL 缓存 (支持 SWR - Stale-While-Revalidate)"""
-    now = time.time()
-    with _cache_lock:
-        if key in _cache:
-            ts_cached, data = _cache[key]
-            if now - ts_cached < ttl_seconds:
-                return data
-            else:
-                # SWR 模式: 返回旧数据，并在后台异步刷新
-                try:
-                    _bg_executor.submit(_refresh_cache, key, fetcher)
-                except RuntimeError:
-                    pass  # shutdown 阶段, 跳过后台刷新
-                return data
-
-    # 内存无数据，必须同步阻塞拉取（通常是冷启动或服务重启后）
-    return _refresh_cache(key, fetcher)
+    """统一缓存接口 (委托给 EngineCache, 保持调用签名不变)"""
+    return _engine_cache.get(key, ttl_seconds, fetcher)
 
 
 # ===== 规则百科 =====

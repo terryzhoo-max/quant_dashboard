@@ -26,9 +26,7 @@ import numpy as np
 import time
 import os
 import json
-import threading
-from functools import wraps
-from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 from config import FRED_API_KEY as CONFIG_FRED_API_KEY
@@ -47,26 +45,13 @@ def _get_wilshire_ttl() -> int:
     """Wilshire5000 智能TTL: 工作日4h / 周末24h"""
     return 86400 if datetime.now().weekday() >= 5 else 14400
 
-# ===== 工业级重试装饰器 =====
+# ===== 工业级重试装饰器 (统一至 services.retry) =====
+from services.retry import retry_with_backoff as _retry_base
+
 def retry_with_backoff(max_retries=3, base_delay=2.0):
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            delay = base_delay
-            for i in range(max_retries):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    if not should_retry_fred_error(e):
-                        raise
-                    if i == max_retries - 1:
-                        raise e
-                    print(f"[Retry] {func.__name__} failed: {e}. Retrying in {delay}s...")
-                    time.sleep(delay)
-                    delay *= 2
-            return None
-        return wrapper
-    return decorator
+    """FRED 错误过滤版重试 (向后兼容 wrapper)"""
+    return _retry_base(max_retries=max_retries, base_delay=base_delay,
+                       error_filter=should_retry_fred_error)
 
 # ===== 原子性文件写入 =====
 def atomic_write_json(data, filepath):
@@ -80,10 +65,10 @@ def atomic_write_json(data, filepath):
             os.remove(tmp_path)
         raise e
 
-# ===== 线程安全 TTL 缓存 (SWR) =====
-_us_aiae_cache = {}
-_us_aiae_lock = threading.Lock()
-_bg_executor = ThreadPoolExecutor(max_workers=3)
+# ===== 线程安全 TTL 缓存 (V26.1: 迁移至统一 EngineCache) =====
+from services.engine_cache import EngineCache
+_engine_cache = EngineCache("aiae_us", max_workers=3)
+_bg_executor = _engine_cache._executor  # 复用缓存线程池做并行数据获取
 
 def _log(msg: str, level: str = "INFO"):
     ts_str = datetime.now().strftime("%H:%M:%S.%f")[:-3]
@@ -93,32 +78,9 @@ def _log(msg: str, level: str = "INFO"):
         safe_msg = msg.encode('ascii', errors='replace').decode('ascii')
         print(f"[{ts_str}] [{level}] [US-AIAE] {safe_msg}")
 
-def _refresh_cache(key: str, fetcher):
-    try:
-        data = fetcher()
-        with _us_aiae_lock:
-            _us_aiae_cache[key] = (time.time(), data)
-        return data
-    except Exception as e:
-        _log(f"后台缓存刷新失败 ({key}): {e}", "WARN")
-        with _us_aiae_lock:
-            if key in _us_aiae_cache:
-                return _us_aiae_cache[key][1]
-        raise
-
 def _cached(key: str, ttl_seconds: int, fetcher):
-    """线程安全 TTL 缓存 (支持 SWR - Stale-While-Revalidate)"""
-    now = time.time()
-    with _us_aiae_lock:
-        if key in _us_aiae_cache:
-            ts_cached, data = _us_aiae_cache[key]
-            if now - ts_cached < ttl_seconds:
-                return data
-            else:
-                _bg_executor.submit(_refresh_cache, key, fetcher)
-                return data
-
-    return _refresh_cache(key, fetcher)
+    """统一缓存接口 (委托给 EngineCache)"""
+    return _engine_cache.get(key, ttl_seconds, fetcher)
 
 
 # FRED API helper
@@ -794,7 +756,7 @@ class AIAEUSEngine:
 
     def _get_us_erp_value(self) -> float:
         try:
-            from erp_us_engine import get_us_erp_engine
+            from engines.erp_us_engine import get_us_erp_engine
             engine = get_us_erp_engine()
             signal = engine.compute_signal()
             if signal.get("status") == "success":
@@ -960,12 +922,9 @@ class AIAEUSEngine:
 
     def refresh(self):
         """清除内存缓存, 下次 generate_report 时强制从数据源重新获取"""
-        with _us_aiae_lock:
-            keys_to_clear = [k for k in _us_aiae_cache if k.startswith("us_aiae_")]
-            for k in keys_to_clear:
-                del _us_aiae_cache[k]
+        _engine_cache.invalidate_prefix("us_aiae_")
         self._aaii_data = self._load_aaii_sentiment()
-        _log(f"缓存已清除 ({len(keys_to_clear)} keys)")
+        _log("缓存已清除")
 
 
 # ===== 引擎单例 =====

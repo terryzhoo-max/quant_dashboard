@@ -5,7 +5,9 @@ AlphaCore 统一 API 响应包装
 确保前端拿到一致的 JSON 结构。
 """
 
-VERSION = "V15.1"
+from version import VERSION_SHORT
+
+VERSION = VERSION_SHORT
 
 
 def ok(data=None, message="success"):

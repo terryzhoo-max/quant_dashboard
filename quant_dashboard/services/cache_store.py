@@ -1,14 +1,5 @@
 """AlphaCore 共享缓存容器 — 跨模块状态管理"""
-import threading
 from datetime import datetime
-
-
-# 海外 AIAE 全局缓存 (V1.1: L1 API结果级缓存)
-_AIAE_GLOBAL_LOCK = threading.Lock()
-AIAE_GLOBAL_CACHE = {
-    "last_update": None,
-    "report_data": None
-}
 
 
 def get_cache_ttl() -> int:

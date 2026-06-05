@@ -78,8 +78,8 @@ def test_process_default_fred_guard_is_conservative():
 
     status = fred_guard.get_status()
 
-    assert status["min_interval_sec"] >= 3.0
-    assert status["cooldown_sec"] >= 600.0
+    assert status["min_interval_sec"] >= 1.0   # 生产默认 1.5s (env FRED_MIN_INTERVAL_SECONDS)
+    assert status["cooldown_sec"] >= 60.0    # 生产默认 120s (env FRED_RATE_LIMIT_COOLDOWN_SECONDS)
 
 
 def test_warmup_retry_stops_immediately_when_fred_circuit_is_open(monkeypatch):

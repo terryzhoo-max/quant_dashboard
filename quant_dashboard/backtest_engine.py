@@ -1,3 +1,5 @@
+# ⚠️ DEPRECATED: 此文件仅为兼容性代理, 请直接 import engines/strategies 子模块.
+# 计划在 V27.0 移除. 请更新引用: from strategies.backtest_engine import xxx
 """
 ⚠️ 兼容 shim — 此文件已迁移至 strategies/backtest_engine.py
 =======================================================

@@ -439,6 +439,7 @@ async def get_dashboard_data():
 
 from routers import portfolio, audit, aiae, market, industry, strategy, decision, slippage, ci, intelligence, assistant
 from routers import params_api  # V5.2: 参数同步 API
+from routers import system as system_router  # V26.1: 系统健康检查
 app.include_router(portfolio.router)
 app.include_router(audit.router)
 app.include_router(aiae.router)
@@ -451,6 +452,7 @@ app.include_router(ci.router)
 app.include_router(intelligence.router)
 app.include_router(assistant.router)
 app.include_router(params_api.router)  # V5.2: 参数同步
+app.include_router(system_router.router)  # V26.1: 系统监控
 
 
 
@@ -550,4 +552,4 @@ class SafeStaticFiles(StaticFiles):
 app.mount("/", SafeStaticFiles(directory="."), name="static")
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=8000)

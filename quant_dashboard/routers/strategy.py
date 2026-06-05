@@ -25,7 +25,7 @@ logger = get_logger("strategy")
 from mean_reversion_engine import run_strategy
 from dividend_trend_engine import run_dividend_strategy
 from momentum_rotation_engine import run_momentum_strategy
-from dual_momentum_engine import run_gem_strategy
+from engines.dual_momentum_engine import run_gem_strategy
 from erp_timing_engine import get_erp_engine
 from aiae_engine import get_aiae_engine, REGIMES as AIAE_REGIMES
 from services.cache_service import cache_manager, stale_while_revalidate

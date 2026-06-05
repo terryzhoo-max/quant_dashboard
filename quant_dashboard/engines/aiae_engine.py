@@ -59,10 +59,10 @@ pro = ts.pro_api()
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
-# ===== 线程安全 TTL 缓存 =====
-_cache = {}
-_cache_lock = threading.Lock()
-_bg_executor = ThreadPoolExecutor(max_workers=3)
+# ===== 线程安全 TTL 缓存 (V26.1: 迁移至统一 EngineCache) =====
+from services.engine_cache import EngineCache
+_engine_cache = EngineCache("aiae", max_workers=3)
+_bg_executor = _engine_cache._executor  # 复用缓存线程池做并行数据获取
 
 # P1 修复: 从 print() 迁移到标准 logger (生产级日志集中采集)
 try:
@@ -89,35 +89,10 @@ def atomic_write_json(data, filepath):
             os.remove(tmp_path)
         raise e
 
-def _refresh_cache(key: str, fetcher):
-    try:
-        data = fetcher()
-        with _cache_lock:
-            _cache[key] = (time.time(), data)
-        return data
-    except Exception as e:
-        _log(f"后台缓存刷新失败 ({key}): {e}", "WARN")
-        with _cache_lock:
-            if key in _cache:
-                return _cache[key][1]
-        raise
-
 def _cached(key: str, ttl_seconds: int, fetcher):
-    """线程安全 TTL 缓存 (支持 SWR - Stale-While-Revalidate)"""
-    now = time.time()
-    with _cache_lock:
-        if key in _cache:
-            ts_cached, data = _cache[key]
-            if now - ts_cached < ttl_seconds:
-                return data
-            else:
-                try:
-                    _bg_executor.submit(_refresh_cache, key, fetcher)
-                except RuntimeError:
-                    pass  # shutdown 阶段, 跳过后台刷新
-                return data
+    """统一缓存接口 (委托给 EngineCache, 保持调用签名不变)"""
+    return _engine_cache.get(key, ttl_seconds, fetcher)
 
-    return _refresh_cache(key, fetcher)
 
 
 # ===== 历史基准数据 (回测验证) =====
@@ -1613,12 +1588,9 @@ class AIAEEngine:
         }
 
     def refresh(self):
-        """强制清除缓存 (线程安全)"""
-        with _cache_lock:
-            keys_to_clear = [k for k in _cache if k.startswith("aiae_")]
-            for k in keys_to_clear:
-                del _cache[k]
-        _log(f"缓存已清除 ({len(keys_to_clear)} keys)")
+        """强制清除缓存 (V26.1: 委托给 EngineCache)"""
+        _engine_cache.invalidate_prefix("aiae_")
+        _log("缓存已清除 (via EngineCache)")
 
 
 # ===== 引擎单例 (C3 Fix: 双重检查锁定, 防并发竞态) =====

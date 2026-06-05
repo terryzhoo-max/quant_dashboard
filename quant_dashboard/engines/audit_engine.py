@@ -1384,7 +1384,7 @@ def audit_factor_decay():
 
     # 检查因子分析器是否可导入
     try:
-        from factor_analyzer import FactorAnalyzer
+        from engines.factor_analyzer import FactorAnalyzer
         fa = FactorAnalyzer()
         scores.append(100)
         checks.append({

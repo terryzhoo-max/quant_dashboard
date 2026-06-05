@@ -68,30 +68,19 @@ def _get_fred():
 def _finnhub_quote(symbol: str) -> Optional[float]:
     """Finnhub 美股报价 (替代 yfinance)"""
     try:
-        from finnhub_client import get_price
+        from data.finnhub_client import get_price
         return get_price(symbol)
     except Exception as e:
         logger.warning("Finnhub %s failed: %s", symbol, e)
         return None
 
-# ===== TTL 缓存 (复用中国版架构) =====
-_us_cache = {}
+# ===== 线程安全 + SWR 后台缓存 (V26.1: 迁移至统一 EngineCache) =====
+from services.engine_cache import EngineCache
+_engine_cache = EngineCache("erp_us", max_workers=3)
 
-def _us_cached(key: str, ttl_seconds: int, fetcher):
-    now = time.time()
-    if key in _us_cache:
-        ts_cached, data = _us_cache[key]
-        if now - ts_cached < ttl_seconds:
-            return data
-    try:
-        data = fetcher()
-        _us_cache[key] = (now, data)
-        return data
-    except Exception as e:
-        logger.warning("cache fail (%s): %s", key, e)
-        if key in _us_cache:
-            return _us_cache[key][1]
-        raise
+def _us_cached(key, ttl_seconds, fetcher):
+    """统一缓存接口 (委托给 EngineCache)"""
+    return _engine_cache.get(key, ttl_seconds, fetcher)
 
 
 # ===== 规则百科 =====

@@ -19,20 +19,8 @@ import traceback
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-def retry_with_backoff(retries=3, backoff_in_seconds=1):
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            x = 0
-            while True:
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    if x == retries:
-                        raise
-                    time.sleep(backoff_in_seconds * (2 ** x))
-                    x += 1
-        return wrapper
-    return decorator
+# ===== 工业级重试装饰器 (统一至 services.retry) =====
+from services.retry import retry_with_backoff
 
 from config import TUSHARE_TOKEN
 DAILY_PRICE_DIR = "data_lake/daily_prices"

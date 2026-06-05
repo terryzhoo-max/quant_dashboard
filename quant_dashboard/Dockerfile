@@ -1,5 +1,9 @@
 FROM python:3.12-slim
 
+# P5: 创建非 root 用户 (CIS Docker Benchmark 4.1)
+RUN groupadd --gid 1000 alphacore && \
+    useradd --uid 1000 --gid alphacore --shell /bin/bash --create-home alphacore
+
 # 设置时区为亚洲/上海，对量化数据的日期对齐极其重要
 ENV TZ=Asia/Shanghai
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
@@ -11,8 +15,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com
 
-# 复制代码
-COPY . .
+# 复制代码 (chown 赋予非 root 用户所有权)
+COPY --chown=alphacore:alphacore . .
+
+# 切换到非 root 用户
+USER alphacore
 
 # 暴露仪表盘端口
 EXPOSE 8000

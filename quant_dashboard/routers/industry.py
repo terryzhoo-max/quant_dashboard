@@ -14,7 +14,7 @@ from config import TUSHARE_TOKEN
 from models.schemas import BacktestRequest, BatchBacktestRequest, FactorAnalysisRequest
 from data_manager import FactorDataManager
 from backtest_engine import AlphaBacktester
-from factor_analyzer import FactorAnalyzer
+from engines.factor_analyzer import FactorAnalyzer
 from strategies_backtest import (
     mean_reversion_strategy_vectorized,
     dividend_trend_strategy_vectorized,
@@ -24,7 +24,7 @@ from strategies_backtest import (
 from erp_backtest_data import prepare_erp_backtest_data
 from momentum_backtest_engine import run_momentum_backtest, run_momentum_optimize
 from core_etf_config import CORE_ETFS, CORE_ETF_CODES, ETF_CONSTITUENTS, FALLBACK_MOMENTUM
-from industry_engine import IndustryEngine
+from engines.industry_engine import IndustryEngine
 from services.industry_tracker import (
     _tracking_cache_get, _tracking_cache_set, _get_tracking_ttl,
     compute_price_percentile, compute_dynamic_rps, compute_momentum_20d,

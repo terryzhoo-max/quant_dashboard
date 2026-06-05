@@ -326,7 +326,7 @@ def warmup_global_aiae_cache():
 
 def warmup_gem_cache():
     """预热 GEM 双重动量策略缓存: 拉取7资产历史数据 + 生成信号"""
-    from dual_momentum_engine import run_gem_strategy
+    from engines.dual_momentum_engine import run_gem_strategy
     from services.cache_service import cache_manager
     result = run_gem_strategy()
     status = result.get('status', 'unknown')

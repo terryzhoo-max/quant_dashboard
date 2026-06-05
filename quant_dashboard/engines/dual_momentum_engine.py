@@ -41,7 +41,6 @@ import json
 import math
 import threading
 from datetime import datetime, timedelta
-from functools import wraps
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from config import TUSHARE_TOKEN, POSITION_CONFIG
@@ -60,24 +59,8 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 #  工业级基础设施 (对齐 ERP / MOM 引擎)
 # ═══════════════════════════════════════════════════════════════
 
-def _retry_with_backoff(max_retries=3, base_delay=1.5):
-    """指数退避重试装饰器 (Tushare 限频保护)"""
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            delay = base_delay
-            for i in range(max_retries):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    if i == max_retries - 1:
-                        raise e
-                    logger.warning(f"[Retry] {func.__name__} 失败: {e}. {delay}s 后重试 ({i+1}/{max_retries})")
-                    time.sleep(delay)
-                    delay *= 2
-            return None
-        return wrapper
-    return decorator
+# ===== 工业级重试装饰器 (统一至 services.retry) =====
+from services.retry import retry_with_backoff as _retry_with_backoff
 
 
 def _atomic_write_json(data, filepath):

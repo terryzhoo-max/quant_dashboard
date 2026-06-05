@@ -76,23 +76,13 @@ def _get_hk_fred():
             logger.warning("FRED init failed: %s", e)
     return _hk_fred
 
-_hk_cache = {}
+# ===== 线程安全 + SWR 后台缓存 (V26.1: 迁移至统一 EngineCache) =====
+from services.engine_cache import EngineCache
+_engine_cache = EngineCache("erp_hk", max_workers=3)
 
-def _hk_cached(key: str, ttl_seconds: int, fetcher):
-    now = time.time()
-    if key in _hk_cache:
-        ts_cached, data = _hk_cache[key]
-        if now - ts_cached < ttl_seconds:
-            return data
-    try:
-        data = fetcher()
-        _hk_cache[key] = (now, data)
-        return data
-    except Exception as e:
-        logger.warning("cache fail (%s): %s", key, e)
-        if key in _hk_cache:
-            return _hk_cache[key][1]
-        raise
+def _hk_cached(key, ttl_seconds, fetcher):
+    """统一缓存接口 (委托给 EngineCache)"""
+    return _engine_cache.get(key, ttl_seconds, fetcher)
 
 
 # ===== 南向资金持久化 =====

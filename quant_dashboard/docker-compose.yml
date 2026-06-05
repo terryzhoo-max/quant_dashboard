@@ -49,6 +49,12 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    # P5: 资源限制 (匹配 2GB 服务器)
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.5'
     restart: unless-stopped
 
   # ── Batch 6: Nginx 反向代理 (HTTPS + 安全头) ──

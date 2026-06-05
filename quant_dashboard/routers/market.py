@@ -49,8 +49,8 @@ async def get_erp_global():
 
 def _compute_erp_global():
     """全球 ERP 计算核心 (5引擎并行 — P7)"""
-    from erp_us_engine import get_us_erp_engine
-    from erp_jp_engine import get_jp_erp_engine
+    from engines.erp_us_engine import get_us_erp_engine
+    from engines.erp_jp_engine import get_jp_erp_engine
     import erp_params
     import numpy as np
 

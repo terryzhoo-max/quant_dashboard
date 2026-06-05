@@ -86,7 +86,11 @@ class CacheService:
             self._memory_cache.popitem(last=False)  # O(1) 驱逐最旧
 
     def get_json(self, key: str, default=None):
-        """获取 JSON 反序列化后的缓存值"""
+        """获取 JSON 反序列化后的缓存值
+
+        内存模式下返回 deepcopy, 防止调用方修改返回值污染缓存。
+        Redis 模式下 json.loads 天然产生新对象, 无需额外拷贝。
+        """
         if self.use_redis:
             try:
                 val = self.redis_client.get(key)
@@ -97,10 +101,12 @@ class CacheService:
                 _logger.error(f"Redis GET 失败: {e}")
                 # Redis 异常时 fallback 到内存
                 with self._memory_lock:
-                    return self._mem_get(key, default)
+                    result = self._mem_get(key, default)
+                    return copy.deepcopy(result) if result is not default else default
 
         with self._memory_lock:
-            return self._mem_get(key, default)
+            result = self._mem_get(key, default)
+            return copy.deepcopy(result) if result is not default else default
 
     def set_json(self, key: str, value, ttl_seconds: int = None):
         """写入序列化 JSON 缓存，可选 TTL"""
@@ -256,7 +262,7 @@ def _swr_compute_sync(cache_key: str, compute_fn):
     except Exception as e:
         _logger.error(f"SWR 同步计算失败 {cache_key}: {e}")
         import traceback
-        logger.debug("Traceback", exc_info=True)
+        _logger.debug("Traceback", exc_info=True)
         return {"status": "error", "error": str(e)}
 
 

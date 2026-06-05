@@ -63,55 +63,50 @@ def _get_fred():
 #  FRED 数据获取 (带磁盘缓存兜底)
 # ═══════════════════════════════════════════════════
 
-_gold_cache = {}
-_gold_cache_lock = threading.Lock()
+# V26.1: 迁移至统一 EngineCache
+from services.engine_cache import EngineCache
+_gold_engine_cache = EngineCache("gold_signal", max_workers=2)
 
 
 def _fetch_fred_series(series_id: str, lookback_days: int = 365) -> Optional[pd.Series]:
-    """获取 FRED 数据序列, 带内存 + 磁盘双层缓存"""
-    now = time.time()
+    """获取 FRED 数据序列, 委托 EngineCache 管理 TTL + SWR"""
     cache_key = f"gold_{series_id}"
-    
-    with _gold_cache_lock:
-        if cache_key in _gold_cache:
-            ts, data = _gold_cache[cache_key]
-            if now - ts < 4 * 3600:  # 4h 有效期
-                return data
-    
-    fred = _get_fred()
-    data = None
-    
-    if fred:
-        try:
-            start = (datetime.now() - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
-            data = fred_get_series(
-                series_id,
-                lambda: fred.get_series(series_id, observation_start=start),
-            )
-            data = data.dropna()
-            
-            # 写入磁盘缓存
-            cache_path = os.path.join(CACHE_DIR, f"{cache_key}.json")
-            data.to_json(cache_path, date_format="iso")
-            logger.debug("FRED %s: %d 条数据已缓存", series_id, len(data))
-        except Exception as e:
-            logger.warning("FRED %s 获取失败: %s", series_id, e)
-    
-    # 兜底: 磁盘缓存
-    if data is None:
-        cache_path = os.path.join(CACHE_DIR, f"{cache_key}.json")
-        if os.path.exists(cache_path):
+
+    def _fetch():
+        fred = _get_fred()
+        data = None
+
+        if fred:
             try:
-                data = pd.read_json(cache_path, typ="series")
-                logger.info("FRED %s: 使用磁盘缓存 (%d 条)", series_id, len(data))
-            except Exception:
-                pass
-    
-    if data is not None and len(data) > 0:
-        with _gold_cache_lock:
-            _gold_cache[cache_key] = (now, data)
-    
-    return data
+                start = (datetime.now() - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
+                data = fred_get_series(
+                    series_id,
+                    lambda: fred.get_series(series_id, observation_start=start),
+                )
+                data = data.dropna()
+
+                # 写入磁盘缓存
+                cache_path = os.path.join(CACHE_DIR, f"{cache_key}.json")
+                data.to_json(cache_path, date_format="iso")
+                logger.debug("FRED %s: %d 条数据已缓存", series_id, len(data))
+            except Exception as e:
+                logger.warning("FRED %s 获取失败: %s", series_id, e)
+
+        # 兜底: 磁盘缓存
+        if data is None:
+            cache_path = os.path.join(CACHE_DIR, f"{cache_key}.json")
+            if os.path.exists(cache_path):
+                try:
+                    data = pd.read_json(cache_path, typ="series")
+                    logger.info("FRED %s: 使用磁盘缓存 (%d 条)", series_id, len(data))
+                except Exception:
+                    pass
+
+        if data is None:
+            raise ValueError(f"FRED {series_id}: 无可用数据")
+        return data
+
+    return _gold_engine_cache.get(cache_key, 4 * 3600, _fetch)
 
 
 # ═══════════════════════════════════════════════════
