@@ -70,5 +70,11 @@
     "reason": "数据恢复正常，自动解除阻断",
     "status": "executed",
     "timestamp": "2026-05-07 19:39:44"
+  },
+  {
+    "action": "trade_block",
+    "reason": "风控合规审计 FAIL (59分) 触发硬红线联锁熔断",
+    "status": "executed",
+    "timestamp": "2026-06-08 19:40:11"
   }
 ]

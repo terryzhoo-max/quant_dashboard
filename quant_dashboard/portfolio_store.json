@@ -1,239 +1,249 @@
 {
-    "cash": 11560.16,
+    "cash": 33555.91,
     "positions": {
         "000960.SZ": {
-            "amount": 300,
-            "cost": 37.563,
+            "amount": 600,
+            "cost": 36.79,
             "name": "锡业股份",
-            "broker_price": 38.9,
-            "broker_market_value": 11670.0,
-            "broker_pnl": 757.94,
-            "broker_pnl_pct": 6.94,
-            "import_date": "2026-06-06"
+            "broker_price": 35.01,
+            "broker_market_value": 21006.0,
+            "broker_pnl": -711.06,
+            "broker_pnl_pct": -3.27,
+            "import_date": "2026-06-08"
         },
         "001270.SZ": {
             "amount": 200,
             "cost": 137.025,
             "name": "铖昌科技",
-            "broker_price": 137.61,
-            "broker_market_value": 27522.0,
-            "broker_pnl": 117.0,
-            "broker_pnl_pct": 0.43,
-            "import_date": "2026-06-06"
+            "broker_price": 132.61,
+            "broker_market_value": 26522.0,
+            "broker_pnl": -883.0,
+            "broker_pnl_pct": -3.22,
+            "import_date": "2026-06-08"
         },
         "001309.SZ": {
             "amount": 100,
             "cost": 669.057,
             "name": "德明利",
-            "broker_price": 630.5,
-            "broker_market_value": 63050.0,
-            "broker_pnl": -3855.69,
-            "broker_pnl_pct": -5.76,
-            "import_date": "2026-06-06"
+            "broker_price": 588.1,
+            "broker_market_value": 58810.0,
+            "broker_pnl": -8095.69,
+            "broker_pnl_pct": -12.1,
+            "import_date": "2026-06-08"
+        },
+        "002851.SZ": {
+            "amount": 100,
+            "cost": 148.26,
+            "name": "麦格米特",
+            "broker_price": 149.0,
+            "broker_market_value": 14900.0,
+            "broker_pnl": 74.0,
+            "broker_pnl_pct": 0.5,
+            "import_date": "2026-06-08"
         },
         "159218.SZ": {
-            "amount": 101600,
-            "cost": 1.777,
+            "amount": 112900,
+            "cost": 1.765,
             "name": "卫星ETF招商",
-            "broker_price": 1.701,
-            "broker_market_value": 172821.6,
-            "broker_pnl": -12106.4,
-            "broker_pnl_pct": -6.54,
-            "import_date": "2026-06-06"
+            "broker_price": 1.64,
+            "broker_market_value": 185156.0,
+            "broker_pnl": -18489.8,
+            "broker_pnl_pct": -9.09,
+            "import_date": "2026-06-08"
         },
         "159326.SZ": {
             "amount": 15300,
             "cost": 1.85,
             "name": "电网设备ETF华夏",
-            "broker_price": 2.054,
-            "broker_market_value": 31426.2,
-            "broker_pnl": 3113.9,
-            "broker_pnl_pct": 11.03,
-            "import_date": "2026-06-06"
+            "broker_price": 1.999,
+            "broker_market_value": 30584.7,
+            "broker_pnl": 2272.4,
+            "broker_pnl_pct": 8.05,
+            "import_date": "2026-06-08"
+        },
+        "159516.SZ": {
+            "amount": 23900,
+            "cost": 1.172,
+            "name": "半导体设备ETF国泰",
+            "broker_price": 1.166,
+            "broker_market_value": 27867.4,
+            "broker_pnl": -145.1,
+            "broker_pnl_pct": -0.51,
+            "import_date": "2026-06-08"
         },
         "159545.SZ": {
             "amount": 13700,
             "cost": 1.369,
             "name": "恒生红利低波ETF易方达",
-            "broker_price": 1.373,
-            "broker_market_value": 18810.1,
-            "broker_pnl": 49.8,
-            "broker_pnl_pct": 0.29,
-            "import_date": "2026-06-06"
+            "broker_price": 1.362,
+            "broker_market_value": 18659.4,
+            "broker_pnl": -100.9,
+            "broker_pnl_pct": -0.51,
+            "import_date": "2026-06-08"
         },
         "159995.SZ": {
-            "amount": 10800,
-            "cost": 1.626,
+            "amount": 26900,
+            "cost": 2.047,
             "name": "芯片ETF华夏",
-            "broker_price": 2.403,
-            "broker_market_value": 25952.4,
-            "broker_pnl": 99210.3,
+            "broker_price": 2.293,
+            "broker_market_value": 61681.7,
+            "broker_pnl": 97433.6,
             "broker_pnl_pct": 0.0,
-            "import_date": "2026-06-06"
+            "import_date": "2026-06-08"
         },
         "300748.SZ": {
             "amount": 500,
             "cost": 31.9,
             "name": "金力永磁",
-            "broker_price": 31.12,
-            "broker_market_value": 15560.0,
-            "broker_pnl": -390.0,
-            "broker_pnl_pct": -2.45,
-            "import_date": "2026-06-06"
+            "broker_price": 29.19,
+            "broker_market_value": 14595.0,
+            "broker_pnl": -1355.0,
+            "broker_pnl_pct": -8.5,
+            "import_date": "2026-06-08"
         },
         "301308.SZ": {
             "amount": 100,
             "cost": 564.219,
             "name": "江波龙",
-            "broker_price": 520.01,
-            "broker_market_value": 52001.0,
-            "broker_pnl": -4420.93,
-            "broker_pnl_pct": -7.84,
-            "import_date": "2026-06-06"
+            "broker_price": 485.06,
+            "broker_market_value": 48506.0,
+            "broker_pnl": -7915.93,
+            "broker_pnl_pct": -14.03,
+            "import_date": "2026-06-08"
         },
         "510500.SH": {
-            "amount": 3500,
-            "cost": 7.66,
+            "amount": 5700,
+            "cost": 7.873,
             "name": "中证500ETF南方",
-            "broker_price": 8.339,
-            "broker_market_value": 29186.5,
-            "broker_pnl": 4593.2,
-            "broker_pnl_pct": 18.67,
-            "import_date": "2026-06-06"
+            "broker_price": 8.068,
+            "broker_market_value": 45987.6,
+            "broker_pnl": 3327.3,
+            "broker_pnl_pct": 7.8,
+            "import_date": "2026-06-08"
         },
         "512400.SH": {
             "amount": 19200,
             "cost": 1.961,
             "name": "有色金属ETF南方",
-            "broker_price": 1.926,
-            "broker_market_value": 36979.2,
-            "broker_pnl": -662.8,
-            "broker_pnl_pct": -1.78,
-            "import_date": "2026-06-06"
+            "broker_price": 1.82,
+            "broker_market_value": 34944.0,
+            "broker_pnl": -2698.0,
+            "broker_pnl_pct": -7.19,
+            "import_date": "2026-06-08"
         },
         "512890.SH": {
             "amount": 100,
-            "cost": 1.15,
+            "cost": 1.165,
             "name": "红利低波ETF华泰柏瑞",
-            "broker_price": 1.159,
-            "broker_market_value": 115.9,
-            "broker_pnl": 298.7,
+            "broker_price": 1.165,
+            "broker_market_value": 0.0,
+            "broker_pnl": 294.0,
             "broker_pnl_pct": 0.0,
-            "import_date": "2026-06-06"
+            "import_date": "2026-06-08"
         },
         "518880.SH": {
             "amount": 4900,
             "cost": 8.894,
             "name": "黄金ETF华安",
-            "broker_price": 9.252,
-            "broker_market_value": 45334.8,
-            "broker_pnl": 13666.8,
-            "broker_pnl_pct": 43.15,
-            "import_date": "2026-06-06"
+            "broker_price": 8.953,
+            "broker_market_value": 43869.7,
+            "broker_pnl": 12201.7,
+            "broker_pnl_pct": 38.53,
+            "import_date": "2026-06-08"
         },
         "562500.SH": {
             "amount": 13000,
             "cost": 0.955,
             "name": "机器人ETF华夏",
-            "broker_price": 1.163,
-            "broker_market_value": 15119.0,
-            "broker_pnl": 13277.5,
-            "broker_pnl_pct": 719.01,
-            "import_date": "2026-06-06"
-        },
-        "562550.SH": {
-            "amount": 8000,
-            "cost": 1.285,
-            "name": "绿电ETF华夏",
-            "broker_price": 1.285,
-            "broker_market_value": 0.0,
-            "broker_pnl": -353.7,
-            "broker_pnl_pct": 0.0,
-            "import_date": "2026-06-06"
+            "broker_price": 1.168,
+            "broker_market_value": 15184.0,
+            "broker_pnl": 13342.5,
+            "broker_pnl_pct": 722.54,
+            "import_date": "2026-06-08"
         },
         "588000.SH": {
-            "amount": 15700,
-            "cost": 1.376,
+            "amount": 59800,
+            "cost": 1.617,
             "name": "科创50ETF华夏",
-            "broker_price": 1.763,
-            "broker_market_value": 27679.1,
-            "broker_pnl": 62318.2,
-            "broker_pnl_pct": 0.0,
-            "import_date": "2026-06-06"
+            "broker_price": 1.683,
+            "broker_market_value": 100643.4,
+            "broker_pnl": 60182.9,
+            "broker_pnl_pct": 148.6,
+            "import_date": "2026-06-08"
         },
         "600111.SH": {
             "amount": 300,
             "cost": 50.207,
             "name": "北方稀土",
-            "broker_price": 49.66,
-            "broker_market_value": 14898.0,
-            "broker_pnl": -164.15,
-            "broker_pnl_pct": -1.09,
-            "import_date": "2026-06-06"
+            "broker_price": 46.98,
+            "broker_market_value": 14094.0,
+            "broker_pnl": -968.15,
+            "broker_pnl_pct": -6.43,
+            "import_date": "2026-06-08"
         },
         "601138.SH": {
             "amount": 100,
-            "cost": 68.113,
+            "cost": 70.48,
             "name": "工业富联",
-            "broker_price": 74.06,
-            "broker_market_value": 7406.0,
-            "broker_pnl": 2958.09,
-            "broker_pnl_pct": 66.51,
-            "import_date": "2026-06-06"
+            "broker_price": 70.48,
+            "broker_market_value": 0.0,
+            "broker_pnl": 2706.44,
+            "broker_pnl_pct": 0.0,
+            "import_date": "2026-06-08"
         },
         "601899.SH": {
-            "amount": 1800,
-            "cost": 30.163,
+            "amount": 8300,
+            "cost": 28.366,
             "name": "紫金矿业",
-            "broker_price": 29.63,
-            "broker_market_value": 53334.0,
-            "broker_pnl": -959.54,
-            "broker_pnl_pct": -1.77,
-            "import_date": "2026-06-06"
+            "broker_price": 28.05,
+            "broker_market_value": 232815.0,
+            "broker_pnl": -2622.54,
+            "broker_pnl_pct": -1.11,
+            "import_date": "2026-06-08"
         },
         "688234.SH": {
             "amount": 200,
-            "cost": 137.826,
+            "cost": 121.7,
             "name": "天岳先进",
-            "broker_price": 130.93,
-            "broker_market_value": 26186.0,
-            "broker_pnl": -1379.28,
-            "broker_pnl_pct": -5.0,
-            "import_date": "2026-06-06"
+            "broker_price": 121.7,
+            "broker_market_value": 0.0,
+            "broker_pnl": -2345.15,
+            "broker_pnl_pct": 0.0,
+            "import_date": "2026-06-08"
         },
         "688981.SH": {
             "amount": 998,
-            "cost": 120.515,
+            "cost": 120.85,
             "name": "中芯国际",
-            "broker_price": 127.4,
-            "broker_market_value": 127145.2,
-            "broker_pnl": 54747.99,
-            "broker_pnl_pct": 75.62,
-            "import_date": "2026-06-06"
+            "broker_price": 121.92,
+            "broker_market_value": 121676.16,
+            "broker_pnl": 49550.1,
+            "broker_pnl_pct": 68.7,
+            "import_date": "2026-06-08"
         },
         "02498.HK": {
-            "amount": 800,
-            "cost": 27.614,
+            "amount": 1200,
+            "cost": 27.12,
             "name": "速腾聚创",
-            "broker_price": 27.832,
-            "broker_market_value": 22265.99,
-            "broker_pnl": 174.49,
-            "broker_pnl_pct": 0.79,
-            "import_date": "2026-06-06"
+            "broker_price": 26.932,
+            "broker_market_value": 32317.91,
+            "broker_pnl": -225.82,
+            "broker_pnl_pct": -0.69,
+            "import_date": "2026-06-08"
         },
         "09988.HK": {
-            "amount": 800,
-            "cost": 110.473,
+            "amount": 900,
+            "cost": 109.529,
             "name": "阿里巴巴－Ｗ",
-            "broker_price": 106.123,
-            "broker_market_value": 84898.58,
-            "broker_pnl": -3479.89,
-            "broker_pnl_pct": -3.94,
-            "import_date": "2026-06-06"
+            "broker_price": 102.679,
+            "broker_market_value": 92410.96,
+            "broker_pnl": -6165.08,
+            "broker_pnl_pct": -6.25,
+            "import_date": "2026-06-08"
         }
     },
-    "broker_ref_market_value": 909361.57,
-    "broker_total_asset": 1598913.35,
-    "broker_total_pnl": 227511.53,
-    "import_date": "2026-06-06"
+    "broker_ref_market_value": 1242230.93,
+    "broker_total_asset": 1559652.44,
+    "broker_total_pnl": 188663.72,
+    "import_date": "2026-06-08"
 }
