@@ -302,6 +302,9 @@ def compute_brinson_attribution(lookback: int = 20) -> dict:
     positive.sort(key=lambda x: x["total_effect"], reverse=True)
     negative.sort(key=lambda x: x["total_effect"])
 
+    # 计算时序累计归因折线走势
+    timeline = _compute_brinson_timeline(positions, benchmark_weights, lookback)
+
     result = {
         "status": "success",
         "period_days": lookback,
@@ -321,9 +324,124 @@ def compute_brinson_attribution(lookback: int = 20) -> dict:
         "top_detractors": negative[:5],
         "sector_count": len(sector_detail),
         "benchmark": "沪深300",
+        "timeline": timeline,
         "computed_at": datetime.now().isoformat(),
     }
 
     # 缓存
     cache_manager.set_json(_CACHE_KEY, result, ttl_seconds=_CACHE_TTL)
     return result
+
+
+def _compute_brinson_timeline(positions: list, benchmark_weights: dict, lookback: int = 20) -> list:
+    """计算持仓累计归因的时序折线数据 (Holdings-Based)"""
+    from data_manager import FactorDataManager
+    import pandas as pd
+    import numpy as np
+    dm = FactorDataManager()
+
+    # 1. 获取 HS300 时序作为基准与日期对齐轴
+    try:
+        hs300_df = dm.get_price_payload("000300.SH")
+        if hs300_df is None or hs300_df.empty or len(hs300_df) < lookback:
+            return []
+        hs_subset = hs300_df.tail(lookback).copy()
+        hs_subset = hs_subset.sort_values("trade_date").reset_index(drop=True)
+        dates = hs_subset["trade_date"].tolist()
+        hs300_closes = hs_subset["close"].tolist()
+    except Exception as e:
+        logger.warning(f"Brinson timeline benchmark error: {e}")
+        return []
+
+    # 2. 拉取所有持仓标的的收盘价时序，对齐到相同日期轴
+    stock_prices = {}
+    for pos in positions:
+        code = pos["ts_code"]
+        try:
+            p_df = dm.get_price_payload(code)
+            if p_df is not None and not p_df.empty:
+                p_df = p_df[p_df["trade_date"].isin(dates)].sort_values("trade_date")
+                date_price = dict(zip(p_df["trade_date"], p_df["close"]))
+                closes = []
+                last_p = None
+                for d in dates:
+                    p = date_price.get(d)
+                    if p is not None:
+                        last_p = p
+                    closes.append(last_p)
+                stock_prices[code] = closes
+        except Exception:
+            pass
+
+    # 3. 按行业对持仓股分类与赋权
+    portfolio_sectors = {}
+    for pos in positions:
+        industry = pos.get("industry", "其他")
+        if not industry or str(industry) == "nan":
+            industry = "其他"
+        if industry not in portfolio_sectors:
+            portfolio_sectors[industry] = []
+        portfolio_sectors[industry].append((pos["ts_code"], pos.get("weight", 0) / 100.0))
+
+    # 基准权重归一化到小数
+    bw_total = sum(benchmark_weights.values())
+    benchmark_weights_frac = {}
+    for k, v in benchmark_weights.items():
+        benchmark_weights_frac[k] = (v / bw_total) if bw_total > 0 else 0.0
+
+    all_sectors = set(list(portfolio_sectors.keys()) + list(benchmark_weights_frac.keys()))
+
+    timeline = []
+    # 4. 逐交易日计算累计归因
+    if not hs300_closes:
+        return []
+    hs_base = hs300_closes[0]
+
+    for t in range(len(dates)):
+        Rb_t = (hs300_closes[t] / hs_base - 1.0) if hs_base > 0 else 0.0
+
+        total_allocation = 0.0
+        total_selection = 0.0
+        total_interaction = 0.0
+
+        for sector in all_sectors:
+            wp = sum(item[1] for item in portfolio_sectors.get(sector, []))
+            wb = benchmark_weights_frac.get(sector, 0.0)
+
+            sector_ret_list = []
+            sector_weight_list = []
+            for code, weight in portfolio_sectors.get(sector, []):
+                closes = stock_prices.get(code)
+                if closes and len(closes) > t:
+                    c_base = closes[0]
+                    c_now = closes[t]
+                    if c_base and c_base > 0 and c_now is not None:
+                        ret_i = c_now / c_base - 1.0
+                        sector_ret_list.append(ret_i)
+                        sector_weight_list.append(weight)
+
+            if sector_weight_list and sum(sector_weight_list) > 0:
+                rp_i_t = sum(r * w for r, w in zip(sector_ret_list, sector_weight_list)) / sum(sector_weight_list)
+            else:
+                rp_i_t = 0.0
+
+            rb_i_t = Rb_t
+
+            AA_i = (wp - wb) * rb_i_t
+            SS_i = wb * (rp_i_t - rb_i_t)
+            II_i = (wp - wb) * (rp_i_t - rb_i_t)
+
+            total_allocation += AA_i
+            total_selection += SS_i
+            total_interaction += II_i
+
+        timeline.append({
+            "date": dates[t],
+            "allocation": round(total_allocation * 100, 3),
+            "selection": round(total_selection * 100, 3),
+            "interaction": round(total_interaction * 100, 3),
+            "excess": round((total_allocation + total_selection + total_interaction) * 100, 3),
+        })
+
+    return timeline
+

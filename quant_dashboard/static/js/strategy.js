@@ -915,6 +915,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (targetId === 'st-erp-timing') setTimeout(() => loadERPTimingData(), 100);
         if (targetId === 'st-aiae-position') setTimeout(() => loadAIAEReport(), 100);
         if (targetId === 'st-gem') setTimeout(() => { if (typeof loadGemStrategy === 'function') loadGemStrategy(); }, 100);
+        if (targetId === 'st-drift-health') setTimeout(() => { if (typeof loadDriftStatus === 'function') loadDriftStatus(); }, 100);
     });
 });
 

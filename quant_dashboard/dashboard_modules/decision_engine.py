@@ -29,12 +29,13 @@ except ImportError:
 # ==============================================================
 
 from dashboard_modules.decision.conflicts import (  # noqa: F401,F403
-    _signal_direction, _CONFLICT_RULES, compute_conflict_matrix,
+    _signal_direction, _signal_conviction, _CONFLICT_RULES, compute_conflict_matrix,
 )
 
 from dashboard_modules.decision.jcs import (  # noqa: F401,F403
     _JCS_WEIGHTS, _JCS_WEIGHTS_V4, _REGIME_CN_MAP, _REGIME_CAP_MAP,
-    _recalc_vix_score, _recalc_hub_composite, _compute_jcs_with_weights, compute_jcs,
+    _recalc_vix_score, _recalc_hub_composite, _compute_jcs_with_weights,
+    _compute_jcs_v26, compute_jcs,
 )
 
 from dashboard_modules.decision.temperature import (  # noqa: F401,F403
@@ -276,14 +277,18 @@ def log_daily_decision():
         "jcs_shadow_delta": jcs.get("shadow", {}).get("delta"),
         "gold_signal": snapshot.get("gold_signal"),
         "bond_signal": snapshot.get("bond_signal"),
+        # V26: Signal Conviction Model 影子数据
+        "jcs_v26_score": jcs.get("shadow", {}).get("v26_score"),
+        "delta_v26": jcs.get("shadow", {}).get("delta_v26"),
     }
 
     ac_db.upsert_decision_log(data)
     ac_db.cleanup_old_decisions(365)
 
     shadow = jcs.get("shadow", {})
-    logger.info("决策快照存档: JCS=%.1f (%s) shadow_delta=%.1f conflicts=%d pos=%s%%",
-                jcs["score"], jcs["level"], shadow.get("delta", 0),
+    logger.info("决策快照存档: JCS=%.1f (%s) v26=%.1f delta=%.1f conflicts=%d pos=%s%%",
+                jcs["score"], jcs["level"],
+                shadow.get("v26_score", 0), shadow.get("delta", 0),
                 conflicts["conflict_count"],
                 snapshot.get("suggested_position", "?"))
 

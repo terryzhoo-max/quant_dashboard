@@ -1,0 +1,472 @@
+/* ═══════════════════════════════════════════════════
+   AlphaCore V27 · 多资产配置雷达 — 机构级生产视觉
+   ═══════════════════════════════════════════════════ */
+
+/* ── 主布局: 左雷达 + 右卡片 ── */
+.ma-layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    align-items: start;
+}
+
+.ma-left,
+.ma-right {
+    display: flex;
+    flex-direction: column;
+}
+
+/* ── 区域标签 ── */
+.ma-section-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+    padding-left: 2px;
+}
+
+/* ── 雷达图容器 ── */
+.ma-radar-box {
+    width: 100%;
+    height: 300px;
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+/* ── 时间戳行 ── */
+.ma-ts-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 8px;
+    padding: 0 4px;
+    font-size: 0.68rem;
+    color: #475569;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── 刷新按钮 ── */
+.ma-refresh-btn {
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #94a3b8;
+    background: rgba(148, 163, 184, 0.06);
+    border: 1px solid rgba(148, 163, 184, 0.1);
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+}
+
+.ma-refresh-btn:hover {
+    color: #e2e8f0;
+    background: rgba(148, 163, 184, 0.12);
+    border-color: rgba(148, 163, 184, 0.2);
+    transform: translateY(-1px);
+}
+
+/* ── 重试按钮 ── */
+.ma-retry-btn {
+    margin-top: 10px;
+    padding: 6px 18px;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #3b82f6;
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    cursor: pointer;
+    transition: all 0.25s;
+    font-family: inherit;
+}
+
+.ma-retry-btn:hover {
+    background: rgba(59, 130, 246, 0.15);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+}
+
+/* ═══════════════════════════════════════
+   资产卡片 — 机构级设计
+   ═══════════════════════════════════════ */
+.ma-cards-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ma-card {
+    position: relative;
+    padding: 14px 16px 12px;
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    animation: maCardIn 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+}
+
+@keyframes maCardIn {
+    from { opacity: 0; transform: translateX(12px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+
+.ma-card:hover {
+    background: rgba(15, 23, 42, 0.7);
+    border-color: rgba(255, 255, 255, 0.1);
+    transform: translateX(4px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+/* 左侧强调色条 */
+.ma-card-accent {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--ma-accent, #94a3b8);
+    border-radius: 0 2px 2px 0;
+    opacity: 0.7;
+    transition: opacity 0.3s, width 0.3s;
+}
+
+.ma-card:hover .ma-card-accent {
+    opacity: 1;
+    width: 4px;
+}
+
+/* 卡片顶行: 图标 + 名称 + 信号徽章 */
+.ma-card-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.ma-card-icon {
+    font-size: 1.3rem;
+    flex-shrink: 0;
+    filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.1));
+}
+
+.ma-card-meta {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.ma-card-name {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #f1f5f9;
+    letter-spacing: 0.02em;
+}
+
+.ma-card-sublabel {
+    font-size: 0.65rem;
+    color: #64748b;
+    font-weight: 500;
+}
+
+/* 信号方向徽章 */
+.ma-card-signal-badge {
+    flex-shrink: 0;
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    border: 1px solid;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+    transition: box-shadow 0.3s;
+}
+
+.ma-card:hover .ma-card-signal-badge {
+    box-shadow: 0 0 12px rgba(255, 255, 255, 0.05);
+}
+
+/* 配比进度条 */
+.ma-card-bar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.ma-card-bar-track {
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: rgba(148, 163, 184, 0.08);
+    overflow: hidden;
+}
+
+.ma-card-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+    box-shadow: 0 0 6px var(--ma-accent, rgba(148, 163, 184, 0.3));
+}
+
+.ma-card-pct {
+    font-size: 0.92rem;
+    font-weight: 800;
+    color: #f1f5f9;
+    min-width: 42px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+}
+
+/* 错误态 */
+.ma-card-err { opacity: 0.6; border-color: rgba(239, 68, 68, 0.2); }
+.ma-card-err-msg {
+    font-size: 0.62rem;
+    color: #f87171;
+    margin-top: 6px;
+    word-break: break-all;
+}
+
+/* ═══════════════════════════════════════
+   黄金三维信号拆解 — 金色主题
+   ═══════════════════════════════════════ */
+.ma-gold-panel {
+    margin-top: 12px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(234, 179, 8, 0.04) 0%, rgba(217, 119, 6, 0.02) 100%);
+    border: 1px solid rgba(234, 179, 8, 0.1);
+    position: relative;
+    overflow: hidden;
+}
+
+.ma-gold-panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(251, 191, 36, 0.3), transparent);
+}
+
+.ma-gold-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #fbbf24;
+}
+
+.ma-gold-total {
+    font-variant-numeric: tabular-nums;
+    font-size: 0.78rem;
+}
+
+.ma-gold-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.04);
+    transition: background 0.2s;
+}
+
+.ma-gold-row:last-child { border-bottom: none; }
+.ma-gold-row:hover { background: rgba(251, 191, 36, 0.03); }
+
+.ma-gold-icon {
+    font-size: 0.9rem;
+    flex-shrink: 0;
+    width: 22px;
+    text-align: center;
+}
+
+.ma-gold-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.ma-gold-label {
+    font-size: 0.75rem;
+    color: #e2e8f0;
+    font-weight: 600;
+}
+
+.ma-gold-desc {
+    font-size: 0.6rem;
+    color: #475569;
+}
+
+.ma-gold-val {
+    font-size: 0.82rem;
+    font-weight: 800;
+    min-width: 44px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.ma-gold-tag {
+    flex-shrink: 0;
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 6px;
+    border: 1px solid;
+    min-width: 38px;
+    text-align: center;
+}
+
+/* ═══════════════════════════════════════
+   配比饼图区域
+   ═══════════════════════════════════════ */
+.ma-pie-row {
+    margin-top: 16px;
+    display: flex;
+    justify-content: center;
+}
+
+.ma-pie-section {
+    width: 100%;
+    max-width: 340px;
+}
+
+.ma-pie-box {
+    width: 100%;
+    height: 220px;
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+/* ═══════════════════════════════════════
+   加载态 — 高级脉冲环
+   ═══════════════════════════════════════ */
+.ma-loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 20px;
+    gap: 16px;
+}
+
+.ma-loading-ring {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(59, 130, 246, 0.1);
+    border-top-color: #3b82f6;
+    border-right-color: rgba(59, 130, 246, 0.4);
+    border-radius: 50%;
+    animation: maRingSpin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes maRingSpin {
+    to { transform: rotate(360deg); }
+}
+
+.ma-loading-text {
+    font-size: 0.82rem;
+    color: #64748b;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+}
+
+/* ═══════════════════════════════════════
+   错误态
+   ═══════════════════════════════════════ */
+.ma-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 36px 20px;
+    text-align: center;
+    color: #94a3b8;
+    font-size: 0.82rem;
+    background: rgba(239, 68, 68, 0.03);
+    border: 1px solid rgba(239, 68, 68, 0.1);
+    border-radius: 12px;
+}
+
+.ma-error-icon { font-size: 1.5rem; }
+
+.ma-error-detail {
+    font-size: 0.7rem;
+    color: #64748b;
+    max-width: 400px;
+    word-break: break-all;
+}
+
+/* ═══════════════════════════════════════
+   响应式
+   ═══════════════════════════════════════ */
+@media (max-width: 900px) {
+    .ma-layout {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
+
+    .ma-left  { order: 2; }
+    .ma-right { order: 1; }
+
+    .ma-radar-box { height: 260px; }
+}
+
+@media (max-width: 480px) {
+    .ma-card-top { flex-wrap: wrap; }
+    .ma-card-signal-badge { flex-basis: 100%; text-align: center; }
+    .ma-pie-box { height: 180px; }
+}
+
+/* ── 资产卡片底层文字说明 ── */
+.ma-card-desc {
+    font-size: 0.65rem;
+    color: #475569;
+    margin-top: 6px;
+    line-height: 1.4;
+    border-top: 1px dashed rgba(255, 255, 255, 0.03);
+    padding-top: 6px;
+}
+.ma-card:hover .ma-card-desc {
+    color: #64748b;
+}
+
+/* ── 黄金归因横向双向条形图 ── */
+.ma-gold-diverging-wrap {
+    position: relative;
+    flex: 1;
+    height: 10px;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 5px;
+    margin: 0 10px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.02);
+}
+.ma-gold-diverging-center {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: rgba(255, 255, 255, 0.25);
+    z-index: 2;
+}
+.ma-gold-diverging-bar {
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    border-radius: 2px;
+    z-index: 1;
+    transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), left 0.6s, right 0.6s;
+}
+

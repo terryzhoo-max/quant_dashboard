@@ -60,6 +60,7 @@ function _fetchWithDegradation(containerId, fetchFn, label) {
 
 let _cachedGlobalTemp = null;   // 全球温度 LazyInit 缓存
 let _globalTempRendered = false; // Gauge 是否已渲染
+let _multiAssetLoaded = false;   // 多资产雷达是否已加载
 
 function toggleDHPanel(panelId) {
     const panel = document.getElementById(panelId);
@@ -73,6 +74,17 @@ function toggleDHPanel(panelId) {
             renderGlobalTemperature(_cachedGlobalTemp);
             _globalTempRendered = true;
         });
+    }
+
+    // LazyInit: Brinson 归因面板首次展开时加载数据
+    if (panelId === 'brinson-panel' && isCollapsed && !_brinsonData) {
+        loadBrinsonAttribution();
+    }
+
+    // LazyInit: 多资产配置雷达展开时触发加载
+    if (panelId === 'multi-asset-panel' && isCollapsed && !_multiAssetLoaded) {
+        _multiAssetLoaded = true;
+        if (typeof loadMultiAssetRadar === 'function') loadMultiAssetRadar();
     }
 }
 
@@ -132,6 +144,7 @@ async function initDecisionHub() {
     _riskMatrixCache = null;  // V20.0: 刷新时清除缓存
     window._riskMatrixCacheTs = 0; // V25.1: 对齐 TTL 缓存时间戳
     if (typeof resetRiskTabGuards === 'function') resetRiskTabGuards(); // V25.1: 重置 Risk Tab guards
+    _multiAssetLoaded = true; // V27: 多资产雷达默认展开, 立即加载
 
     // 版本号已从 UI 移除 (信噪分离: 版本号为工程内部概念，非决策信息)
 
@@ -192,6 +205,9 @@ async function initDecisionHub() {
 
             // V22.0: 仓位调整路径 (独立异步, 不阻塞主流程)
             fetchPositionPath();
+
+            // V27: 多资产配置雷达 (默认展开, 独立异步加载)
+            if (typeof loadMultiAssetRadar === 'function') loadMultiAssetRadar();
 
             // ⑦ 信号阈值速查表
             if (data.snapshot) highlightThresholdTable(data.snapshot);

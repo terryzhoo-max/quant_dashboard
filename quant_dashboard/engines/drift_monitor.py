@@ -364,6 +364,33 @@ def get_drift_status() -> dict:
         "regime_transition": check_regime_transition(),
     }
 
+    # 注入历史走势和信号胜率，用于前端 Sparklines / Grid 渲染
+    try:
+        hist = _get_decision_history(15)
+        from services import db as ac_db
+        stats = ac_db.get_accuracy_stats()
+
+        if "accuracy" in checks:
+            checks["accuracy"]["recent_signals"] = stats.get("recent_signals", [])
+
+        if hist:
+            jcs_hist = [float(r["jcs_score"]) for r in hist if r.get("jcs_score") is not None]
+            conflict_hist = [int(r["conflict_count"]) for r in hist if r.get("conflict_count") is not None]
+            aiae_hist = [float(r["aiae_v1"]) for r in hist if r.get("aiae_v1") is not None]
+            dates = [r["date"] for r in hist]
+
+            if "jcs_trend" in checks:
+                checks["jcs_trend"]["history"] = jcs_hist
+                checks["jcs_trend"]["dates"] = dates
+            if "conflict_trend" in checks:
+                checks["conflict_trend"]["history"] = conflict_hist
+                checks["conflict_trend"]["dates"] = dates
+            if "regime_transition" in checks:
+                checks["regime_transition"]["history"] = aiae_hist
+                checks["regime_transition"]["dates"] = dates
+    except Exception as e:
+        logger.warning(f"Failed to populate drift history trends: {e}")
+
     # 综合判定
     statuses = [c.get("status", "ok") for c in checks.values()]
     if "critical" in statuses:
@@ -383,3 +410,4 @@ def get_drift_status() -> dict:
         "checks": checks,
         "checked_at": datetime.now().isoformat(),
     }
+

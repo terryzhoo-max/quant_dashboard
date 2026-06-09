@@ -18,8 +18,9 @@ def upsert_decision_log(data: dict):
            (date, aiae_regime, aiae_v1, erp_score, erp_val, vix_val, mr_regime,
             hub_composite, jcs_score, jcs_level, suggested_position,
             conflict_count, degraded_modules, recorded_at,
-            jcs_v4_score, jcs_v6_score, jcs_shadow_delta, gold_signal, bond_signal)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            jcs_v4_score, jcs_v6_score, jcs_shadow_delta, gold_signal, bond_signal,
+            jcs_v26_score, delta_v26)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(date) DO UPDATE SET
              aiae_regime = excluded.aiae_regime,
              aiae_v1 = excluded.aiae_v1,
@@ -38,7 +39,9 @@ def upsert_decision_log(data: dict):
              jcs_v6_score = excluded.jcs_v6_score,
              jcs_shadow_delta = excluded.jcs_shadow_delta,
              gold_signal = excluded.gold_signal,
-             bond_signal = excluded.bond_signal""",
+             bond_signal = excluded.bond_signal,
+             jcs_v26_score = excluded.jcs_v26_score,
+             delta_v26 = excluded.delta_v26""",
         (
             data.get("date"),
             data.get("aiae_regime"),
@@ -59,6 +62,8 @@ def upsert_decision_log(data: dict):
             data.get("jcs_shadow_delta"),
             data.get("gold_signal"),
             data.get("bond_signal"),
+            data.get("jcs_v26_score"),
+            data.get("delta_v26"),
         ),
     )
     conn.commit()
@@ -166,7 +171,9 @@ def get_accuracy_stats() -> Dict:
         "current_streak": streak,
         "streak_type": streak_type,
         "history": history_list,
+        "recent_signals": [r[0] for r in reversed(recent)] if recent else [],
     }
+
 
 
 def get_accuracy_by_jcs_level() -> Dict:

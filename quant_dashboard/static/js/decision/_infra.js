@@ -19,7 +19,7 @@ function _getChart(domId) {
     const el = document.getElementById(domId);
     if (!el || typeof echarts === 'undefined') return null;
     if (_chartInstances[domId]) _chartInstances[domId].dispose();
-    const chart = echarts.init(el);
+    const chart = echarts.init(el, 'dark');
     _chartInstances[domId] = chart;
     return chart;
 }

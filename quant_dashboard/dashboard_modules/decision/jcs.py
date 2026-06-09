@@ -18,7 +18,7 @@ V25.3 变更:
 """
 
 from dashboard_modules.decision.conflicts import (
-    _signal_direction, compute_conflict_matrix,
+    _signal_direction, _signal_conviction, compute_conflict_matrix,
 )
 
 # ── V25.3: 6 维权重 (原4维各降 2.5pp, 给 gold + bond 各 5%) ──
@@ -181,6 +181,90 @@ def _compute_jcs_with_weights(snapshot: dict, weights: dict, n_core: int = 4) ->
     }
 
 
+def _compute_jcs_v26(snapshot: dict, weights: dict) -> dict:
+    """
+    V26 Signal Conviction Model — 连续信念度 + 矛盾衰减
+
+    JCS = conviction_score × conflict_decay + data_health
+
+    conviction_score (0-80):
+      基准 40 分 (全中性时) + 40 × magnitude^0.7
+      magnitude = |加权信念度向量和| / 权重总和
+      + direction_bonus: ≥3 核心引擎同向时额外 +2/引擎 (max +8)
+
+    conflict_decay (0.0-1.0):
+      = 1 / (1 + severe×3 + medium×1)  Sigmoid 式衰减
+
+    data_health (0-20): 与 V25.3 一致
+    """
+    convictions = _signal_conviction(snapshot)
+    directions = _signal_direction(snapshot)  # 兼容旧 API
+
+    # ── 1. Conviction Score (0-80) ──
+    weighted_sum = sum(convictions.get(k, 0) * weights.get(k, 0) for k in weights)
+    total_weight = sum(weights.values())
+    magnitude = abs(weighted_sum) / total_weight if total_weight > 0 else 0
+
+    # 非线性映射: ^0.7 让弱信号区更敏感, 强信号区适度压缩
+    conviction_score = 40.0 + 40.0 * (magnitude ** 0.7)
+
+    # 方向奖励: 核心引擎同向且信念度>0.2 时加分 (替代旧 consensus_bonus)
+    _CORE_ENGINES = ["aiae", "erp", "vix", "mr"]
+    same_sign_count = sum(
+        1 for k in _CORE_ENGINES
+        if convictions.get(k, 0) * weighted_sum > 0
+        and abs(convictions.get(k, 0)) > 0.2
+    )
+    if same_sign_count >= 3:
+        conviction_score += same_sign_count * 2.0  # max +8
+
+    conviction_score = min(80.0, conviction_score)
+
+    # ── 2. Data Health (0-20) ── 保持不变
+    stale_count = 0
+    for key in ["aiae_regime", "erp_score", "vix_val", "mr_regime"]:
+        if snapshot.get(key) is None:
+            stale_count += 1
+    for key in ["gold_signal", "bond_signal"]:
+        if key in weights and snapshot.get(key) is None:
+            stale_count += 0.25
+    degraded = snapshot.get("degraded_modules", [])
+    if isinstance(degraded, str):
+        degraded = [d.strip() for d in degraded.split(",") if d.strip()]
+    data_health = max(0.0, 20.0 - stale_count * 4.0 - len(degraded) * 2.0)
+
+    # ── 3. Conflict Decay (0-1) ──
+    conflicts = compute_conflict_matrix(snapshot)
+    severe = 1 if conflicts["has_severe"] else 0
+    medium = max(0, conflicts["conflict_count"] - severe)
+    decay = 1.0 / (1.0 + severe * 3.0 + medium * 1.0)
+
+    # ── 合成 ──
+    raw_jcs = conviction_score * decay + data_health
+    jcs = round(min(100, max(0, raw_jcs)), 1)
+
+    if jcs >= 70:
+        level, label = "high", "🟢 高置信 — 多引擎方向一致"
+    elif jcs >= 40:
+        level, label = "medium", "🟡 中置信 — 存在分歧或部分降级"
+    else:
+        level, label = "low", "🔴 低置信 — 严重矛盾或数据缺失，建议观望"
+
+    return {
+        "score": jcs,
+        "level": level,
+        "label": label,
+        "directions": directions,
+        "convictions": convictions,
+        "conviction_score": round(conviction_score, 1),
+        "data_health": round(data_health, 1),
+        "conflict_decay": round(decay, 3),
+        "conflict_count": conflicts["conflict_count"],
+        "agreement_pct": round(magnitude * 100, 1),
+        "consensus_bonus": 0.0,  # V26 废弃, 保持 API 兼容
+    }
+
+
 def compute_jcs(snapshot: dict) -> dict:
     """
     V25.3 联合置信度引擎 (6维 + 影子模式):
@@ -201,17 +285,26 @@ def compute_jcs(snapshot: dict) -> dict:
         ...
     }
     """
-    # V25.3: 6 维正式计算
+    # V25.3: 6 维正式计算 (当前生产)
     result = _compute_jcs_with_weights(snapshot, _JCS_WEIGHTS, n_core=6)
 
-    # P3-C 影子模式: 并行计算旧4维版本, 供30天验证对比
+    # P3-C 影子模式: 并行计算旧4维版本
     v4_result = _compute_jcs_with_weights(snapshot, _JCS_WEIGHTS_V4, n_core=4)
+
+    # V26 影子模式: Signal Conviction Model (30天验证期)
+    v26_result = _compute_jcs_v26(snapshot, _JCS_WEIGHTS)
 
     result["shadow"] = {
         "v4_score": v4_result["score"],
         "v6_score": result["score"],
         "delta": round(result["score"] - v4_result["score"], 1),
         "v4_level": v4_result["level"],
+        "v26_score": v26_result["score"],
+        "v26_level": v26_result["level"],
+        "v26_convictions": v26_result.get("convictions", {}),
+        "v26_conviction_score": v26_result.get("conviction_score", 0),
+        "v26_decay": v26_result.get("conflict_decay", 1.0),
+        "delta_v26": round(v26_result["score"] - result["score"], 1),
     }
 
     return result

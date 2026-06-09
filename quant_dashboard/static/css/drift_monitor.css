@@ -1,0 +1,428 @@
+/* ================================================
+   AlphaCore · 策略漂移监控面板 (Drift Monitor)
+   ================================================ */
+
+/* ── 综合状态头部 ── */
+.drift-header {
+    padding: 24px 28px;
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 14px;
+    margin-bottom: 20px;
+    position: relative;
+    overflow: hidden;
+}
+
+.drift-header::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #10b981, #3b82f6, #10b981);
+    background-size: 200% 100%;
+    animation: drift-glow 4s ease infinite;
+}
+
+@keyframes drift-glow {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+}
+
+.drift-header-title {
+    font-size: 1.4rem;
+    font-weight: 800;
+    color: #e2e8f0;
+    margin-bottom: 8px;
+}
+
+.drift-header-summary {
+    font-size: 0.92rem;
+    color: #94a3b8;
+    line-height: 1.6;
+    margin-bottom: 4px;
+}
+
+.drift-header-time {
+    font-size: 0.75rem;
+    color: #475569;
+    font-variant-numeric: tabular-nums;
+}
+
+/* 综合漂移等级徽章 */
+.drift-level-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    margin-bottom: 10px;
+}
+
+.drift-level-badge.level-ok {
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    color: #34d399;
+}
+
+.drift-level-badge.level-warning {
+    background: rgba(251, 191, 36, 0.12);
+    border: 1px solid rgba(251, 191, 36, 0.3);
+    color: #fbbf24;
+}
+
+.drift-level-badge.level-critical {
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #f87171;
+}
+
+/* ── 5 维检测卡片网格 ── */
+.drift-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 14px;
+}
+
+/* 响应式: 平板3列, 手机1列 */
+@media (max-width: 1200px) {
+    .drift-cards-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .drift-cards-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ── 单个漂移检测卡片 ── */
+.drift-card {
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    padding: 18px 16px;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.2s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+    animation: drift-fadeInUp 0.5s ease-out both;
+}
+
+.drift-card:nth-child(1) { animation-delay: 0.05s; }
+.drift-card:nth-child(2) { animation-delay: 0.10s; }
+.drift-card:nth-child(3) { animation-delay: 0.15s; }
+.drift-card:nth-child(4) { animation-delay: 0.20s; }
+.drift-card:nth-child(5) { animation-delay: 0.25s; }
+
+.drift-card:hover {
+    transform: translateY(-3px);
+}
+
+/* 顶部状态色条 */
+.drift-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    border-radius: 12px 12px 0 0;
+    transition: background 0.3s ease;
+}
+
+/* 状态边框 + 色条 */
+.drift-card.status-ok {
+    border-color: rgba(16, 185, 129, 0.2);
+}
+.drift-card.status-ok::before {
+    background: linear-gradient(90deg, #10b981, #34d399);
+}
+.drift-card.status-ok:hover {
+    box-shadow: 0 4px 20px rgba(16, 185, 129, 0.12);
+}
+
+.drift-card.status-warning {
+    border-color: rgba(251, 191, 36, 0.25);
+}
+.drift-card.status-warning::before {
+    background: linear-gradient(90deg, #f59e0b, #fbbf24);
+}
+.drift-card.status-warning:hover {
+    box-shadow: 0 4px 20px rgba(251, 191, 36, 0.12);
+}
+
+.drift-card.status-critical {
+    border-color: rgba(239, 68, 68, 0.25);
+}
+.drift-card.status-critical::before {
+    background: linear-gradient(90deg, #ef4444, #f87171);
+}
+.drift-card.status-critical:hover {
+    box-shadow: 0 4px 20px rgba(239, 68, 68, 0.12);
+}
+
+/* 卡片头部: 图标 + 标题 */
+.drift-card-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.drift-card-icon {
+    font-size: 1.2rem;
+    flex-shrink: 0;
+}
+
+.drift-card-title {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* 状态指示灯 + 标签 */
+.drift-card-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.drift-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.drift-status-dot.dot-ok {
+    background: #10b981;
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+}
+
+.drift-status-dot.dot-warning {
+    background: #fbbf24;
+    box-shadow: 0 0 8px rgba(251, 191, 36, 0.5);
+    animation: drift-pulse 2s ease-in-out infinite;
+}
+
+.drift-status-dot.dot-critical {
+    background: #ef4444;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+    animation: drift-pulse 1s ease-in-out infinite;
+}
+
+@keyframes drift-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.drift-card-label {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #e2e8f0;
+}
+
+/* 关键指标区域 */
+.drift-card-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.drift-metric-chip {
+    padding: 3px 8px;
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 6px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #cbd5e1;
+    font-family: 'Outfit', 'Inter', sans-serif;
+    font-variant-numeric: tabular-nums;
+}
+
+/* 详情文本 */
+.drift-card-detail {
+    font-size: 0.72rem;
+    color: #64748b;
+    line-height: 1.6;
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+    padding-top: 8px;
+}
+
+/* Regime 饼图容器 */
+.drift-regime-chart {
+    width: 100%;
+    height: 130px;
+    margin-top: 8px;
+}
+
+/* ── 加载态 ── */
+.drift-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    gap: 14px;
+}
+
+.drift-loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(16, 185, 129, 0.15);
+    border-top-color: #10b981;
+    border-radius: 50%;
+    animation: drift-spin 0.8s linear infinite;
+}
+
+@keyframes drift-spin {
+    to { transform: rotate(360deg); }
+}
+
+.drift-loading-text {
+    font-size: 0.88rem;
+    color: #64748b;
+}
+
+/* ── 错误态 ── */
+.drift-error {
+    padding: 24px;
+    text-align: center;
+    color: #f87171;
+    font-size: 0.88rem;
+    background: rgba(239, 68, 68, 0.06);
+    border: 1px solid rgba(239, 68, 68, 0.15);
+    border-radius: 10px;
+}
+
+/* ── fadeInUp 动画 ── */
+@keyframes drift-fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ── 刷新按钮 ── */
+.drift-refresh-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    border-radius: 8px;
+    color: #34d399;
+    font-size: 0.78rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-top: 10px;
+}
+
+.drift-refresh-btn:hover {
+    background: rgba(16, 185, 129, 0.18);
+    transform: translateY(-1px);
+}
+
+.drift-refresh-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* ── win/loss grid 胜率历史网格 ── */
+.drift-accuracy-grid-label {
+    font-size: 0.65rem;
+    color: #64748b;
+    margin: 8px 0 4px;
+}
+.drift-accuracy-grid {
+    display: flex;
+    gap: 5px;
+    margin-bottom: 12px;
+}
+.drift-grid-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    transition: transform 0.2s;
+}
+.drift-grid-dot:hover {
+    transform: scale(1.3);
+}
+.drift-grid-dot.dot-win {
+    background: #10b981;
+    box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
+}
+.drift-grid-dot.dot-lose {
+    background: #ef4444;
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
+}
+.drift-grid-dot.dot-pending {
+    background: #4b5563;
+}
+
+/* ── sparklines 容器 ── */
+.drift-sparkline-wrap {
+    width: 100%;
+    height: 42px;
+    margin: 10px 0;
+    overflow: hidden;
+}
+
+/* ── regime transition slider 刻度滑块条 ── */
+.drift-slider-wrap {
+    margin: 12px 0 8px 0;
+    width: 100%;
+}
+.drift-slider-track {
+    position: relative;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+    margin-bottom: 6px;
+}
+.drift-slider-bar {
+    position: absolute;
+    width: 8px;
+    height: 14px;
+    background: #3b82f6;
+    border: 2px solid #fff;
+    border-radius: 4px;
+    top: -4px;
+    transform: translateX(-50%);
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
+    z-index: 3;
+}
+.drift-slider-notch {
+    position: absolute;
+    width: 2px;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.3);
+    top: -1px;
+    transform: translateX(-50%);
+    z-index: 2;
+}
+.drift-slider-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.62rem;
+    color: #475569;
+    font-weight: 600;
+}
+

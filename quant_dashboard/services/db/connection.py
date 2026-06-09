@@ -348,6 +348,9 @@ def migrate_decision_log_v2():
         ("jcs_shadow_delta", "REAL"),
         ("gold_signal", "REAL"),
         ("bond_signal", "REAL"),
+        # V26: Signal Conviction Model
+        ("jcs_v26_score", "REAL"),
+        ("delta_v26", "REAL"),
     ]
     for col, typ in new_cols:
         if col not in existing:

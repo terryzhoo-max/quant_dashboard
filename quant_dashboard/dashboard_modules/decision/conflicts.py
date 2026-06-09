@@ -36,6 +36,55 @@ def _signal_direction(snapshot: dict) -> dict:
     }
 
 
+def _signal_conviction(snapshot: dict) -> dict:
+    """各引擎 → [-1.0, +1.0] 连续信念度 (V26 Signal Conviction Model)
+
+    与 _signal_direction() 的三值化 {-1,0,+1} 不同，连续信念度保留信号强度:
+      ±1.0: 极度看多/看空 (引擎读数触及极端区)
+      ±0.5: 中度看多/看空
+       0.0: 中性 (引擎无方向信号)
+
+    映射原则:
+      AIAE:  R1→+1.0 ... R3→0 ... R5→-1.0 (线性, 步长0.5)
+      ERP:   score→线性, 中心50, 半宽25 (0→-1, 50→0, 100→+1)
+      VIX:   反向线性, 中心20, 半宽10 (10→+1, 20→0, 30→-1)
+      MR:    离散 {BULL:+0.8, RANGE:0, BEAR:-0.7, CRASH:-1.0}
+      Gold/Bond: 连续信号/50, clamp ±1
+    """
+    aiae_r = snapshot.get("aiae_regime") if snapshot.get("aiae_regime") is not None else 3
+    erp_s  = snapshot.get("erp_score") if snapshot.get("erp_score") is not None else 50
+    vix_v  = snapshot.get("vix_val") if snapshot.get("vix_val") is not None else 20
+    mr_r   = snapshot.get("mr_regime") or "RANGE"
+    gold_sig = snapshot.get("gold_signal")
+    bond_sig = snapshot.get("bond_signal")
+
+    # AIAE: R1(极冷)=+1, R2=+0.5, R3(中性)=0, R4=-0.5, R5(极热)=-1
+    aiae_conv = max(-1.0, min(1.0, (3 - aiae_r) / 2.0))
+
+    # ERP: score 50=中性, >75=强看多, <25=强看空
+    erp_conv = max(-1.0, min(1.0, (erp_s - 50) / 25.0))
+
+    # VIX: 20=中性, <10=强看多(无恐慌), >30=强看空(恐慌)
+    vix_conv = max(-1.0, min(1.0, (20 - vix_v) / 10.0))
+
+    # MR: 离散→信念度 (BULL 不给满+1, 技术面信号可靠度略低于基本面)
+    _mr_map = {"BULL": 0.8, "RANGE": 0.0, "BEAR": -0.7, "CRASH": -1.0}
+    mr_conv = _mr_map.get(mr_r, 0.0)
+
+    # Gold/Bond: 连续信号映射 (None → 0 中性, 不干扰核心逻辑)
+    gold_conv = max(-1.0, min(1.0, gold_sig / 50.0)) if gold_sig is not None else 0.0
+    bond_conv = max(-1.0, min(1.0, bond_sig / 50.0)) if bond_sig is not None else 0.0
+
+    return {
+        "aiae": round(aiae_conv, 3),
+        "erp":  round(erp_conv, 3),
+        "vix":  round(vix_conv, 3),
+        "mr":   round(mr_conv, 3),
+        "gold": round(gold_conv, 3),
+        "bond": round(bond_conv, 3),
+    }
+
+
 # 矛盾规则定义: (引擎A条件, 引擎B条件, 严重度, 描述, 建议)
 _CONFLICT_RULES = [
     {

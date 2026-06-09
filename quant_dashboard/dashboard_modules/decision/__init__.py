@@ -23,6 +23,7 @@ AlphaCore · 决策引擎包 (P2-A 渐进式拆分 — 全部完成)
 # ── 已拆分模块: 从子模块导出 ──
 from dashboard_modules.decision.conflicts import (  # noqa: F401
     _signal_direction,
+    _signal_conviction,
     _CONFLICT_RULES,
     compute_conflict_matrix,
 )

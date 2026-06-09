@@ -1139,3 +1139,711 @@ textarea:focus-visible {
 .nav-parent {
     min-height: 44px;
 }
+
+
+/* ═══════════════════════════════════════════════════
+   3D. 联合置信度决策中枢 (JCS Hub) 升级
+   ── 机构级 Decision Terminal V2 ──
+   ═══════════════════════════════════════════════════ */
+
+/* ── 容器背景与发光 ── */
+.jcs-gauge-wrap {
+    background: linear-gradient(135deg, rgba(20, 24, 34, 0.6) 0%, rgba(15, 23, 42, 0.45) 100%) !important;
+    box-shadow: inset 0 0 24px rgba(255, 255, 255, 0.02), 0 8px 32px rgba(0, 0, 0, 0.35) !important;
+    border: 1px solid rgba(255, 255, 255, 0.06) !important;
+    border-radius: 16px !important;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 1;
+}
+
+.jcs-gauge-wrap:hover {
+    border-color: rgba(255, 255, 255, 0.12) !important;
+    box-shadow: inset 0 0 24px rgba(255, 255, 255, 0.04), 0 12px 40px rgba(0, 0, 0, 0.45) !important;
+}
+
+/* 置信度色温弥散背光 */
+.jcs-gauge-wrap::before {
+    content: '';
+    position: absolute;
+    top: 30%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 140px; height: 140px;
+    background: radial-gradient(circle, var(--jcs-glow, rgba(59, 130, 246, 0.08)) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+    transition: background 0.5s ease;
+}
+
+.jcs-gauge-wrap:has(.jcs-level-badge.high) { --jcs-glow: rgba(16, 185, 129, 0.14); }
+.jcs-gauge-wrap:has(.jcs-level-badge.medium) { --jcs-glow: rgba(245, 158, 11, 0.14); }
+.jcs-gauge-wrap:has(.jcs-level-badge.low) { --jcs-glow: rgba(239, 68, 68, 0.14); }
+
+/* JCS Canvas 环形图容器 */
+.jcs-ring {
+    position: relative;
+    z-index: 1;
+    width: 180px;
+    height: 180px;
+    margin: 0 auto 12px !important;
+}
+
+.jcs-ring::after {
+    /* 玻璃反光环阴影效果 */
+    content: '';
+    position: absolute;
+    top: 5px; left: 5px; right: 5px; bottom: 5px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.03);
+    box-shadow: inset 0 0 12px rgba(255, 255, 255, 0.05);
+    pointer-events: none;
+}
+
+.jcs-ring-value {
+    font-family: var(--font-mono) !important;
+    font-weight: 900 !important;
+    text-shadow: 0 0 16px rgba(255, 255, 255, 0.15) !important;
+    color: #f8fafc !important;
+    z-index: 1;
+}
+
+.jcs-ring-label {
+    font-size: 0.75rem !important;
+    color: #94a3b8 !important;
+    font-weight: 600 !important;
+    margin-top: 6px !important;
+    letter-spacing: 0.5px;
+    z-index: 1;
+}
+
+/* ── JCS 置信度 Badge 升级 ── */
+.jcs-level-badge {
+    padding: 4px 14px !important;
+    border-radius: 6px !important;
+    font-size: 0.72rem !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.8px !important;
+    margin-top: 10px !important;
+    text-transform: uppercase;
+    transition: all 0.3s ease;
+    z-index: 1;
+    border-width: 1px !important;
+    border-style: solid !important;
+}
+
+.jcs-level-badge.high {
+    background: rgba(16, 185, 129, 0.1) !important;
+    color: #34d399 !important;
+    border-color: rgba(16, 185, 129, 0.35) !important;
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.15) !important;
+    animation: jcsGlowPulseGreen 2.5s infinite;
+}
+
+.jcs-level-badge.medium {
+    background: rgba(245, 158, 11, 0.1) !important;
+    color: #fbbf24 !important;
+    border-color: rgba(245, 158, 11, 0.35) !important;
+    box-shadow: 0 0 12px rgba(245, 158, 11, 0.15) !important;
+    animation: jcsGlowPulseYellow 2.5s infinite;
+}
+
+.jcs-level-badge.low {
+    background: rgba(239, 68, 68, 0.1) !important;
+    color: #f87171 !important;
+    border-color: rgba(239, 68, 68, 0.35) !important;
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.15) !important;
+    animation: jcsGlowPulseRed 2.5s infinite;
+}
+
+@keyframes jcsGlowPulseGreen {
+    0%, 100% { box-shadow: 0 0 8px rgba(16, 185, 129, 0.15); }
+    50% { box-shadow: 0 0 16px rgba(16, 185, 129, 0.3), inset 0 0 4px rgba(16, 185, 129, 0.1); }
+}
+@keyframes jcsGlowPulseYellow {
+    0%, 100% { box-shadow: 0 0 8px rgba(245, 158, 11, 0.15); }
+    50% { box-shadow: 0 0 16px rgba(245, 158, 11, 0.3), inset 0 0 4px rgba(245, 158, 11, 0.1); }
+}
+@keyframes jcsGlowPulseRed {
+    0%, 100% { box-shadow: 0 0 8px rgba(239, 68, 68, 0.15); }
+    50% { box-shadow: 0 0 16px rgba(239, 68, 68, 0.3), inset 0 0 4px rgba(239, 68, 68, 0.1); }
+}
+
+.jcs-label-subtitle {
+    font-size: 0.72rem !important;
+    color: #94a3b8 !important;
+    margin-top: 8px !important;
+    line-height: 1.45 !important;
+    z-index: 1;
+    text-align: center;
+}
+
+/* ── JCS 规则参考条 ── */
+.jcs-rules {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    margin-top: 16px !important;
+    padding: 8px 10px !important;
+    border-radius: 8px !important;
+    background: rgba(15, 23, 42, 0.6) !important;
+    border: 1px solid rgba(255, 255, 255, 0.04) !important;
+    z-index: 1;
+}
+
+.jcs-rule {
+    font-size: 0.68rem !important;
+    color: #64748b !important;
+    font-weight: 600 !important;
+}
+
+/* ── JCS 组件分解条 (电子发光管进度条) ── */
+.jcs-components {
+    margin-top: 16px !important;
+    width: 100%;
+    z-index: 1;
+}
+
+.jcs-comp-row {
+    margin-bottom: 8px !important;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.jcs-comp-label {
+    font-size: 0.68rem !important;
+    color: #cbd5e1 !important;
+    font-weight: 600 !important;
+    width: 50px !important;
+    text-align: left !important;
+}
+
+.jcs-comp-bar-bg {
+    height: 6px !important;
+    border-radius: 3px !important;
+    background: rgba(15, 23, 42, 0.8) !important;
+    border: none !important;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6) !important;
+    flex: 1;
+}
+
+.jcs-comp-bar-fill {
+    height: 100% !important;
+    border-radius: 3px !important;
+    position: relative;
+    transition: width 1s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+
+/* 电子发光管末端亮点 */
+.jcs-comp-bar-fill::after {
+    content: '';
+    position: absolute;
+    right: -2px; top: 50%;
+    transform: translateY(-50%);
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 10px 2px currentColor;
+}
+
+.jcs-comp-val {
+    font-size: 0.65rem !important;
+    color: #cbd5e1 !important;
+    font-family: var(--font-mono) !important;
+    text-align: right;
+    width: 32px !important;
+}
+
+/* ── 信号新鲜度衰减指示器 ── */
+.signal-decay {
+    margin-top: 14px !important;
+    padding-top: 12px !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.05) !important;
+    width: 100%;
+    z-index: 1;
+}
+
+.signal-decay-label {
+    font-size: 0.68rem !important;
+    color: #64748b !important;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px !important;
+    font-weight: 700 !important;
+}
+
+.sd-bar-row {
+    margin-bottom: 6px !important;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sd-bar-engine {
+    font-size: 0.65rem !important;
+    color: #94a3b8 !important;
+    font-weight: 600 !important;
+    width: 32px !important;
+}
+
+.sd-bar-track {
+    height: 4px !important;
+    border-radius: 2px !important;
+    background: rgba(15, 23, 42, 0.8) !important;
+    border: none !important;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6) !important;
+    flex: 1;
+}
+
+.sd-bar-fill {
+    height: 100% !important;
+    border-radius: 2px !important;
+    transition: width 1s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+
+.sd-bar-age {
+    font-size: 0.6rem !important;
+    color: #64748b !important;
+    font-family: var(--font-mono) !important;
+    width: 28px !important;
+    text-align: right;
+}
+
+.sd-bar-badge {
+    font-size: 0.55rem !important;
+    padding: 1px 4px !important;
+    border-radius: 4px !important;
+    font-weight: 700 !important;
+    line-height: 1.2 !important;
+    width: 14px;
+    text-align: center;
+}
+
+.sd-footnote {
+    font-size: 0.6rem !important;
+    color: #64748b !important;
+    margin-top: 8px !important;
+}
+
+/* ── 右侧信号矩阵 (Koyfin 风格重构) ── */
+.decision-panel {
+    background: linear-gradient(135deg, rgba(20, 24, 34, 0.55) 0%, rgba(15, 23, 42, 0.35) 100%) !important;
+    box-shadow: inset 0 0 24px rgba(255, 255, 255, 0.02), 0 8px 32px rgba(0, 0, 0, 0.35) !important;
+    border: 1px solid rgba(255, 255, 255, 0.06) !important;
+    border-radius: 16px !important;
+    padding: 24px !important;
+    display: flex;
+    flex-direction: column;
+}
+
+.decision-panel h3 {
+    font-size: 0.95rem !important;
+    color: #f8fafc !important;
+    margin-top: 0 !important;
+    margin-bottom: 16px !important;
+    letter-spacing: 0.3px;
+    font-weight: 700 !important;
+}
+
+.direction-grid {
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)) !important;
+    gap: 12px !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.06) !important;
+    padding-top: 16px !important;
+    margin-bottom: 16px !important;
+    margin-top: 0 !important;
+}
+
+.direction-item {
+    background: rgba(15, 23, 42, 0.55) !important;
+    border: 1px solid rgba(255, 255, 255, 0.04) !important;
+    border-radius: 10px !important;
+    padding: 12px 10px !important;
+    box-shadow: inset 0 0 12px rgba(255, 255, 255, 0.01) !important;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+    position: relative;
+    overflow: visible; /* 允许 Tooltip 溢出卡片边界 */
+    min-height: 98px !important; /* 确保折行时所有卡片高度对齐 */
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.direction-item::before {
+    /* 大范围微光漏光阴影 */
+    height: 32px !important;
+    opacity: 0.35 !important;
+}
+
+.direction-item::after {
+    /* 顶部彩条线 */
+    height: 2px !important;
+    opacity: 0.65 !important;
+}
+
+.direction-item:hover:not(.dir-no-data) {
+    background: rgba(20, 28, 48, 0.8) !important;
+    transform: translateY(-4px) scale(1.02) !important;
+    border-color: rgba(255, 255, 255, 0.12) !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), 0 0 16px rgba(var(--dir-rgb-val, 255,255,255), 0.18) !important;
+}
+
+.direction-item.dir-up { --dir-rgb-val: 52, 211, 153; }
+.direction-item.dir-down { --dir-rgb-val: 248, 113, 113; }
+.direction-item.dir-neutral { --dir-rgb-val: 148, 163, 184; }
+
+/* ── 无数据引擎退化 ── */
+.direction-item.dir-no-data {
+    opacity: 0.45 !important;
+    border-style: dashed !important;
+    border-color: rgba(100, 116, 139, 0.15) !important;
+    cursor: not-allowed !important;
+}
+
+.direction-item.dir-no-data::before,
+.direction-item.dir-no-data::after {
+    display: none !important;
+}
+
+.direction-item.dir-no-data:hover {
+    transform: none !important;
+    background: rgba(15, 23, 42, 0.45) !important;
+    box-shadow: none !important;
+    border-color: rgba(100, 116, 139, 0.2) !important;
+}
+
+.dir-header {
+    margin-bottom: 8px !important;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.direction-label {
+    font-size: 0.72rem !important;
+    color: #f1f5f9 !important;
+    font-weight: 700 !important;
+}
+
+.dir-weight {
+    font-size: 0.58rem !important;
+    background: rgba(255, 255, 255, 0.04) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    color: #94a3b8 !important;
+    padding: 1px 5px !important;
+    border-radius: 4px !important;
+    font-weight: 700 !important;
+}
+
+.dir-center {
+    margin-bottom: 6px !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.direction-arrow {
+    font-size: 1.2rem !important;
+    font-weight: 900 !important;
+}
+
+.dir-realval {
+    font-size: 0.85rem !important;
+    font-weight: 800 !important;
+    color: #cbd5e1 !important;
+    font-family: var(--font-mono) !important;
+    position: relative;
+    cursor: help;
+}
+
+.direction-meaning {
+    font-size: 0.65rem !important;
+    color: #64748b !important;
+    font-weight: 600 !important;
+    text-align: center;
+}
+
+/* ── ERP决策链路 Tooltip 美化 ── */
+.dir-tooltip {
+    background: rgba(15, 23, 42, 0.98) !important;
+    border: 1px solid rgba(139, 92, 246, 0.35) !important;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65), 0 0 20px rgba(139, 92, 246, 0.18) !important;
+    padding: 12px !important;
+    border-radius: 8px !important;
+    width: 190px !important; /* 精简宽度防止窄屏边缘溢出 */
+}
+
+.dir-tooltip-title {
+    font-size: 0.65rem !important;
+    color: #c4b5fd !important;
+    border-bottom: 1px dashed rgba(139, 92, 246, 0.2);
+    padding-bottom: 6px;
+    margin-bottom: 8px !important;
+    font-weight: 700 !important;
+}
+
+.dir-tooltip-row {
+    font-size: 0.68rem !important;
+    color: #cbd5e1 !important;
+    margin-bottom: 4px !important;
+}
+
+.dir-tooltip-rule {
+    font-size: 0.58rem !important;
+    color: #64748b !important;
+    line-height: 1.4 !important;
+}
+
+/* ── 矛盾扫描与列表美化 ── */
+#conflict-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.conflict-summary {
+    padding: 10px 14px !important;
+    font-size: 0.78rem !important;
+    border-radius: 8px !important;
+    margin-bottom: 12px !important;
+    font-weight: 700 !important;
+}
+
+.conflict-item {
+    background: rgba(15, 23, 42, 0.4) !important;
+    border: 1px solid rgba(255, 255, 255, 0.03) !important;
+    border-radius: 8px !important;
+    margin-bottom: 0 !important;
+    display: flex;
+    align-items: stretch;
+}
+
+.conflict-item:hover {
+    background: rgba(20, 28, 48, 0.5) !important;
+    border-color: rgba(255, 255, 255, 0.08) !important;
+    transform: translateX(4px) !important;
+}
+
+.conflict-item:has(.conflict-color-band.high) {
+    animation: conflictCardBreathe 3s ease-in-out infinite;
+}
+
+@keyframes conflictCardBreathe {
+    0%, 100% { border-color: rgba(239, 68, 68, 0.08); }
+    50% { border-color: rgba(239, 68, 68, 0.22); box-shadow: 0 0 10px rgba(239, 68, 68, 0.05); }
+}
+
+.conflict-color-band {
+    width: 3px !important;
+    flex-shrink: 0;
+}
+
+.conflict-body {
+    padding: 10px 12px !important;
+    flex: 1;
+}
+
+.conflict-desc {
+    font-size: 0.78rem !important;
+    color: #e2e8f0 !important;
+    line-height: 1.45 !important;
+    font-weight: 600 !important;
+}
+
+.conflict-action {
+    font-size: 0.72rem !important;
+    color: #cbd5e1 !important;
+    margin-top: 4px !important;
+    font-weight: 500 !important;
+}
+
+.no-conflict-badge {
+    padding: 14px 12px !important;
+    font-size: 0.78rem !important;
+    background: rgba(16, 185, 129, 0.04) !important;
+    border: 1px dashed rgba(16, 185, 129, 0.15) !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+}
+
+.pulse-dot {
+    width: 8px !important;
+    height: 8px !important;
+}
+
+/* ── 执行控制台 (Action Command 工单化与环境色漏光) ── */
+.decision-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent) !important;
+    margin: 16px 0 !important;
+}
+
+.action-inline {
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.7) 0%, rgba(20, 28, 48, 0.4) 100%) !important;
+    border: 1px dashed rgba(255, 255, 255, 0.08) !important;
+    border-radius: 12px !important;
+    padding: 16px 18px !important;
+    position: relative;
+    overflow: hidden;
+    /* 精确物理质感阴影 + 动态置信度漏光 */
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4), 
+                inset 0 1px 0 rgba(255, 255, 255, 0.04), 
+                0 0 24px var(--conf-color, rgba(167, 139, 250, 0.08)) !important;
+    transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+}
+
+.action-inline::before {
+    /* 顶部色条指示线 */
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--conf-color, #a78bfa);
+    box-shadow: 0 1px 6px var(--conf-color, transparent);
+    opacity: 0.8;
+}
+
+.action-inline-header {
+    margin-bottom: 12px !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 12px !important;
+    position: relative !important;
+    width: 100% !important;
+}
+
+.action-inline-icon {
+    font-size: 1.5rem !important;
+    filter: drop-shadow(0 0 8px var(--conf-color, currentColor));
+}
+
+.action-inline-title {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 2px !important;
+    flex: 1 !important;
+}
+
+.action-label {
+    font-size: 0.95rem !important;
+    font-weight: 800 !important;
+    color: #f1f5f9 !important;
+}
+
+.action-confidence {
+    font-size: 0.72rem !important;
+    font-weight: 700 !important;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.conf-dot {
+    width: 6px !important;
+    height: 6px !important;
+}
+
+.compliance-badge {
+    font-size: 0.65rem !important;
+    padding: 2px 8px !important;
+    border-radius: 4px !important;
+    border: 1px solid rgba(16, 185, 129, 0.3) !important;
+    background: rgba(16, 185, 129, 0.08) !important;
+    color: #34d399 !important;
+    font-weight: 700 !important;
+    margin-left: auto !important;
+    align-self: center !important;
+}
+
+.action-reasoning {
+    font-size: 0.78rem !important;
+    color: #cbd5e1 !important;
+    line-height: 1.5 !important;
+    margin-bottom: 14px !important;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.05) !important;
+    padding-bottom: 10px !important;
+    font-weight: 500 !important;
+}
+
+.action-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+.action-next, .action-pos {
+    background: rgba(15, 23, 42, 0.5) !important;
+    border: 1px solid rgba(255, 255, 255, 0.04) !important;
+    border-radius: 8px !important;
+    padding: 8px 12px !important;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.action-next-label, .action-pos-label {
+    font-size: 0.62rem !important;
+    color: #64748b !important;
+    margin-bottom: 3px !important;
+    text-transform: uppercase;
+    font-weight: 700 !important;
+}
+
+.action-next-value, .action-pos-value {
+    font-size: 0.85rem !important;
+    font-weight: 700 !important;
+    color: #f8fafc !important;
+    font-family: var(--font-mono) !important;
+}
+
+.action-risk {
+    margin-top: 10px !important;
+    padding: 6px 10px !important;
+    font-size: 0.68rem !important;
+    color: #fbbf24 !important;
+    background: rgba(251, 191, 36, 0.04) !important;
+    border: 1px solid rgba(251, 191, 36, 0.1) !important;
+    border-radius: 6px !important;
+    font-weight: 600 !important;
+}
+
+/* ── JCS 双栏布局与 14寸/小屏适配 ── */
+.jcs-section {
+    display: grid !important;
+    grid-template-columns: 280px 1fr !important;
+    gap: 20px !important;
+    margin-bottom: 24px !important;
+}
+
+@media (max-width: 1440px) {
+    .jcs-section {
+        grid-template-columns: 260px 1fr !important;
+        gap: 16px !important;
+    }
+    .jcs-gauge-wrap {
+        padding: 16px !important;
+    }
+    /* 14寸笔记本下保留 JCS Canvas 180px 1:1 物理像素显示，防止拉伸模糊，且能安全容纳在 260px 栏中 */
+    .jcs-ring {
+        width: 180px !important;
+        height: 180px !important;
+    }
+    .jcs-ring canvas {
+        max-width: 180px !important;
+        max-height: 180px !important;
+    }
+    .jcs-ring-value {
+        font-size: 2.2rem !important;
+    }
+}
+
+@media (max-width: 1100px) {
+    .jcs-section {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+

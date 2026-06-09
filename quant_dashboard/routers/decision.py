@@ -889,3 +889,108 @@ async def reset_breaker(name: str):
         return {"status": "error", "error": f"未知断路器: {name}"}
     breaker.reset()
     return {"status": "success", "message": f"断路器 {name} 已重置", "new_state": breaker.get_status()}
+
+
+# ═══════════════════════════════════════════════════
+#  Brinson 收益归因
+# ═══════════════════════════════════════════════════
+
+@router.get("/brinson")
+async def get_brinson_attribution(lookback: int = Query(default=20, ge=5, le=120)):
+    """Brinson 收益归因分析"""
+    from services.cache_service import stale_while_revalidate
+
+    def _compute():
+        from engines.brinson_engine import compute_brinson_attribution
+        return compute_brinson_attribution(lookback)
+
+    return stale_while_revalidate(f"swr_brinson_{lookback}", _compute, fresh_ttl=1800, stale_ttl=7200)
+
+
+# ═══════════════════════════════════════════════════
+#  多资产配置雷达: 股/债/金 信号聚合
+# ═══════════════════════════════════════════════════
+
+@router.get("/multi-asset")
+async def get_multi_asset_radar():
+    """多资产配置雷达: 股/债/金 信号聚合"""
+    from services.cache_service import stale_while_revalidate
+
+    def _compute():
+        result = {"status": "success", "assets": {}}
+
+        # 黄金信号
+        try:
+            from engines.gold_signal_engine import compute_gold_signal
+            gold = compute_gold_signal()
+            result["assets"]["gold"] = {
+                "label": "黄金",
+                "icon": "🥇",
+                "signal": gold.get("gold_signal", 0),
+                "direction": gold.get("gold_direction", "neutral"),
+                "direction_cn": gold.get("gold_direction_cn", "中性"),
+                "allocation": gold.get("suggested_allocation", 5),
+                "allocation_label": gold.get("allocation_label", "中性"),
+                "components": gold.get("components", {}),
+            }
+        except Exception as e:
+            result["assets"]["gold"] = {"label": "黄金", "icon": "🥇", "signal": 0, "direction": "neutral", "error": str(e)}
+
+        # A股权益 (从 AIAE/JCS 合成)
+        try:
+            from dashboard_modules.decision_engine import _build_snapshot_from_cache, compute_jcs
+            snapshot = _build_snapshot_from_cache()
+            jcs = compute_jcs(snapshot)
+            equity_signal = jcs.get("score", 50) - 50  # 映射到 -50~50
+            regime = snapshot.get("aiae_regime", 3)
+            pos = snapshot.get("suggested_position", 55)
+            result["assets"]["equity_cn"] = {
+                "label": "A股权益",
+                "icon": "📈",
+                "signal": round(equity_signal * 2, 1),  # 放大到 -100~100
+                "direction": "bullish" if equity_signal > 15 else ("bearish" if equity_signal < -15 else "neutral"),
+                "direction_cn": "看多" if equity_signal > 15 else ("看空" if equity_signal < -15 else "中性"),
+                "allocation": pos,
+                "allocation_label": f"R{regime} · {pos}%",
+                "jcs_score": jcs.get("score"),
+                "jcs_level": jcs.get("level"),
+            }
+        except Exception as e:
+            result["assets"]["equity_cn"] = {"label": "A股权益", "icon": "📈", "signal": 0, "error": str(e)}
+
+        # 债券 (利率信号)
+        try:
+            from services.cache_service import cache_manager
+            dashboard = cache_manager.get_json("dashboard_data") or {}
+            rates_info = dashboard.get("data", {}).get("macro_cards", {}).get("rates_strategy", {})
+            bond_signal = rates_info.get("score", 0) if rates_info else 0
+            result["assets"]["bond"] = {
+                "label": "债券",
+                "icon": "📋",
+                "signal": bond_signal,
+                "direction": "bullish" if bond_signal > 25 else ("bearish" if bond_signal < -25 else "neutral"),
+                "direction_cn": "看多" if bond_signal > 25 else ("看空" if bond_signal < -25 else "中性"),
+                "allocation": 20 if bond_signal > 0 else 10,
+                "allocation_label": "利率下行利好" if bond_signal > 25 else "中性配置",
+            }
+        except Exception as e:
+            result["assets"]["bond"] = {"label": "债券", "icon": "📋", "signal": 0, "error": str(e)}
+
+        # 现金 (作为残差)
+        used = sum(a.get("allocation", 0) for a in result["assets"].values())
+        cash_pct = max(0, 100 - used)
+        result["assets"]["cash"] = {
+            "label": "现金",
+            "icon": "💵",
+            "signal": 0,
+            "direction": "neutral",
+            "direction_cn": "—",
+            "allocation": cash_pct,
+            "allocation_label": "流动性储备",
+        }
+
+        from datetime import datetime
+        result["timestamp"] = datetime.now().isoformat()
+        return result
+
+    return stale_while_revalidate("swr_multi_asset", _compute, fresh_ttl=600, stale_ttl=3600)

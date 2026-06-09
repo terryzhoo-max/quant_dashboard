@@ -38,6 +38,10 @@
 
 
 
+    <link rel="stylesheet" href="./static/css/drift_monitor.css?v=1">
+
+
+
     <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 
 
@@ -407,6 +411,26 @@
 
 
                     <button class="st-tab" data-report="st-signal-rules" data-color="slate">🎯 信号评分</button>
+
+
+
+                </div>
+
+
+
+                <!-- 第3行: 监控层 -->
+
+
+
+                <div class="st-tab-group">
+
+
+
+                    <span class="st-tab-group-label">监控</span>
+
+
+
+                    <button class="st-tab" data-report="st-drift-health" data-color="green">🩺 策略健康</button>
 
 
 
@@ -16909,15 +16933,20 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
 
 
 
+            <!-- ==================== 策略漂移监控 (Drift Health) ==================== -->
 
+            <div class="st-report" id="st-drift-health">
 
+                <div id="drift-monitor-container">
 
+                    <div class="drift-loading">
+                        <div class="drift-loading-spinner"></div>
+                        <div class="drift-loading-text">切换至此 Tab 后自动加载漂移检测...</div>
+                    </div>
 
+                </div>
 
-
-
-
-
+            </div><!-- /st-drift-health -->
 
 
 
@@ -16970,6 +16999,10 @@ defence_break = (close_qfq < ma20)  # 右侧防守破位</div>
 
 
     <script src="./static/js/strategy_gem.js?v=203"></script>
+
+
+
+    <script src="./static/js/drift_monitor.js?v=1"></script>
 
 
 
