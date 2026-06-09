@@ -240,8 +240,9 @@
     margin-top: 12px;
     padding: 14px 16px;
     border-radius: 12px;
-    background: linear-gradient(135deg, rgba(234, 179, 8, 0.04) 0%, rgba(217, 119, 6, 0.02) 100%);
-    border: 1px solid rgba(234, 179, 8, 0.1);
+    background: linear-gradient(135deg, rgba(234, 179, 8, 0.05) 0%, rgba(217, 119, 6, 0.02) 100%) !important;
+    border: 1px solid rgba(251, 191, 36, 0.15) !important;
+    box-shadow: inset 0 0 20px rgba(251, 191, 36, 0.03), 0 4px 24px rgba(0, 0, 0, 0.25) !important;
     position: relative;
     overflow: hidden;
 }
@@ -250,8 +251,8 @@
     content: '';
     position: absolute;
     top: 0; left: 0; right: 0;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(251, 191, 36, 0.3), transparent);
+    height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(251, 191, 36, 0.6), rgba(217, 119, 6, 0.4), transparent) !important;
 }
 
 .ma-gold-header {
@@ -259,37 +260,60 @@
     justify-content: space-between;
     align-items: center;
     margin-bottom: 10px;
-    font-size: 0.75rem;
+    font-size: 0.78rem;
     font-weight: 700;
     color: #fbbf24;
 }
 
 .ma-gold-total {
+    font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    font-size: 0.78rem;
+    font-size: 0.82rem;
+    font-weight: 900;
+    text-shadow: 0 0 10px currentColor;
 }
 
 .ma-gold-row {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 0;
+    padding: 8px 10px !important;
     border-bottom: 1px solid rgba(148, 163, 184, 0.04);
-    transition: background 0.2s;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    border-radius: 6px;
 }
 
 .ma-gold-row:last-child { border-bottom: none; }
-.ma-gold-row:hover { background: rgba(251, 191, 36, 0.03); }
+.ma-gold-row:hover { 
+    background: rgba(251, 191, 36, 0.04) !important; 
+    transform: translateX(3px);
+}
+
+/* 黄金左侧精细发光定位条 */
+.ma-gold-row::after {
+    content: '';
+    position: absolute;
+    left: 0; top: 8px; bottom: 8px;
+    width: 2px;
+    background: #fbbf24;
+    opacity: 0;
+    transition: opacity 0.2s;
+    border-radius: 1px;
+}
+.ma-gold-row:hover::after {
+    opacity: 1;
+}
 
 .ma-gold-icon {
-    font-size: 0.9rem;
+    font-size: 0.95rem;
     flex-shrink: 0;
     width: 22px;
     text-align: center;
 }
 
 .ma-gold-info {
-    flex: 1;
+    flex: 0 0 110px !important; /* 精确宽度，消除抖动 */
     min-width: 0;
     display: flex;
     flex-direction: column;
@@ -299,31 +323,36 @@
 .ma-gold-label {
     font-size: 0.75rem;
     color: #e2e8f0;
-    font-weight: 600;
+    font-weight: 700;
 }
 
 .ma-gold-desc {
     font-size: 0.6rem;
-    color: #475569;
+    color: #64748b;
+    font-weight: 500;
 }
 
 .ma-gold-val {
-    font-size: 0.82rem;
+    font-size: 0.85rem;
     font-weight: 800;
     min-width: 44px;
     text-align: right;
+    font-family: var(--font-mono) !important;
     font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 8px currentColor;
 }
 
 .ma-gold-tag {
     flex-shrink: 0;
     font-size: 0.6rem;
-    font-weight: 700;
-    padding: 2px 8px;
-    border-radius: 6px;
+    font-weight: 800;
+    padding: 2px 6px;
+    border-radius: 4px;
     border: 1px solid;
     min-width: 38px;
     text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 /* ═══════════════════════════════════════
@@ -445,28 +474,56 @@
 .ma-gold-diverging-wrap {
     position: relative;
     flex: 1;
-    height: 10px;
-    background: rgba(255, 255, 255, 0.02);
-    border-radius: 5px;
-    margin: 0 10px;
+    height: 8px !important;
+    background: rgba(15, 23, 42, 0.8) !important;
+    border-radius: 4px !important;
+    margin: 0 12px;
     overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.02);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6) !important;
 }
 .ma-gold-diverging-center {
     position: absolute;
     left: 50%;
     top: 0;
     bottom: 0;
-    width: 1px;
-    background: rgba(255, 255, 255, 0.25);
+    width: 2px !important;
+    background: rgba(255, 255, 255, 0.35) !important;
     z-index: 2;
+    box-shadow: 0 0 4px rgba(255, 255, 255, 0.4);
 }
 .ma-gold-diverging-bar {
     position: absolute;
-    top: 2px;
-    bottom: 2px;
-    border-radius: 2px;
+    top: 1px !important;
+    bottom: 1px !important;
+    border-radius: 3px !important;
     z-index: 1;
     transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), left 0.6s, right 0.6s;
+    box-shadow: 0 0 8px currentColor;
+}
+
+/* 进度条电子管亮点微粒（根据增长方向自适应定位） */
+.ma-gold-diverging-bar::after {
+    content: '';
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #ffffff;
+    top: 50%;
+    transform: translateY(-50%);
+    box-shadow: 0 0 6px 1.5px #ffffff;
+    opacity: 0.95;
+}
+
+/* 🟢 看多亮点偏右 */
+.ma-gold-diverging-bar[style*="left: 50%"]::after,
+.ma-gold-diverging-bar[style*="left:50%"]::after {
+    right: 1px;
+}
+
+/* 🔴 看空亮点偏左 */
+.ma-gold-diverging-bar[style*="right: 50%"]::after,
+.ma-gold-diverging-bar[style*="right:50%"]::after {
+    left: 1px;
 }
 

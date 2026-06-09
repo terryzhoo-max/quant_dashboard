@@ -15,14 +15,56 @@ from services.fred_guard import fred_get_series
 
 logger = logging.getLogger("alphacore.fetch_macro")
 
+# ── V6.0: VIX 磁盘降级缓存 ──
+import os as _os
+_VIX_CACHE_PATH = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "data_lake", "vix_cache.json")
+
+def _save_vix_disk(latest: float, prev: float, source: str):
+    """VIX 成功获取后写入磁盘缓存 (供重启/全源失败时降级)"""
+    try:
+        payload = {"latest": latest, "prev": prev, "source": source,
+                   "timestamp": datetime.now().isoformat()}
+        tmp = _VIX_CACHE_PATH + ".tmp"
+        with open(tmp, 'w') as f:
+            json.dump(payload, f)
+        _os.replace(tmp, _VIX_CACHE_PATH)
+    except Exception as e:
+        logger.debug("VIX 磁盘缓存写入失败: %s", e)
+
+def _load_vix_disk(max_age_hours: int = 72) -> Optional[Tuple[float, float]]:
+    """从磁盘读取 VIX 缓存 (72h 内有效)"""
+    try:
+        if not _os.path.exists(_VIX_CACHE_PATH):
+            return None
+        with open(_VIX_CACHE_PATH) as f:
+            data = json.load(f)
+        cached_at = datetime.fromisoformat(data["timestamp"])
+        age_hours = (datetime.now() - cached_at).total_seconds() / 3600
+        if age_hours > max_age_hours:
+            logger.debug("VIX 磁盘缓存已过期 (%.1fh > %dh)", age_hours, max_age_hours)
+            return None
+        logger.info("VIX 从磁盘缓存加载: latest=%.2f, source=%s, age=%.1fh",
+                    data["latest"], data.get("source", "?"), age_hours)
+        return data["latest"], data["prev"]
+    except Exception as e:
+        logger.debug("VIX 磁盘缓存读取失败: %s", e)
+        return None
+
 
 def fetch_vix_for_dashboard() -> Tuple[float, float]:
-    """Production-grade VIX fetch: TradingView -> yfinance -> FRED -> CNBC -> Default"""
+    """Production-grade VIX fetch: 磁盘缓存(周末) -> TradingView -> yfinance -> FRED -> CNBC -> 磁盘降级 -> Default"""
+    # V6.0: 周末/节假日直接使用磁盘缓存 (VIX 不更新, 无需请求外部源)
+    if datetime.now().weekday() >= 5:
+        disk = _load_vix_disk(max_age_hours=96)  # 周末容忍4天
+        if disk:
+            return disk
+
     # 1. TradingView
     try:
         latest, prev = _fetch_vix_tradingview()
         if latest is not None and prev is not None:
             logger.info(f"VIX successfully fetched from TradingView: latest={latest}, prev={prev}")
+            _save_vix_disk(latest, prev, "tradingview")
             return latest, prev
     except Exception as e:
         logger.warning(f"TradingView VIX fetch failed: {e}")
@@ -32,6 +74,7 @@ def fetch_vix_for_dashboard() -> Tuple[float, float]:
         latest, prev = _fetch_vix_yfinance()
         if latest is not None and prev is not None:
             logger.info(f"VIX successfully fetched from yfinance: latest={latest}, prev={prev}")
+            _save_vix_disk(latest, prev, "yfinance")
             return latest, prev
     except Exception as e:
         logger.warning(f"yfinance VIX fetch failed: {e}")
@@ -49,8 +92,10 @@ def fetch_vix_for_dashboard() -> Tuple[float, float]:
             s = s.dropna()
             if len(s) >= 2:
                 logger.info(f"VIX successfully fetched from FRED: latest={float(s.iloc[-1])}, prev={float(s.iloc[-2])}")
+                _save_vix_disk(float(s.iloc[-1]), float(s.iloc[-2]), "fred")
                 return float(s.iloc[-1]), float(s.iloc[-2])
             logger.info(f"VIX successfully fetched from FRED (single): latest={float(s.iloc[-1])}")
+            _save_vix_disk(float(s.iloc[-1]), float(s.iloc[-1]), "fred")
             return float(s.iloc[-1]), float(s.iloc[-1])
     except Exception as e:
         logger.warning(f"FRED VIX fetch failed: {e}")
@@ -60,11 +105,18 @@ def fetch_vix_for_dashboard() -> Tuple[float, float]:
         rt = _fetch_vix_cnbc()
         if rt is not None:
             logger.info(f"VIX successfully fetched from CNBC: latest={rt}")
+            _save_vix_disk(rt, rt, "cnbc")
             return rt, rt
     except Exception as e:
         logger.warning(f"CNBC VIX fetch failed: {e}")
 
-    # 5. Ultimate default fallback
+    # 5. V6.0: 磁盘降级 — 所有外部源失败, 使用最近一次成功值
+    disk = _load_vix_disk(max_age_hours=168)  # 容忍7天
+    if disk:
+        logger.warning("All VIX sources failed, using disk cache fallback")
+        return disk
+
+    # 6. Ultimate default fallback
     logger.warning("All VIX data sources failed. Using default values.")
     return 18.25, 18.25
 

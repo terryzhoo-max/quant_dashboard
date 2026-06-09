@@ -43,7 +43,7 @@ class CacheService:
     def _init(self):
         """初始化: 尝试连接 Redis，失败则降级为内存模式"""
         self._memory_cache = OrderedDict()  # key → (value, expire_at|None), LRU 顺序
-        self._mem_maxsize = 200       # R5 P1-6: 内存缓存容量上限 (LRU 驱逐)
+        self._mem_maxsize = 512       # P1-6: 内存缓存容量上限 (LRU 驱逐, 200→512 适配 25+ SWR 键)
         self._memory_lock = threading.Lock()
         self.use_redis = False
 
@@ -169,6 +169,68 @@ cache_manager = CacheService()
 
 
 # ═══════════════════════════════════════════════════
+#  V6.0: 分时段自适应 TTL (收盘后辅助决策优化)
+# ═══════════════════════════════════════════════════
+
+from datetime import datetime as _datetime
+
+# TTL 放大倍数矩阵 (盘中=1x, 收盘后=Nx, 周末=Mx)
+# 注意: 周末倍率不宜过大, 否则 base_ttl × M 可能超过 stale_ttl 导致逻辑倒挂
+_TTL_MULTIPLIERS = {
+    #                盘中   收盘后  周末/节假日
+    "realtime":   (1,     6,      12),    # 合规/漂移/盘中PnL: 盘中高频, 收盘后大幅放宽
+    "decision":   (1,     4,      8),     # 决策中枢/风险矩阵: 收盘后仍需可访问但无需频繁刷新
+    "strategy":   (1,     4,      12),    # 策略信号: 收盘后到次日不会变 (12× 不超过 stale)
+    "slow":       (1,     2,      6),     # 相关性/传染/归因: 本身就是低频计算
+    "default":    (1,     3,      8),     # 兜底
+}
+
+
+def is_market_hours() -> str:
+    """
+    判断当前所处的市场时段:
+    - "trading"   : A股盘中 (工作日 09:15-15:05)
+    - "after"     : 收盘后 (工作日 15:05-次日09:15)
+    - "weekend"   : 周末/节假日
+    """
+    now = _datetime.now()
+    weekday = now.weekday()  # 0=Mon, 6=Sun
+    if weekday >= 5:
+        return "weekend"
+    hour, minute = now.hour, now.minute
+    t = hour * 60 + minute
+    if 555 <= t <= 905:  # 09:15 ~ 15:05
+        return "trading"
+    return "after"
+
+
+def adaptive_fresh_ttl(base_ttl: int, category: str = "default", max_ttl: int = None) -> int:
+    """
+    根据市场时段动态调整 SWR fresh_ttl:
+    - 盘中: 原始值 (高频刷新)
+    - 收盘后: base_ttl × N (数据不再变化, 减少无意义重算)
+    - 周末: base_ttl × M (最大化缓存命中)
+
+    安全约束: 返回值不会超过 max_ttl (防止 fresh > stale 倒挂)
+
+    Args:
+        base_ttl: 盘中基准 TTL (秒)
+        category: 端点分类 (realtime/decision/strategy/slow)
+        max_ttl: 上限 (秒), 不传则不封顶
+
+    Returns:
+        调整后的 fresh_ttl (秒)
+    """
+    period = is_market_hours()
+    multipliers = _TTL_MULTIPLIERS.get(category, _TTL_MULTIPLIERS["default"])
+    idx = {"trading": 0, "after": 1, "weekend": 2}.get(period, 0)
+    result = base_ttl * multipliers[idx]
+    if max_ttl is not None:
+        result = min(result, max_ttl)
+    return result
+
+
+# ═══════════════════════════════════════════════════
 #  V2.0: Stale-While-Revalidate 通用中间件
 # ═══════════════════════════════════════════════════
 
@@ -190,6 +252,9 @@ def stale_while_revalidate(cache_key: str, compute_fn, fresh_ttl=3600, stale_ttl
     - Stale  (fresh_ttl < age < stale_ttl): 返回旧数据 + 后台静默刷新
     - Miss   (age > stale_ttl 或无缓存): 同步计算
     
+    V6.0 不变量守卫: fresh_ttl 不会超过 stale_ttl 的 90%,
+    防止 adaptive_fresh_ttl 放大后导致 fresh > stale 逻辑倒挂。
+    
     Args:
         cache_key: 缓存键名 (建议前缀 swr_)
         compute_fn: 无参数计算函数, 返回 dict
@@ -199,6 +264,9 @@ def stale_while_revalidate(cache_key: str, compute_fn, fresh_ttl=3600, stale_ttl
     Returns:
         dict: 计算结果 + 缓存元数据 (cached, stale, age_seconds)
     """
+    # V6.0: 不变量守卫 — fresh 不得超过 stale 的 90%
+    fresh_ttl = min(fresh_ttl, int(stale_ttl * 0.9))
+
     cached = cache_manager.get_json(cache_key)
     
     if cached and "timestamp" in cached:

@@ -58,13 +58,58 @@ async def health_check():
 
 @router.get("/cache")
 async def cache_dashboard():
-    """EngineCache 统一监控面板 — 展示所有引擎缓存实例的键数、年龄、命中情况"""
+    """V6.0: 增强缓存监控面板 — 引擎缓存 + SWR 键状态 + 预热进度 + 市场时段"""
+    from services.cache_service import cache_manager, is_market_hours
+    import time as _t
+
     stats = _collect_cache_stats()
+
+    # V6.0: CacheService 后端统计
+    cache_backend = cache_manager.stats()
+
+    # V6.0: 所有 SWR 缓存键的 age / freshness 状态
+    _SWR_KEYS = [
+        "swr_decision_hub", "swr_risk_matrix", "swr_compliance", "swr_accuracy",
+        "swr_perf_analytics", "swr_swing_guard", "swr_corr_matrix", "swr_contagion_matrix",
+        "swr_drift_status", "swr_multi_asset", "swr_erp_timing", "swr_erp_global",
+        "swr_rates", "swr_gold_signal", "swr_gem_strategy", "swr_aiae_cn_report",
+        "swr_portfolio_risk",
+    ]
+    swr_status = {}
+    now = _t.time()
+    for key in _SWR_KEYS:
+        cached = cache_manager.get_json(key)
+        if cached and isinstance(cached, dict) and "timestamp" in cached:
+            age = int(now - cached["timestamp"])
+            swr_status[key] = {"age_sec": age, "age_human": _format_age(age), "status": "cached"}
+        else:
+            swr_status[key] = {"age_sec": None, "status": "miss"}
+
+    # V6.0: 预热进度
+    warmup_status = cache_manager.get_json("warmup_status") or {"phase": "unknown"}
+
     return {
         "status": "ok",
         "timestamp": datetime.now().isoformat(),
+        "market_period": is_market_hours(),
+        "cache_backend": cache_backend,
+        "warmup": warmup_status,
+        "swr_keys": swr_status,
+        "swr_miss_count": sum(1 for v in swr_status.values() if v["status"] == "miss"),
+        "swr_total": len(swr_status),
         **stats,
     }
+
+
+def _format_age(seconds: int) -> str:
+    """格式化缓存年龄为人类可读字符串"""
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m{seconds % 60}s"
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    return f"{hours}h{minutes}m"
 
 
 @router.post("/cache/flush")

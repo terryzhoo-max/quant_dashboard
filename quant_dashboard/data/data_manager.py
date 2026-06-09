@@ -31,16 +31,27 @@ class FactorDataManager:
             os.makedirs(DAILY_PRICE_DIR)
 
     def get_all_stocks(self) -> pd.DataFrame:
-        """获取全市场 A 股列表"""
+        """获取全市场 A 股列表 — V6.0: 30天自动刷新 (覆盖新上市/退市)"""
         cache_path = os.path.join(DATA_DIR, "stock_list.parquet")
         if os.path.exists(cache_path):
-            logger.debug("加载本地股票列表缓存")
-            return pd.read_parquet(cache_path)
+            # V6.0: 检查文件修改时间, 超过30天自动重新拉取
+            file_age_days = (datetime.now() - datetime.fromtimestamp(os.path.getmtime(cache_path))).days
+            if file_age_days <= 30:
+                logger.debug("加载本地股票列表缓存 (age=%d天)", file_age_days)
+                return pd.read_parquet(cache_path)
+            logger.info("stock_list.parquet 已过期 (%d天 > 30天), 自动刷新", file_age_days)
         
         logger.info("从 Tushare 获取全市场股票列表")
-        df = pro.stock_basic(exchange='', list_status='L', fields='ts_code,symbol,name,area,industry,list_date')
-        df.to_parquet(cache_path)
-        return df
+        try:
+            df = pro.stock_basic(exchange='', list_status='L', fields='ts_code,symbol,name,area,industry,list_date')
+            df.to_parquet(cache_path)
+            return df
+        except Exception as e:
+            logger.error("股票列表刷新失败: %s", e)
+            # 刷新失败时仍返回过期的缓存数据
+            if os.path.exists(cache_path):
+                return pd.read_parquet(cache_path)
+            raise
 
     def sync_financial_indicators(self, ts_codes: List[str], start_year: int = 2018, force: bool = False):
         """

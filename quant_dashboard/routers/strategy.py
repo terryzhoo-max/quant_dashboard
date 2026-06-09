@@ -28,7 +28,7 @@ from momentum_rotation_engine import run_momentum_strategy
 from engines.dual_momentum_engine import run_gem_strategy
 from erp_timing_engine import get_erp_engine
 from aiae_engine import get_aiae_engine, REGIMES as AIAE_REGIMES
-from services.cache_service import cache_manager, stale_while_revalidate
+from services.cache_service import cache_manager, stale_while_revalidate, adaptive_fresh_ttl
 # P0-4: 使用统一的策略缓存写入锁 (与 dashboard_builder / main.py 共享同一实例)
 from services.dashboard_builder import _STRATEGY_LOCK
 
@@ -254,7 +254,7 @@ async def get_gem_strategy_api(refresh: int = 0):
     # SWR 三级缓存
     return await asyncio.get_running_loop().run_in_executor(
         executor,
-        lambda: stale_while_revalidate(_GEM_SWR_KEY, _run_gem_strategy, _GEM_FRESH_TTL, _GEM_STALE_TTL)
+        lambda: stale_while_revalidate(_GEM_SWR_KEY, _run_gem_strategy, adaptive_fresh_ttl(1800, 'strategy'), _GEM_STALE_TTL)
     )
 
 

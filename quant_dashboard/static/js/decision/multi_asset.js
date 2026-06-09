@@ -179,8 +179,20 @@ function renderMultiAssetRadar(data) {
             const comp = comps[ci.key];
             if (!comp) return;
             const val = comp.contribution != null ? comp.contribution : (comp.score || 0);
-            const dir = comp.direction || 'neutral';
-            const dc = _MA_DIR_COLORS[dir] || _MA_DIR_COLORS.neutral;
+            
+            // A: 智能多空极性判定 Fallback
+            let computedDir = comp.direction || 'neutral';
+            if (computedDir === 'neutral') {
+                if (val >= 30) computedDir = 'bullish';
+                else if (val <= -30) computedDir = 'bearish';
+            }
+            const dc = _MA_DIR_COLORS[computedDir] || _MA_DIR_COLORS.neutral;
+
+            // B: 中文语义标签 Fallback
+            let directionCn = comp.direction_cn;
+            if (!directionCn || directionCn === 'neutral' || directionCn === 'neutral_short') {
+                directionCn = val > 15 ? '利好' : (val < -15 ? '利空' : '中性');
+            }
 
             const absVal = Math.abs(val);
             const barWidth = Math.min(50, absVal / 2);
@@ -203,17 +215,26 @@ function renderMultiAssetRadar(data) {
                 </div>
                 <span class="ma-gold-val" style="color:${dc.main}; min-width:44px; text-align:right;">${val > 0 ? '+' : ''}${_fmt(val, 1)}</span>
                 <span class="ma-gold-tag" style="color:${dc.main};border-color:${dc.border};background:${dc.bg}; min-width:38px; text-align:center;">
-                    ${comp.direction_cn || dir}
+                    ${directionCn}
                 </span>
             </div>`;
         });
 
         if (compRows) {
+            // C: 黄金综合分值根据数值变色 Fallback
+            const goldDir = gold.direction || 'neutral';
+            let totalColor = '#cbd5e1';
+            if (gold.signal > 15) totalColor = '#34d399';
+            else if (gold.signal < -15) totalColor = '#f87171';
+            else {
+                totalColor = (_MA_DIR_COLORS[goldDir] || _MA_DIR_COLORS.neutral).main;
+            }
+
             goldHtml = `
             <div class="ma-gold-panel">
                 <div class="ma-gold-header">
                     <span>🥇 黄金信号拆解</span>
-                    <span class="ma-gold-total" style="color:${(_MA_DIR_COLORS[gold.direction] || _MA_DIR_COLORS.neutral).main}">
+                    <span class="ma-gold-total" style="color:${totalColor}">
                         综合 ${gold.signal > 0 ? '+' : ''}${_fmt(gold.signal, 0)}
                     </span>
                 </div>

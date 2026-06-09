@@ -10,6 +10,7 @@ GET  /api/v1/decision/history   — 决策日志历史
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 from typing import Optional
+from services.cache_service import adaptive_fresh_ttl
 
 router = APIRouter(prefix="/api/v1/decision", tags=["decision"])
 
@@ -33,7 +34,7 @@ async def get_decision_hub():
         return {"status": "degraded", "message": "决策中枢暂时不可用, 请稍后重试"}
 
     return decision_hub_breaker.call(
-        lambda: stale_while_revalidate("swr_decision_hub", get_hub_data_with_events, fresh_ttl=300, stale_ttl=3600),
+        lambda: stale_while_revalidate("swr_decision_hub", get_hub_data_with_events, fresh_ttl=adaptive_fresh_ttl(300, 'decision'), stale_ttl=3600),
         fallback_fn=_cached_fallback,
     )
 
@@ -87,7 +88,7 @@ async def get_risk_matrix():
         from dashboard_modules.decision_engine import compute_risk_matrix
         return {"status": "success", **compute_risk_matrix()}
 
-    return stale_while_revalidate("swr_risk_matrix", _compute, fresh_ttl=300, stale_ttl=3600)
+    return stale_while_revalidate("swr_risk_matrix", _compute, fresh_ttl=adaptive_fresh_ttl(300, 'decision'), stale_ttl=3600)
 
 
 @router.get("/compliance-check")
@@ -101,7 +102,7 @@ async def get_compliance_check():
         snapshot = _build_snapshot_from_cache()
         return run_compliance_check(snapshot)
 
-    return stale_while_revalidate("swr_compliance", _compute, fresh_ttl=60, stale_ttl=300)
+    return stale_while_revalidate("swr_compliance", _compute, fresh_ttl=adaptive_fresh_ttl(60, 'realtime'), stale_ttl=300)
 
 
 @router.get("/accuracy")
@@ -114,7 +115,7 @@ async def get_accuracy():
         stats = ac_db.get_accuracy_stats()
         return {"status": "success", **stats}
 
-    return stale_while_revalidate("swr_accuracy", _compute, fresh_ttl=600, stale_ttl=3600)
+    return stale_while_revalidate("swr_accuracy", _compute, fresh_ttl=adaptive_fresh_ttl(600, 'decision'), stale_ttl=3600)
 
 
 @router.get("/accuracy-dashboard")
@@ -154,7 +155,7 @@ async def get_performance():
         from dashboard_modules.performance_analytics import compute_performance_analytics
         return {"status": "success", **compute_performance_analytics()}
 
-    return stale_while_revalidate("swr_perf_analytics", _compute, fresh_ttl=7200, stale_ttl=43200)
+    return stale_while_revalidate("swr_perf_analytics", _compute, fresh_ttl=adaptive_fresh_ttl(7200, 'strategy'), stale_ttl=43200)
 
 
 @router.get("/swing-guard")
@@ -168,7 +169,7 @@ async def get_swing_guard():
         signals = orchestrator.generate_all_signals()
         return {"status": "success", "data": signals}
 
-    return stale_while_revalidate("swr_swing_guard", _compute, fresh_ttl=3600, stale_ttl=21600)
+    return stale_while_revalidate("swr_swing_guard", _compute, fresh_ttl=adaptive_fresh_ttl(3600, 'strategy'), stale_ttl=21600)
 
 
 # ── V22.0: 仓位调整路径 ──
@@ -479,7 +480,7 @@ async def get_correlation_matrix():
         return {"status": "degraded", "message": "相关性矩阵暂时不可用"}
 
     return correlation_breaker.call(
-        lambda: stale_while_revalidate("swr_corr_matrix", _compute, fresh_ttl=1800, stale_ttl=7200),
+        lambda: stale_while_revalidate("swr_corr_matrix", _compute, fresh_ttl=adaptive_fresh_ttl(1800, 'slow'), stale_ttl=7200),
         fallback_fn=_cached_fallback,
     )
 
@@ -528,7 +529,7 @@ async def get_contagion_matrix():
         result = compute_contagion_matrix(window_days=120)
         return {"status": "success", **result}
 
-    return stale_while_revalidate("swr_contagion_matrix", _compute, fresh_ttl=3600, stale_ttl=14400)
+    return stale_while_revalidate("swr_contagion_matrix", _compute, fresh_ttl=adaptive_fresh_ttl(3600, 'slow'), stale_ttl=14400)
 
 
 # ── V22.0: 有向冲击传播模拟器 ──
@@ -595,7 +596,7 @@ async def get_drift_status():
         result["drift_level"] = result.pop("status", "ok")
         return {"status": "success", **result}
 
-    return stale_while_revalidate("swr_drift_status", _compute, fresh_ttl=60, stale_ttl=300)
+    return stale_while_revalidate("swr_drift_status", _compute, fresh_ttl=adaptive_fresh_ttl(60, 'realtime'), stale_ttl=300)
 
 
 # ── V22.1: 参数敏感度分析 (线程安全版 — 零全局副作用) ──
@@ -904,7 +905,7 @@ async def get_brinson_attribution(lookback: int = Query(default=20, ge=5, le=120
         from engines.brinson_engine import compute_brinson_attribution
         return compute_brinson_attribution(lookback)
 
-    return stale_while_revalidate(f"swr_brinson_{lookback}", _compute, fresh_ttl=1800, stale_ttl=7200)
+    return stale_while_revalidate(f"swr_brinson_{lookback}", _compute, fresh_ttl=adaptive_fresh_ttl(1800, 'strategy'), stale_ttl=7200)
 
 
 # ═══════════════════════════════════════════════════
@@ -993,4 +994,4 @@ async def get_multi_asset_radar():
         result["timestamp"] = datetime.now().isoformat()
         return result
 
-    return stale_while_revalidate("swr_multi_asset", _compute, fresh_ttl=600, stale_ttl=3600)
+    return stale_while_revalidate("swr_multi_asset", _compute, fresh_ttl=adaptive_fresh_ttl(600, 'decision'), stale_ttl=3600)

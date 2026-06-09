@@ -23,7 +23,7 @@ from aiae_hk_engine import get_hk_aiae_engine
 from erp_hk_engine import get_hk_erp_engine
 from mean_reversion_engine import detect_regime, get_all_regime_params, needs_reoptimize
 # Batch 7: 统一缓存层 — 消除 cache_store 双写, 全部走 cache_manager
-from services.cache_service import cache_manager
+from services.cache_service import cache_manager, adaptive_fresh_ttl
 from services.cache_store import get_global_aiae_ttl as _get_global_aiae_ttl
 from services.fred_guard import fred_get_series
 from services.locks import AIAE_GLOBAL_LOCK as _AIAE_GLOBAL_LOCK
@@ -46,7 +46,7 @@ async def get_aiae_report():
         report = engine.generate_report()
         return {"status": "success", "data": report, "timestamp": __import__('datetime').datetime.now().isoformat()}
 
-    return stale_while_revalidate("swr_aiae_cn_report", _compute, fresh_ttl=1800, stale_ttl=14400)
+    return stale_while_revalidate("swr_aiae_cn_report", _compute, fresh_ttl=adaptive_fresh_ttl(1800, 'strategy'), stale_ttl=14400)
 
 @router.get("/aiae/chart")
 async def get_aiae_chart():

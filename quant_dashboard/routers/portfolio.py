@@ -9,6 +9,7 @@ from models.schemas import TradeRequest
 from models import response as R
 from portfolio_engine import get_portfolio_engine
 from services import db as ac_db
+from services.cache_service import adaptive_fresh_ttl
 
 router = APIRouter(prefix="/api/v1", tags=["portfolio"])
 logger = logging.getLogger("alphacore.portfolio")
@@ -50,7 +51,7 @@ async def get_portfolio_risk():
         return R.ok(engine.calculate_risk_metrics())
 
     return await asyncio.get_running_loop().run_in_executor(
-        executor, lambda: stale_while_revalidate("swr_portfolio_risk", _compute, fresh_ttl=300, stale_ttl=1800))
+        executor, lambda: stale_while_revalidate("swr_portfolio_risk", _compute, fresh_ttl=adaptive_fresh_ttl(300, 'decision'), stale_ttl=1800))
 
 @router.get("/portfolio/history")
 async def get_portfolio_history():
@@ -180,7 +181,7 @@ async def get_brinson_attribution(days: int = 20):
 
     return await asyncio.get_running_loop().run_in_executor(
         executor, lambda: stale_while_revalidate(
-            f"swr_brinson_{days}", _compute, fresh_ttl=3600, stale_ttl=14400))
+            f"swr_brinson_{days}", _compute, fresh_ttl=adaptive_fresh_ttl(3600, 'strategy'), stale_ttl=14400))
 
 
 @router.get("/portfolio/factor-attribution")
@@ -198,7 +199,7 @@ async def get_factor_attribution(days: int = 60):
 
     return await asyncio.get_running_loop().run_in_executor(
         executor, lambda: stale_while_revalidate(
-            f"swr_factor_attr_{days}", _compute, fresh_ttl=7200, stale_ttl=28800))
+            f"swr_factor_attr_{days}", _compute, fresh_ttl=adaptive_fresh_ttl(7200, 'slow'), stale_ttl=28800))
 
 
 @router.get("/portfolio/intraday-pnl")
@@ -213,7 +214,7 @@ async def get_intraday_pnl():
 
     return await asyncio.get_running_loop().run_in_executor(
         executor, lambda: stale_while_revalidate(
-            "swr_intraday_pnl", _compute, fresh_ttl=60, stale_ttl=300))
+            "swr_intraday_pnl", _compute, fresh_ttl=adaptive_fresh_ttl(60, 'realtime'), stale_ttl=300))
 
 
 @router.get("/portfolio/rebalance")

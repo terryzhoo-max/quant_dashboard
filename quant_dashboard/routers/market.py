@@ -14,6 +14,7 @@ import tushare as ts
 from config import TUSHARE_TOKEN
 from erp_timing_engine import get_erp_engine
 from erp_hk_engine import get_hk_erp_engine
+from services.cache_service import adaptive_fresh_ttl
 
 router = APIRouter(prefix="/api/v1", tags=["market"])
 executor = ThreadPoolExecutor(max_workers=4)
@@ -36,7 +37,7 @@ async def get_erp_timing():
         return {"status": "success", "data": report}
 
     return await asyncio.get_running_loop().run_in_executor(
-        executor, lambda: stale_while_revalidate("swr_erp_timing", _compute, fresh_ttl=3600, stale_ttl=21600))
+        executor, lambda: stale_while_revalidate("swr_erp_timing", _compute, fresh_ttl=adaptive_fresh_ttl(3600, 'strategy'), stale_ttl=21600))
 
 
 @router.get("/strategy/erp-global")
@@ -44,7 +45,7 @@ async def get_erp_global():
     """海外ERP择时 — V2: SWR 三级缓存 (30min fresh / 4h stale)"""
     from services.cache_service import stale_while_revalidate
     return await asyncio.get_running_loop().run_in_executor(
-        executor, lambda: stale_while_revalidate("swr_erp_global", _compute_erp_global, fresh_ttl=1800, stale_ttl=14400))
+        executor, lambda: stale_while_revalidate("swr_erp_global", _compute_erp_global, fresh_ttl=adaptive_fresh_ttl(1800, 'strategy'), stale_ttl=14400))
 
 
 def _compute_erp_global():
@@ -167,7 +168,7 @@ async def get_rates_strategy():
         return {"status": "success", "data": report}
 
     return await asyncio.get_running_loop().run_in_executor(
-        executor, lambda: stale_while_revalidate("swr_rates", _compute, fresh_ttl=3600, stale_ttl=21600))
+        executor, lambda: stale_while_revalidate("swr_rates", _compute, fresh_ttl=adaptive_fresh_ttl(3600, 'strategy'), stale_ttl=21600))
 
 
 @router.get("/strategy/gold-signal")
@@ -180,7 +181,7 @@ async def get_gold_signal():
         return compute_gold_signal()
 
     return await asyncio.get_running_loop().run_in_executor(
-        executor, lambda: stale_while_revalidate("swr_gold_signal", _compute, fresh_ttl=3600, stale_ttl=21600))
+        executor, lambda: stale_while_revalidate("swr_gold_signal", _compute, fresh_ttl=adaptive_fresh_ttl(3600, 'strategy'), stale_ttl=21600))
 
 
 @router.get("/stock/name")
