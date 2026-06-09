@@ -1,5 +1,5 @@
 """
-AlphaCore · 港股 AIAE 宏观仓位管控引擎 V1.0
+AlphaCore · 港股 AIAE 宏观仓位管控引擎 V2.0
 =============================================
 核心思想: HK_AIAE = 港股投资者配置权重的温度计
   - 比例极高 → 市场过热, 减仓
@@ -19,6 +19,14 @@ AlphaCore · 港股 AIAE 宏观仓位管控引擎 V1.0
 
 交叉验证: HK_AIAE × HK_ERP 仓位矩阵
 子策略配额: 恒生ETF / 恒生科技ETF / 恒生红利低波ETF
+
+V2.0 (2026-06-10): Sigmoid 归一化 + 迟滞带 + 仓位平滑 + 因子诊断
+  - 三因子从线性归一化升级为 Sigmoid 平滑归一化
+  - Regime 判定加入 ±0.5pt 迟滞带 + ±1.0pt 缓冲带
+  - Regime 内仓位连续插值 (消除离散跳变)
+  - 每次报告输出因子贡献度分解
+  - AIAE 历史值自动滚动存储 (JSONL)
+  - V1 线性模式可通过 HK_V2_ENABLED=False 回退
 """
 
 import os
@@ -27,6 +35,26 @@ import time
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
+import logging
+logger = logging.getLogger(__name__)
+from engines.aiae_hk_params import (
+    HK_V2_ENABLED, W_CORE, W_SB, W_AH,
+    CORE_SIGMOID_CENTER, CORE_SIGMOID_K,
+    SB_SIGMOID_CENTER, SB_SIGMOID_K,
+    AH_SIGMOID_CENTER, AH_SIGMOID_K,
+    NORM_MIN, NORM_MAX,
+    V1_CORE_RATIO_LOW, V1_CORE_RATIO_HIGH, V1_CORE_AIAE_LOW, V1_CORE_AIAE_HIGH,
+    V1_CORE_CLAMP_MIN, V1_CORE_CLAMP_MAX,
+    V1_SB_HEAT_MAX, V1_SB_NORM_LOW, V1_SB_NORM_HIGH,
+    V1_AH_INDEX_LOW, V1_AH_INDEX_HIGH, V1_AH_AIAE_LOW, V1_AH_AIAE_HIGH,
+    HK_REGIME_THRESHOLDS, HK_REGIME_SMOOTH_BUFFER, HK_REGIME_HYSTERESIS,
+    POSITION_MATRIX_HK, SUB_STRATEGY_ALLOC_HK, REGIMES_HK,
+    SB_WARN_WEEKLY_HIGH, SB_WARN_WEEKLY_LOW, SB_HEAT_CLAMP_MAX, SB_HEAT_CLAMP_FALLBACK,
+    AH_WARN_HIGH, AH_WARN_LOW,
+    SLOPE_ACCEL_UP, SLOPE_ACCEL_DOWN,
+    FACTOR_DOMINANCE_WARN_PCT,
+    sigmoid_normalize, smooth_position,
+)
 from config import FRED_API_KEY as CONFIG_FRED_API_KEY
 from services.fred_guard import fred_get_series, should_retry_fred_error
 
@@ -123,41 +151,11 @@ HISTORICAL_SNAPSHOTS = [
     {"date": "2026-04-06", "aiae": 14.0, "hsi_after_1y": None, "label": "当前状态(估)"},
 ]
 
-# ===== 五档状态定义 =====
-REGIMES_HK = {
-    1: {"name": "Ⅰ · EXTREME FEAR", "cn": "极度恐慌", "range": "<8%",
-        "color": "#10b981", "emoji": "🟢", "position": "90-95%", "pos_min": 90, "pos_max": 95,
-        "action": "满配进攻", "desc": "2022年10月底部级别 · 分3批建仓"},
-    2: {"name": "Ⅱ · LOW ALLOCATION", "cn": "低配置区", "range": "8-12%",
-        "color": "#3b82f6", "emoji": "🔵", "position": "70-85%", "pos_min": 70, "pos_max": 85,
-        "action": "标准建仓", "desc": "2024年1月底部 · 耐心持有"},
-    3: {"name": "Ⅲ · NEUTRAL", "cn": "中性均衡", "range": "12-18%",
-        "color": "#eab308", "emoji": "🟡", "position": "50-65%", "pos_min": 50, "pos_max": 65,
-        "action": "均衡持有", "desc": "常态运行 · 有纪律地持有"},
-    4: {"name": "Ⅳ · GETTING HOT", "cn": "偏热区域", "range": "18-25%",
-        "color": "#f97316", "emoji": "🟠", "position": "25-40%", "pos_min": 25, "pos_max": 40,
-        "action": "系统减仓", "desc": "2024年9月牛市 · 每周减5%"},
-    5: {"name": "Ⅴ · EUPHORIA", "cn": "极度过热", "range": ">25%",
-        "color": "#ef4444", "emoji": "🔴", "position": "0-15%", "pos_min": 0, "pos_max": 15,
-        "action": "清仓防守", "desc": "2018年1月级别 · 3天清仓"},
-}
+# ===== 五档状态 / 仓位矩阵 / 子策略配额 → 全部迁移到 aiae_hk_params.py =====
+# REGIMES_HK, POSITION_MATRIX_HK, SUB_STRATEGY_ALLOC_HK 通过顶部 import 引入
 
-# ===== HK_AIAE × HK_ERP 仓位矩阵 =====
-POSITION_MATRIX_HK = {
-    "erp_gt8":  [95, 85, 70, 45, 20],
-    "erp_6_8":  [90, 80, 65, 40, 15],
-    "erp_4_6":  [85, 70, 55, 30, 10],
-    "erp_lt4":  [75, 60, 40, 20,  5],
-}
-
-# ===== 子策略配额 =====
-SUB_STRATEGY_ALLOC_HK = {
-    1: {"hsi": 30, "hstech": 45, "dividend": 25},
-    2: {"hsi": 35, "hstech": 35, "dividend": 30},
-    3: {"hsi": 30, "hstech": 30, "dividend": 40},
-    4: {"hsi": 20, "hstech": 15, "dividend": 65},
-    5: {"hsi": 10, "hstech":  0, "dividend": 90},
-}
+# ===== AIAE 历史滚动存储 =====
+HISTORY_FILE = os.path.join(CACHE_DIR, "hk_aiae_history.jsonl")
 
 # ===== 手动数据文件 (override层) =====
 SOUTHBOUND_FILE = os.path.join(CACHE_DIR, "hk_southbound_flow.json")
@@ -184,9 +182,18 @@ DEFAULT_AH_PREMIUM = {
 
 
 class AIAEHKEngine:
-    """港股 AIAE 宏观仓位管控引擎 V1.0"""
+    """港股 AIAE 宏观仓位管控引擎 V2.0
 
-    VERSION = "1.0"
+    V2.0 核心升级:
+    - Sigmoid 归一化 (替代线性, 提升尾部信号区分度)
+    - Regime 迟滞带 (±0.5pt, 防止边界频繁跳变)
+    - 仓位平滑插值 (Regime 内连续映射)
+    - 因子贡献度诊断面板
+    - AIAE 历史滚动存储 (支持实时斜率)
+    - V1 线性模式可回退 (HK_V2_ENABLED=False)
+    """
+
+    VERSION = "2.0"
     REGION = "HK"
 
     def __init__(self):
@@ -559,19 +566,17 @@ class AIAEHKEngine:
     def compute_aiae_core(self, mktcap_usd: float, effective_m2: float) -> float:
         """HK_AIAE_Core = HSI MktCap / Effective_M2 比値 → 歸一化到 AIAE 標度
 
-        V1.1 修正: 从分数法改为 ratio 法 (与美/日统一)
-        旧公式 MktCap/(MktCap+M2) 因 CN M2($43T) >> HK MktCap($4T),
-        导致 Core 永远≈9%, 五档系统失去区分能力.
+        V2.0: Sigmoid 归一化 (替代线性, 尾部信号区分度提升)
+        V1 fallback: HK_V2_ENABLED=False 时回退到线性映射
 
-        歴史錨点:
-          ratio=0.08  (2022-10 HSI 14800 極底) → AIAE=6%  (Ⅰ級恐慌)
-          ratio=0.20  (2018-01 HSI 33500 泡沫) → AIAE=28% (Ⅴ級過熱)
+        歴史錨点 (k=45, scipy.optimize 校准):
+          ratio=0.08  (2022-10 HSI 14800 極底) → AIAE≈7.5%  (Ⅰ級恐慌)
+          ratio=0.14  (中位数 HSI ~22000)      → AIAE≈18.0% (Ⅲ級中部)
+          ratio=0.20  (2018-01 HSI 33500 泡沫) → AIAE≈28.5% (Ⅴ級過熱)
 
-        線形映射: AIAE = 6 + (ratio - 0.08) / (0.20 - 0.08) × 22
-
-        V1.3 防腐層: MktCap < $1T USD → return neutral 15% (防止脏数据扩散)
+        防腐層: MktCap < $1T USD → return neutral 15% (防止脏数据扩散)
         """
-        # V1.3 Layer 3: 输入合理性校验
+        # 输入合理性校验
         if mktcap_usd < 1.0:
             _log(f"compute_aiae_core: MktCap=${mktcap_usd}T (<$1T), using neutral 15%", "ERROR")
             return 15.0
@@ -581,66 +586,144 @@ class AIAEHKEngine:
         if ratio < 0.02:
             _log(f"compute_aiae_core: ratio={ratio:.4f} (<0.02), using neutral 15%", "ERROR")
             return 15.0
-        # 線形歸一化: [0.08, 0.20] → [6%, 28%]
-        aiae_core = 6.0 + (ratio - 0.08) / (0.20 - 0.08) * 22.0
+
+        if HK_V2_ENABLED:
+            # V2: Sigmoid 归一化
+            aiae_core = sigmoid_normalize(ratio, CORE_SIGMOID_CENTER, CORE_SIGMOID_K,
+                                          NORM_MIN, NORM_MAX)
+        else:
+            # V1 回退: 线性映射 [0.08, 0.20] → [6%, 28%]
+            aiae_core = V1_CORE_AIAE_LOW + (ratio - V1_CORE_RATIO_LOW) / \
+                        (V1_CORE_RATIO_HIGH - V1_CORE_RATIO_LOW) * \
+                        (V1_CORE_AIAE_HIGH - V1_CORE_AIAE_LOW)
+            aiae_core = max(V1_CORE_CLAMP_MIN, min(V1_CORE_CLAMP_MAX, aiae_core))
+
         return round(max(4.0, min(35.0, aiae_core)), 2)
 
     def compute_southbound_heat(self, cumulative_12m: float, mktcap_usd: float) -> float:
-        """南向热度 = 南向12M累计 / HSI总市值 × 100
-        
+        """南向热度 = 南向12M累计 / HSI总市值 × 100 (原始值, 归一化在融合时做)
+
         V1.1 修正: mktcap_usd 单位=万亿(trillion), cumulative_12m 单位=亿RMB
-        旧: *1000 (万亿→十亿) vs 亿 → 放大10倍
-        新: *10000 (万亿→亿) 单位统一
         V1.3: 钳制上限 5.0%, 防止 MktCap 异常导致数值爆炸
         """
         if mktcap_usd <= 0:
             return 1.0
         cumulative_usd = cumulative_12m / 7.25  # 亿RMB→亿USD
         heat = round(cumulative_usd / (mktcap_usd * 10000) * 100, 2)  # 万亿→亿, 单位统一
-        # V1.3 clamp: 防止 MktCap 异常导致热度暴涨
-        if heat > 5.0:
-            _log(f"SB heat={heat:.2f}% clamped to 1.5% (mktcap=${mktcap_usd}T)", "ERROR")
-            return 1.5
+        # clamp: 防止 MktCap 异常导致热度暴涨
+        if heat > SB_HEAT_CLAMP_MAX:
+            _log(f"SB heat={heat:.2f}% clamped to {SB_HEAT_CLAMP_FALLBACK}% (mktcap=${mktcap_usd}T)", "ERROR")
+            return SB_HEAT_CLAMP_FALLBACK
         return heat
 
     def compute_ah_premium_score(self, ah_index: float) -> float:
         """AH溢价指数归一化 → AIAE等效值
 
-        V1.3 校准: 锚定区间从 [120,160] 扩展至 [105,160]
-        原因: 互联互通深化后 AH 溢价结构性收窄至 110-125 区间,
-              旧 [120,160] 锚点导致 AH<120 时归一化值飙升至 30%+,
-              30% 权重因子贡献 53% AIAE 总值 → 单因子扭曲全局信号.
-
-        新映射: AH=105 → 30% (过热上限)
-                AH=132.5 → 20% (中性)
-                AH=160 → 10% (极度低估)
-
+        V2.0: Sigmoid 归一化 (k<0 实现反向映射)
         AH越高 = H股越便宜 = AIAE应该越低(利好加仓)
-        """
-        # 反向: AH越高 = H股越便宜 = 越应该买
-        # V1.3: [105, 160] 适应互联互通时代 AH 溢价中枢下移
-        normalized = 30 - (ah_index - 105) / (160 - 105) * (30 - 10)
-        return max(5, min(35, normalized))
 
-    def compute_hk_aiae_v1(self, aiae_core: float, sb_heat: float, ah_score: float) -> float:
+        V2 Sigmoid 校准 (k=-0.064, scipy.optimize):
+            AH=105 → ~26.5% (H股偏贵, 过热)
+            AH=113 → ~24.7% (当前值, 偏热)
+            AH=132.5 → ~18.0% (中性)
+            AH=160 → ~9.5% (H股极度低估)
         """
-        HK AIAE V1.0 融合
-        = 0.5 × AIAE_Core + 0.2 × SB_归一化 + 0.3 × AH_归一化
-        """
-        # 南向热度归一化: 0-5% → 10-30% AIAE等效
-        sb_norm = 10 + sb_heat / 5 * (30 - 10)
-        sb_norm = max(5, min(30, sb_norm))
+        if HK_V2_ENABLED:
+            return sigmoid_normalize(ah_index, AH_SIGMOID_CENTER, AH_SIGMOID_K,
+                                     NORM_MIN, NORM_MAX)
+        else:
+            # V1 回退: 反向线性映射 [105,160] → [30,10]
+            normalized = V1_AH_AIAE_HIGH - (ah_index - V1_AH_INDEX_LOW) / \
+                         (V1_AH_INDEX_HIGH - V1_AH_INDEX_LOW) * \
+                         (V1_AH_AIAE_HIGH - V1_AH_AIAE_LOW)
+            return max(5, min(35, normalized))
 
-        return round(0.5 * aiae_core + 0.2 * sb_norm + 0.3 * ah_score, 2)
+    def _normalize_sb_heat(self, sb_heat: float) -> float:
+        """南向热度归一化 → AIAE等效值 (从 compute_hk_aiae 中提取)"""
+        if HK_V2_ENABLED:
+            return sigmoid_normalize(sb_heat, SB_SIGMOID_CENTER, SB_SIGMOID_K,
+                                     NORM_MIN, NORM_MAX)
+        else:
+            # V1 回退: 线性映射 [0-5%] → [10-30]
+            sb_norm = V1_SB_NORM_LOW + sb_heat / V1_SB_HEAT_MAX * \
+                      (V1_SB_NORM_HIGH - V1_SB_NORM_LOW)
+            return max(5, min(30, sb_norm))
+
+    def compute_hk_aiae_v1(self, aiae_core: float, sb_heat: float, ah_score: float) -> Dict:
+        """HK AIAE 三因子融合
+
+        V2.0: 返回 dict 包含融合值 + 因子贡献度分解
+        V1 兼容: result['value'] 等价于旧版返回的 float
+
+        = W_CORE × AIAE_Core + W_SB × SB_归一化 + W_AH × AH_归一化
+        """
+        sb_norm = self._normalize_sb_heat(sb_heat)
+
+        # 加权融合
+        core_contrib = W_CORE * aiae_core
+        sb_contrib = W_SB * sb_norm
+        ah_contrib = W_AH * ah_score
+        total = round(core_contrib + sb_contrib + ah_contrib, 2)
+
+        # 因子贡献度分解
+        decomposition = {
+            "core": {
+                "raw": round(aiae_core, 2),
+                "normalized": round(aiae_core, 2),
+                "weight": W_CORE,
+                "weighted": round(core_contrib, 2),
+                "pct_of_total": f"{core_contrib / total * 100:.0f}%" if total > 0 else "N/A",
+            },
+            "sb": {
+                "raw": round(sb_heat, 4),
+                "normalized": round(sb_norm, 2),
+                "weight": W_SB,
+                "weighted": round(sb_contrib, 2),
+                "pct_of_total": f"{sb_contrib / total * 100:.0f}%" if total > 0 else "N/A",
+            },
+            "ah": {
+                "raw": round(ah_score, 2),  # ah_score 已归一化
+                "normalized": round(ah_score, 2),
+                "weight": W_AH,
+                "weighted": round(ah_contrib, 2),
+                "pct_of_total": f"{ah_contrib / total * 100:.0f}%" if total > 0 else "N/A",
+            },
+            "total": total,
+            "warnings": [],
+        }
+
+        # 单因子主导度告警
+        if total > 0:
+            for name, contrib in [("core", core_contrib), ("sb", sb_contrib), ("ah", ah_contrib)]:
+                pct = contrib / total
+                if pct > FACTOR_DOMINANCE_WARN_PCT:
+                    decomposition["warnings"].append(
+                        f"⚠️ {name}因子贡献占比{pct*100:.0f}%>{FACTOR_DOMINANCE_WARN_PCT*100:.0f}%, 单因子主导风险")
+
+        return {"value": total, "decomposition": decomposition}
 
     # ========== 五档判定 ==========
 
-    def classify_regime(self, aiae_value: float) -> int:
-        if aiae_value < 8: return 1
-        elif aiae_value < 12: return 2
-        elif aiae_value < 18: return 3
-        elif aiae_value < 25: return 4
-        else: return 5
+    def classify_regime(self, aiae_value: float, prev_regime: int = None) -> int:
+        """五档状态分类 (V2.0: 含迟滞带防频繁跳变)
+
+        迟滞逻辑: 上行需超过 threshold + H 才升档, 下行需低于 threshold - H 才降档
+        """
+        thresholds = HK_REGIME_THRESHOLDS
+        for i, t in enumerate(thresholds):
+            if prev_regime is not None and HK_V2_ENABLED:
+                h = HK_REGIME_HYSTERESIS
+                # 当前在 regime (i+1) 或更低 → 上行需突破 t+h
+                # 当前在 regime (i+2) 或更高 → 下行需跌破 t-h
+                if prev_regime <= i + 1:
+                    effective_t = t + h   # 上行加阻力
+                else:
+                    effective_t = t - h   # 下行加惯性
+            else:
+                effective_t = t
+            if aiae_value < effective_t:
+                return i + 1
+        return 5
 
     def compute_slope(self, current: float, previous: float) -> Dict:
         if previous is None or previous == 0:
@@ -648,9 +731,9 @@ class AIAEHKEngine:
         slope = current - previous
         direction = "rising" if slope > 0 else ("falling" if slope < 0 else "flat")
         signal = None
-        if slope > 2.0:
+        if slope > SLOPE_ACCEL_UP:
             signal = {"type": "accel_up", "text": "HK AIAE 加速上行", "level": "warning"}
-        elif slope < -2.0:
+        elif slope < SLOPE_ACCEL_DOWN:
             signal = {"type": "accel_down", "text": "HK AIAE 加速下行", "level": "opportunity"}
         return {"slope": round(slope, 2), "direction": direction, "signal": signal}
 
@@ -660,10 +743,36 @@ class AIAEHKEngine:
         elif erp_value >= 4.0: return "erp_4_6"
         else: return "erp_lt4"
 
-    def get_position_from_matrix(self, regime: int, erp_level: str) -> int:
+    def get_position_from_matrix(self, regime: int, erp_level: str,
+                                  aiae_value: float = None) -> int:
+        """仓位矩阵查表 (V2.0: Regime 内平滑插值)"""
         row = POSITION_MATRIX_HK.get(erp_level, POSITION_MATRIX_HK["erp_4_6"])
         idx = min(regime - 1, 4)
-        return row[idx]
+        base_position = row[idx]
+
+        if not HK_V2_ENABLED or aiae_value is None:
+            return base_position
+
+        # V2: Regime 内连续插值
+        # 在当前 Regime 区间内, AIAE 越低→仓位越高, AIAE 越高→仓位越低
+        ri = REGIMES_HK[regime]
+        pos_high = ri["pos_max"]  # Regime 下界对应的高仓位
+        pos_low = ri["pos_min"]   # Regime 上界对应的低仓位
+
+        # Regime 区间边界
+        bounds = [0] + HK_REGIME_THRESHOLDS + [100]
+        low_bound = bounds[regime - 1]
+        high_bound = bounds[regime]
+
+        if high_bound <= low_bound:
+            return base_position
+
+        ratio = (aiae_value - low_bound) / (high_bound - low_bound)
+        ratio = max(0.0, min(1.0, ratio))
+        smooth_pos = round(pos_high + (pos_low - pos_high) * ratio)
+
+        # 仍受 ERP 矩阵约束: 不超过矩阵值 ± 10%
+        return max(base_position - 10, min(base_position + 10, smooth_pos))
 
     def allocate_sub_strategies(self, regime: int, total_position: int) -> Dict:
         alloc = SUB_STRATEGY_ALLOC_HK.get(regime, SUB_STRATEGY_ALLOC_HK[3])
@@ -690,22 +799,116 @@ class AIAEHKEngine:
                           "color": "#f59e0b" if s["level"] == "warning" else "#10b981"})
 
         weekly_sb = self._southbound.get("weekly_net_buy_billion_rmb", 0)
-        if weekly_sb > 40:
+        if weekly_sb > SB_WARN_WEEKLY_HIGH:
             signals.append({"type": "southbound", "level": "opportunity",
                           "text": f"南向资金强劲流入 {weekly_sb:.0f}亿/周", "color": "#10b981"})
-        elif weekly_sb < -20:
+        elif weekly_sb < SB_WARN_WEEKLY_LOW:
             signals.append({"type": "southbound", "level": "warning",
                           "text": f"南向资金大幅流出 {abs(weekly_sb):.0f}亿/周", "color": "#ef4444"})
 
         ah_index = self._ah_premium.get("index_value", 130)
-        if ah_index > 150:
+        if ah_index > AH_WARN_HIGH:
             signals.append({"type": "ah_premium", "level": "opportunity",
                           "text": f"AH溢价{ah_index:.0f} → H股显著折价, 估值修复空间大", "color": "#10b981"})
-        elif ah_index < 105:
+        elif ah_index < AH_WARN_LOW:
             signals.append({"type": "ah_premium", "level": "warning",
                           "text": f"AH溢价仅{ah_index:.0f} → H股折价消失, 港股偏贵", "color": "#f59e0b"})
 
         return signals
+
+    # ========== V2: AIAE 历史滚动存储 ==========
+
+    def _append_history(self, aiae_value: float, regime: int,
+                        mktcap_usd: float, ah_premium: float):
+        """每次 generate_report() 成功后，追加一条 JSONL 记录
+
+        去重: 同一分钟内不重复写入 (防止高频调用产生垃圾数据)
+        """
+        try:
+            now = datetime.now()
+            ts_minute = now.strftime("%Y-%m-%d %H:%M")
+
+            # 去重: 检查最后一条是否同分钟
+            if os.path.exists(HISTORY_FILE):
+                try:
+                    with open(HISTORY_FILE, 'rb') as f:
+                        # 只读最后 200 字节
+                        f.seek(0, 2)
+                        size = f.tell()
+                        f.seek(max(0, size - 200))
+                        tail = f.read().decode('utf-8', errors='replace')
+                    last_line = [l for l in tail.strip().split('\n') if l.strip()][-1] if tail.strip() else None
+                    if last_line:
+                        last_record = json.loads(last_line)
+                        if last_record.get("date") == now.strftime("%Y-%m-%d") and \
+                           last_record.get("time") == now.strftime("%H:%M"):
+                            return  # 同分钟去重
+                except Exception:
+                    pass  # 去重失败不阻塞写入
+
+            record = {
+                "date": now.strftime("%Y-%m-%d"),
+                "time": now.strftime("%H:%M"),
+                "aiae": round(aiae_value, 2),
+                "regime": regime,
+                "mktcap_usd_t": round(mktcap_usd, 2),
+                "ah_premium": round(ah_premium, 1),
+                "engine_mode": "V2" if HK_V2_ENABLED else "V1",
+            }
+            with open(HISTORY_FILE, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(record, ensure_ascii=False) + '\n')
+        except Exception as e:
+            _log(f"历史记录追加失败: {e}", "WARN")
+
+    def _get_prev_aiae(self, min_hours_gap: int = 6) -> Optional[float]:
+        """从 JSONL 历史文件取前一个 AIAE 值 (用于斜率计算)
+
+        内存优化: 只读文件尾部 (不加载全部历史到内存)
+        min_hours_gap: 预留参数, 未来可实现时间间隔过滤
+        """
+        if not os.path.exists(HISTORY_FILE):
+            return None
+        try:
+            # 只读尾部 1KB (足够覆盖最近 5-6 条记录)
+            with open(HISTORY_FILE, 'rb') as f:
+                f.seek(0, 2)
+                size = f.tell()
+                f.seek(max(0, size - 1024))
+                tail = f.read().decode('utf-8', errors='replace')
+            lines = [l for l in tail.strip().split('\n') if l.strip()]
+            if len(lines) < 2:
+                # 文件太小, 可能只读到部分, 回退全量读取
+                with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
+                    lines = [l.strip() for l in f if l.strip()]
+            if len(lines) < 2:
+                return None
+            # 取倒数第二条 (最后一条是当前 generate_report 刚写入的)
+            prev = json.loads(lines[-2])
+            return prev.get("aiae")
+        except Exception:
+            return None
+
+    def _get_prev_regime(self) -> Optional[int]:
+        """从 JSONL 历史文件取上次 Regime (用于迟滞判定)
+
+        内存优化: 只读文件尾部最后一行
+        """
+        if not os.path.exists(HISTORY_FILE):
+            return None
+        try:
+            with open(HISTORY_FILE, 'rb') as f:
+                f.seek(0, 2)
+                size = f.tell()
+                if size == 0:
+                    return None
+                f.seek(max(0, size - 256))
+                tail = f.read().decode('utf-8', errors='replace')
+            lines = [l for l in tail.strip().split('\n') if l.strip()]
+            if lines:
+                return json.loads(lines[-1]).get("regime")
+        except Exception:
+            pass
+        return None
 
     # ========== 历史走势 ==========
 
@@ -804,23 +1007,36 @@ class AIAEHKEngine:
             ah_index = ah_data.get("index_value", 135.0)
             ah_score = self.compute_ah_premium_score(ah_index)
 
-            aiae_v1 = self.compute_hk_aiae_v1(aiae_core, sb_heat, ah_score)
-            regime = self.classify_regime(aiae_v1)
+            # V2: compute_hk_aiae_v1 返回 dict (含因子分解)
+            fusion_result = self.compute_hk_aiae_v1(aiae_core, sb_heat, ah_score)
+            aiae_v1 = fusion_result["value"]
+            factor_decomposition = fusion_result["decomposition"]
+
+            # V2: 迟滞 — 读取上次 Regime 用于迟滞判定
+            prev_regime = self._get_prev_regime()
+            regime = self.classify_regime(aiae_v1, prev_regime)
             regime_info = REGIMES_HK[regime]
 
-            prev_aiae = HISTORICAL_SNAPSHOTS[-2]["aiae"] if len(HISTORICAL_SNAPSHOTS) >= 2 else None
+            # V2: 斜率 — 从滚动历史取前值
+            prev_aiae = self._get_prev_aiae()
+            if prev_aiae is None:
+                prev_aiae = HISTORICAL_SNAPSHOTS[-2]["aiae"] if len(HISTORICAL_SNAPSHOTS) >= 2 else None
             slope_info = self.compute_slope(aiae_v1, prev_aiae)
 
             erp_value = self._get_hk_erp_value()
             erp_level = self.classify_erp_level(erp_value)
-            matrix_position = self.get_position_from_matrix(regime, erp_level)
+            # V2: 平滑仓位 (传入 aiae_value 做 Regime 内插值)
+            matrix_position = self.get_position_from_matrix(regime, erp_level, aiae_v1)
 
             allocations = self.allocate_sub_strategies(regime, matrix_position)
             signals = self.generate_signals(aiae_v1, regime, slope_info, sb_heat)
             chart_data = self.get_chart_data()
             cross_validation = self._cross_validate(regime, erp_value)
 
-            _log(f"报告完成 ({time.time()-t0:.1f}s) | AIAE={aiae_v1}% Regime={regime} Pos={matrix_position}%")
+            # V2: 追加历史记录
+            self._append_history(aiae_v1, regime, mktcap_usd, ah_index)
+
+            _log(f"报告完成 ({time.time()-t0:.1f}s) | AIAE={aiae_v1}% Regime={regime} Pos={matrix_position}% [V{'2-Sigmoid' if HK_V2_ENABLED else '1-Linear'}]")
 
             return {
                 "status": "success",
@@ -838,6 +1054,8 @@ class AIAEHKEngine:
                     "effective_m2_trillion": effective_m2,
                     "southbound_heat": sb_heat,
                     "ah_premium": float(self._ah_premium.get("index_value", 135.0)),
+                    "factor_decomposition": factor_decomposition,
+                    "engine_mode": "V2-Sigmoid" if HK_V2_ENABLED else "V1-Linear",
                     "southbound": self._southbound,
                     "slope": slope_info,
                 },
@@ -881,6 +1099,14 @@ class AIAEHKEngine:
                 "regime_info": REGIMES_HK[3],
                 "mktcap_usd_trillion": 4.3, "effective_m2_trillion": 2.6,
                 "southbound_heat": 1.0, "ah_premium": DEFAULT_AH_PREMIUM,
+                "factor_decomposition": {
+                    "core": {"raw": 14.0, "normalized": 14.0, "weight": W_CORE, "weighted": 7.0, "pct_of_total": "N/A"},
+                    "sb": {"raw": 1.0, "normalized": 10.0, "weight": W_SB, "weighted": 2.0, "pct_of_total": "N/A"},
+                    "ah": {"raw": 20.0, "normalized": 20.0, "weight": W_AH, "weighted": 6.0, "pct_of_total": "N/A"},
+                    "total": 14.0,
+                    "warnings": ["数据降级, 因子分解为估算值"],
+                },
+                "engine_mode": "V2-Sigmoid" if HK_V2_ENABLED else "V1-Linear",
                 "southbound": DEFAULT_SOUTHBOUND,
                 "slope": {"slope": 0, "direction": "flat", "signal": None},
             },
@@ -915,7 +1141,8 @@ if __name__ == "__main__":
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
     engine = AIAEHKEngine()
-    print("=== HK AIAE Engine V1.0 Self-Test ===")
+    mode = "V2-Sigmoid" if HK_V2_ENABLED else "V1-Linear"
+    print(f"=== HK AIAE Engine {engine.VERSION} Self-Test [{mode}] ===")
     report = engine.generate_report()
     if report.get("status") in ("success", "fallback"):
         c = report["current"]
@@ -925,8 +1152,22 @@ if __name__ == "__main__":
         print(f"MktCap: ${c['mktcap_usd_trillion']}T | Eff.M2: ${c['effective_m2_trillion']}T")
         print(f"SB Heat: {c['southbound_heat']}% | AH Premium: {c['ah_premium']}")
         print(f"Matrix Position: {p['matrix_position']}% (ERP={p['erp_value']}%)")
+        print(f"Engine Mode: {c.get('engine_mode', 'N/A')}")
+
+        # V2: 因子分解
+        fd = c.get('factor_decomposition', {})
+        if fd:
+            print(f"\n--- Factor Decomposition ---")
+            for name in ['core', 'sb', 'ah']:
+                f = fd.get(name, {})
+                print(f"  {name:>5}: raw={f.get('raw','?')} norm={f.get('normalized','?')} "
+                      f"w={f.get('weight','?')} contrib={f.get('weighted','?')} ({f.get('pct_of_total','?')})")
+            if fd.get('warnings'):
+                for w in fd['warnings']:
+                    print(f"  {w}")
+
         cv = report["cross_validation"]
-        print(f"Cross-Validation: {cv['verdict']} [{'*'*cv['confidence']}]")
+        print(f"\nCross-Validation: {cv['verdict']} [{'*'*cv['confidence']}]")
         for s in report["signals"]:
             print(f"  > {s['text']}")
         print(f"\n--- Latency: {report.get('latency_ms', '?')}ms | Status: {report['status']} ---")
