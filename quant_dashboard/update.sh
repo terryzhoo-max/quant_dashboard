@@ -177,6 +177,13 @@ cd "$CODE_DIR"
 
 # 修复 data_lake 目录权限，防止非 root 容器用户 (alphacore: 1000) 遭遇 Permission Denied
 if [ -d "${CODE_DIR}/data_lake" ]; then
+    # V3.2: 迁移旧版运行时数据到 data_lake (首次部署迁移)
+    for f in portfolio_store.json trade_history.json audit_enforcement_log.json; do
+        if [ -f "${CODE_DIR}/${f}" ] && [ ! -f "${CODE_DIR}/data_lake/${f}" ]; then
+            cp "${CODE_DIR}/${f}" "${CODE_DIR}/data_lake/${f}"
+            log "  📦 迁移 ${f} → data_lake/"
+        fi
+    done
     chown -R 1000:1000 "${CODE_DIR}/data_lake" 2>/dev/null || true
     chmod -R 775 "${CODE_DIR}/data_lake" 2>/dev/null || true
 fi

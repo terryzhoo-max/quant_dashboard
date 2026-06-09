@@ -394,7 +394,7 @@ def daily_warmup_callback():
     _set_warmup_status("Phase 1", [], ["ERP", "AIAE", "Industry", "Factor", "SwingGuard"],
                        ["Dashboard", "GEM", "Snapshot"])
 
-    _dag_pool = ThreadPoolExecutor(max_workers=5, thread_name_prefix="dag")
+    _dag_pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="dag")
 
     def _safe_warmup_task(fn, name):
         try:

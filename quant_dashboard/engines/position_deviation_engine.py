@@ -61,7 +61,7 @@ class PositionDeviationEngine:
 
     def load_portfolio(self) -> Optional[dict]:
         """加载最新 portfolio_store.json"""
-        fp = "portfolio_store.json"
+        fp = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data_lake", "portfolio_store.json")
         if not os.path.exists(fp):
             _log(f"portfolio_store.json 不存在", "WARN")
             return None
@@ -430,7 +430,7 @@ class PositionDeviationEngine:
         # ⑤ 止损纪律 10%: 从审计强制执行器日志获取实际执行情况
         stop_loss_score = 80  # 默认值（无数据时）
         try:
-            enforcer_log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'audit_enforcement_log.json')
+            enforcer_log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data_lake', 'audit_enforcement_log.json')
             if os.path.exists(enforcer_log_path):
                 with open(enforcer_log_path, 'r', encoding='utf-8') as f:
                     enforcer_log = json.load(f)

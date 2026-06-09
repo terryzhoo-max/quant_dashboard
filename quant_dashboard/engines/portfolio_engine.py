@@ -50,9 +50,13 @@ class PortfolioEngine:
     MCTR_LOOKBACK  = 120           # 风险窗口 120 根 K 线 (约半年)
     RISK_FREE_RATE = 0.012          # 无风险利率 (2026 一年期国债收益率 ~1.2%)
 
-    def __init__(self, store_path="portfolio_store.json", history_path="trade_history.json"):
-        self.store_path = store_path
-        self.history_path = history_path
+    # 运行时数据存入 data_lake (Docker volume 挂载，重建容器不丢失)
+    _DATA_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data_lake"))
+
+    def __init__(self, store_path=None, history_path=None):
+        os.makedirs(self._DATA_DIR, exist_ok=True)
+        self.store_path = store_path or os.path.join(self._DATA_DIR, "portfolio_store.json")
+        self.history_path = history_path or os.path.join(self._DATA_DIR, "trade_history.json")
         self.dm = FactorDataManager()
         self.holdings = self._load_portfolio()
         self.trade_history = self._load_history()

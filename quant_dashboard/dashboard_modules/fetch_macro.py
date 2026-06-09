@@ -212,15 +212,71 @@ def _fetch_vix_cnbc() -> Optional[float]:
     return None
 
 
+# ── V7.0: CNY 磁盘降级缓存 ──
+_CNY_CACHE_PATH = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "data_lake", "cny_cache.json")
+
+
+def _save_cny_disk(rate: float):
+    """CNY 成功获取后写入磁盘缓存"""
+    try:
+        payload = {"rate": rate, "timestamp": datetime.now().isoformat()}
+        tmp = _CNY_CACHE_PATH + ".tmp"
+        with open(tmp, 'w') as f:
+            json.dump(payload, f)
+        _os.replace(tmp, _CNY_CACHE_PATH)
+    except Exception as e:
+        logger.debug("CNY 磁盘缓存写入失败: %s", e)
+
+
+def _load_cny_disk(max_age_hours: int = 72) -> Optional[float]:
+    """从磁盘读取 CNY 缓存 (72h 内有效)"""
+    try:
+        if not _os.path.exists(_CNY_CACHE_PATH):
+            return None
+        with open(_CNY_CACHE_PATH) as f:
+            data = json.load(f)
+        cached_at = datetime.fromisoformat(data["timestamp"])
+        age_hours = (datetime.now() - cached_at).total_seconds() / 3600
+        if age_hours > max_age_hours:
+            logger.debug("CNY 磁盘缓存已过期 (%.1fh > %dh)", age_hours, max_age_hours)
+            return None
+        logger.info("CNY 从磁盘缓存加载: rate=%.4f, age=%.1fh", data["rate"], age_hours)
+        return data["rate"]
+    except Exception as e:
+        logger.debug("CNY 磁盘缓存读取失败: %s", e)
+        return None
+
+
 def fetch_cny_for_dashboard() -> float:
-    """CNBC USD/CNY → 默认值"""
+    """Production-grade CNY fetch: 磁盘缓存(周末) -> CNBC -> 磁盘降级 -> 默认值"""
+    # 1. 周末/节假日直接使用磁盘缓存 (CNY 不更新)
+    if datetime.now().weekday() >= 5:
+        disk = _load_cny_disk(max_age_hours=96)  # 周末容忍4天
+        if disk is not None:
+            return disk
+
+    # 2. CNBC API 获取 (超时缩短为 4s 防止卡顿)
     try:
         url = "https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=USD/CNY&requestMethod=itv&noCache=1&partnerId=2&fund=1&exthrs=1&output=json&events=1"
-        r = requests.get(url, timeout=8, headers={'User-Agent': 'Mozilla/5.0'})
-        quote = r.json().get('FormattedQuoteResult', {}).get('FormattedQuote', [{}])[0]
-        return float(quote.get('last', '7.23').replace(',', ''))
-    except Exception:
-        return 7.23
+        r = requests.get(url, timeout=4, headers={'User-Agent': 'Mozilla/5.0'})
+        if r.status_code == 200:
+            quote = r.json().get('FormattedQuoteResult', {}).get('FormattedQuote', [{}])[0]
+            rate = float(quote.get('last', '7.23').replace(',', ''))
+            logger.info("CNY successfully fetched from CNBC: rate=%.4f", rate)
+            _save_cny_disk(rate)
+            return rate
+    except Exception as e:
+        logger.warning("CNBC CNY fetch failed: %s", e)
+
+    # 3. 磁盘降级
+    disk = _load_cny_disk(max_age_hours=168)  # 容忍7天
+    if disk is not None:
+        logger.warning("All CNY sources failed, using disk cache fallback")
+        return disk
+
+    # 4. 最终保底默认值
+    logger.warning("All CNY data sources failed. Using default values.")
+    return 7.23
 
 
 async def fetch_macro_data(executor) -> Tuple[float, float, float]:

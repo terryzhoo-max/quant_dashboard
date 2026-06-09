@@ -20,14 +20,14 @@ print("=" * 60)
 
 # 模拟各时间点
 test_cases = [
-    (datetime(2026, 6, 9, 9, 30), "trading",  "周一盘中"),
-    (datetime(2026, 6, 9, 15, 30), "after",   "周一收盘后"),
-    (datetime(2026, 6, 9, 8, 0),  "after",    "周一盘前"),
-    (datetime(2026, 6, 7, 12, 0), "weekend",  "周六"),
-    (datetime(2026, 6, 8, 12, 0), "weekend",  "周日"),
-    (datetime(2026, 6, 9, 9, 15), "trading",  "周一开盘"),
-    (datetime(2026, 6, 9, 15, 5), "trading",  "周一收盘时刻"),
-    (datetime(2026, 6, 9, 15, 6), "after",    "周一收盘后1分钟"),
+    (datetime(2026, 6, 9, 9, 30), "trading",  "周二盘中"),
+    (datetime(2026, 6, 9, 15, 30), "after",   "周二收盘后"),
+    (datetime(2026, 6, 9, 8, 0),  "after",    "周二盘前"),
+    (datetime(2026, 6, 6, 12, 0), "weekend",  "周六"),
+    (datetime(2026, 6, 7, 12, 0), "weekend",  "周日"),
+    (datetime(2026, 6, 9, 9, 15), "trading",  "周二开盘"),
+    (datetime(2026, 6, 9, 15, 5), "trading",  "周二收盘时刻"),
+    (datetime(2026, 6, 9, 15, 6), "after",    "周二收盘后1分钟"),
 ]
 
 for mock_time, expected, desc in test_cases:

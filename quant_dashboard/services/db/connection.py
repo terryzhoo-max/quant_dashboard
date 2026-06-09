@@ -267,8 +267,10 @@ def migrate_from_json() -> dict:
     result = {"trades": 0, "aiae": 0, "erp": 0, "errors": []}
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    # 1. 交易历史
-    trade_file = os.path.join(root, "trade_history.json")
+    # 1. 交易历史 (优先 data_lake, 降级旧路径)
+    trade_file = os.path.join(root, "data_lake", "trade_history.json")
+    if not os.path.exists(trade_file):
+        trade_file = os.path.join(root, "trade_history.json")
     if os.path.exists(trade_file):
         try:
             with open(trade_file, "r", encoding="utf-8") as f:

@@ -18,10 +18,13 @@ import json
 import time
 from datetime import datetime
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# 运行时状态文件存入 data_lake (Docker volume 挂载，重建容器不丢失)
+_ENGINE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.join(os.path.dirname(_ENGINE_DIR), "data_lake")
 BLOCK_FILE = os.path.join(BASE_DIR, "audit_trade_block.json")
 LOG_FILE = os.path.join(BASE_DIR, "audit_enforcement_log.json")
 MUTE_RUNTIME_FILE = os.path.join(BASE_DIR, "audit_mute_runtime.json")
+os.makedirs(BASE_DIR, exist_ok=True)
 MAX_LOG_ENTRIES = 200  # 保留最近 200 条执行日志
 
 

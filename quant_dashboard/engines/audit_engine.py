@@ -992,7 +992,7 @@ def _get_live_portfolio():
         print(f"[Audit] portfolio_engine 不可用, 降级为成本估算: {e}")
 
     # ── 降级: 从 JSON 手动解析 (成本估算) ──
-    pf_path = os.path.join(PROJECT_ROOT, "portfolio_store.json")
+    pf_path = os.path.join(PROJECT_ROOT, "data_lake", "portfolio_store.json")
     if not os.path.exists(pf_path):
         return [], 0, 0, False, None, 0
     try:

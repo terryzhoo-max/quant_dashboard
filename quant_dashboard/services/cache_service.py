@@ -244,6 +244,19 @@ _SWR_REFRESH_TIMEOUT = 300  # 5 分钟超时自动清除
 _swr_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="swr")
 
 
+# ── V7.0: 同步防击穿锁 (Single Flight Lock) ──
+_swr_compute_locks = {}
+_swr_compute_locks_lock = threading.Lock()
+
+
+def _get_key_lock(cache_key: str):
+    """获取专属缓存键的重入锁"""
+    with _swr_compute_locks_lock:
+        if cache_key not in _swr_compute_locks:
+            _swr_compute_locks[cache_key] = threading.RLock()
+        return _swr_compute_locks[cache_key]
+
+
 def stale_while_revalidate(cache_key: str, compute_fn, fresh_ttl=3600, stale_ttl=21600):
     """
     三级缓存通用中间件 (全路由复用):
@@ -254,6 +267,12 @@ def stale_while_revalidate(cache_key: str, compute_fn, fresh_ttl=3600, stale_ttl
     
     V6.0 不变量守卫: fresh_ttl 不会超过 stale_ttl 的 90%,
     防止 adaptive_fresh_ttl 放大后导致 fresh > stale 逻辑倒挂。
+    
+    V7.0 生产级打磨:
+      - 强类型保护: data 不为 dict 时直接返回，不再强行写入 _cache 触发 TypeError
+      - 深拷贝防御: 统一使用 copy.deepcopy 拷贝缓存对象，防止调用方修改子字典污染内存缓存
+      - 同步防击穿: Hard miss 时基于 Single Flight Lock 重入排队，带 Double Check 逻辑
+      - 柔性容灾降级: 同步计算失败时，若存在过期缓存，触发 Stale-On-Error 优雅返回
     
     Args:
         cache_key: 缓存键名 (建议前缀 swr_)
@@ -272,21 +291,61 @@ def stale_while_revalidate(cache_key: str, compute_fn, fresh_ttl=3600, stale_ttl
     if cached and "timestamp" in cached:
         age = _time.time() - cached["timestamp"]
         
-        # Tier 1: Fresh — 直接返回 (浅拷贝防污染)
+        # Tier 1: Fresh — 直接返回 (深拷贝防污染, 类型安全保护)
         if age < fresh_ttl:
-            result = copy.copy(cached["data"]) if isinstance(cached["data"], dict) else cached["data"]
-            result["_cache"] = {"cached": True, "stale": False, "age_seconds": int(age)}
-            return result
+            if isinstance(cached["data"], dict):
+                result = copy.deepcopy(cached["data"])
+                result["_cache"] = {"cached": True, "stale": False, "age_seconds": int(age)}
+                return result
+            return copy.deepcopy(cached["data"])
         
-        # Tier 2: Stale — 返回旧数据 + 后台刷新 (浅拷贝防污染)
+        # Tier 2: Stale — 返回旧数据 + 后台刷新 (深拷贝防污染, 类型安全保护)
         if age < stale_ttl:
             _trigger_bg_refresh(cache_key, compute_fn)
-            result = copy.copy(cached["data"]) if isinstance(cached["data"], dict) else cached["data"]
-            result["_cache"] = {"cached": True, "stale": True, "age_seconds": int(age)}
-            return result
+            if isinstance(cached["data"], dict):
+                result = copy.deepcopy(cached["data"])
+                result["_cache"] = {"cached": True, "stale": True, "age_seconds": int(age)}
+                return result
+            return copy.deepcopy(cached["data"])
     
-    # Tier 3: Hard miss — 同步计算
-    return _swr_compute_sync(cache_key, compute_fn)
+    # Tier 3: Hard miss — 同步计算 (加锁防止多线程并发计算导致 Tushare 击穿/限频)
+    key_lock = _get_key_lock(cache_key)
+    with key_lock:
+        # Double Check: 获取锁后再次检查缓存，防并发排队时已被前一线程刷新为 Fresh
+        cached = cache_manager.get_json(cache_key)
+        if cached and "timestamp" in cached:
+            age = _time.time() - cached["timestamp"]
+            if age < fresh_ttl:
+                if isinstance(cached["data"], dict):
+                    result = copy.deepcopy(cached["data"])
+                    result["_cache"] = {"cached": True, "stale": False, "age_seconds": int(age)}
+                    return result
+                return copy.deepcopy(cached["data"])
+
+        try:
+            return _swr_compute_sync(cache_key, compute_fn)
+        except Exception as e:
+            # Stale-On-Error 柔性容灾降级:
+            # 计算失败时，如果缓存中有旧数据（哪怕已经超出 stale_ttl 过期），优先返回旧数据并打上降级标记
+            if cached and "timestamp" in cached:
+                age = _time.time() - cached["timestamp"]
+                _logger.warning("SWR 刷新失败, 触发 Stale-On-Error 柔性降级返回过期缓存: %s (age=%ds), 错误: %s", 
+                               cache_key, int(age), e)
+                if isinstance(cached["data"], dict):
+                    result = copy.deepcopy(cached["data"])
+                    result["_cache"] = {
+                        "cached": True,
+                        "stale": True,
+                        "age_seconds": int(age),
+                        "degraded": True,
+                        "error": str(e)
+                    }
+                    return result
+                return copy.deepcopy(cached["data"])
+            
+            # 彻底无缓存可用，降级返回错误响应
+            _logger.error("SWR 同步计算失败且无旧缓存可用 %s: %s", cache_key, e)
+            return {"status": "error", "error": str(e)}
 
 
 def _trigger_bg_refresh(cache_key: str, compute_fn):
@@ -320,21 +379,25 @@ def _trigger_bg_refresh(cache_key: str, compute_fn):
 
 
 def _swr_compute_sync(cache_key: str, compute_fn):
-    """同步计算并写入缓存"""
+    """同步计算并写入缓存 (V7.0: 异常不吞掉，抛出供柔性降级捕捉)"""
     try:
         result = compute_fn()
         payload = {"timestamp": _time.time(), "data": result}
         cache_manager.set_json(cache_key, payload)
-        result["_cache"] = {"cached": False, "stale": False, "age_seconds": 0}
-        return result
+        if isinstance(result, dict):
+            ret = copy.deepcopy(result)
+            ret["_cache"] = {"cached": False, "stale": False, "age_seconds": 0}
+            return ret
+        return copy.deepcopy(result)
     except Exception as e:
-        _logger.error(f"SWR 同步计算失败 {cache_key}: {e}")
+        _logger.error(f"SWR 同步计算执行出错 {cache_key}: {e}")
         import traceback
         _logger.debug("Traceback", exc_info=True)
-        return {"status": "error", "error": str(e)}
+        raise e
 
 
 def swr_clear(cache_key: str):
     """清除 SWR 缓存 (供 /refresh 端点调用)"""
     cache_manager.delete(cache_key)
     _logger.info(f"SWR 缓存已清除: {cache_key}")
+

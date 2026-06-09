@@ -90,7 +90,7 @@ def generate_rebalance_orders(
     # 1. 加载当前持仓
     portfolio_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "portfolio_store.json"
+        "data_lake", "portfolio_store.json"
     )
     if not os.path.exists(portfolio_path):
         return {"status": "error", "error": "portfolio_store.json 不存在"}
@@ -456,7 +456,7 @@ if __name__ == "__main__":
         print_orders(result)
         out_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "rebalance_orders.json"
+            "data_lake", "rebalance_orders.json"
         )
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
