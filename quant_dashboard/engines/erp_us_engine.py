@@ -881,7 +881,7 @@ class USERPTimingEngine:
                 "alerts": alerts, "diagnosis": diagnosis, "encyclopedia": ENCYCLOPEDIA_US,
             }
         except Exception as e:
-            logger.debug("Traceback", exc_info=True)
+            logger.error("US ERP compute_signal 降级: %s", e, exc_info=True)
             return self._fallback_signal(str(e))
 
     def get_erp_chart_data(self) -> dict:
@@ -912,14 +912,63 @@ class USERPTimingEngine:
         return {**signal, "chart": chart, "engine_version": self.VERSION, "region": self.REGION, "updated_at": datetime.now().isoformat()}
 
     def _fallback_signal(self, reason):
+        # Fallback 降級數據 — 必須包含前端 renderRegionPanel() 所需的完整嵌套結構
+        fallback_erp = 0.05
+        fallback_pe = 23.0
+        fallback_yield = 4.30
+        fallback_vix = 18.9
+        fallback_rate = 4.55
+        fallback_spread = 3.5
+
+        fallback_dims = {
+            "erp_abs":       {"score": 50, "weight": self.W["erp_abs"],       "label": "ERP绝对值",  "desc": f"ERP {fallback_erp:.2f}% (降级推定)"},
+            "erp_pct":       {"score": 50, "weight": self.W["erp_pct"],       "label": "ERP历史分位", "desc": "降级: 分位不可用", "percentile": 15.0},
+            "fed_liquidity": {"score": 50, "weight": self.W["fed_liquidity"], "label": "Fed流动性",   "desc": f"3M利率{fallback_rate:.2f}% (降级推定)",
+                              "fed_info": {"current": fallback_rate, "prev_month": fallback_rate, "3m_ago": fallback_rate,
+                                           "direction": "unknown", "3m_direction": "unknown", "rate_drop_3m": 0.0}},
+            "vix":           {"score": 50, "weight": self.W["vix"],           "label": "VIX恐慌",    "desc": f"VIX {fallback_vix:.1f} (降级推定)",
+                              "vix_info": {"current": fallback_vix, "pct": 50.0, "regime": "normal"}},
+            "credit_spread": {"score": 50, "weight": self.W["credit_spread"], "label": "信用利差",   "desc": f"利差{fallback_spread:.1f}% (降级推定)",
+                              "credit_info": {"spread": fallback_spread, "trend": "unknown", "raw_bps": round(fallback_spread * 100)}},
+        }
+
+        fallback_trade = {
+            "signal_key": "reduce", "signal": self.SIGNAL_MAP["reduce"],
+            "resonance": "none", "resonance_label": "⚪ 降级",
+            "etf_advice": [
+                {"etf": self.ETF_TARGETS["defensive"], "ratio": "50%", "reason": "防御为主(降级)"},
+                {"etf": self.ETF_TARGETS["balanced"],  "ratio": "35%", "reason": "核心底仓(降级)"},
+                {"etf": self.ETF_TARGETS["aggressive"],"ratio": "15%", "reason": "保留弹性(降级)"},
+            ],
+            "take_profit": [
+                {"trigger": "ERP 回落至 1.0% 以下", "action": "减仓30%", "type": "valuation",
+                 "triggered": bool(fallback_erp < 1.0), "current": f"ERP={fallback_erp:.2f}%"},
+                {"trigger": "综合得分跌破 45", "action": "降至50%仓位", "type": "score_drop",
+                 "triggered": False, "current": "得分=35(降级)"},
+            ],
+            "stop_loss": [
+                {"trigger": "ERP ≥ 5% (极端低估)", "action": "逆向加仓20%", "type": "contrarian_buy", "color": "#10b981",
+                 "triggered": bool(fallback_erp >= 5.0), "current": f"ERP={fallback_erp:.2f}%"},
+                {"trigger": "ERP < -1% (极端泡沫)", "action": "硬止损: 清仓", "type": "hard_stop", "color": "#ef4444",
+                 "triggered": bool(fallback_erp < -1.0), "current": f"ERP={fallback_erp:.2f}%"},
+                {"trigger": f"信用利差 > 6%", "action": "降至20%以下", "type": "credit_crisis", "color": "#ef4444",
+                 "triggered": bool(fallback_spread > 6.0), "current": f"利差={fallback_spread:.1f}%"},
+            ],
+        }
+
         return {
             "status": "fallback", "region": "US", "message": f"数据异常: {reason}",
-            "current_snapshot": {"pe_ttm": 23.0, "yield_10y": 4.30, "earnings_yield": 4.35, "erp_value": 0.05, "erp_percentile": 15.0, "trade_date": datetime.now().strftime("%Y-%m-%d")},
+            "current_snapshot": {
+                "pe_ttm": fallback_pe, "yield_10y": fallback_yield,
+                "earnings_yield": round(1.0 / fallback_pe * 100, 2),
+                "erp_value": fallback_erp, "erp_percentile": 15.0,
+                "trade_date": datetime.now().strftime("%Y-%m-%d"),
+            },
             "signal": {"score": 35, "key": "reduce", "label": "减仓(降级)", "position": "30-50%", "color": "#f59e0b", "emoji": "🟡"},
-            "dimensions": {k: {"score": 50, "weight": v, "label": k, "desc": "降级"} for k, v in self.W.items()},
-            "trade_rules": {"signal_key": "reduce", "signal": self.SIGNAL_MAP["reduce"], "resonance": "none", "resonance_label": "⚪ 降级", "etf_advice": [], "take_profit": [], "stop_loss": []},
-            "alerts": [{"level": "warning", "icon": "🟡", "text": reason}],
-            "diagnosis": [{"type": "warning", "title": "数据降级", "text": reason}],
+            "dimensions": fallback_dims,
+            "trade_rules": fallback_trade,
+            "alerts": [{"level": "warning", "icon": "🟡", "text": f"⚠️ 降级模式: {reason}"}],
+            "diagnosis": [{"type": "warning", "title": "降级模式", "text": f"FRED數據源不可用: {reason}。面板顯示推定值，不代表實時市場狀態。"}],
             "encyclopedia": ENCYCLOPEDIA_US,
         }
 

@@ -1082,7 +1082,7 @@ class HKERPTimingEngine:
                 "alerts": alerts, "diagnosis": diagnosis, "encyclopedia": ENCYCLOPEDIA_HK,
             }
         except Exception as e:
-            logger.debug("Traceback", exc_info=True)
+            logger.error("HK ERP compute_signal 降级 [%s]: %s", self.market, e, exc_info=True)
             return self._fallback_signal(str(e))
 
     def get_erp_chart_data(self) -> dict:
@@ -1117,18 +1117,65 @@ class HKERPTimingEngine:
         }
 
     def _fallback_signal(self, reason):
+        # Fallback 降級數據 — 必須包含前端 renderRegionPanel() 所需的完整嵌套結構
         fb_pe = self.cfg["pe_fallback"]
         fb_rf = 3.5
         fb_erp = round(1.0 / fb_pe * 100 - fb_rf, 2)
+        fb_vol = 22.0
+        fb_sb_weekly = 0.0
+        fb_spread = 2.0
+        etf_targets = self.cfg["etf_targets"]
+
+        fallback_dims = {
+            "erp_abs":      {"score": 50, "weight": self.W["erp_abs"],      "label": "ERP绝对值",  "desc": f"ERP {fb_erp:.2f}% (降级推定)"},
+            "erp_pct":      {"score": 50, "weight": self.W["erp_pct"],      "label": "ERP历史分位", "desc": "降级: 分位不可用", "percentile": 50.0},
+            "southbound":   {"score": 50, "weight": self.W["southbound"],   "label": "南向资金",   "desc": "降级: 南向数据不可用",
+                             "sb_info": {"weekly": fb_sb_weekly, "monthly": 0.0, "cumulative_12m": 0.0,
+                                         "direction": "unknown", "date": "unknown", "stale": True, "days_old": 999}},
+            "vhsi":         {"score": 50, "weight": self.W["vhsi"],         "label": "恒生波动率", "desc": f"波动率{fb_vol:.1f}% (降级推定)",
+                             "vol_info": {"current": fb_vol, "pct": 50.0, "regime": "normal"}},
+            "rate_spread":  {"score": 50, "weight": self.W["rate_spread"],  "label": "港美利差",   "desc": f"利差{fb_spread:.1f}% (降级推定)",
+                             "spread_info": {"us10y": 4.3, "cn10y": 2.3, "spread": fb_spread,
+                                             "spread_3m_ago": fb_spread, "trend": "unknown"}},
+        }
+
+        fallback_trade = {
+            "signal_key": "hold", "signal": self.SIGNAL_MAP["hold"],
+            "resonance": "none", "resonance_label": "⚪ 降级",
+            "etf_advice": [
+                {"etf": etf_targets["aggressive"], "ratio": "35%", "reason": "核心底仓(降级)"},
+                {"etf": etf_targets["defensive"],  "ratio": "40%", "reason": "防御为主(降级)"},
+                {"etf": etf_targets["balanced"],   "ratio": "25%", "reason": "保留弹性(降级)"},
+            ],
+            "take_profit": [
+                {"trigger": "ERP 回落至估值中性以下", "action": "减仓30%", "type": "valuation",
+                 "triggered": False, "current": f"ERP={fb_erp:.2f}%(降级)"},
+                {"trigger": "综合得分跌破 45", "action": "降至标配", "type": "score_drop",
+                 "triggered": False, "current": "得分=50(降级)"},
+            ],
+            "stop_loss": [
+                {"trigger": "ERP 极端低估", "action": "逆向加仓20%", "type": "contrarian_buy", "color": "#10b981",
+                 "triggered": False, "current": f"ERP={fb_erp:.2f}%(降级)"},
+                {"trigger": "港美利差 > 3.0%", "action": "降至20%以下", "type": "rate_crisis", "color": "#ef4444",
+                 "triggered": bool(fb_spread > 3.0), "current": f"利差={fb_spread:.1f}%(降级)"},
+            ],
+        }
+
         return {
             "status": "fallback", "region": "HK", "market": self.market,
             "message": f"数据异常: {reason}",
-            "current_snapshot": {"pe_ttm": fb_pe, "blended_rf": fb_rf, "earnings_yield": round(1/fb_pe*100, 2), "erp_value": fb_erp, "erp_percentile": 50.0, "trade_date": datetime.now().strftime("%Y-%m-%d"), "market": self.market},
+            "current_snapshot": {
+                "pe_ttm": fb_pe, "blended_rf": fb_rf,
+                "earnings_yield": round(1.0 / fb_pe * 100, 2),
+                "erp_value": fb_erp, "erp_percentile": 50.0,
+                "trade_date": datetime.now().strftime("%Y-%m-%d"),
+                "market": self.market,
+            },
             "signal": {"score": 50, "key": "hold", "label": "标配(降级)", "position": "50-70%", "color": "#3b82f6", "emoji": "🔵"},
-            "dimensions": {k: {"score": 50, "weight": v, "label": k, "desc": "降级"} for k, v in self.W.items()},
-            "trade_rules": {"signal_key": "hold", "signal": self.SIGNAL_MAP["hold"], "resonance": "none", "resonance_label": "⚪ 降级", "etf_advice": [], "take_profit": [], "stop_loss": []},
-            "alerts": [{"level": "warning", "icon": "🟡", "text": reason}],
-            "diagnosis": [{"type": "warning", "title": "数据降级", "text": reason}],
+            "dimensions": fallback_dims,
+            "trade_rules": fallback_trade,
+            "alerts": [{"level": "warning", "icon": "🟡", "text": f"⚠️ 降级模式: {reason}"}],
+            "diagnosis": [{"type": "warning", "title": "降级模式", "text": f"数据源不可用: {reason}。面板显示推定值，不代表实时市场状态。"}],
             "encyclopedia": ENCYCLOPEDIA_HK,
         }
 

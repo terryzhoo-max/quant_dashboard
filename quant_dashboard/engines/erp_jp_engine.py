@@ -790,7 +790,7 @@ class JPERPTimingEngine:
                 "alerts": alerts, "diagnosis": diagnosis, "encyclopedia": ENCYCLOPEDIA_JP,
             }
         except Exception as e:
-            logger.debug("Traceback", exc_info=True)
+            logger.error("JP ERP compute_signal 降級: %s", e, exc_info=True)
             return self._fallback_signal(str(e))
 
     def get_erp_chart_data(self) -> dict:
@@ -821,14 +821,69 @@ class JPERPTimingEngine:
         return {**signal, "chart": chart, "engine_version": self.VERSION, "region": self.REGION, "updated_at": datetime.now().isoformat()}
 
     def _fallback_signal(self, reason):
+        # Fallback 降級數據 — 必須包含前端 renderRegionPanel() 所需的完整嵌套結構:
+        #   yen_trend.yen_info  → USD/JPY 卡片
+        #   volatility.vol_info → 日経波動率 卡片
+        #   rate_env.rate_info  → 利率環境 卡片
+        #   trade_rules.etf_advice / take_profit / stop_loss → 買賣信号中枢
+        fallback_erp = 5.6
+        fallback_pe = 15.5
+        fallback_jgb = 0.85
+        fallback_usdjpy = 143.0
+        fallback_vol = 18.0
+
+        fallback_dims = {
+            "erp_abs":    {"score": 50, "weight": self.W["erp_abs"],    "label": "ERP絶対値", "desc": f"ERP {fallback_erp:.2f}% (降級推定)"},
+            "erp_pct":    {"score": 50, "weight": self.W["erp_pct"],    "label": "ERP分位",   "desc": "降級: 分位不可用", "percentile": 50.0},
+            "yen_trend":  {"score": 50, "weight": self.W["yen_trend"],  "label": "日元趋势",  "desc": f"USDJPY {fallback_usdjpy:.1f} (降級推定)",
+                           "yen_info": {"current": fallback_usdjpy, "prev_month": fallback_usdjpy, "3m_ago": fallback_usdjpy,
+                                        "direction": "stable", "3m_direction": "stable", "change_3m_pct": 0.0}},
+            "volatility": {"score": 50, "weight": self.W["volatility"], "label": "日経波動率", "desc": f"波動率 {fallback_vol:.1f}% (降級推定)",
+                           "vol_info": {"current": fallback_vol, "pct": 50.0, "regime": "normal"}},
+            "rate_env":   {"score": 50, "weight": self.W["rate_env"],   "label": "利率環境",  "desc": f"JGB {fallback_jgb:.3f}% (降級推定)",
+                           "rate_info": {"jgb_now": fallback_jgb, "jgb_3m_ago": fallback_jgb,
+                                         "jgb_direction": "stable", "usdjpy_change_3m": 0.0}},
+        }
+
+        fallback_trade = {
+            "signal_key": "hold", "signal": self.SIGNAL_MAP["hold"],
+            "resonance": "none", "resonance_label": "⚪ 降級",
+            "etf_advice": [
+                {"etf": self.ETF_TARGETS["balanced"],  "ratio": "40%", "reason": "核心底仓(降級)"},
+                {"etf": self.ETF_TARGETS["defensive"], "ratio": "40%", "reason": "防御為主(降級)"},
+                {"etf": self.ETF_TARGETS["aggressive"],"ratio": "20%", "reason": "弾性保留(降級)"},
+            ],
+            "take_profit": [
+                {"trigger": f"ERP 回落至 4.0% 以下", "action": "減倉20%", "type": "valuation",
+                 "triggered": bool(fallback_erp < 4.0), "current": f"ERP={fallback_erp:.2f}%"},
+                {"trigger": f"USDJPY < 130 (日元大幅升値)", "action": "減倉30%", "type": "yen",
+                 "triggered": bool(fallback_usdjpy < 130), "current": f"USDJPY={fallback_usdjpy:.1f}"},
+                {"trigger": "綜合得分跌破 50", "action": "降至標配", "type": "score_drop",
+                 "triggered": False, "current": "得分=60(降級)"},
+            ],
+            "stop_loss": [
+                {"trigger": "ERP ≥ 8% (極端低估)", "action": "逆向加倉20%", "type": "contrarian_buy", "color": "#10b981",
+                 "triggered": bool(fallback_erp >= 8.0), "current": f"ERP={fallback_erp:.2f}%"},
+                {"trigger": f"ERP < 3% (日本罕見高估)", "action": "硬止損: 清倉", "type": "hard_stop", "color": "#ef4444",
+                 "triggered": bool(fallback_erp < 3.0), "current": f"ERP={fallback_erp:.2f}%"},
+                {"trigger": f"JGB > 2.0% (BOJ急收緊)", "action": "降至20%以下", "type": "rate_shock", "color": "#ef4444",
+                 "triggered": bool(fallback_jgb > 2.0), "current": f"JGB={fallback_jgb:.3f}%"},
+            ],
+        }
+
         return {
             "status": "fallback", "region": "JP", "message": f"数据异常: {reason}",
-            "current_snapshot": {"pe_ttm": 15.5, "yield_10y": 0.85, "earnings_yield": 6.45, "erp_value": 5.6, "erp_percentile": 55.0, "trade_date": datetime.now().strftime("%Y-%m-%d")},
+            "current_snapshot": {
+                "pe_ttm": fallback_pe, "yield_10y": fallback_jgb,
+                "earnings_yield": round(1.0 / fallback_pe * 100, 2),
+                "erp_value": fallback_erp, "erp_percentile": 55.0,
+                "trade_date": datetime.now().strftime("%Y-%m-%d"),
+            },
             "signal": {"score": 60, "key": "hold", "label": "標配(降級)", "position": "50-70%", "color": "#3b82f6", "emoji": "🔵"},
-            "dimensions": {k: {"score": 50, "weight": v, "label": k, "desc": "降級"} for k, v in self.W.items()},
-            "trade_rules": {"signal_key": "hold", "signal": self.SIGNAL_MAP["hold"], "resonance": "none", "resonance_label": "⚪ 降級", "etf_advice": [], "take_profit": [], "stop_loss": []},
-            "alerts": [{"level": "warning", "icon": "🟡", "text": reason}],
-            "diagnosis": [{"type": "warning", "title": "降級", "text": reason}],
+            "dimensions": fallback_dims,
+            "trade_rules": fallback_trade,
+            "alerts": [{"level": "warning", "icon": "🟡", "text": f"⚠️ 降級模式: {reason}"}],
+            "diagnosis": [{"type": "warning", "title": "降級模式", "text": f"FRED數據源不可用: {reason}。面板顯示推定值，不代表實時市場狀態。"}],
             "encyclopedia": ENCYCLOPEDIA_JP,
         }
 
