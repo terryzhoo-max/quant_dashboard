@@ -76,5 +76,11 @@
     "reason": "风控合规审计 FAIL (59分) 触发硬红线联锁熔断",
     "status": "executed",
     "timestamp": "2026-06-08 19:40:11"
+  },
+  {
+    "action": "trade_unblock",
+    "reason": "24小时自动解除",
+    "status": "executed",
+    "timestamp": "2026-06-09 21:27:13"
   }
 ]

@@ -8,7 +8,6 @@ import requests
 import re
 import logging
 import json
-import yfinance as yf
 from datetime import datetime, timedelta
 from typing import Tuple, Optional
 from services.fred_guard import fred_get_series
@@ -182,6 +181,11 @@ def _fetch_vix_tradingview() -> Tuple[Optional[float], Optional[float]]:
 
 def _fetch_vix_yfinance() -> Tuple[Optional[float], Optional[float]]:
     """Fetch VIX data from Yahoo Finance"""
+    try:
+        import yfinance as yf
+    except ImportError:
+        logger.warning("yfinance is not installed, skipping yfinance VIX fetch")
+        return None, None
     ticker = yf.Ticker("^VIX")
     hist = ticker.history(period="5d", timeout=5)
     if hist is not None and not hist.empty and len(hist) >= 1:

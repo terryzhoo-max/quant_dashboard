@@ -175,6 +175,12 @@ log ""
 log "⏳ [3/5] 切换容器..."
 cd "$CODE_DIR"
 
+# 修复 data_lake 目录权限，防止非 root 容器用户 (alphacore: 1000) 遭遇 Permission Denied
+if [ -d "${CODE_DIR}/data_lake" ]; then
+    chown -R 1000:1000 "${CODE_DIR}/data_lake" 2>/dev/null || true
+    chmod -R 775 "${CODE_DIR}/data_lake" 2>/dev/null || true
+fi
+
 # 标记: 从这里开始旧容器将被移除
 # 如果后续步骤失败或被中断, cleanup() 会自动恢复
 CONTAINER_REMOVED=true
