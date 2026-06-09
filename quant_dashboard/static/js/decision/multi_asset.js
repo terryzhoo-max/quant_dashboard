@@ -179,34 +179,32 @@ function renderMultiAssetRadar(data) {
             const comp = comps[ci.key];
             if (!comp) return;
             const val = comp.contribution != null ? comp.contribution : (comp.score || 0);
+            const weight = comp.weight || 0;
             
-            // A: 智能多空极性判定 Fallback
-            let computedDir = comp.direction || 'neutral';
-            if (computedDir === 'neutral') {
-                if (val >= 30) computedDir = 'bullish';
-                else if (val <= -30) computedDir = 'bearish';
-            }
+            // A: 方向判定 — 优先使用后端返回的 direction
+            const computedDir = comp.direction || (val > 0 ? 'bullish' : (val < 0 ? 'bearish' : 'neutral'));
             const dc = _MA_DIR_COLORS[computedDir] || _MA_DIR_COLORS.neutral;
 
-            // B: 中文语义标签 Fallback
-            let directionCn = comp.direction_cn;
-            if (!directionCn || directionCn === 'neutral' || directionCn === 'neutral_short') {
-                directionCn = val > 15 ? '利好' : (val < -15 ? '利空' : '中性');
-            }
+            // B: 中文语义标签 — 优先使用后端返回的 direction_cn
+            const directionCn = comp.direction_cn || (val > 5 ? '利好' : (val < -5 ? '利空' : '中性'));
 
+            // C: Diverging bar — contribution 最大值 = 100 × weight (如 40%→max 40)
+            const maxContrib = 100 * (weight || 0.4);
             const absVal = Math.abs(val);
-            const barWidth = Math.min(50, absVal / 2);
+            const barWidth = Math.min(50, (absVal / maxContrib) * 50);
             const isPos = val >= 0;
             const barStyle = isPos 
                 ? `left:50%;width:${barWidth}%;background:#10b981;`
                 : `right:50%;width:${barWidth}%;background:#ef4444;`;
+
+            const weightPct = weight ? `${Math.round(weight * 100)}%` : '';
 
             compRows += `
             <div class="ma-gold-row">
                 <span class="ma-gold-icon">${ci.icon}</span>
                 <div class="ma-gold-info" style="flex:0 0 110px;">
                     <span class="ma-gold-label">${comp.label || ci.label}</span>
-                    <span class="ma-gold-desc">${ci.desc}</span>
+                    <span class="ma-gold-desc">${weightPct ? `权重 ${weightPct} · ` : ''}${ci.desc}</span>
                 </div>
                 <!-- 横向双向条形图 -->
                 <div class="ma-gold-diverging-wrap">
@@ -268,7 +266,7 @@ function renderMultiAssetRadar(data) {
     // ── 渲染图表 ──
     requestAnimationFrame(() => {
         _drawMARadar(assets, order);
-        _drawMASaaTaaBar(assets, order);
+        _drawMASaaTaaBar(data, assets, order);
     });
 }
 
@@ -281,11 +279,16 @@ function _drawMARadar(assets, order) {
     if (!chart) return;
     if (typeof AC !== 'undefined' && AC.registerChart) AC.registerChart(chart);
 
+    const _DIR_ARROW = { bullish: '▲', bearish: '▼', neutral: '━' };
+    const _DIR_COLOR = { bullish: '#34d399', bearish: '#f87171', neutral: '#94a3b8' };
+
     const labels = order.map(k => assets[k]?.label || k);
-    const signals = order.map(k => {
+
+    // 信号确定性 = abs(signal), 范围 [0, 100]
+    // 解决: 看空 -80 不再显示为"弱信号", 而是和 +80 一样大的面积
+    const signalStrength = order.map(k => {
         const a = assets[k];
-        if (!a) return 0;
-        return Math.max(0, Math.min(100, (a.signal || 0) / 2 + 50));
+        return a ? Math.min(100, Math.abs(a.signal || 0)) : 0;
     });
     const allocations = order.map(k => assets[k]?.allocation || 0);
 
@@ -305,24 +308,35 @@ function _drawMARadar(assets, order) {
                     if (!a) return '';
                     const sig = a.signal || 0;
                     const alloc = a.allocation || 0;
-                    const color = _MA_ASSET_COLORS[k] || '#94a3b8';
-                    return `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin-right:6px;"></span>${a.icon} ${a.label}: 信号 ${sig > 0 ? '+' : ''}${_fmt(sig, 1)} · 配比 ${alloc}%`;
+                    const dir = a.direction || 'neutral';
+                    const arrow = _DIR_ARROW[dir] || '━';
+                    const color = _DIR_COLOR[dir] || '#94a3b8';
+                    return `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin-right:6px;"></span>${a.icon} ${a.label}: ${arrow} ${sig > 0 ? '+' : ''}${_fmt(sig, 1)} · 配比 ${alloc}%`;
                 }).join('<br>');
             },
         },
         radar: {
             shape: 'polygon',
-            indicator: labels.map((l, i) => ({
-                name: `{icon|${order.map(k => assets[k]?.icon || '')[i]}} ${l}`,
-                max: 100,
-            })),
+            indicator: labels.map((l, i) => {
+                const icon = order.map(k => assets[k]?.icon || '')[i];
+                const dir = assets[order[i]]?.direction || 'neutral';
+                const dirColor = _DIR_COLOR[dir] || '#94a3b8';
+                return {
+                    name: `{icon|${icon}} {dir|${_DIR_ARROW[dir] || '━'}} ${l}`,
+                    max: 100,
+                    color: dirColor,
+                };
+            }),
             center: ['50%', '46%'],
             radius: '62%',
             axisName: {
                 color: '#cbd5e1',
                 fontSize: 12,
                 fontWeight: 600,
-                rich: { icon: { fontSize: 14 } },
+                rich: {
+                    icon: { fontSize: 14 },
+                    dir: { fontSize: 10, padding: [0, 2, 0, 0] },
+                },
             },
             splitArea: {
                 areaStyle: {
@@ -341,8 +355,8 @@ function _drawMARadar(assets, order) {
             type: 'radar',
             data: [
                 {
-                    value: signals,
-                    name: '信号强度',
+                    value: signalStrength,
+                    name: '信号确定性',
                     areaStyle: {
                         color: {
                             type: 'radial', x: 0.5, y: 0.5, r: 0.7,
@@ -355,7 +369,7 @@ function _drawMARadar(assets, order) {
                     lineStyle: { color: '#3b82f6', width: 2.5, shadowBlur: 8, shadowColor: 'rgba(59,130,246,0.4)' },
                     itemStyle: { color: '#3b82f6', borderWidth: 2, borderColor: '#1d4ed8' },
                     symbol: 'circle',
-                    symbolSize: 7,
+                    symbolSize: 8,
                 },
                 {
                     value: allocations,
@@ -369,7 +383,7 @@ function _drawMARadar(assets, order) {
             ],
         }],
         legend: {
-            data: ['信号强度', '配置比例'],
+            data: ['信号确定性', '配置比例'],
             bottom: 2,
             textStyle: { color: '#94a3b8', fontSize: 11 },
             itemWidth: 14, itemHeight: 10,
@@ -382,12 +396,13 @@ function _drawMARadar(assets, order) {
 //  配置比例环形图
 // ═══════════════════════════════════════════════════
 
-function _drawMASaaTaaBar(assets, order) {
+function _drawMASaaTaaBar(data, assets, order) {
     const chart = _getChart('ma-alloc-pie');
     if (!chart) return;
     if (typeof AC !== 'undefined' && AC.registerChart) AC.registerChart(chart);
 
-    const saaWeights = {
+    // SAA 从后端投委会级配置读取, 硬编码作为兜底
+    const saaWeights = data.saa_weights || {
         equity_cn: 50,
         bond: 30,
         gold: 10,

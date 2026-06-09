@@ -918,7 +918,16 @@ async def get_multi_asset_radar():
     from services.cache_service import stale_while_revalidate
 
     def _compute():
-        result = {"status": "success", "assets": {}}
+        # ── SAA 战略基准 (投委会级配置, 集中管理) ──
+        SAA_WEIGHTS = {
+            "equity_cn": 50,
+            "bond": 30,
+            "gold": 10,
+            "cash": 10,
+        }
+        MIN_CASH_PCT = 5  # 保证金安全底线
+
+        result = {"status": "success", "assets": {}, "saa_weights": SAA_WEIGHTS}
 
         # 黄金信号
         try:
@@ -935,7 +944,7 @@ async def get_multi_asset_radar():
                 "components": gold.get("components", {}),
             }
         except Exception as e:
-            result["assets"]["gold"] = {"label": "黄金", "icon": "🥇", "signal": 0, "direction": "neutral", "error": str(e)}
+            result["assets"]["gold"] = {"label": "黄金", "icon": "🥇", "signal": 0, "direction": "neutral", "allocation": 5, "error": str(e)}
 
         # A股权益 (从 AIAE/JCS 合成)
         try:
@@ -957,29 +966,57 @@ async def get_multi_asset_radar():
                 "jcs_level": jcs.get("level"),
             }
         except Exception as e:
-            result["assets"]["equity_cn"] = {"label": "A股权益", "icon": "📈", "signal": 0, "error": str(e)}
+            result["assets"]["equity_cn"] = {"label": "A股权益", "icon": "📈", "signal": 0, "direction": "neutral", "allocation": 55, "error": str(e)}
 
-        # 债券 (利率信号)
+        # 债券 (利率信号 → 5 档渐变配置)
+        _BOND_ALLOC_MAP = [
+            # (signal_threshold, allocation_pct, label)
+            (60,  35, "久期拉长"),
+            (30,  25, "增配"),
+            (-30, 15, "中性配置"),
+            (-60, 10, "缩短久期"),
+            (-100, 5, "防御减持"),
+        ]
         try:
             from services.cache_service import cache_manager
             dashboard = cache_manager.get_json("dashboard_data") or {}
             rates_info = dashboard.get("data", {}).get("macro_cards", {}).get("rates_strategy", {})
             bond_signal = rates_info.get("score", 0) if rates_info else 0
+
+            # 5 档渐变映射 (对齐黄金引擎模式)
+            bond_alloc = 15  # 默认中性
+            bond_label = "中性配置"
+            for threshold, alloc, label in _BOND_ALLOC_MAP:
+                if bond_signal >= threshold:
+                    bond_alloc = alloc
+                    bond_label = label
+                    break
+
             result["assets"]["bond"] = {
                 "label": "债券",
                 "icon": "📋",
                 "signal": bond_signal,
                 "direction": "bullish" if bond_signal > 25 else ("bearish" if bond_signal < -25 else "neutral"),
                 "direction_cn": "看多" if bond_signal > 25 else ("看空" if bond_signal < -25 else "中性"),
-                "allocation": 20 if bond_signal > 0 else 10,
-                "allocation_label": "利率下行利好" if bond_signal > 25 else "中性配置",
+                "allocation": bond_alloc,
+                "allocation_label": bond_label,
             }
         except Exception as e:
-            result["assets"]["bond"] = {"label": "债券", "icon": "📋", "signal": 0, "error": str(e)}
+            result["assets"]["bond"] = {"label": "债券", "icon": "📋", "signal": 0, "direction": "neutral", "allocation": 15, "error": str(e)}
 
-        # 现金 (作为残差)
-        used = sum(a.get("allocation", 0) for a in result["assets"].values())
-        cash_pct = max(0, 100 - used)
+        # ── 超配防护: 风险资产总和不得超过 (100 - MIN_CASH_PCT) ──
+        risk_keys = ["equity_cn", "bond", "gold"]
+        max_risk_budget = 100 - MIN_CASH_PCT
+        total_risk = sum(result["assets"].get(k, {}).get("allocation", 0) for k in risk_keys)
+        if total_risk > max_risk_budget:
+            scale = max_risk_budget / total_risk
+            for k in risk_keys:
+                if k in result["assets"] and "allocation" in result["assets"][k]:
+                    result["assets"][k]["allocation"] = round(result["assets"][k]["allocation"] * scale)
+
+        # 现金 (残差, 保底 MIN_CASH_PCT)
+        used = sum(result["assets"].get(k, {}).get("allocation", 0) for k in risk_keys)
+        cash_pct = max(MIN_CASH_PCT, 100 - used)
         result["assets"]["cash"] = {
             "label": "现金",
             "icon": "💵",

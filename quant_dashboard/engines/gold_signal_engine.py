@@ -263,7 +263,16 @@ def compute_gold_signal() -> Dict:
         d1 = _real_rate_signal(dfii10)
         d2 = _dollar_signal(dtwex)
         d3 = _inflation_signal(dgs10, dfii10)
-        
+
+        # 为每个子信号补充加权贡献值 + 方向标签
+        for comp, weight_key in [(d1, "real_rate"), (d2, "dollar"), (d3, "inflation")]:
+            s = comp["score"]
+            comp["contribution"] = round(s * _WEIGHTS[weight_key], 1)
+            comp["weight"] = _WEIGHTS[weight_key]
+            # 方向判定阈值: direction 和 direction_cn 使用统一阈值 ±30
+            comp["direction"] = "bullish" if s > 30 else ("bearish" if s < -30 else "neutral")
+            comp["direction_cn"] = "利好" if s > 30 else ("利空" if s < -30 else "中性")
+
         # 加权综合
         composite = (
             d1["score"] * _WEIGHTS["real_rate"] +
