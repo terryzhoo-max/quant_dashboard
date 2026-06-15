@@ -530,7 +530,12 @@ class HKERPTimingEngine:
                             df.to_parquet(cache_file)
                             return df
             except Exception as e:
-                logger.warning("Tushare CN10Y error: %s", e)
+                # P0-YC: 权限不足时降为 INFO，不再产生 WARNING 噪音
+                msg = str(e)
+                if "没有接口" in msg or "访问权限" in msg:
+                    logger.info("Tushare CN10Y: yc_cb 权限不足，降级到 CNBC/FRED 通道")
+                else:
+                    logger.warning("Tushare CN10Y error: %s", e)
 
             # Tier 1: CNBC 实时中国10Y国债 (准确, 实时)
             try:

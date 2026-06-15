@@ -20,6 +20,9 @@ import os
 import json
 from datetime import datetime
 
+# P1-6: 缓存默认 LogRecord 键集合，避免每条日志都创建临时对象
+_DEFAULT_LOG_KEYS = frozenset(logging.LogRecord("", 0, "", 0, "", (), None).__dict__.keys()) | {"message", "asctime"}
+
 
 # ─── 日志级别: 环境变量控制 ───
 LOG_LEVEL = os.getenv("AC_LOG_LEVEL", "INFO").upper()
@@ -40,9 +43,7 @@ class JsonFormatter(logging.Formatter):
         }
         # 附加 extra 字段
         for key in record.__dict__:
-            if key not in logging.LogRecord(
-                "", 0, "", 0, "", (), None
-            ).__dict__ and key not in ("message", "asctime"):
+            if key not in _DEFAULT_LOG_KEYS:
                 log_entry[key] = record.__dict__[key]
         if record.exc_info and record.exc_info[0]:
             log_entry["exception"] = self.formatException(record.exc_info)
@@ -123,20 +124,17 @@ _setup_namespace("ac")
 def get_logger(name: str) -> logging.Logger:
     """获取命名日志器 (统一 ac.xxx 命名空间)
 
+    P1-5 修复: 依赖 namespace 继承机制，不再为子 logger 重复添加 handler。
+    ac 父 logger 已在模块初始化时注册了 console + file handler，
+    子 logger 通过 propagate 自动继承。
+
     Args:
         name: 模块简称，如 "warmup", "cache", "reactor", "erp"
 
     Returns:
         配置好的 Logger 实例
     """
-    logger = logging.getLogger(f"ac.{name}")
-    if not logger.handlers:
-        logger.addHandler(_handler)
-        if _file_handler:
-            logger.addHandler(_file_handler)
-        logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
-        logger.propagate = False
-    return logger
+    return logging.getLogger(f"ac.{name}")
 
 
 def log_execution_time(logger_name: str = "perf"):

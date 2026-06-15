@@ -245,16 +245,25 @@ _swr_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="swr")
 
 
 # ── V7.0: 同步防击穿锁 (Single Flight Lock) ──
-_swr_compute_locks = {}
+# P1-2 修复: 使用 _SWR_LOCK_MAX 上限 + LRU 清理，防止锁对象无限增长
+_swr_compute_locks: dict[str, threading.RLock] = {}
 _swr_compute_locks_lock = threading.Lock()
+_SWR_LOCK_MAX = 128  # 最多缓存 128 个键的锁
 
 
-def _get_key_lock(cache_key: str):
-    """获取专属缓存键的重入锁"""
+def _get_key_lock(cache_key: str) -> threading.RLock:
+    """获取专属缓存键的重入锁 (P1-2: 带容量上限防泄漏)"""
     with _swr_compute_locks_lock:
-        if cache_key not in _swr_compute_locks:
-            _swr_compute_locks[cache_key] = threading.RLock()
-        return _swr_compute_locks[cache_key]
+        if cache_key in _swr_compute_locks:
+            return _swr_compute_locks[cache_key]
+        # 容量保护: 超限时清除最早的一半
+        if len(_swr_compute_locks) >= _SWR_LOCK_MAX:
+            keys_to_remove = list(_swr_compute_locks.keys())[:_SWR_LOCK_MAX // 2]
+            for k in keys_to_remove:
+                _swr_compute_locks.pop(k, None)
+        lock = threading.RLock()
+        _swr_compute_locks[cache_key] = lock
+        return lock
 
 
 def stale_while_revalidate(cache_key: str, compute_fn, fresh_ttl=3600, stale_ttl=21600):

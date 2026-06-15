@@ -143,7 +143,7 @@ class CircuitBreaker:
         """状态查询"""
         return {
             "name": self.name,
-            "state": self.state.value,
+            "state": self._state.value,
             "failure_count": self._failure_count,
             "last_error": self._last_error,
             "failure_threshold": self.failure_threshold,

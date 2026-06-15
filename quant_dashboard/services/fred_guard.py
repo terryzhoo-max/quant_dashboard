@@ -177,7 +177,9 @@ class FredGuard:
         return self._time() < self._blocked_until
 
     def call(self, series_id: str, fn: Callable[[], T]) -> T:
-        # Phase 1: 持锁检查速率状态 + 等待间隔
+        # Phase 1: 持锁 → 计算等待时间 + 更新时间戳 → 释放锁
+        # P1-1 修复: sleep 移到锁外, 消除全局串行瓶颈
+        wait_for = 0.0
         with self._lock:
             now = self._time()
             if now < self._blocked_until:
@@ -187,12 +189,14 @@ class FredGuard:
                 )
 
             wait_for = self.min_interval_seconds - (now - self._last_call_at)
-            if wait_for > 0:
-                self._sleep(wait_for)
-
-            self._last_call_at = self._time()
+            # 预占时间槽: 即使多线程同时到达, 每个都会拿到不同的等待时间
+            self._last_call_at = max(now, self._last_call_at + self.min_interval_seconds)
             self._last_series = series_id
             self._total_calls += 1
+
+        # 锁外 sleep — 不阻塞其他 FRED 调用者
+        if wait_for > 0:
+            self._sleep(wait_for)
 
         # Phase 2: 释放锁后执行网络请求 (P0-2: 消除全局串行瓶颈)
         try:

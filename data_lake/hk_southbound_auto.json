@@ -1,0 +1,9 @@
+{
+  "weekly_net_buy_billion_rmb": 0.8,
+  "monthly_net_buy_billion_rmb": 3.0,
+  "cumulative_12m_billion_rmb": 103.8,
+  "direction": "inflow",
+  "date": "20260610",
+  "source": "tushare_auto",
+  "data_points": 237
+}

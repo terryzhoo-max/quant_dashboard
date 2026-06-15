@@ -196,7 +196,7 @@ class JPERPTimingEngine:
                     pe = max(10, min(35, pe))
                     with open(pe_cache_file, "w") as f:
                         json.dump({"pe": round(pe, 2), "source": "FRED/NIKKEI225", "ts": datetime.now().isoformat()}, f)
-                    logger.info("PE from FRED NIKKEI225: %.1fx (price=¥%.0f, est_EPS=¥2500)", pe, price)
+                    logger.info("PE from FRED NIKKEI225: %.1fx (price=¥%.0f, est_EPS=¥%.0f)", pe, price, estimated_eps)
                     return float(pe)
         except Exception as e:
             logger.warning("FRED PE failed: %s", e)
@@ -218,10 +218,22 @@ class JPERPTimingEngine:
         return 16.0
 
     def _fetch_topix_pe_history(self, years: int = 5) -> pd.DataFrame:
-        """日経225 PE历史序列 (FRED NIKKEI225価格 + 三級PE獲取)"""
+        """日経225 PE历史序列 (FRED NIKKEI225価格 + 三級PE獲取)
+
+        V2.1: FRED NIKKEI225 仅返回最近数周数据(~21行)，通过与磁盘缓存
+        合并来累积历史记录，确保分位数计算有足够样本量。
+        """
         def _fetch():
             cache_file = os.path.join(CACHE_DIR, "erp_jp_topix_history.parquet")
             fred = _get_jp_fred()
+
+            # 先加载旧缓存以追加历史 (FRED NIKKEI225 每次只返回~21行)
+            old_df = None
+            if os.path.exists(cache_file):
+                try:
+                    old_df = pd.read_parquet(cache_file)
+                except Exception:
+                    pass
 
             if fred:
                 try:
@@ -248,15 +260,27 @@ class JPERPTimingEngine:
                         df["eps"] = eps_list
                         df["pe_ttm"] = df["close"] / df["eps"]
                         df["pe_ttm"] = df["pe_ttm"].clip(8, 40)
+
+                        # V2.1: 与旧缓存合并 — 累积历史数据
+                        if old_df is not None and not old_df.empty:
+                            combined = pd.concat([old_df, df]).drop_duplicates(
+                                subset=["trade_date"], keep="last"
+                            ).sort_values("trade_date").reset_index(drop=True)
+                            # 保留最近 years*252 行 (防止无限膨胀)
+                            max_rows = years * 252
+                            if len(combined) > max_rows:
+                                combined = combined.tail(max_rows).reset_index(drop=True)
+                            df = combined
+
                         df.to_parquet(cache_file)
-                        logger.info("Nikkei PE (FRED): %d rows, PE≈%.1f", len(df), current_pe)
+                        logger.info("Nikkei PE (FRED): %d rows (new+hist), PE≈%.1f", len(df), current_pe)
                         return df
                 except Exception as e:
                     logger.warning("FRED NIKKEI225 error: %s", e)
 
-            if os.path.exists(cache_file):
-                logger.info("Nikkei PE: using disk cache")
-                return pd.read_parquet(cache_file)
+            if old_df is not None and not old_df.empty:
+                logger.info("Nikkei PE: using disk cache (%d rows)", len(old_df))
+                return old_df
             raise ValueError("Nikkei data unavailable")
         return _jp_cached("jp_topix_pe", 4 * 3600, _fetch)
 
@@ -290,14 +314,8 @@ class JPERPTimingEngine:
             if os.path.exists(cache_file):
                 return pd.read_parquet(cache_file)
 
-            # 最终降级: 用近似值
-            logger.warning("JGB fallback: proxy values")
-            dates = pd.date_range(end=datetime.now(), periods=years * 252, freq="B")
-            jgb_vals = np.interp(range(len(dates)), [0, len(dates)//3, len(dates)*2//3, len(dates)-1], [0.1, 0.3, 0.7, 1.0])
-            jgb_vals = np.clip(jgb_vals + np.random.normal(0, 0.05, len(dates)), 0.0, 2.0)
-            df = pd.DataFrame({"trade_date": dates, "yield_10y": jgb_vals})
-            df.to_parquet(cache_file)
-            return df
+            # P0-2: 安全降级 — 不生成随机假数据污染缓存
+            raise ValueError("JGB 10Y data unavailable (FRED + disk cache both failed)")
         return _jp_cached("jp_jgb_10y", 4 * 3600, _fetch)
 
     def _fetch_usdjpy_history(self, years: int = 3) -> pd.DataFrame:
@@ -331,10 +349,20 @@ class JPERPTimingEngine:
         return _jp_cached("jp_usdjpy", 4 * 3600, _fetch)
 
     def _fetch_nikkei_history(self, years: int = 5) -> pd.DataFrame:
-        """日经225历史 (FRED NIKKEI225)"""
+        """日经225历史 (FRED NIKKEI225)
+
+        V2.1: 与PE历史相同逻辑 — 累积历史数据，解决FRED仅返回近期问题。
+        """
         def _fetch():
             cache_file = os.path.join(CACHE_DIR, "erp_jp_nikkei.parquet")
             fred = _get_jp_fred()
+
+            old_df = None
+            if os.path.exists(cache_file):
+                try:
+                    old_df = pd.read_parquet(cache_file)
+                except Exception:
+                    pass
 
             if fred:
                 try:
@@ -349,11 +377,21 @@ class JPERPTimingEngine:
                             "trade_date": series.index.tz_localize(None) if series.index.tz else series.index,
                             "close": series.values,
                         })
+                        # V2.1: 累积历史数据
+                        if old_df is not None and not old_df.empty:
+                            df = pd.concat([old_df, df]).drop_duplicates(
+                                subset=["trade_date"], keep="last"
+                            ).sort_values("trade_date").reset_index(drop=True)
+                            max_rows = years * 252
+                            if len(df) > max_rows:
+                                df = df.tail(max_rows).reset_index(drop=True)
                         df.to_parquet(cache_file)
                         return df
                 except Exception as e:
                     logger.warning("FRED NIKKEI225 error: %s", e)
 
+            if old_df is not None and not old_df.empty:
+                return old_df
             if os.path.exists(cache_file):
                 return pd.read_parquet(cache_file)
             raise ValueError("Nikkei data unavailable")
@@ -362,13 +400,36 @@ class JPERPTimingEngine:
     # ========== 核心计算层 ==========
 
     def _compute_erp_series(self) -> pd.DataFrame:
+        """计算 ERP 时间序列。
+
+        P0-1 修复: JGB (IRLTLT01JPM156N) 是月频数据且发布滞后约2个月。
+        使用 merge_asof(direction="backward") 替代 pd.merge，
+        为每个 PE 日期匹配最近的已知 JGB 利率数据点。
+        tolerance=90D 确保滞后不超过3个月。
+        """
         pe_df = self._fetch_topix_pe_history()
         jgb_df = self._fetch_jgb_10y_history()
 
-        merged = pd.merge(pe_df, jgb_df, on="trade_date", how="left")
-        merged = merged.sort_values("trade_date")
+        # 确保按日期排序 (merge_asof 要求)
+        pe_sorted = pe_df.sort_values("trade_date").reset_index(drop=True)
+        jgb_sorted = jgb_df.sort_values("trade_date").reset_index(drop=True)
+
+        # merge_asof: 每个PE日期 → 向后找最近的JGB数据点 (容忍90天滞后)
+        merged = pd.merge_asof(
+            pe_sorted, jgb_sorted,
+            on="trade_date",
+            direction="backward",
+            tolerance=pd.Timedelta("90D"),
+        )
+
         merged["yield_10y"] = merged["yield_10y"].ffill().bfill()
         merged = merged.dropna(subset=["pe_ttm", "yield_10y"])
+
+        if merged.empty:
+            logger.warning("ERP merge后仍为空: PE范围=%s~%s, JGB范围=%s~%s",
+                           pe_sorted['trade_date'].min(), pe_sorted['trade_date'].max(),
+                           jgb_sorted['trade_date'].min(), jgb_sorted['trade_date'].max())
+
         merged = merged[merged["pe_ttm"] > 0].copy()
         merged["earnings_yield"] = 1.0 / merged["pe_ttm"] * 100
         merged["erp"] = merged["earnings_yield"] - merged["yield_10y"]

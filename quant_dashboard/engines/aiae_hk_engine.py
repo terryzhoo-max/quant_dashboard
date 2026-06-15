@@ -348,30 +348,40 @@ class AIAEHKEngine:
 
                 _log(f"AH篮子: H股取价完成 {len(h_prices)}/{len(h_tickers)}只")
 
-                # Step 2: Tushare 逐只取 A 股价格 + 计算溢价
+                # Step 2: Tushare 并行取 A 股价格 + 计算溢价
+                # P2-7 优化: 从 11 次串行 → 并行获取, ~10-15s → ~4s
+                from concurrent.futures import ThreadPoolExecutor, as_completed
                 weighted_premium = 0.0
                 total_weight = 0.0
                 details = []
 
-                for a_code, h_code, weight, name in AH_BASKET:
-                    try:
-                        h_price = h_prices.get(h_code)
-                        if h_price is None or h_price <= 0:
-                            continue
+                def _fetch_a_price(a_code, h_code, weight, name):
+                    """单只 A 股取价 (线程内执行)"""
+                    h_price = h_prices.get(h_code)
+                    if h_price is None or h_price <= 0:
+                        return None
+                    df_a = pro.daily(ts_code=a_code, start_date=start, end_date=today, limit=5)
+                    if df_a is None or df_a.empty:
+                        return None
+                    a_price = float(df_a.sort_values('trade_date').iloc[-1]['close'])
+                    premium = a_price / (h_price * rmb_hkd)
+                    return {"name": name, "weight": weight, "a": a_price, "h": h_price, "premium": round(premium * 100, 1)}
 
-                        df_a = pro.daily(ts_code=a_code, start_date=start, end_date=today, limit=5)
-                        if df_a is None or df_a.empty:
+                with ThreadPoolExecutor(max_workers=3, thread_name_prefix="ah") as pool:
+                    futures = {
+                        pool.submit(_fetch_a_price, a_code, h_code, weight, name): name
+                        for a_code, h_code, weight, name in AH_BASKET
+                    }
+                    for future in as_completed(futures, timeout=30):
+                        try:
+                            result_item = future.result()
+                            if result_item:
+                                weighted_premium += result_item["weight"] * (result_item["premium"] / 100.0)
+                                total_weight += result_item["weight"]
+                                details.append({"name": result_item["name"], "a": result_item["a"], "h": result_item["h"], "premium": result_item["premium"]})
+                        except Exception as e:
+                            _log(f"AH篮子 {futures[future]} 失败: {e}", "DEBUG")
                             continue
-                        a_price = float(df_a.sort_values('trade_date').iloc[-1]['close'])
-
-                        # AH溢价 = A价(RMB) / (H价(HKD) × rmb_hkd)
-                        premium = a_price / (h_price * rmb_hkd)
-                        weighted_premium += weight * premium
-                        total_weight += weight
-                        details.append({"name": name, "a": a_price, "h": h_price, "premium": round(premium * 100, 1)})
-                    except Exception as e:
-                        _log(f"AH篮子 {name} 失败: {e}", "DEBUG")
-                        continue
 
                 if total_weight > 0.3:  # 至少30%权重的股票有数据
                     ah_index = round(weighted_premium / total_weight * 100, 1)
@@ -979,16 +989,23 @@ class AIAEHKEngine:
     def generate_report(self) -> Dict:
         t0 = time.time()
         try:
-            # P0 fix: 使用模块级线程池, 避免 with 块 shutdown(wait=True) 吞掉 timeout
+            # P2-7 优化: 4路并行数据获取 (原来 2路并行 + 2路串行 → 全并行)
+            # MktCap, M2, Southbound, AH Premium 同时发起, 整体 I/O 时间从 ~20s → ~8s
             try:
                 f_mkt = _bg_executor.submit(self._fetch_hsi_market_cap)
                 f_m2 = _bg_executor.submit(self._fetch_cn_m2_proxy)
+                f_sb = _bg_executor.submit(self._fetch_southbound_auto)
+                f_ah = _bg_executor.submit(self._compute_ah_premium_auto)
                 mkt_data = f_mkt.result(timeout=45)
                 m2_data = f_m2.result(timeout=45)
+                sb_data = f_sb.result(timeout=45)
+                ah_data = f_ah.result(timeout=45)
             except (RuntimeError, TimeoutError):
                 _log("并行获取超时或线程池不可用, 降级同步获取", "WARN")
                 mkt_data = self._fetch_hsi_market_cap()
                 m2_data = self._fetch_cn_m2_proxy()
+                sb_data = self._fetch_southbound_auto()
+                ah_data = self._compute_ah_premium_auto()
             _log(f"数据获取完成 ({time.time()-t0:.1f}s)")
 
             mktcap_usd = mkt_data.get("mktcap_usd_trillion", 4.3)
@@ -996,13 +1013,11 @@ class AIAEHKEngine:
 
             aiae_core = self.compute_aiae_core(mktcap_usd, effective_m2)
 
-            # V1.1: 自动数据源优先, 手动override兜底
-            sb_data = self._fetch_southbound_auto()
-            self._southbound = sb_data  # 更新实例变量供信号系统使用
+            # 南向资金 + AH 溢价 (已在上面并行获取)
+            self._southbound = sb_data
             sb_cumulative = sb_data.get("cumulative_12m_billion_rmb", 350)
             sb_heat = self.compute_southbound_heat(sb_cumulative, mktcap_usd)
 
-            ah_data = self._compute_ah_premium_auto()
             self._ah_premium = ah_data
             ah_index = ah_data.get("index_value", 135.0)
             ah_score = self.compute_ah_premium_score(ah_index)

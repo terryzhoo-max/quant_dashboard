@@ -21,7 +21,10 @@ except ImportError:
 # ── Tushare API (从环境变量读取, 禁止硬编码) ──
 TUSHARE_TOKEN = os.environ.get("TUSHARE_TOKEN", "")
 if not TUSHARE_TOKEN:
-    raise RuntimeError("❌ TUSHARE_TOKEN 未设置! 请在 .env 文件或环境变量中配置。")
+    import logging as _log
+    _log.getLogger("alphacore.config").critical(
+        "⚠️ TUSHARE_TOKEN 未设置! 数据引擎将不可用。请在 .env 或环境变量中配置。"
+    )
 
 # ==========================================
 # TUSHARE CONNECTION FIX (Monkey Patch)
@@ -35,7 +38,7 @@ _orig_post = tushare.pro.client.requests.post
 def _patched_post(url, **kwargs):
     # Intercept requests to waditu and forward to the reliable tushare.pro root endpoint
     if 'api.waditu.com' in url or 'api.tushare.pro' in url:
-        url = 'http://api.tushare.pro'
+        url = 'https://api.tushare.pro'
         # V5.2: 全局限频 — 防止6引擎32+并发线程超限
         try:
             from services.tushare_limiter import tushare_limiter

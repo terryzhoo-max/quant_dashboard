@@ -283,7 +283,13 @@ class ERPTimingEngine:
             while chunk_start < end_dt:
                 chunk_end = min(chunk_start + timedelta(days=180), end_dt)
                 s_str, e_str = chunk_start.strftime("%Y%m%d"), chunk_end.strftime("%Y%m%d")
-                @retry_with_backoff(max_retries=3, base_delay=2.0)
+                # P0-YC: 权限感知重试 — 检测到"没有接口权限"时跳过重试
+                def _is_permission_error(exc: Exception) -> bool:
+                    msg = str(exc)
+                    return "没有接口" in msg or "访问权限" in msg
+
+                @retry_with_backoff(max_retries=3, base_delay=2.0,
+                                    error_filter=lambda e: not _is_permission_error(e))
                 def _call_pro_yc():
                     return pro.yc_cb(ts_code=self.BOND_CODE, curve_type='0', start_date=s_str, end_date=e_str)
 
@@ -295,6 +301,10 @@ class ERPTimingEngine:
                             all_dfs.append(chunk_10y)
                             batch_count += 1
                 except Exception as e:
+                    msg = str(e)
+                    if _is_permission_error(e):
+                        logger.info("yield %s-%s: yc_cb 权限不足，跳过此批次 (使用磁盘缓存降级)", s_str, e_str)
+                        break  # 权限不足不会因重试恢复，直接跳出循环用磁盘缓存
                     logger.warning("yield batch %s-%s: %s", s_str, e_str, e)
                 chunk_start = chunk_end + timedelta(days=1)
                 time.sleep(1.0)  # Rate limit safety

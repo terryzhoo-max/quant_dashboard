@@ -73,21 +73,19 @@ def warmup_aiae_cache():
 
 
 def warmup_dashboard_cache():
-    """后台预热量化总览缓存: True Zero-Wait (真实主动流水线预热)"""
-    # Batch 7: 已迁移至 services/dashboard_builder.py
+    """后台预热量化总览缓存: True Zero-Wait (真实主动流水线预热)
+    P1-3 修复: 使用 asyncio.run() 替代手动 event loop 管理，
+    避免线程内 set_event_loop() 干扰和资源泄漏。
+    """
     from services.dashboard_builder import _build_dashboard_data_full
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
     try:
-        data = loop.run_until_complete(_build_dashboard_data_full())
+        data = asyncio.run(_build_dashboard_data_full())
         if data and data.get("status") == "success":
             logger.info("Dashboard 主动预热成功, 零等待缓存已就绪")
         else:
             logger.warning("Dashboard 预热后返回状态异常，部分缓存建立失败")
     except Exception as e:
         logger.error(f"Dashboard 预热失败: {e}")
-    finally:
-        loop.close()
 
 
 def warmup_factor_data():
@@ -132,11 +130,8 @@ def warmup_industry_tracking():
     logger.info("12只核心ETF日线同步完成")
     # Step 2: 主动触发一次 tracking 指标计算，填充 latest 缓存
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
         from routers.industry import get_industry_tracking
-        result = loop.run_until_complete(get_industry_tracking(date=None))
-        loop.close()
+        result = asyncio.run(get_industry_tracking(date=None))
         cached_count = len(result.get('data', {}).get('sector_heatmap', []))
         logger.info(f"Industry 预热完成 · {cached_count} 只ETF指标已写入 latest 缓存")
     except Exception as e:
@@ -503,7 +498,7 @@ def daily_warmup_callback():
         "next_warmup": "tomorrow 15:35",
     })
 
-    _dag_pool.shutdown(wait=False)
+    _dag_pool.shutdown(wait=True)
     sched_logger.info("收盘 DAG 预热管线完成 · 总耗时 %.1fs · 成功 %d · 错误 %d",
                       elapsed, len(final_results), len(final_errors))
 
