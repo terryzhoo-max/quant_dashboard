@@ -61,33 +61,52 @@ def _fetch_pe_ttm(start_date: str, end_date: str, index_code: str = "000300.SH")
 
 def _fetch_yield_10y(start_date: str, end_date: str, bond_code: str = "1001.CB") -> pd.DataFrame:
     """
-    获取10Y国债收益率日频数据 (分批拉取 + parquet 缓存)
+    获取10Y国债收益率日频数据 (V2: 统一中债数据层, 三级降级)
+
+    数据源优先级:
+      Tier 0: AKShare 中债 (免费, 中国债券信息网直接源)
+      Tier 1: Tushare yc_cb (如权限恢复)
+      Tier 2: 磁盘缓存
+
     返回: DataFrame[trade_date, yield_10y]
     """
+    import logging
+    logger = logging.getLogger("alphacore.erp_backtest")
+
+    try:
+        from services.chinabond_yield import get_yield_10y_history
+        df = get_yield_10y_history(years=5)
+        # 按请求范围过滤
+        start_dt = pd.to_datetime(start_date, format='%Y%m%d')
+        end_dt = pd.to_datetime(end_date, format='%Y%m%d')
+        df = df[(df['trade_date'] >= start_dt) & (df['trade_date'] <= end_dt)]
+        logger.info("[ERP Data] 10Y Yield (ChinaBond): %d rows", len(df))
+        return df[['trade_date', 'yield_10y']].sort_values('trade_date').reset_index(drop=True)
+    except Exception as e:
+        logger.warning("[ERP Data] ChinaBond 数据层异常, 回退到直接 Tushare: %s", e)
+
+    # 回退: 原始 Tushare yc_cb 调用 (保留兼容)
     cache_file = os.path.join(CACHE_DIR, "erp_yield_10y.parquet")
     existing = None
-
     if os.path.exists(cache_file):
         existing = pd.read_parquet(cache_file)
         existing['trade_date'] = pd.to_datetime(existing['trade_date'])
 
-    start_dt = datetime.strptime(start_date, "%Y%m%d")
-    end_dt = datetime.strptime(end_date, "%Y%m%d")
-
-    # 检查是否需要增量拉取
+    start_dt_raw = datetime.strptime(start_date, "%Y%m%d")
+    end_dt_raw = datetime.strptime(end_date, "%Y%m%d")
     need_fetch = True
     if existing is not None and not existing.empty:
         cached_max = existing['trade_date'].max()
-        if cached_max >= end_dt:
+        if cached_max >= end_dt_raw:
             need_fetch = False
         else:
-            start_dt = cached_max - timedelta(days=1)
+            start_dt_raw = cached_max - timedelta(days=1)
 
     all_dfs = []
     if need_fetch:
-        chunk_start = start_dt
-        while chunk_start < end_dt:
-            chunk_end = min(chunk_start + timedelta(days=180), end_dt)
+        chunk_start = start_dt_raw
+        while chunk_start < end_dt_raw:
+            chunk_end = min(chunk_start + timedelta(days=180), end_dt_raw)
             s_str = chunk_start.strftime("%Y%m%d")
             e_str = chunk_end.strftime("%Y%m%d")
             try:
@@ -98,9 +117,9 @@ def _fetch_yield_10y(start_date: str, end_date: str, bond_code: str = "1001.CB")
                     if not chunk_10y.empty:
                         all_dfs.append(chunk_10y)
             except Exception as e:
-                print(f"[ERP Data] yield batch {s_str}-{e_str}: {e}")
+                logger.warning("[ERP Data] yield batch %s-%s: %s", s_str, e_str, e)
             chunk_start = chunk_end + timedelta(days=1)
-            time.sleep(3.5)  # Tushare 限流
+            time.sleep(3.5)
 
     if all_dfs:
         new_df = pd.concat([d for d in all_dfs if not d.empty], ignore_index=True)
@@ -114,7 +133,7 @@ def _fetch_yield_10y(start_date: str, end_date: str, bond_code: str = "1001.CB")
             df = new_df
         df = df.sort_values('trade_date').reset_index(drop=True)
         df.to_parquet(cache_file)
-        print(f"[ERP Data] 10Y Yield: {len(df)} rows cached")
+        logger.info("[ERP Data] 10Y Yield: %d rows cached", len(df))
     elif existing is not None:
         df = existing
     else:

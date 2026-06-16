@@ -508,7 +508,20 @@ class HKERPTimingEngine:
         def _fetch():
             cache_file = os.path.join(CACHE_DIR, "erp_hk_cn10y.parquet")
 
-            # Tier 0: Tushare 直接获取中国10年期国债收益率
+            # Tier 0: AKShare 中债 (免费, 权威, 中国债券信息网直接源)
+            try:
+                from services.chinabond_yield import get_yield_10y_latest
+                cn10y_val, cn10y_date = get_yield_10y_latest()
+                if 0.5 < cn10y_val < 8.0:
+                    logger.info("CN10Y from ChinaBond (AKShare): %.4f%% (%s)", cn10y_val, cn10y_date)
+                    dates = pd.date_range(end=datetime.now(), periods=years * 252, freq="B")
+                    df = pd.DataFrame({"trade_date": dates, "cn10y": np.full(len(dates), cn10y_val)})
+                    df.to_parquet(cache_file)
+                    return df
+            except Exception as e:
+                logger.info("ChinaBond CN10Y 异常, 降级到 Tushare: %s", e)
+
+            # Tier 1: Tushare 直接获取中国10年期国债收益率 (需 yc_cb 权限)
             try:
                 from config import TUSHARE_TOKEN
                 import tushare as _ts
@@ -537,7 +550,7 @@ class HKERPTimingEngine:
                 else:
                     logger.warning("Tushare CN10Y error: %s", e)
 
-            # Tier 1: CNBC 实时中国10Y国债 (准确, 实时)
+            # Tier 2: CNBC 实时中国10Y国债 (准确, 实时)
             try:
                 import requests, re
                 url = "https://www.cnbc.com/quotes/CN10Y-CN"
@@ -555,7 +568,7 @@ class HKERPTimingEngine:
             except Exception as e:
                 logger.warning("CNBC CN10Y error: %s", e)
 
-            # Tier 2: FRED INTDSRCNM193N (央行贴现率, ⚠️ 非真实CN10Y, 偏高~1.2%)
+            # Tier 3: FRED INTDSRCNM193N (央行贴现率, ⚠️ 非真实CN10Y, 偏高~1.2%)
             fred = _get_hk_fred()
             if fred:
                 try:
@@ -579,12 +592,12 @@ class HKERPTimingEngine:
                 except Exception as e:
                     logger.warning("FRED INTDSRCNM193N error: %s", e)
 
-            # Tier 3: 磁盘缓存 (任何年龄)
+            # Tier 4: 磁盘缓存 (任何年龄)
             if os.path.exists(cache_file):
                 logger.info("CN10Y: using disk cache")
                 return pd.read_parquet(cache_file)
 
-            # Tier 4: 硬编码 (更新为当前市场水平)
+            # Tier 5: 硬编码 (更新为当前市场水平)
             logger.warning("CN10Y fallback: 1.70%%")
             dates = pd.date_range(end=datetime.now(), periods=years * 252, freq="B")
             df = pd.DataFrame({"trade_date": dates, "cn10y": np.full(len(dates), 1.70)})

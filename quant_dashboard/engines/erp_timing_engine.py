@@ -264,65 +264,16 @@ class ERPTimingEngine:
         return _cached("pe_ttm_history", 30 * 60, _fetch)  # 30分钟TTL: 盘中实时刷新
 
     def _fetch_yield_10y_history(self, years: int = 5) -> pd.DataFrame:
-        """获取10Y国债收益率 (磁盘缓存+增量更新, 分批拉取)"""
+        """获取10Y国债收益率 (V2: 统一中债数据层, 三级降级)
+
+        数据源优先级:
+          Tier 0: AKShare 中债 (免费, 中国债券信息网直接源)
+          Tier 1: Tushare yc_cb (如权限恢复)
+          Tier 2: 磁盘缓存 (data_lake/chinabond_yield_10y.parquet)
+        """
         def _fetch():
-            cache_file = os.path.join(CACHE_DIR, "erp_yield_10y.parquet")
-            existing = None
-            last_date = None
-            if os.path.exists(cache_file):
-                existing = pd.read_parquet(cache_file)
-                existing['trade_date'] = pd.to_datetime(existing['trade_date'])
-                last_date = existing['trade_date'].max()
-                if last_date.strftime("%Y%m%d") >= datetime.now().strftime("%Y%m%d"):
-                    return existing.sort_values('trade_date').reset_index(drop=True)
-            end_dt = datetime.now()
-            start_dt = (last_date - timedelta(days=1)) if last_date else (end_dt - timedelta(days=years * 365))
-            all_dfs = []
-            chunk_start = start_dt
-            batch_count = 0
-            while chunk_start < end_dt:
-                chunk_end = min(chunk_start + timedelta(days=180), end_dt)
-                s_str, e_str = chunk_start.strftime("%Y%m%d"), chunk_end.strftime("%Y%m%d")
-                # P0-YC: 权限感知重试 — 检测到"没有接口权限"时跳过重试
-                def _is_permission_error(exc: Exception) -> bool:
-                    msg = str(exc)
-                    return "没有接口" in msg or "访问权限" in msg
-
-                @retry_with_backoff(max_retries=3, base_delay=2.0,
-                                    error_filter=lambda e: not _is_permission_error(e))
-                def _call_pro_yc():
-                    return pro.yc_cb(ts_code=self.BOND_CODE, curve_type='0', start_date=s_str, end_date=e_str)
-
-                try:
-                    chunk = _call_pro_yc()
-                    if chunk is not None and not chunk.empty:
-                        chunk_10y = chunk[chunk['curve_term'] == 10.0].copy()
-                        if not chunk_10y.empty:
-                            all_dfs.append(chunk_10y)
-                            batch_count += 1
-                except Exception as e:
-                    msg = str(e)
-                    if _is_permission_error(e):
-                        logger.info("yield %s-%s: yc_cb 权限不足，跳过此批次 (使用磁盘缓存降级)", s_str, e_str)
-                        break  # 权限不足不会因重试恢复，直接跳出循环用磁盘缓存
-                    logger.warning("yield batch %s-%s: %s", s_str, e_str, e)
-                chunk_start = chunk_end + timedelta(days=1)
-                time.sleep(1.0)  # Rate limit safety
-            if all_dfs:
-                new_df = pd.concat([d for d in all_dfs if not d.empty], ignore_index=True)
-                new_df['trade_date'] = pd.to_datetime(new_df['trade_date'], format='%Y%m%d')
-                new_df = new_df.rename(columns={'yield': 'yield_10y'})
-                new_df = new_df[['trade_date', 'yield_10y']]
-                dfs = [d for d in [existing, new_df] if d is not None and not d.empty]
-                df = pd.concat(dfs).drop_duplicates(subset='trade_date', keep='last') if len(dfs) > 1 else (dfs[0] if dfs else new_df)
-                df = df.sort_values('trade_date').reset_index(drop=True)
-                atomic_write_parquet(df, cache_file)
-                logger.info("10Y yield cached: %d rows (%d batches)", len(df), batch_count)
-            elif existing is not None:
-                df = existing
-            else:
-                raise ValueError("国债收益率数据全部拉取失败")
-            return df.sort_values('trade_date').reset_index(drop=True)
+            from services.chinabond_yield import get_yield_10y_history
+            return get_yield_10y_history(years=years)
         return _cached("yield_10y_history", 30 * 60, _fetch)  # 30分钟TTL: 盘中实时刷新
 
     def _fetch_m1_history(self, months: int = 36) -> pd.DataFrame:
