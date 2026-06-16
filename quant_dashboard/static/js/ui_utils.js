@@ -201,7 +201,7 @@ function showFallbackData() {
                 trend: "DT 5/8趋 · AIAE 中性均衡 · MOM AI领涨"
             },
             erp: { value: "5.2%", trend: "估值中性", status: "neutral", desc: "偏低估 · 4Y分位10.8%", erp_pct: 10.8, signal_label: "标配持有" },
-            regime_banner: { regime: "🟠 震荡偏多", temp: 52.3, advice: "🟡 中性均衡 (Cap 65%)", vix: 20.15, vix_label: "🟡 正常震荡", z_capital: 0.8, aiae_regime: 3, aiae_regime_cn: "中性均衡", aiae_cap: 65, aiae_v1: 22.3 },
+            regime_banner: { regime: "⏳ 数据预热中", temp: 0, advice: "⏳ 等待引擎预热...", vix: 0, vix_label: "—", z_capital: 0, aiae_regime: 0, aiae_regime_cn: "预热中", aiae_cap: 0, aiae_v1: 0 },
             aiae_thermometer: { aiae_v1: 22.3, regime: 3, regime_cn: "中性均衡", regime_emoji: "🟡", regime_color: "#eab308", regime_name: "Regime III", cap: 65, slope: 0.3, slope_direction: "rising", margin_heat: 2.1, fund_position: 82.5, aiae_simple: 19.8, erp_value: 3.5, status: "fallback" },
             market_temp: {
                 value: 52.3, label: "温暖 | 极度低估", advice: "🟡 中性均衡 (Cap 65%)",
@@ -251,7 +251,7 @@ function showFallbackData() {
             mom: { status_text: "动能衰竭", status_class: "warning", metric1: "红利低波", metric2: "拥挤度 92%" },
             div: { status_text: "稳定防御", status_class: "dormant", metric1: "4.82%", metric2: "62%" },
             erp: { status_text: "ERP 极度低估", status_class: "active", metric1: "ERP 3.5%", metric2: "Z: +1.8" },
-            aiae: { status_text: "🟡 中性均衡", status_class: "dormant", metric1: "AIAE 22.3%", metric2: "Cap 65%" }
+            aiae: { status_text: "⏳ 预热中", status_class: "dormant", metric1: "AIAE --", metric2: "Cap --" }
         }
     };
     updateDashboard(fallbackData);

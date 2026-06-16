@@ -86,6 +86,17 @@ def _hot_data_reactor_tick():
                 _hot_ttl = _get_cache_ttl()
                 cache_manager.set_json("last_update", time.time(), ttl_seconds=_hot_ttl)
                 cache_manager.set_json("dashboard_data", hot_data, ttl_seconds=_hot_ttl)
+        elif has_strategy_cache:
+            # 盘后安全网: 周期性续期缓存 TTL (30 分钟节流, O(1) 无数据拷贝)
+            # 防止 TTL 计算异常导致缓存过期 → 页面降级为 Fallback 假数据
+            _last_ka = getattr(_hot_data_reactor_tick, '_last_keepalive', 0)
+            if time.time() - _last_ka > 1800:
+                _renew_ttl = _get_cache_ttl()
+                cache_manager.touch("dashboard_data", _renew_ttl)
+                cache_manager.touch("last_update", _renew_ttl)
+                cache_manager.touch("aiae_ctx", _renew_ttl)
+                _hot_data_reactor_tick._last_keepalive = time.time()
+                logger.debug("盘后缓存续期: TTL=%ds", _renew_ttl)
     except Exception as e:
         logger.warning(f"Reactor tick 异常: {e}")
 

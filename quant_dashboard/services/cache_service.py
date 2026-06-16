@@ -143,6 +143,37 @@ class CacheService:
             self._memory_cache.pop(key, None)
         return True
 
+    def touch(self, key: str, ttl_seconds: int = None) -> bool:
+        """续期缓存 TTL 而不修改值 (O(1), 无数据拷贝)。
+
+        用途: 盘后 reactor tick 周期性续期，防止缓存过期导致页面
+        降级为 Fallback 假数据。
+
+        Args:
+            key: 缓存键
+            ttl_seconds: 新的 TTL (秒), None 表示永不过期
+
+        Returns:
+            True 如果键存在且续期成功, 否则 False
+        """
+        if self.use_redis:
+            try:
+                if ttl_seconds:
+                    return bool(self.redis_client.expire(key, ttl_seconds))
+                return bool(self.redis_client.persist(key))
+            except Exception as e:
+                _logger.debug("Redis touch(%s) 异常: %s", key, e)
+
+        with self._memory_lock:
+            entry = self._memory_cache.get(key)
+            if entry is not None:
+                value, _ = entry
+                expire_at = (_time.time() + ttl_seconds) if ttl_seconds else None
+                self._memory_cache[key] = (value, expire_at)
+                self._memory_cache.move_to_end(key)
+                return True
+        return False
+
     def stats(self) -> dict:
         """V25.0: 缓存统计信息 (运维可观测性)"""
         if self.use_redis:
