@@ -79,14 +79,38 @@ def _log(msg: str, level: str = "INFO"):
     _level_map.get(level, _logger.info)("[AIAE] %s", msg)
 
 def atomic_write_json(data, filepath):
-    tmp_path = filepath + ".tmp"
+    """原子写入 JSON (Windows 兼容: 带重试处理文件锁竞争)
+
+    Windows 上 os.replace() 在目标文件被另一线程/进程持有读锁时
+    会抛 WinError 32 (另一个程序正在使用) 或 WinError 5 (拒绝访问)。
+    解决方案: PID+TID 唯一 tmp 名 + 指数退避重试。
+    """
+    import threading
+    # 唯一 tmp 文件名: 消除并发线程间 tmp 冲突
+    tid = threading.current_thread().ident or 0
+    tmp_path = f"{filepath}.{os.getpid()}_{tid}.tmp"
     try:
         with open(tmp_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp_path, filepath)
+        # Windows 文件锁重试: 等待其他线程释放读锁
+        import time as _time
+        for attempt in range(4):
+            try:
+                os.replace(tmp_path, filepath)
+                return  # 成功
+            except OSError as oe:
+                # WinError 32: 文件被占用 / WinError 5: 拒绝访问
+                if oe.winerror in (32, 5) and attempt < 3:
+                    _time.sleep(0.05 * (2 ** attempt))  # 50ms, 100ms, 200ms
+                    continue
+                raise
     except Exception as e:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
+        # 清理残留 tmp (静默)
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass
         raise e
 
 def _cached(key: str, ttl_seconds: int, fetcher):
