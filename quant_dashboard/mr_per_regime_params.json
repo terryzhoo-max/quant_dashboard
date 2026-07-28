@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-06-03T21:08:56.186558",
-  "next_optimize_after": "2026-08-02",
+  "generated_at": "2026-07-28T19:26:39.004497",
+  "next_optimize_after": "2026-09-26",
   "regimes": {
     "BEAR": {
       "regime": "BEAR",
@@ -38,7 +38,7 @@
         "opt_score": 0.15
       },
       "combined_score": 0.3358,
-      "optimized_at": "2026-06-03T21:08:48.775743"
+      "optimized_at": "2026-07-28T19:26:15.166893"
     },
     "RANGE": {
       "regime": "RANGE",
@@ -76,7 +76,7 @@
         "opt_score": 0.45
       },
       "combined_score": 0.431,
-      "optimized_at": "2026-06-03T21:08:52.243142"
+      "optimized_at": "2026-07-28T19:26:29.758571"
     },
     "BULL": {
       "regime": "BULL",
@@ -114,7 +114,7 @@
         "opt_score": 0.4967
       },
       "combined_score": 0.4461,
-      "optimized_at": "2026-06-03T21:08:56.186558"
+      "optimized_at": "2026-07-28T19:26:39.004497"
     }
   },
   "summary": {
