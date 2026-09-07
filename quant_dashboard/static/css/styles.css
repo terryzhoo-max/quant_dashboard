@@ -1400,6 +1400,14 @@ body {
     opacity: 0.6;
 }
 
+.plan-card.plan-locked {
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+.plan-card.plan-locked::before {
+    background: linear-gradient(90deg, transparent, #ef4444, transparent);
+}
+
 .plan-header {
     display: flex;
     justify-content: space-between;
@@ -1436,6 +1444,10 @@ body {
     white-space: nowrap;
 }
 
+.regime-badge.regime-badge-locked {
+    background: rgba(239, 68, 68, 0.1);
+}
+
 /* 双栏布局 */
 /* [P6] 间距令牌统一 */
 .plan-body-grid {
@@ -1461,6 +1473,11 @@ body {
     flex-direction: column;
     align-items: center;
     gap: 8px;
+}
+
+.plan-anchor.plan-anchor-locked {
+    border-color: rgba(239, 68, 68, 0.18);
+    background: rgba(127, 29, 29, 0.08);
 }
 
 .plan-anchor-tier {
@@ -1632,6 +1649,25 @@ body {
 .matrix-row-v2.tier-4.tier-active { --tier-color-rgb: 249, 115, 22; }
 .matrix-row-v2.tier-5.tier-active { --tier-color-rgb: 239, 68, 68; }
 
+.matrix-locked-state {
+    min-height: 116px;
+    padding: 22px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: rgba(248, 113, 113, 0.9);
+    font-size: 0.78rem;
+    line-height: 1.5;
+    text-align: center;
+    background: rgba(127, 29, 29, 0.06);
+}
+
+.matrix-locked-icon {
+    font-size: 1.35rem;
+}
+
 @keyframes matrix-glow-pulse {
     0%, 100% { box-shadow: 0 0 8px rgba(245,158,11,0.3); }
     50% { box-shadow: 0 0 16px rgba(245,158,11,0.7); }
@@ -1705,6 +1741,7 @@ body {
 .scenario-tag-v2.type-aiae_upgrade { border-color: rgba(249,115,22,0.3); color: #fb923c; }
 .scenario-tag-v2.type-vix_alert { border-color: rgba(239,68,68,0.3); color: var(--danger-light); }
 .scenario-tag-v2.type-erp_shift { border-color: rgba(59,130,246,0.3); color: var(--accent-light); }
+.scenario-tag-v2.type-locked { border-color: rgba(239,68,68,0.3); color: #f87171; }
 
 .plan-disclaimer {
     font-size: 0.68rem;

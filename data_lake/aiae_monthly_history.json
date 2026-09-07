@@ -1,0 +1,35 @@
+[
+  {
+    "month": "2026-09",
+    "aiae_v1": 26.63,
+    "regime": 3,
+    "recorded_at": "2026-09-06T18:17:31.297615",
+    "updated_at": "2026-09-06T18:17:31.297615",
+    "decomposition": {
+      "aiae_simple": {
+        "label": "AIAE_简 (证券化率)",
+        "raw": 26.63,
+        "normalized": 26.63,
+        "weight": 0.55,
+        "contribution": 14.65,
+        "frequency": "月频"
+      },
+      "fund_position": {
+        "label": "基金仓位 (Sigmoid)",
+        "raw": 82.0,
+        "normalized": 21.79,
+        "weight": 0.2,
+        "contribution": 4.36,
+        "frequency": "季频"
+      },
+      "margin_heat": {
+        "label": "融资热度 (Sigmoid)",
+        "raw": 1.03,
+        "normalized": 9.22,
+        "weight": 0.25,
+        "contribution": 2.31,
+        "frequency": "日频"
+      }
+    }
+  }
+]

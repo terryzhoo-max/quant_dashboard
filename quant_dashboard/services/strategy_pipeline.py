@@ -3,13 +3,13 @@ AlphaCore · 策略 CI/CD 管道 V2.0 (P1-3 + V5 自检)
 ==========================================
 触发: APScheduler 月度任务 / 手动 API 调用
 流程:
-  1. 读取当前生产参数 (mr_per_regime_params.json / erp_optimization_results.json)
+  1. 从 config/strategy_runtime.json 读取当前生产参数
   2. 运行参数优化 (复用已有优化器)
   3. 用新参数跑回测, 获取 KPI
   4. 质量门检查 (Quality Gate)
   5. A/B 对比 (新参数 vs 旧参数)
   6. 决策: ACCEPT / REJECT / REVIEW
-  7. 归档: SQLite ci_runs 表
+  7. ACCEPT 原子发布后归档到 SQLite ci_runs 表
 """
 
 import json
@@ -22,6 +22,11 @@ from typing import Dict, Optional
 
 from services.logger import get_logger
 from services import db as ac_db
+from services.strategy_params import (
+    get_erp_params,
+    get_mr_params,
+    publish_ci_parameters,
+)
 
 logger = get_logger("ci.pipeline")
 
@@ -104,6 +109,16 @@ def _check_quality_gate(metrics: dict) -> list:
             "passed": coverage >= QUALITY_GATE["coverage_min"],
         })
 
+    # 优化器返回交易次数时必须执行最小样本门，避免零交易参数被 Sharpe 误放行。
+    trade_count = metrics.get("total_trades", metrics.get("trades"))
+    if trade_count is not None:
+        checks.append({
+            "rule": "Trades ≥ {}".format(QUALITY_GATE["min_trades"]),
+            "expected": QUALITY_GATE["min_trades"],
+            "actual": trade_count,
+            "passed": trade_count >= QUALITY_GATE["min_trades"],
+        })
+
     return checks
 
 
@@ -155,6 +170,39 @@ def _build_diff_summary(strategy: str, old_params: dict, new_params: dict) -> st
     return "\n".join(lines)
 
 
+def _publish_accepted_run(ci_run: dict) -> dict:
+    """Publish an auto-accepted run before its ACCEPT state is persisted."""
+    if ci_run.get("status") != "ACCEPT":
+        return ci_run
+
+    try:
+        publication = publish_ci_parameters(ci_run)
+        ci_run["publication"] = publication
+        ci_run.setdefault("quality_gate", []).append({
+            "rule": "参数原子发布",
+            "expected": "published",
+            "actual": f"revision {publication['revision']}",
+            "passed": True,
+        })
+        ci_run["diff_summary"] += (
+            f"\n已发布生产参数 revision {publication['revision']}"
+        )
+    except Exception as exc:
+        ci_run["status"] = "ERROR"
+        ci_run.setdefault("quality_gate", []).append({
+            "rule": "参数原子发布",
+            "expected": "published",
+            "actual": str(exc),
+            "passed": False,
+        })
+        ci_run["diff_summary"] += f"\n参数发布失败: {exc}"
+        logger.error(
+            "[CI] 参数发布失败 run_id=%s: %s",
+            ci_run.get("run_id"), exc, exc_info=True,
+        )
+    return ci_run
+
+
 # ═══════════════════════════════════════════════════════════
 #  MR 均值回归 CI (三态分别优化)
 # ═══════════════════════════════════════════════════════════
@@ -178,7 +226,7 @@ def run_mr_ci(regime: str = None) -> list:
         try:
             # 读取旧参数
             old_regime = old_regimes.get(r, {})
-            old_params = old_regime.get("params", {})
+            old_params = get_mr_params(r)
             old_kpi = old_regime.get("train_kpi", old_regime.get("valid_kpi", {}))
 
             # 调用已有优化器 (内存安全)
@@ -217,10 +265,11 @@ def run_mr_ci(regime: str = None) -> list:
                 "diff_summary": _build_diff_summary(f"MR-{r}", old_params, new_params),
             }
 
+            _publish_accepted_run(ci_run)
             ac_db.save_ci_run(ci_run)
             results.append(ci_run)
             logger.info("[CI] MR-%s 完成: status=%s, sharpe=%.3f",
-                        r, status, new_kpi.get("sharpe", 0))
+                        r, ci_run["status"], new_kpi.get("sharpe", 0))
 
         except Exception as e:
             logger.error("[CI] MR-%s 失败: %s\n%s", r, e, traceback.format_exc())
@@ -253,12 +302,12 @@ def run_erp_ci() -> dict:
 
     try:
         old_data = _load_json_safe(ERP_PARAMS_FILE)
-        old_params = old_data.get("best_params", {})
+        old_params = get_erp_params()
         old_kpi = old_data.get("best_out_sample", old_data.get("best_in_sample", {}))
 
         # 调用 ERP 优化器
         from strategies.erp_backtest_optimizer import run_optimization
-        new_result = run_optimization()
+        new_result = run_optimization(persist_results=False)
         gc.collect()
 
         if not new_result:
@@ -284,8 +333,9 @@ def run_erp_ci() -> dict:
             "diff_summary": _build_diff_summary("ERP", old_params, new_params),
         }
 
+        _publish_accepted_run(ci_run)
         ac_db.save_ci_run(ci_run)
-        logger.info("[CI] ERP 完成: status=%s", status)
+        logger.info("[CI] ERP 完成: status=%s", ci_run["status"])
         return ci_run
 
     except Exception as e:
@@ -530,4 +580,3 @@ def _run_aiae_v5_monthly_check() -> dict:
     logger.info("[CI] AIAE V5 月度自检完成: status=%s, alerts=%d",
                 result["status"], len(result["alerts"]))
     return result
-

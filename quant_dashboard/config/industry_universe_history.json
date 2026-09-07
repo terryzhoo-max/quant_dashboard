@@ -1,0 +1,242 @@
+{
+  "schema_version": 2,
+  "as_of": "2026-09-07",
+  "source": {
+    "provider": "tushare_pro",
+    "datasets": [
+      "etf_basic",
+      "fund_basic"
+    ],
+    "primary_origin": "Shanghai and Shenzhen stock exchange public disclosures",
+    "retrieved_at": "2026-09-07T00:06:51.365584+00:00",
+    "snapshot_sha256": "7a883c958bfad4b47865ac058c10ef18dc3f07c2faf8cafee518ea5898755599",
+    "master_path": "data_lake/industry_etf_master.json"
+  },
+  "complete_history": false,
+  "history_start": "2026-09-06",
+  "coverage": {
+    "mode": "prospective",
+    "complete_from": "2026-09-06",
+    "complete_through": null
+  },
+  "policy": {
+    "revision": 1,
+    "frozen_at": "2026-09-06",
+    "selection_method": "manual_pre_registered_core_etf_set",
+    "automatic_membership_changes": false
+  },
+  "notes": [
+    "Research-universe membership is complete prospectively from the policy freeze date.",
+    "No membership is backfilled before the freeze date; retrospective validation remains locked."
+  ],
+  "members": [
+    {
+      "code": "512760.SH",
+      "name": "半导体/芯片",
+      "instrument_name": "国泰CES半导体芯片行业ETF",
+      "tracking_index_code": "990001.OTH",
+      "tracking_index_name": "中华半导体芯片",
+      "instrument_list_date": "2019-06-12",
+      "instrument_delist_date": null,
+      "instrument_status": "L",
+      "membership_from": "2026-09-06",
+      "membership_to": null,
+      "membership_source": "pre_registered_policy_freeze"
+    },
+    {
+      "code": "512720.SH",
+      "name": "计算机/AI",
+      "instrument_name": "国泰中证计算机主题ETF",
+      "tracking_index_code": "930651.CSI",
+      "tracking_index_name": "中证CS计算机",
+      "instrument_list_date": "2019-08-16",
+      "instrument_delist_date": null,
+      "instrument_status": "L",
+      "membership_from": "2026-09-06",
+      "membership_to": null,
+      "membership_source": "pre_registered_policy_freeze"
+    },
+    {
+      "code": "562030.SH",
+      "name": "算力/AI基建",
+      "instrument_name": "华宝中证信息技术应用创新产业ETF",
+      "tracking_index_code": "931247.CSI",
+      "tracking_index_name": "中证信创",
+      "instrument_list_date": "2023-10-12",
+      "instrument_delist_date": null,
+      "instrument_status": "L",
+      "membership_from": "2026-09-06",
+      "membership_to": null,
+      "membership_source": "pre_registered_policy_freeze"
+    },
+    {
+      "code": "515880.SH",
+      "name": "通信设备/卫星互联",
+      "instrument_name": "国泰中证全指通信设备ETF",
+      "tracking_index_code": "931160.CSI",
+      "tracking_index_name": "中证通信设备",
+      "instrument_list_date": "2019-09-06",
+      "instrument_delist_date": null,
+      "instrument_status": "L",
+      "membership_from": "2026-09-06",
+      "membership_to": null,
+      "membership_source": "pre_registered_policy_freeze"
+    },
+    {
+      "code": "159218.SZ",
+      "name": "卫星/商业航天",
+      "instrument_name": "招商中证卫星产业ETF",
+      "tracking_index_code": "931594.CSI",
+      "tracking_index_name": "中证卫星产业",
+      "instrument_list_date": "2025-05-22",
+      "instrument_delist_date": null,
+      "instrument_status": "L",
+      "membership_from": "2026-09-06",
+      "membership_to": null,
+      "membership_source": "pre_registered_policy_freeze"
+    },
+    {
+      "code": "562500.SH",
+      "name": "人形机器人/智能制造",
+      "instrument_name": "华夏中证机器人ETF",
+      "tracking_index_code": "H30590.CSI",
+      "tracking_index_name": "中证机器人",
+      "instrument_list_date": "2021-12-29",
+      "instrument_delist_date": null,
+      "instrument_status": "L",
+      "membership_from": "2026-09-06",
+      "membership_to": null,
+      "membership_source": "pre_registered_policy_freeze"
+    },
+    {
+      "code": "159663.SZ",
+      "name": "工业母机/自主可控",
+      "instrument_name": "华夏中证机床ETF",
+      "tracking_index_code": "931866.CSI",
+      "tracking_index_name": "中证机床",
+      "instrument_list_date": "2022-10-26",
+      "instrument_delist_date": null,
+      "instrument_status": "L",
+      "membership_from": "2026-09-06",
+      "membership_to": null,
+      "membership_source": "pre_registered_policy_freeze"
+    },
+    {
+      "code": "515030.SH",
+      "name": "新能源车",
+      "instrument_name": "华夏中证新能源汽车ETF",
+      "tracking_index_code": "399976.SZ",
+      "tracking_index_name": "中证CS新能车",
+      "instrument_list_date": "2020-03-04",
+      "instrument_delist_date": null,
+      "instrument_status": "L",
+      "membership_from": "2026-09-06",
+      "membership_to": null,
+      "membership_source": "pre_registered_policy_freeze"
+    },
+    {
+      "code": "516360.SH",
+      "name": "前沿新材料",
+      "instrument_name": "华宝中证新材料主题ETF",
+      "tracking_index_code": "H30597.CSI",
+      "tracking_index_name": "中证新材料",
+      "instrument_list_date": "2021-05-13",
+      "instrument_delist_date": null,
+      "instrument_status": "L",
+      "membership_from": "2026-09-06",
+      "membership_to": null,
+      "membership_source": "pre_registered_policy_freeze"
+    },
+    {
+      "code": "512400.SH",
+      "name": "有色金属",
+      "instrument_name": "南方中证申万有色金属ETF",
+      "tracking_index_code": "000819.SH",
+      "tracking_index_name": "中证有色金属",
+      "instrument_list_date": "2017-09-01",
+      "instrument_delist_date": null,
+      "instrument_status": "L",
+      "membership_from": "2026-09-06",
+      "membership_to": null,
+      "membership_source": "pre_registered_policy_freeze"
+    },
+    {
+      "code": "512010.SH",
+      "name": "医药生物",
+      "instrument_name": "易方达沪深300医药卫生ETF",
+      "tracking_index_code": "000913.SH",
+      "tracking_index_name": "300医药",
+      "instrument_list_date": "2013-10-28",
+      "instrument_delist_date": null,
+      "instrument_status": "L",
+      "membership_from": "2026-09-06",
+      "membership_to": null,
+      "membership_source": "pre_registered_policy_freeze"
+    },
+    {
+      "code": "159992.SZ",
+      "name": "创新药/生物制造",
+      "instrument_name": "银华中证创新药产业ETF",
+      "tracking_index_code": "931152.CSI",
+      "tracking_index_name": "中证CS创新药",
+      "instrument_list_date": "2020-04-10",
+      "instrument_delist_date": null,
+      "instrument_status": "L",
+      "membership_from": "2026-09-06",
+      "membership_to": null,
+      "membership_source": "pre_registered_policy_freeze"
+    },
+    {
+      "code": "515400.SH",
+      "name": "数据要素/数字经济",
+      "instrument_name": "富国中证大数据产业ETF",
+      "tracking_index_code": "930902.CSI",
+      "tracking_index_name": "中证数据",
+      "instrument_list_date": "2021-01-20",
+      "instrument_delist_date": null,
+      "instrument_status": "L",
+      "membership_from": "2026-09-06",
+      "membership_to": null,
+      "membership_source": "pre_registered_policy_freeze"
+    },
+    {
+      "code": "512660.SH",
+      "name": "军工龙头",
+      "instrument_name": "国泰中证军工ETF",
+      "tracking_index_code": "399967.SZ",
+      "tracking_index_name": "中证军工",
+      "instrument_list_date": "2016-08-08",
+      "instrument_delist_date": null,
+      "instrument_status": "L",
+      "membership_from": "2026-09-06",
+      "membership_to": null,
+      "membership_source": "pre_registered_policy_freeze"
+    },
+    {
+      "code": "512880.SH",
+      "name": "证券/非银",
+      "instrument_name": "国泰中证全指证券公司ETF",
+      "tracking_index_code": "399975.SZ",
+      "tracking_index_name": "中证证券公司",
+      "instrument_list_date": "2016-08-08",
+      "instrument_delist_date": null,
+      "instrument_status": "L",
+      "membership_from": "2026-09-06",
+      "membership_to": null,
+      "membership_source": "pre_registered_policy_freeze"
+    },
+    {
+      "code": "159915.SZ",
+      "name": "创业板/成长",
+      "instrument_name": "易方达创业板ETF",
+      "tracking_index_code": "399006.SZ",
+      "tracking_index_name": "创业板指",
+      "instrument_list_date": "2011-12-09",
+      "instrument_delist_date": null,
+      "instrument_status": "L",
+      "membership_from": "2026-09-06",
+      "membership_to": null,
+      "membership_source": "pre_registered_policy_freeze"
+    }
+  ]
+}

@@ -12,10 +12,11 @@ AlphaCore · 参数同步 API V5.2
 
 from fastapi import APIRouter
 from config import (
-    POSITION_CONFIG, MR_SCORE_GATE, MR_STOP_LOSS,
+    POSITION_CONFIG,
     MOMENTUM_LOOKBACK, MOMENTUM_VOL_MIN, MOMENTUM_GROUP_CAP,
     AUDIT_CONFIG,
 )
+from services.strategy_params import get_runtime_metadata, load_runtime_config
 
 router = APIRouter(prefix="/api/v1/params", tags=["params"])
 
@@ -61,20 +62,48 @@ async def get_strategy_config():
     except Exception:
         asset_params = {}
 
+    runtime = load_runtime_config()
+    strategies = runtime["strategies"]
+    position_config = dict(POSITION_CONFIG)
+    for key, strategy in (
+        ("mr_regime_cap", "mr"),
+        ("mom_regime_cap", "momentum"),
+        ("gem_regime_cap", "gem"),
+        ("dividend_regime_cap", "dividend"),
+    ):
+        position_config[key] = dict(strategies[strategy]["position_caps"])
+
     return {
         "version": "V5.2",
-        "position": POSITION_CONFIG,
+        "runtime": get_runtime_metadata(),
+        "position": position_config,
         "mr": {
-            "score_gate": MR_SCORE_GATE,
-            "stop_loss": MR_STOP_LOSS,
-            "pos_cap": POSITION_CONFIG["mr_regime_cap"],
+            "score_gate": dict(strategies["mr"]["score_gates"]),
+            "stop_loss": {
+                state: -float(value)
+                for state, value in strategies["mr"]["stop_losses"].items()
+            },
+            "pos_cap": dict(strategies["mr"]["position_caps"]),
+            "regimes": dict(strategies["mr"]["regimes"]),
             "asset_params": asset_params,
         },
         "momentum": {
             "lookback": MOMENTUM_LOOKBACK,
             "vol_min": MOMENTUM_VOL_MIN,
             "group_cap": MOMENTUM_GROUP_CAP,
+            "pos_cap": dict(strategies["momentum"]["position_caps"]),
+            "single_position_cap": dict(
+                strategies["momentum"]["single_position_caps"]
+            ),
+            "score_gate": dict(strategies["momentum"]["score_gates"]),
+            "stop_loss": {
+                state: -float(value) * 100
+                for state, value in strategies["momentum"]["stop_losses"].items()
+            },
         },
+        "gem": {"pos_cap": dict(strategies["gem"]["position_caps"])},
+        "dividend": {"pos_cap": dict(strategies["dividend"]["position_caps"])},
+        "erp": {"params": dict(strategies["erp"]["params"])},
         "aiae": aiae_config,
         "audit": {
             "stop_loss_stock": AUDIT_CONFIG.get("stop_loss_stock", -12),

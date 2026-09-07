@@ -20,6 +20,7 @@ class _SuppressConnectionReset(logging.Filter):
 _proactor_logger.addFilter(_SuppressConnectionReset())
 
 import os as _env_os
+import copy
 import time
 import threading
 import uvicorn
@@ -47,6 +48,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from services.cache_service import cache_manager
+from services.cache_store import get_cache_ttl
+from services.health_status import evaluate_system_health, get_aiae_max_age_sec
 from services.dashboard_builder import _hot_data_reactor_tick, _STRATEGY_LOCK
 from services.warmup_pipeline import (
     warmup_erp_cache, warmup_aiae_cache, warmup_dashboard_cache,
@@ -126,7 +129,8 @@ async def lifespan(app: FastAPI):
 
     # Phase 1: core warmups. Stagger FRED-heavy tasks to avoid startup bursts.
     _schedule_after_delay(warmup_erp_cache, "ERP", 0)
-    _schedule_after_delay(lambda: get_aiae_engine().generate_report(), "AIAE", 0)
+    # Publish both the engine report and the canonical fail-closed aiae_ctx.
+    _schedule_after_delay(warmup_aiae_cache, "AIAE", 0)
     _schedule_after_delay(warmup_rates_cache, "Rates", _warmup_stagger)
     _schedule_after_delay(warmup_dashboard_cache, "Dashboard", _warmup_stagger * 2)
 
@@ -222,6 +226,41 @@ async def lifespan(app: FastAPI):
             _logger.error("AIAE 基金仓位自动抓取任务异常: %s", e)
     scheduler.add_job(_aiae_fund_position_update_callback, CronTrigger(day_of_week='mon-fri', hour=16, minute=0), id="aiae_fund_position_update")
 
+    # 15. 行业挑战者前向证据：收盘后记录不可变快照并结算成熟信号。
+    def _industry_forward_monitor_callback():
+        try:
+            from services.industry_forward_monitor import run_forward_monitor
+            run_forward_monitor()
+        except Exception as exc:
+            _logger.error("行业挑战者前向证据任务异常: %s", exc)
+
+    scheduler.add_job(
+        _industry_forward_monitor_callback,
+        CronTrigger(day_of_week='mon-fri', hour=15, minute=45),
+        id="industry_forward_monitor",
+    )
+
+    # 16. ETF 主数据周度校验：仅更新权威元数据，保留预注册研究池冻结日。
+    def _industry_universe_refresh_callback():
+        try:
+            from services.industry_challenger import run_local_challenger_validation
+            from services.industry_constituents import refresh_industry_constituents
+            from services.industry_universe import refresh_existing_industry_universe
+            from services.industry_validation import run_local_industry_validation
+
+            refresh_existing_industry_universe()
+            refresh_industry_constituents()
+            run_local_industry_validation()
+            run_local_challenger_validation()
+        except Exception as exc:
+            _logger.error("行业ETF主数据周度校验异常: %s", exc)
+
+    scheduler.add_job(
+        _industry_universe_refresh_callback,
+        CronTrigger(day_of_week='sat', hour=8, minute=30),
+        id="industry_universe_refresh",
+    )
+
     scheduler.start()
     app.state.scheduler = scheduler
 
@@ -273,8 +312,8 @@ async def get_version():
 async def health_check():
     """V15.0 生产级健康检查: 引擎状态 + 数据新鲜度 + 调度器详情"""
     now_ts = time.time()
-    last_update = cache_manager.get_json("last_update") or 0
-    cache_age = round(now_ts - last_update) if last_update else None
+    last_update = cache_manager.get_json("last_update")
+    last_hot_update = cache_manager.get_json("last_hot_update")
 
     # 引擎就绪状态
     dashboard_data = cache_manager.get_json("dashboard_data")
@@ -284,6 +323,21 @@ async def health_check():
 
     # AIAE 上下文
     aiae_ctx = cache_manager.get_json("aiae_ctx") or {}
+
+    # Fail-closed health evaluation. The dashboard threshold follows the same
+    # market-aware TTL used by the cache producer; AIAE remains valid for at
+    # least 24h and for the full weekend cache window.
+    dashboard_max_age = get_cache_ttl()
+    aiae_max_age = get_aiae_max_age_sec()
+    health_state = evaluate_system_health(
+        dashboard_ready=dashboard_ready,
+        dashboard_updated_at=last_update,
+        aiae_ctx=aiae_ctx,
+        now_ts=now_ts,
+        dashboard_max_age_sec=dashboard_max_age,
+        aiae_max_age_sec=aiae_max_age,
+    )
+    cache_age = health_state["dashboard_age_sec"]
 
     # 调度器状态
     scheduler_info = {}
@@ -312,6 +366,11 @@ async def health_check():
         if macro.get("market_temp"):
             data_freshness["market_temp"] = macro["market_temp"].get("confidence", "unknown")
 
+    # 产业决策使用独立 qfq 数据契约；其质量失败必须进入全局健康状态，
+    # 否则行业页已锁定而 /health 仍会误报 OK。
+    industry_quality = _get_industry_quality_status()
+    industry_locked = bool(industry_quality.get("decision_locked", True))
+
     # Batch 11: SQLite 数据库统计
     db_info = {}
     try:
@@ -330,20 +389,112 @@ async def health_check():
     # Batch 11: uptime
     uptime = int(time.time() - getattr(app.state, 'startup_time', time.time()))
 
-    status = "ok" if dashboard_ready else "starting"
+    status = health_state["status"]
+    health_reasons = list(health_state["reasons"])
+    if industry_locked:
+        health_reasons.append("industry_data_locked")
+        if status == "ok":
+            status = "degraded"
+    overall_decision_locked = bool(health_state["decision_locked"] or industry_locked)
+    dashboard_engine_status = (
+        "cold" if not dashboard_ready
+        else "ready" if health_state["dashboard_fresh"]
+        else "stale"
+    )
+    aiae_engine_status = (
+        "cold" if not aiae_ctx
+        else "ready" if not health_state["decision_locked"] and health_state["aiae_fresh"]
+        else "degraded"
+    )
     return {
         "status": status,
+        "health_reasons": health_reasons,
         "version": VERSION_STRING,
         "uptime_sec": uptime,
         "cache_age_sec": cache_age,
+        "last_hot_update": last_hot_update,
+        "data_quality": {
+            "aiae_score": health_state["data_quality_score"],
+            "aiae_decision_locked": health_state["decision_locked"],
+            "decision_locked": overall_decision_locked,
+            "industry": {
+                "decision_locked": industry_locked,
+                "is_usable": industry_quality.get("is_usable", False),
+                "execution_policy_ready": industry_quality.get(
+                    "execution_policy_ready", False
+                ),
+                "policy_engine_ready": industry_quality.get("policy_engine_ready", False),
+                "operational_gates_ready": industry_quality.get(
+                    "operational_gates_ready", False
+                ),
+                "model_validation_ready": industry_quality.get(
+                    "model_validation_ready", False
+                ),
+                "model_validation": industry_quality.get("model_validation", {}),
+                "usable_count": industry_quality.get("usable_count", 0),
+                "checked_count": industry_quality.get("checked_count", 0),
+                "coverage_ratio": industry_quality.get("coverage_ratio", 0.0),
+                "reasons": industry_quality.get("reasons", []),
+            },
+        },
+        "freshness": {
+            "dashboard": {
+                "fresh": health_state["dashboard_fresh"],
+                "age_sec": health_state["dashboard_age_sec"],
+                "max_age_sec": health_state["dashboard_max_age_sec"],
+            },
+            "aiae": {
+                "fresh": health_state["aiae_fresh"],
+                "age_sec": health_state["aiae_age_sec"],
+                "max_age_sec": health_state["aiae_max_age_sec"],
+            },
+            "industry": {
+                "fresh": not bool(
+                    industry_quality.get("missing_codes")
+                    or industry_quality.get("stale_codes")
+                ),
+                "expected_trade_date": industry_quality.get("expected_trade_date"),
+                "daily_latest": industry_quality.get("daily_latest"),
+                "daily_earliest_latest": industry_quality.get("daily_earliest_latest"),
+                "calendar_source": industry_quality.get("calendar_source"),
+                "validation_generated_at": (
+                    industry_quality.get("model_validation") or {}
+                ).get("generated_at"),
+                "validation_data_end_date": (
+                    industry_quality.get("model_validation") or {}
+                ).get("data_end_date"),
+                "validation_data_lag_days": (
+                    industry_quality.get("model_validation") or {}
+                ).get("data_lag_days"),
+            },
+        },
         "engines": {
-            "dashboard": {"status": "ready" if dashboard_ready else "cold", "age_sec": cache_age},
+            "dashboard": {"status": dashboard_engine_status, "age_sec": cache_age},
             "aiae_global": {"status": "ready" if aiae_global_ready else "cold"},
             "aiae_cn": {
+                "status": aiae_engine_status,
                 "regime": aiae_ctx.get("regime"),
                 "aiae_v1": aiae_ctx.get("aiae_v1"),
                 "position": aiae_ctx.get("cap"),
-            } if aiae_ctx else {"status": "cold"},
+                "data_quality_score": health_state["data_quality_score"],
+                "decision_locked": health_state["decision_locked"],
+                "fresh": health_state["aiae_fresh"],
+                "age_sec": health_state["aiae_age_sec"],
+            } if aiae_ctx else {
+                "status": "cold",
+                "data_quality_score": 0,
+                "decision_locked": True,
+                "fresh": False,
+                "age_sec": None,
+            },
+            "industry": {
+                "status": "degraded" if industry_locked else "ready",
+                "decision_locked": industry_locked,
+                "reasons": industry_quality.get("reasons", []),
+                "validation_stage": (
+                    industry_quality.get("model_validation") or {}
+                ).get("stage", "missing"),
+            },
             "strategies": {k: "cached" for k in strategy_results.keys()} if strategy_results else {"status": "cold"},
             "cache_backend": "redis" if cache_manager.use_redis else "memory",
         },
@@ -387,6 +538,47 @@ def _get_fred_guard_status() -> dict:
         return {"status": "error"}
 
 
+def _get_industry_quality_status() -> dict:
+    """读取行业数据与执行闸门；任何异常均按 fail-closed 返回。"""
+    try:
+        from data_manager import FactorDataManager
+        from core_etf_config import CORE_ETF_CODES
+        from services.industry_policy import build_industry_decision_context
+        from services.market_regime import get_market_regime_snapshot
+
+        quality = FactorDataManager().check_industry_data_quality(CORE_ETF_CODES)
+        market_snapshot = (
+            {}
+            if quality.get("decision_locked", True)
+            else get_market_regime_snapshot()
+        )
+        context = build_industry_decision_context(
+            quality,
+            market_snapshot,
+        )
+        quality["policy_engine_ready"] = True
+        quality["operational_gates_ready"] = not context["hard_locked"]
+        quality["model_validation_ready"] = context["model_validation_ready"]
+        quality["model_validation"] = context["model_validation"]
+        quality["execution_policy_ready"] = not context["decision_locked"]
+        quality["decision_locked"] = context["decision_locked"]
+        quality["reasons"] = context["decision_lock_reasons"]
+        quality["execution_context"] = context
+        return quality
+    except Exception as exc:
+        _logger.warning("Health: 产业数据质量检查异常: %s", exc)
+        return {
+            "decision_locked": True,
+            "is_usable": False,
+            "checked_count": 0,
+            "usable_count": 0,
+            "coverage_ratio": 0.0,
+            "reasons": ["INDUSTRY_HEALTH_CHECK_ERROR"],
+            "missing_codes": [],
+            "stale_codes": [],
+        }
+
+
 # ═══════════════════════════════════════════════════════════════════
 #  PWA 路由 (manifest + Service Worker)
 # ═══════════════════════════════════════════════════════════════════
@@ -421,9 +613,11 @@ async def get_dashboard_data():
         _cached_ts = cache_manager.get_json("last_update")
 
     if _cached_data:
-        if time.time() - (_cached_ts or 0) > 10800:
-            _cached_data["is_stale"] = True
-        return _cached_data
+        response_data = copy.deepcopy(_cached_data)
+        age_sec = time.time() - _cached_ts if isinstance(_cached_ts, (int, float)) else None
+        response_data["is_stale"] = age_sec is None or age_sec > get_cache_ttl()
+        response_data["cache_age_sec"] = round(age_sec) if age_sec is not None else None
+        return response_data
 
     return {
         "status": "warming_up",

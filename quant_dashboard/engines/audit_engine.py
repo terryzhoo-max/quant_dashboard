@@ -716,17 +716,23 @@ def audit_strategy_health():
     # ── Regime 参数文件深度校验 V6.0 ──
     # 不仅检查数量, 还验证 BULL/RANGE/BEAR 每套参数的关键字段完整性
     _REQUIRED_REGIMES = ("BULL", "RANGE", "BEAR")
-    _REQUIRED_PARAM_KEYS = {"N_trend", "rsi_period", "rsi_buy", "rsi_sell", "bias_buy", "stop_loss"}
+    _REQUIRED_PARAM_KEYS = {"N_trend", "rsi_period", "rsi_buy", "rsi_sell", "bias_buy"}
     regime_w = STRATEGY_WEIGHTS.get("_regime", 0.15)
 
-    regime_fp = os.path.join(PROJECT_ROOT, "mr_per_regime_params.json")
+    regime_fp = os.path.join(PROJECT_ROOT, "config", "strategy_runtime.json")
     if os.path.exists(regime_fp):
         try:
             with open(regime_fp, "r", encoding="utf-8") as f:
                 regime_data = json.load(f)
 
-            # 支持两种结构: {"regimes": {"BULL": ...}} 或 {"BULL": ...}
-            regimes = regime_data.get("regimes", regime_data) if isinstance(regime_data, dict) else {}
+            regimes = (
+                regime_data.get("strategies", {}).get("mr", {}).get("regimes", {})
+                if isinstance(regime_data, dict) else {}
+            )
+            stop_losses = (
+                regime_data.get("strategies", {}).get("mr", {}).get("stop_losses", {})
+                if isinstance(regime_data, dict) else {}
+            )
 
             regime_ok = 0
             regime_issues = []
@@ -741,6 +747,8 @@ def audit_strategy_health():
                 missing = _REQUIRED_PARAM_KEYS - set(rparams.keys())
                 if missing:
                     regime_issues.append(f"{rname}: 缺少 {', '.join(sorted(missing))}")
+                elif rname not in stop_losses:
+                    regime_issues.append(f"{rname}: 缺少统一止损参数")
                 else:
                     regime_ok += 1
                     # 提取质量摘要
@@ -751,8 +759,8 @@ def audit_strategy_health():
             # 评分: 3套完整=100, 2套=75, 1套=50, 0套=20
             s = {3: 100, 2: 75, 1: 50, 0: 20}.get(regime_ok, 20)
 
-            # 检查时效性 (Regime 文件也有 generated_at)
-            regime_gen = regime_data.get("generated_at") if isinstance(regime_data, dict) else None
+            # 检查权威运行时配置的最后发布时间
+            regime_gen = regime_data.get("published_at") if isinstance(regime_data, dict) else None
             regime_age_info = ""
             if regime_gen:
                 try:
@@ -783,18 +791,18 @@ def audit_strategy_health():
                 "detail": detail_str,
                 "meta": f"校验字段: {', '.join(sorted(_REQUIRED_PARAM_KEYS))} · 权重: {int(regime_w*100)}%",
                 "score": s,
-                "explanation": "市场存在牛市/熊市/震荡三种状态(Regime)，每种状态的最优参数差异巨大。V6.0 不仅检查数量，还验证每套参数的 6 个关键字段(N_trend/rsi_period/rsi_buy/rsi_sell/bias_buy/stop_loss)是否完整。",
+                "explanation": "市场存在牛市/熊市/震荡三种状态(Regime)，每种状态的最优参数差异巨大。审计会检查每套信号参数及统一 stop_losses 是否完整。",
                 "threshold": "🟢 3/3完整: 全状态覆盖 | 🟡 1-2套: 部分缺失 | 🔴 0套/损坏: 策略退化为单状态",
-                "action": "执行 python mr_per_regime_optimizer.py 生成三态参数",
+                "action": "通过策略 CI 优化并发布三态参数",
             })
         except Exception:
             check_scores.append(40)
             check_weights.append(regime_w)
-            checks.append({"name": "Regime 三态参数", "status": "fail", "detail": "JSON 解析失败", "score": 40, "explanation": "Regime 参数文件损坏，均值回归引擎将退化为单状态模式。", "threshold": "🟢 3/3完整 | 🟡 1-2套 | 🔴 损坏", "action": "删除损坏文件后执行 python mr_per_regime_optimizer.py"})
+            checks.append({"name": "Regime 三态参数", "status": "fail", "detail": "JSON 解析失败", "score": 40, "explanation": "权威运行时参数损坏，策略参数加载将失败。", "threshold": "🟢 3/3完整 | 🟡 1-2套 | 🔴 损坏", "action": "从 .bak 恢复 strategy_runtime.json 后重新执行策略 CI"})
     else:
         check_scores.append(30)
         check_weights.append(regime_w)
-        checks.append({"name": "Regime 三态参数", "status": "fail", "detail": "文件不存在", "score": 30, "explanation": "无 Regime 参数意味着均值回归策略无法自适应市场状态切换，在牛熊转换时可能产生大量错误信号。", "threshold": "🟢 3/3完整 | 🟡 1-2套 | 🔴 文件缺失", "action": "执行 python mr_per_regime_optimizer.py 生成三态参数"})
+        checks.append({"name": "Regime 三态参数", "status": "fail", "detail": "权威运行时参数文件不存在", "score": 30, "explanation": "无 Regime 参数意味着均值回归策略无法自适应市场状态切换。", "threshold": "🟢 3/3完整 | 🟡 1-2套 | 🔴 文件缺失", "action": "恢复 config/strategy_runtime.json"})
 
     # V6.0: 加权平均 (替代等权 np.mean)
     if check_scores and check_weights:

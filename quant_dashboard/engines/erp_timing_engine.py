@@ -856,6 +856,8 @@ class ERPTimingEngine:
     def compute_signal(self) -> dict:
         """五维信号融合 → 综合得分 + 买卖信号"""
         try:
+            erp_params.reload_runtime_params()
+            self.W = erp_params.WEIGHTS
             erp_df = self._compute_erp_series()
             if erp_df.empty:
                 return self._fallback_signal("ERP序列计算失败")

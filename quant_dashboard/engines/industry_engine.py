@@ -5,7 +5,7 @@ import logging
 from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 from data_manager import FactorDataManager
-from core_etf_config import CORE_ETFS, FALLBACK_MOMENTUM
+from core_etf_config import CORE_ETFS
 
 logger = logging.getLogger(__name__)
 
@@ -38,15 +38,31 @@ class IndustryEngine:
             code = etf['code']
             p_df = self.dm.get_price_payload(code)
             if p_df.empty:
-                results.append({"ts_code": code, "name": etf['name'], "trend_5d": 0.0})
+                results.append({
+                    "ts_code": code,
+                    "name": etf['name'],
+                    "trend_5d": None,
+                    "data_status": "missing",
+                    "data_as_of": None,
+                    "is_synthetic": False,
+                })
                 continue
             
             # 过滤至 target_dt (注意：p_df['trade_date'] 已经是 datetime 类型)
             p_df = p_df[p_df['trade_date'] <= target_dt].sort_values('trade_date')
             
             if len(p_df) < days:
-                # 如果数据不足，尝试取现有数据的近 5 日 (如果存在)
-                results.append({"ts_code": code, "name": etf['name'], "trend_5d": 0.0})
+                results.append({
+                    "ts_code": code,
+                    "name": etf['name'],
+                    "trend_5d": None,
+                    "data_status": "insufficient",
+                    "data_as_of": (
+                        p_df['trade_date'].iloc[-1].strftime("%Y%m%d")
+                        if not p_df.empty else None
+                    ),
+                    "is_synthetic": False,
+                })
                 continue
             
             # 计算 5 日收益
@@ -60,20 +76,24 @@ class IndustryEngine:
                 results.append({
                     "ts_code": code, 
                     "name": etf['name'], 
-                    "trend_5d": trend
+                    "trend_5d": trend,
+                    "data_status": "observed",
+                    "data_as_of": p_df['trade_date'].iloc[-1].strftime("%Y%m%d"),
+                    "is_synthetic": False,
                 })
             except Exception as e:
                 logger.warning(f"{code} | sector perf calc error: {e}")
-                results.append({"ts_code": code, "name": etf['name'], "trend_5d": 0.0})
-            
-        # --- 专家优化: 数据兜底排序 (Scientific Fallback) ---
-        # 如果所有板块都是 0.0 (可能因为非交易日或同步异常)
-        if all(r['trend_5d'] == 0.0 for r in results):
-            # 基于行业近期的基准动量进行“影子排序”
-            # 这里的权重大致模拟了近期市场的活跃度 (半导体/AI > 电车 > 医药)
-            momentum_weights = FALLBACK_MOMENTUM
-            for r in results:
-                r['trend_5d'] = momentum_weights.get(r['ts_code'], 0.0)
+                results.append({
+                    "ts_code": code,
+                    "name": etf['name'],
+                    "trend_5d": None,
+                    "data_status": "invalid",
+                    "data_as_of": (
+                        p_df['trade_date'].iloc[-1].strftime("%Y%m%d")
+                        if not p_df.empty else None
+                    ),
+                    "is_synthetic": False,
+                })
             
         return results
 

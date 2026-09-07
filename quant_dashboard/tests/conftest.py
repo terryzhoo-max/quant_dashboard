@@ -4,6 +4,7 @@ AlphaCore · pytest fixtures (共享测试基础设施)
 """
 import sys
 import os
+from datetime import datetime
 import pytest
 
 # 确保项目根目录在 sys.path 中
@@ -34,6 +35,10 @@ def vix_crisis():
 def mock_aiae_ctx():
     """模拟 AIAE 上下文 (Regime III 均衡)"""
     return {
+        "status": "success",
+        "updated_at": datetime.now().isoformat(),
+        "data_quality_score": 90,
+        "decision_locked": False,
         "regime": 3,
         "cap": 65,
         "aiae_v1": 22.0,

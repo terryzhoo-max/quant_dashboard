@@ -14,6 +14,18 @@ function renderSignalCard(signalData) {
     const matrixEl = el('signal-matrix');
     const descEl = el('desc-signal');
 
+    if (signalData.available === false) {
+        if (consensusCountEl) consensusCountEl.textContent = '--';
+        if (consensusLabelEl) {
+            consensusLabelEl.textContent = '🔒 决策锁定';
+            consensusLabelEl.className = 'signal-consensus-label sig-neutral';
+        }
+        if (matrixEl) matrixEl.innerHTML = '<div class="abp-empty">数据不可用 · 不生成策略共振</div>';
+        if (descEl) descEl.textContent = signalData.trend || '无法验证后端数据';
+        if (cardEl) cardEl.classList.remove('active-glow', 'bear-glow');
+        return;
+    }
+
     // V10.0: 新结构化数据 (有 strategies 数组 + v10_ 字段)
     if (signalData.strategies && Array.isArray(signalData.strategies)) {
         const hasV10 = signalData.v10_score !== undefined;
@@ -144,6 +156,26 @@ function renderErpCard(erpData) {
     const signalPill = el('erp-signal-pill');
     const cardEl = el('card-erp');
 
+    if (erpData.available === false) {
+        if (valEl) {
+            valEl.innerHTML = '-- <span class="trend" id="trend-erp">不可用</span>';
+            valEl.className = 'stat-value highlight-neutral';
+        }
+        if (absLabel) {
+            absLabel.textContent = '数据不可用';
+            absLabel.className = 'erp-abs-label';
+        }
+        if (pctLabel) pctLabel.textContent = '4Y分位 --';
+        if (pctBar) pctBar.style.width = '0%';
+        if (signalPill) {
+            signalPill.textContent = '决策锁定';
+            signalPill.className = 'erp-signal-pill';
+        }
+        if (descEl) descEl.textContent = '未取得可验证的 ERP 数据';
+        if (cardEl) cardEl.classList.remove('active-glow');
+        return;
+    }
+
     // 1. 主值 + Trend Badge
     if (valEl) {
         valEl.innerHTML = `${erpData.value} <span class="trend" id="trend-erp">${erpData.trend || '--'}</span>`;
@@ -216,6 +248,28 @@ function renderErpCard(erpData) {
  *   resonance: "双多共振", resonance_status: "bull", z_composite: 1.65
  */
 function renderCapitalCard(capA, capH) {
+    if (capA?.available === false && capH?.available === false) {
+        const textValues = {
+            'val-capital-a-compact': '--',
+            'trend-capital-a-compact': '不可用',
+            'val-capital-h-compact': '--',
+            'trend-capital-h-compact': '不可用',
+            'cap-resonance-pill': '数据不可用',
+            'cap-z-val': '--',
+            'desc-capital': '未取得可验证的资金流数据',
+        };
+        Object.entries(textValues).forEach(([id, value]) => {
+            const node = el(id);
+            if (node) node.textContent = value;
+        });
+        ['cap-dir-a', 'cap-dir-h'].forEach(id => {
+            const node = el(id);
+            if (node) node.className = 'cap-flow-dir dir-neutral';
+        });
+        if (el('bar-cap-z')) el('bar-cap-z').style.width = '0%';
+        if (el('card-capital')) el('card-capital').classList.remove('active-glow');
+        return;
+    }
     // === 北向 ===
     if (capA) {
         const valA = el('val-capital-a-compact');
@@ -332,7 +386,50 @@ function renderExecutionLists(listContainer, listData) {
 /**
  * V6.0 情绪与持仓枢纽渲染引擎
  */
+function renderPositionHubUnavailable() {
+    const textValues = {
+        'val-mindset': '🔒 数据不可用，停止决策',
+        'val-capital-z': '--',
+        'val-erp-tag': 'ERP 不可用',
+        'val-pos-advice': '执行仓位 0% · 决策锁定',
+        'val-confidence': '--',
+        'val-alloc-total': '总仓位: --',
+        'val-pos-div': '--',
+        'val-pos-mr': '--',
+        'val-pos-mom': '--',
+        'val-pos-erp': '--',
+        'val-pos-aiae': '--',
+    };
+    Object.entries(textValues).forEach(([id, value]) => {
+        const node = el(id);
+        if (node) node.textContent = value;
+    });
+    ['bar-pos-advice', 'conf-fill', 'bar-div', 'bar-mr', 'bar-mom', 'bar-erp', 'bar-aiae'].forEach(id => {
+        const node = el(id);
+        if (node) node.style.width = '0%';
+    });
+    ['vix', 'capital', 'temp', 'erp', 'signal', 'aiae'].forEach(key => {
+        const bar = el(`fbar-${key}`);
+        const score = el(`fscore-${key}`);
+        if (bar) bar.style.width = '0%';
+        if (score) score.textContent = '--';
+    });
+    ['weight-mr', 'weight-mom', 'weight-div', 'weight-erp', 'weight-aiae'].forEach(id => {
+        const node = el(id);
+        if (node) node.textContent = '--权重';
+    });
+    ['filter-div', 'filter-mr', 'filter-mom'].forEach(id => {
+        const node = el(id);
+        if (node) node.textContent = '锁定';
+    });
+    if (el('card-sentiment-hub')) el('card-sentiment-hub').setAttribute('data-temp-zone', 'locked');
+}
+
 function renderPositionHub(temp) {
+    if (temp?.available === false) {
+        renderPositionHubUnavailable();
+        return;
+    }
     const vixMult = temp.market_vix_multiplier || 1.0;
     const hubEl = document.getElementById('card-sentiment-hub');
     
@@ -875,8 +972,42 @@ let _aiaeThermGauge = null;
 //  AIAE 温度计 · 量化总览精简渲染引擎
 // ====================================================================
 
+function renderAIAEUnavailable() {
+    const textValues = {
+        'aiae-thermo-val': '--',
+        'aiae-thermo-regime': '🔒 数据不可用',
+        'aiae-thermo-slope': '月环比: --',
+        'aiae-thermo-cap': '--%',
+        'at-warn-margin': '--',
+        'at-warn-slope': '--',
+        'at-warn-fund': '--',
+        'at-src-simple': 'AIAE_简: --',
+        'at-src-erp': 'ERP: --',
+        'aiae-thermo-action-text': '🔒 数据未通过状态、质量与新鲜度校验，禁止生成仓位建议',
+    };
+    Object.entries(textValues).forEach(([id, value]) => {
+        const node = el(id);
+        if (node) {
+            node.textContent = value;
+            node.style.color = '#94a3b8';
+        }
+    });
+    ['aiae-thermo-cap-bar', 'at-warn-margin-bar', 'at-warn-slope-bar', 'at-warn-fund-bar'].forEach(id => {
+        const node = el(id);
+        if (node) node.style.width = '0%';
+    });
+    document.querySelectorAll('#aiae-thermo-tiers .at-tier').forEach(node => node.classList.remove('active'));
+    if (_aiaeThermGauge) _aiaeThermGauge = AC.disposeChart(_aiaeThermGauge);
+    const gauge = el('aiae-thermo-gauge');
+    if (gauge) gauge.replaceChildren();
+}
+
 function renderAIAEThermometer(d) {
     if (!d) return;
+    if (d.available === false || d.decision_locked === true || ['unavailable', 'error'].includes(d.status)) {
+        renderAIAEUnavailable();
+        return;
+    }
     // 使用全局 el() 工具函数
 
     // ── 仪表盘大字 ──
@@ -1044,6 +1175,15 @@ function renderAIAEThermometer(d) {
         const qaStrip = document.getElementById('quick-action-strip');
 
         if (!qaStrip) return; // 非主页则跳过
+
+        if (temp?.available === false) {
+            if (qaMindset) qaMindset.textContent = '🔒 数据不可用，停止决策';
+            if (qaPos) qaPos.textContent = '--';
+            if (qaConfFill) qaConfFill.style.width = '0%';
+            if (qaConfVal) qaConfVal.textContent = '--';
+            qaStrip.style.borderColor = 'rgba(239,68,68,0.35)';
+            return;
+        }
 
         // 提取仓位百分比 (复用 Hub 逻辑)
         let posPercent = 30;
@@ -1419,6 +1559,7 @@ function renderSystemHealth(marketData) {
     const temp = mc.market_temp || {};
     const isFallback = marketData._meta_is_fallback || false;
     const isStale = marketData._meta_is_stale || false;
+    const isUnavailable = marketData._meta_unavailable === true;
     const degradedModules = temp.degraded_modules || marketData.degraded_modules || [];
     const confidence = temp.temp_confidence || 'unknown';
 
@@ -1436,7 +1577,10 @@ function renderSystemHealth(marketData) {
 
     // 健康状态判定
     let healthClass, healthLabel;
-    if (isStale || ageMinutes > 120) {
+    if (isUnavailable) {
+        healthClass = 'health-error';
+        healthLabel = '数据不可用';
+    } else if (isStale || ageMinutes > 120) {
         healthClass = 'health-error';
         healthLabel = '数据陈旧';
     } else if (isFallback || degradedModules.length >= 2 || confidence === 'low') {

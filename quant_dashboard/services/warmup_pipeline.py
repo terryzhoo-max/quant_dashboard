@@ -16,6 +16,8 @@ from services.fred_guard import should_retry_fred_error
 from services.locks import AIAE_GLOBAL_LOCK as _AIAE_GLOBAL_LOCK
 from services.logger import get_logger
 from services.aiae_normalizer import normalize_temp, get_region_thresholds, compute_global_position, REGION_NAMES
+from services.aiae_safety import build_aiae_context
+from services.cache_store import get_cache_ttl
 
 logger = get_logger("warmup")
 
@@ -69,6 +71,13 @@ def warmup_aiae_cache():
     status = report.get('status', 'unknown')
     if status != "success":
         raise Exception(f"AIAE report failed with status: {status}")
+    # Publish the canonical safety context immediately. Industry and risk
+    # consumers must not wait for the much slower full-dashboard build.
+    cache_manager.set_json(
+        "aiae_ctx",
+        build_aiae_context(report),
+        ttl_seconds=get_cache_ttl(),
+    )
     logger.info(f"AIAE 预热完成 · status={status}")
 
 
@@ -121,13 +130,13 @@ def warmup_rates_cache():
 
 
 def warmup_industry_tracking():
-    """V6.0: 产业追踪自动预热 — 同步12只核心ETF日线 + 预计算指标写入缓存"""
+    """产业追踪自动预热 — 同步核心ETF前复权日线 + 预计算指标。"""
     from data_manager import FactorDataManager
     from core_etf_config import CORE_ETF_CODES
     mgr = FactorDataManager()
-    # Step 1: 同步最新日线数据 (Tushare asset='E')
-    mgr.sync_daily_prices(CORE_ETF_CODES, asset='E')
-    logger.info("12只核心ETF日线同步完成")
+    # Step 1: 只写产业专用 qfq 命名空间。
+    mgr.sync_industry_prices(CORE_ETF_CODES)
+    logger.info("%d只核心ETF前复权日线同步完成", len(CORE_ETF_CODES))
     # Step 2: 主动触发一次 tracking 指标计算，填充 latest 缓存
     try:
         from routers.industry import get_industry_tracking

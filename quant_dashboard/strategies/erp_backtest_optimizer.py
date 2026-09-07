@@ -106,7 +106,7 @@ def _run_single_backtest(bt: AlphaBacktester, df: pd.DataFrame,
         return {"sharpe_ratio": -999, "error": str(e)}
 
 
-def run_optimization():
+def run_optimization(persist_results: bool = True):
     """
     两阶段网格搜索主流程
     """
@@ -392,10 +392,11 @@ def run_optimization():
         ],
     }
 
-    out_file = "erp_optimization_results.json"
-    with open(out_file, "w", encoding="utf-8") as f:
-        json.dump(output, f, indent=2, ensure_ascii=False, default=str)
-    print(f"\n  💾 结果已保存: {out_file}")
+    if persist_results:
+        out_file = "erp_optimization_results.json"
+        with open(out_file, "w", encoding="utf-8") as f:
+            json.dump(output, f, indent=2, ensure_ascii=False, default=str)
+        print(f"\n  💾 结果已保存: {out_file}")
 
     total_time = time.time() - t0
     print(f"\n  ⏱️ 总耗时: {total_time:.0f}s ({total_time/60:.1f}min)")

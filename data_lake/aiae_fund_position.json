@@ -1,0 +1,15 @@
+{
+  "value": 82.0,
+  "date": "2025-12-31",
+  "source": "initial_seed",
+  "updated_at": "2026-09-06T18:17:29.364253",
+  "note": "首次启动自动创建，请通过 API 或前端表单更新为最新季报数据",
+  "history": [
+    {
+      "quarter": "2025Q4",
+      "value": 82.0,
+      "date": "2025-12-31",
+      "source": "seed"
+    }
+  ]
+}

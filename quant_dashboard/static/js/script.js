@@ -17,9 +17,14 @@ function updateDashboard(marketData) {
                 vixRegimeEl.className = `vix-regime-box ${vix.class}`;
             }
             if (document.getElementById('desc-vix')) document.getElementById('desc-vix').innerText = vix.desc || "接入实时全球避险情绪水温";
-            if (document.getElementById('val-vix-percentile')) document.getElementById('val-vix-percentile').innerText = `Range: ${vix.percentile}%`;
             const vixBar = document.getElementById('bar-vix-range');
-            if (vixBar) vixBar.style.width = `${vix.percentile}%`;
+            if (vix.available === false) {
+                if (document.getElementById('val-vix-percentile')) document.getElementById('val-vix-percentile').innerText = 'Range: --';
+                if (vixBar) vixBar.style.width = '0%';
+            } else {
+                if (document.getElementById('val-vix-percentile')) document.getElementById('val-vix-percentile').innerText = `Range: ${vix.percentile}%`;
+                if (vixBar) vixBar.style.width = `${vix.percentile}%`;
+            }
         }
         // V8.2: ERP 专用渲染管线 (替代通用 updateCardUI)
         if (marketData.macro_cards.erp) {
@@ -84,17 +89,106 @@ function updateDashboard(marketData) {
     // 4.5 V2.0 明日交易计划渲染管线
     if (marketData.macro_cards && marketData.macro_cards.tomorrow_plan) {
         const plan = marketData.macro_cards.tomorrow_plan;
+        const planCardEl = el('card-tomorrow-plan');
+        const anchorPanelEl = el('plan-anchor-panel');
+        const disclaimerEl = el('plan-disclaimer');
+        const lockReasonLabels = {
+            missing: 'AIAE 数据缺失',
+            decision_locked: '质量或风控未通过',
+            timestamp_missing_or_invalid: '时间戳无效',
+            stale: 'AIAE 数据已过期',
+            invalid_payload: 'AIAE 决策字段无效',
+            unverifiable: 'AIAE 状态不可验证'
+        };
+        // 旧缓存中的 VIX 四档响应没有 primary_regime；前端同样必须 fail closed。
+        const planLocked = plan.decision_locked === true || plan.mode === 'locked' || !plan.primary_regime;
 
-        if (plan.primary_regime) {
+        if (planLocked) {
+            const lockLabel = lockReasonLabels[plan.lock_reason] || lockReasonLabels.unverifiable;
+            const lockMessage = plan.lock_message || `${lockLabel}，停止生成交易指令`;
+            if (planCardEl) planCardEl.classList.add('plan-locked');
+            if (anchorPanelEl) anchorPanelEl.classList.add('plan-anchor-locked');
+
+            const badgeEl = el('tag-current-regime');
+            if (badgeEl) {
+                badgeEl.innerText = `🔒 决策锁定 · ${lockLabel}`;
+                badgeEl.className = 'regime-badge regime-badge-locked';
+                badgeEl.style.borderColor = 'rgba(239,68,68,0.5)';
+                badgeEl.style.color = '#f87171';
+            }
+
+            if (el('plan-anchor-tier')) el('plan-anchor-tier').innerText = '🔒';
+            if (el('plan-anchor-value')) {
+                el('plan-anchor-value').innerText = '--';
+                el('plan-anchor-value').style.color = '#94a3b8';
+            }
+            if (el('plan-anchor-cap-val')) el('plan-anchor-cap-val').innerText = '--%';
+            if (el('plan-anchor-cap-bar')) el('plan-anchor-cap-bar').style.width = '0%';
+            if (el('plan-anchor-erp')) {
+                el('plan-anchor-erp').innerText = 'ERP --';
+                el('plan-anchor-erp').className = 'plan-anchor-erp';
+            }
+            if (el('plan-anchor-slope')) el('plan-anchor-slope').innerText = '斜率 --';
+            ['plan-risk-margin', 'plan-risk-slope', 'plan-risk-fund'].forEach(id => {
+                const riskEl = el(id);
+                if (riskEl) {
+                    riskEl.innerText = '--';
+                    riskEl.className = 'plan-risk-val';
+                }
+            });
+
+            const matrixEl = el('matrix-content-v2');
+            if (matrixEl) {
+                matrixEl.replaceChildren();
+                const lockedState = document.createElement('div');
+                lockedState.className = 'matrix-locked-state';
+                const icon = document.createElement('span');
+                icon.className = 'matrix-locked-icon';
+                icon.textContent = '🔒';
+                const text = document.createElement('span');
+                text.textContent = '五档矩阵已停用：AIAE 主轴尚未通过状态、质量与新鲜度校验';
+                lockedState.append(icon, text);
+                matrixEl.appendChild(lockedState);
+            }
+
+            const directivesEl = el('plan-directives');
+            if (directivesEl) {
+                directivesEl.replaceChildren();
+                const directive = document.createElement('div');
+                directive.className = 'plan-directive priority-risk risk-critical';
+                const icon = document.createElement('span');
+                icon.className = 'plan-directive-icon';
+                icon.textContent = '🔒';
+                const text = document.createElement('span');
+                text.className = 'plan-directive-text';
+                text.textContent = lockMessage;
+                directive.append(icon, text);
+                directivesEl.appendChild(directive);
+            }
+
+            const scenarioEl = el('plan-scenarios-v2');
+            if (scenarioEl) {
+                scenarioEl.replaceChildren();
+                const status = document.createElement('div');
+                status.className = 'scenario-tag-v2 type-locked';
+                status.textContent = '⏸ 待 AIAE 数据恢复并通过校验后自动解锁';
+                scenarioEl.appendChild(status);
+            }
+            if (disclaimerEl) disclaimerEl.innerText = 'AlphaCore V7.0 · 决策锁定期间不输出仓位与交易建议';
+        } else if (plan.primary_regime) {
             // === V2.0 新版渲染 ===
             const pr = plan.primary_regime;
             const vd = plan.validators || {};
             const rp = plan.risk_panel || {};
+            if (planCardEl) planCardEl.classList.remove('plan-locked');
+            if (anchorPanelEl) anchorPanelEl.classList.remove('plan-anchor-locked');
+            if (disclaimerEl) disclaimerEl.innerText = 'AlphaCore V7.0 · AIAE五档 × ERP双维 × VIX风控 Protocol';
 
             // 1. Header Badge
             const badgeEl = el('tag-current-regime');
             if (badgeEl) {
                 badgeEl.innerText = `${pr.emoji} ${pr.cn} Cap${pr.cap}%`;
+                badgeEl.className = 'regime-badge';
                 badgeEl.style.borderColor = pr.tier <= 2 ? 'rgba(16,185,129,0.4)' : pr.tier >= 4 ? 'rgba(239,68,68,0.4)' : 'rgba(245,158,11,0.4)';
                 badgeEl.style.color = pr.tier <= 2 ? '#10b981' : pr.tier >= 4 ? '#ef4444' : '#f59e0b';
             }
@@ -102,7 +196,8 @@ function updateDashboard(marketData) {
             // 2. 左侧决策锚面板
             if (el('plan-anchor-tier')) el('plan-anchor-tier').innerText = pr.emoji;
             if (el('plan-anchor-value')) {
-                el('plan-anchor-value').innerText = pr.aiae_v1.toFixed(1);
+                const aiaeValue = Number(pr.aiae_v1);
+                el('plan-anchor-value').innerText = Number.isFinite(aiaeValue) ? aiaeValue.toFixed(1) : '--';
                 const colors = {1:'#10b981',2:'#3b82f6',3:'#eab308',4:'#f97316',5:'#ef4444'};
                 el('plan-anchor-value').style.color = colors[pr.tier] || '#eab308';
             }
@@ -127,8 +222,9 @@ function updateDashboard(marketData) {
             const setRisk = (elId, val, threshold, decimals) => {
                 const e = el(elId);
                 if (e) {
-                    e.innerText = typeof val === 'number' ? val.toFixed(decimals || 1) + '%' : '--';
-                    e.className = 'plan-risk-val ' + (val > threshold ? 'risk-danger' : val > threshold * 0.7 ? 'risk-warning' : 'risk-safe');
+                    const valid = Number.isFinite(val);
+                    e.innerText = valid ? val.toFixed(decimals ?? 1) + '%' : '--';
+                    e.className = 'plan-risk-val' + (valid ? ' ' + (val > threshold ? 'risk-danger' : val > threshold * 0.7 ? 'risk-warning' : 'risk-safe') : '');
                 }
             };
             setRisk('plan-risk-margin', rp.margin_heat?.value, rp.margin_heat?.threshold || 3.5, 1);
@@ -169,38 +265,6 @@ function updateDashboard(marketData) {
                 const typeIcons = {aiae_upgrade: '📈', vix_alert: '🚨', erp_shift: '📉'};
                 scenarioEl.innerHTML = plan.scenarios.map(s =>
                     `<div class="scenario-tag-v2 type-${s.type || ''}">${typeIcons[s.type] || '🔄'} ${s.condition}: ${s.action}</div>`
-                ).join('');
-            }
-        } else {
-            // === 旧版降级渲染 ===
-            const badgeEl = el('tag-current-regime');
-            if (badgeEl && plan.current_tactics) {
-                badgeEl.innerText = `实时状态: ${plan.current_tactics.regime}`;
-            }
-            const matrixEl = el('matrix-content-v2');
-            if (matrixEl && plan.regime_matrix) {
-                matrixEl.innerHTML = plan.regime_matrix.map(m => `
-                    <div class="matrix-row-v2 ${m.active ? 'tier-active tier-3' : ''}">
-                        <div class="col-tier-v2">${m.regime || ''}</div>
-                        <div class="col-range-v2">${m.vix_range || ''}</div>
-                        <div class="col-action-v2">${m.tactics || ''}</div>
-                        <div class="col-cap-v2">${m.pos || ''}</div>
-                    </div>
-                `).join('');
-            }
-            const directivesEl = el('plan-directives');
-            if (directivesEl && plan.framework) {
-                directivesEl.innerHTML = plan.framework.map(f => {
-                    const isPrimary = f.includes('优先') || f.includes('核心');
-                    return `<div class="plan-directive ${isPrimary ? 'priority-primary' : ''}">
-                        <span class="plan-directive-text">${f}</span>
-                    </div>`;
-                }).join('');
-            }
-            const scenarioEl = el('plan-scenarios-v2');
-            if (scenarioEl && plan.scenarios) {
-                scenarioEl.innerHTML = plan.scenarios.map(s =>
-                    `<div class="scenario-tag-v2">${s.case}: ${s.action}</div>`
                 ).join('');
             }
         }

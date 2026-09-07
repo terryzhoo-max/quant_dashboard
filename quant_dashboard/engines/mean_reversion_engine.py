@@ -3,7 +3,7 @@ AlphaCore · 均值回归 V4.2 自适应参数引擎
 ==========================================
 特性：
 - 按实时 Regime 动态加载三套专属参数
-- 无需重启服务器（读取 mr_per_regime_params.json）
+- 无需重启服务器（读取 config/strategy_runtime.json）
 - BULL 状态：均值回归仓位上限 35%，超跌补仓逻辑
 - 60天自动重优化检测
 - V4.2 新增：RSI动量方向（Δ RSI₅）+ K线形态识别（7维度100分制）
@@ -21,18 +21,22 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ===== 工业级重试装饰器 (统一至 services.retry) =====
 from services.retry import retry_with_backoff
+from services.health_status import evaluate_aiae_context
+from services.strategy_params import (
+    get_all_mr_params as _runtime_all_mr_params,
+    get_mr_params,
+    get_position_cap,
+    get_regime_rules,
+    get_score_gate,
+    load_runtime_config,
+)
 
 from config import TUSHARE_TOKEN
 DAILY_PRICE_DIR = "data_lake/daily_prices"
-PARAMS_FILE     = "mr_per_regime_params.json"
 
 # 默认回退参数（若 JSON 不存在）
 # stop_loss：正数表示止损幅度，如 0.05 = 浮亏 > 5% 触发止损（V4.3统一正数约定）
-FALLBACK_PARAMS = {
-    "BEAR":  {"N_trend": 40, "rsi_period": 14, "rsi_buy": 45, "rsi_sell": 65, "bias_buy": -3.0, "stop_loss": 0.05},
-    "RANGE": {"N_trend": 90, "rsi_period": 14, "rsi_buy": 40, "rsi_sell": 70, "bias_buy": -2.0, "stop_loss": 0.07},
-    "BULL":  {"N_trend": 120,"rsi_period": 14, "rsi_buy": 45, "rsi_sell": 75, "bias_buy": -1.5, "stop_loss": 0.06},
-}
+FALLBACK_PARAMS = _runtime_all_mr_params()
 
 # ═══════════════════════════════════════════════════════════
 #  V22.0: 资产类别分类 + 差异化参数加载
@@ -233,19 +237,6 @@ def _atr_fallback(price, entry, stop_pct=-8.0):
     }
 
 
-# 各态仓位上限 (从 config.POSITION_CONFIG 统一读取)
-from config import POSITION_CONFIG as _POS_CFG
-REGIME_POS_CAP = {k: v / 100.0 for k, v in _POS_CFG["mr_regime_cap"].items()}
-# BEAR:0.65 熊市主战  RANGE:0.80 全力出击  BULL:0.35 防过度交易  CRASH:0.00 禁入
-
-# 信号评分入场门槛（100分制·按 Regime 自适应）
-REGIME_SCORE_GATE = {
-    "BEAR":  78,    # 熊市严格（防接飞刀）
-    "RANGE": 68,    # 震荡标准
-    "BULL":  60,    # 牛市宽松（回调即机会）
-    "CRASH": 999,   # CRASH 禁入
-}
-
 MR_POOL = [
     {"code": "510500.SH", "name": "中证500ETF",      "max_pos": 15, "defensive": False},
     {"code": "512100.SH", "name": "中证1000ETF",     "max_pos": 15, "defensive": False},
@@ -288,64 +279,47 @@ MR_POOL = [
 # ─── 动态参数加载（运行时，无需重启） ─────────────────────────────────────────
 
 def load_regime_params(regime: str = None) -> dict:
-    """
-    从 mr_per_regime_params.json 读取指定 Regime 的最优参数。
-    文件更新后无需重启服务器——每次调用都重新读文件。
-    若文件不存在，返回内置默认参数。
-    """
-    if not os.path.exists(PARAMS_FILE):
-        return FALLBACK_PARAMS.get(regime or "RANGE", FALLBACK_PARAMS["RANGE"])
-    try:
-        with open(PARAMS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if regime:
-            reg_data = data.get("regimes", {}).get(regime, {})
-            return reg_data.get("params", FALLBACK_PARAMS.get(regime, FALLBACK_PARAMS["RANGE"]))
-        return data
-    except Exception as e:
-        print(f"[WARN] 读取参数文件失败：{e}，使用默认参数")
-        return FALLBACK_PARAMS.get(regime or "RANGE", FALLBACK_PARAMS["RANGE"])
+    """从版本化运行时配置读取 MR 参数。"""
+    if regime:
+        return get_mr_params(regime)
+    runtime = load_runtime_config()
+    mr = runtime["strategies"]["mr"]
+    return {
+        "regimes": {
+            state: {"params": get_mr_params(state)}
+            for state in ("BEAR", "RANGE", "BULL")
+        },
+        "next_optimize_after": mr.get("next_optimize_after"),
+        "revision": runtime["revision"],
+    }
 
 
 def needs_reoptimize() -> bool:
     """检查是否超过60天未重优化"""
-    if not os.path.exists(PARAMS_FILE):
-        return True
     try:
-        with open(PARAMS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        next_date = pd.to_datetime(data.get("next_optimize_after", "2000-01-01"))
+        runtime = load_runtime_config()
+        next_date = pd.to_datetime(
+            runtime["strategies"]["mr"].get("next_optimize_after", "2000-01-01")
+        )
         return pd.Timestamp.now() >= next_date
-    except:
+    except Exception:
         return True
 
 
 def get_all_regime_params() -> dict:
     """返回三态完整参数摘要（供API和前端使用）"""
-    if not os.path.exists(PARAMS_FILE):
-        return {
-            "BEAR":  {"params": FALLBACK_PARAMS["BEAR"],  "optimized_at": "N/A", "score": 0},
-            "RANGE": {"params": FALLBACK_PARAMS["RANGE"], "optimized_at": "N/A", "score": 0},
-            "BULL":  {"params": FALLBACK_PARAMS["BULL"],  "optimized_at": "N/A", "score": 0},
+    runtime = load_runtime_config()
+    published_at = runtime.get("published_at") or "baseline"
+    return {
+        state: {
+            "params": get_mr_params(state),
+            "optimized_at": published_at,
+            "pos_cap": get_position_cap("mr", state, as_ratio=True),
+            "score_gate": get_score_gate("mr", state),
+            "revision": runtime["revision"],
         }
-    try:
-        with open(PARAMS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return {
-            r: {
-                "params":       v.get("params", {}),
-                "desc":         v.get("desc", ""),
-                "optimized_at": v.get("optimized_at", "N/A"),
-                "combined_score": v.get("combined_score", 0),
-                "train_alpha":  v.get("train_kpi", {}).get("alpha"),
-                "valid_alpha":  v.get("valid_kpi", {}).get("alpha"),
-                "pos_cap":      REGIME_POS_CAP.get(r, 0.65),
-                "score_gate":   REGIME_SCORE_GATE.get(r, 68),
-            }
-            for r, v in data.get("regimes", {}).items()
-        }
-    except:
-        return {}
+        for state in ("BEAR", "RANGE", "BULL")
+    }
 
 
 # ─── 市场状态识别（统一算法，与信号评分系统保持一致） ────────────────────────
@@ -361,28 +335,36 @@ def _classify_regime_from_series(close_arr) -> dict:
     import numpy as np
     close = np.array(close_arr, dtype=float)
     n = len(close)
+    rules = get_regime_rules()
+    ma_period = int(rules["ma_period"])
+    slope_days = int(rules["slope_days"])
 
     # CRASH 检测
     ret3 = (close[-1] / close[-4] - 1) if n >= 4 else 0
-    if ret3 < -0.07:
-        return {"regime": "CRASH", "regime_cn": "崩盘警戒",
-                "regime_color": "#ef4444", "regime_icon": "🚨"}
+    is_crash = ret3 < float(rules["crash_return_3d"])
 
-    ma120 = close[-120:].mean() if n >= 120 else close.mean()
+    ma120 = close[-ma_period:].mean() if n >= ma_period else close.mean()
     ma60  = close[-60:].mean()  if n >= 60  else close.mean()
-    ma120_s = np.array([close[max(0,i-119):i+1].mean() for i in range(max(0,n-6), n)])
+    ma120_s = np.array([
+        close[max(0, i - ma_period + 1):i + 1].mean()
+        for i in range(max(0, n - slope_days - 1), n)
+    ])
     slope5 = float(np.polyfit(np.arange(len(ma120_s), dtype=float), ma120_s, 1)[0]) \
              if len(ma120_s) >= 2 else 0.0
-    ret5  = float((close[-1] / close[-6]  - 1) * 100) if n >= 6  else 0.0
-    ret20 = float((close[-1] / close[-21] - 1) * 100) if n >= 21 else 0.0
+    ret5_ratio = float(close[-1] / close[-6] - 1) if n >= 6 else 0.0
+    ret20_ratio = float(close[-1] / close[-21] - 1) if n >= 21 else 0.0
+    ret5 = ret5_ratio * 100
+    ret20 = ret20_ratio * 100
     cur   = float(close[-1])
     above = cur > ma120
 
-    if above and slope5 > 0 and ret20 > 0:
+    if is_crash:
+        regime, regime_cn, rc, ri = "CRASH", "崩盘警戒", "#ef4444", "🚨"
+    elif above and slope5 > 0 and ret20_ratio > float(rules["bull_return_20d_min"]):
         regime, regime_cn, rc, ri = "BULL",  "牛市",    "#10b981", "🟢"
     elif above:
         regime, regime_cn, rc, ri = "RANGE", "震荡市",  "#fbbf24", "🟡"
-    elif not above and ret5 > 3:
+    elif not above and ret5_ratio > float(rules["rebound_return_5d_min"]):
         regime, regime_cn, rc, ri = "RANGE", "震荡反弹","#fb923c", "🟠"
     else:
         regime, regime_cn, rc, ri = "BEAR",  "熊市",    "#ef4444", "🔴"
@@ -398,6 +380,8 @@ def _classify_regime_from_series(close_arr) -> dict:
         "ret5":         round(float(ret5), 2),
         "ret20":        round(float(ret20), 2),
         "above_ma120":  bool(above),   # ← 强制转为 Python bool，避免 numpy.bool_ 序列化失败
+        "ma_period":    ma_period,
+        "slope_days":   slope_days,
     }
 
 
@@ -426,8 +410,8 @@ def detect_regime() -> dict:
         info    = _classify_regime_from_series(close_arr)
         regime  = info["regime"]
         params  = load_regime_params(regime)
-        pos_cap = REGIME_POS_CAP.get(regime, 0.65)
-        score_gate = REGIME_SCORE_GATE.get(regime, 68)
+        pos_cap = get_position_cap("mr", regime, as_ratio=True)
+        score_gate = get_score_gate("mr", regime)
 
         # ── V6.0: AIAE 宏观约束穿透 ──
         # 读取 AIAE 缓存的 matrix_position 和 MR 子策略配额
@@ -437,26 +421,17 @@ def detect_regime() -> dict:
             from services.cache_service import cache_manager
             from aiae_params import SUB_STRATEGY_ALLOC
             aiae_ctx = cache_manager.get_json("aiae_ctx")
-            if aiae_ctx and aiae_ctx.get("regime"):
+            aiae_state = evaluate_aiae_context(aiae_ctx, now_ts=time.time())
+            if aiae_state["usable"] and aiae_ctx.get("regime"):
                 aiae_regime = aiae_ctx.get("regime", 3)
-                # V3.1 P2-A: 缓存新鲜度保护 (>24h 降级为 R3 中性)
-                try:
-                    import time as _time
-                    _ts = aiae_ctx.get("updated_at") or aiae_ctx.get("ts")
-                    if _ts:
-                        _age = (_time.time() - datetime.fromisoformat(
-                            str(_ts)).timestamp()) / 3600
-                        if _age > 24:
-                            print(f"[MR] aiae_ctx 缓存过期 ({_age:.0f}h), 降级为 R3")
-                            aiae_regime = 3
-                except Exception:
-                    pass
                 matrix_pos = aiae_ctx.get("cap", 55)  # AIAE 总仓位建议
                 mr_alloc_pct = SUB_STRATEGY_ALLOC.get(aiae_regime, {}).get("mr", 25) / 100.0
                 aiae_mr_cap = matrix_pos * mr_alloc_pct / 100.0  # 转为小数
                 if aiae_mr_cap < pos_cap:
                     aiae_cap_info = f"AIAE R{aiae_regime}约束: {pos_cap*100:.0f}%→{aiae_mr_cap*100:.0f}%"
                     pos_cap = aiae_mr_cap
+            elif aiae_state["present"]:
+                aiae_cap_info = f"AIAE约束未采用: {aiae_state['reason']}"
         except Exception:
             pass  # 缓存不可用时降级为纯 Regime 行为
 
@@ -482,9 +457,9 @@ def detect_regime() -> dict:
         return {
             "regime":     "RANGE",
             "regime_cn":  "震荡市",
-            "params":     FALLBACK_PARAMS["RANGE"],
-            "pos_cap":    0.70,
-            "score_gate": 68,
+            "params":     get_mr_params("RANGE"),
+            "pos_cap":    get_position_cap("mr", "RANGE", as_ratio=True),
+            "score_gate": get_score_gate("mr", "RANGE"),
             "error":      str(e),
         }
 

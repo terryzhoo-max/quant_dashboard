@@ -29,6 +29,8 @@ import logging
 from datetime import datetime, timedelta
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from services.health_status import evaluate_aiae_context
+from services.strategy_params import get_position_cap
 
 
 logger = logging.getLogger("alphacore.dividend")
@@ -67,7 +69,7 @@ REGIME_PARAMS = {
         "bias_sell":  7.0,  # 放宽：给足盈利空间
         "ma_defend": 20,    # 收紧防守：牛市跌破MA20就走
         "boll_n":    20,
-        "pos_cap":   0.85,  # 仓位上限85%
+        "pos_cap":   get_position_cap("dividend", "BULL", as_ratio=True),
         "entry_gate": 55,   # 评分入场门槛55分（趋势市降低要求）
         "note":      "牛市模式：RSI/BIAS阈值放宽，趋势持仓为主"
     },
@@ -79,7 +81,7 @@ REGIME_PARAMS = {
         "bias_sell":  5.5,
         "ma_defend": 30,
         "boll_n":    20,
-        "pos_cap":   0.70,  # 仓位上限70%
+        "pos_cap":   get_position_cap("dividend", "RANGE", as_ratio=True),
         "entry_gate": 65,   # 标准入场门槛65分
         "note":      "震荡模式：V3.0标准参数，低吸高卖"
     },
@@ -91,7 +93,7 @@ REGIME_PARAMS = {
         "bias_sell":  4.5,  # 收紧：更早止盈
         "ma_defend": 40,    # 宽松防守：减少假跌破清仓频率
         "boll_n":    20,
-        "pos_cap":   0.45,  # 仓位上限45%
+        "pos_cap":   get_position_cap("dividend", "BEAR", as_ratio=True),
         "entry_gate": 75,   # 高门槛75分，确定性才入
         "note":      "熊市模式：RSI/BIAS阈值收紧，严控仓位"
     },
@@ -103,7 +105,7 @@ REGIME_PARAMS = {
         "bias_sell":  3.0,
         "ma_defend": 20,
         "boll_n":    20,
-        "pos_cap":   0.0,   # 全面空仓
+        "pos_cap":   get_position_cap("dividend", "CRASH", as_ratio=True),
         "entry_gate": 999,  # 禁止任何新建仓
         "note":      "熔断保护：禁止买入，高股息已持仓不强制清仓"
     },
@@ -520,7 +522,8 @@ def run_dividend_strategy(regime: str = None) -> dict:
     if regime not in REGIME_PARAMS:
         regime = DEFAULT_REGIME
 
-    p = REGIME_PARAMS[regime]
+    p = dict(REGIME_PARAMS[regime])
+    p["pos_cap"] = get_position_cap("dividend", regime, as_ratio=True)
 
     logger.info("========= 红利趋势策略 V3.2 启动 =========")
     logger.info("市场状态: %s | %s", regime, p['note'])
@@ -589,34 +592,17 @@ def run_dividend_strategy(regime: str = None) -> dict:
     total_pos   = min(raw_total_pos, pos_cap_pct)
 
     # ── V5.0: AIAE 配额穿透约束 (与 MR/Momentum 引擎一致) ──
-    # AIAE 只能压低仓位，不能放大；24h缓存过期降级为R3
+    # AIAE 只能压低仓位，不能放大；可用性由统一健康契约判定
     aiae_regime = None
     aiae_cap_pct = None
     try:
-        from engines.aiae_engine import get_aiae_engine
-        aiae_engine = get_aiae_engine()
-        aiae_ctx = getattr(aiae_engine, '_last_report_cache', None)
-        if aiae_ctx and isinstance(aiae_ctx, dict):
-            cached_at = aiae_ctx.get('generated_at', '')
-            # 24h 新鲜度保护
-            is_fresh = False
-            if cached_at:
-                try:
-                    from datetime import datetime as _dt
-                    cache_time = _dt.fromisoformat(cached_at.replace('Z', '+00:00'))
-                    age_hours = (datetime.now(cache_time.tzinfo) - cache_time).total_seconds() / 3600
-                    is_fresh = age_hours < 24
-                except:
-                    is_fresh = False
-
-            if is_fresh:
-                current = aiae_ctx.get('current', {})
-                aiae_regime = current.get('regime', 3)
-            else:
-                aiae_regime = 3  # 过期降级为R3
-
+        from services.cache_service import cache_manager
+        aiae_ctx = cache_manager.get_json("aiae_ctx")
+        aiae_state = evaluate_aiae_context(aiae_ctx, now_ts=time.time())
+        if aiae_state["usable"]:
+            aiae_regime = aiae_ctx.get('regime', 3)
             # 从 SUB_STRATEGY_ALLOC 获取红利配额
-            from engines.aiae_params import SUB_STRATEGY_ALLOC
+            from aiae_params import SUB_STRATEGY_ALLOC
             if aiae_regime in SUB_STRATEGY_ALLOC:
                 aiae_cap_pct = SUB_STRATEGY_ALLOC[aiae_regime].get('div', 100)
                 old_pos = total_pos
@@ -624,6 +610,8 @@ def run_dividend_strategy(regime: str = None) -> dict:
                 if total_pos < old_pos:
                     logger.info("AIAE V5 配额约束: R%s div配额=%s%%, 仓位 %d%% → %d%%",
                           aiae_regime, aiae_cap_pct, old_pos, total_pos)
+        elif aiae_state["present"]:
+            logger.warning("AIAE配额未采用: %s", aiae_state["reason"])
     except Exception as e:
         logger.warning("AIAE配额读取失败(non-fatal): %s", e)
 

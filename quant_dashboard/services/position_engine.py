@@ -10,7 +10,89 @@ AlphaCore · 仓位决策引擎 (从 main.py 提取)
   - get_tactical_label: V3.6 仓位标签
 """
 
+import math
+import time
+from collections.abc import Mapping
+
 from aiae_engine import REGIMES as AIAE_REGIMES
+from services.health_status import evaluate_aiae_context
+
+
+def _has_valid_decision_payload(aiae_ctx):
+    """Validate the minimum payload needed to emit position instructions."""
+    if not isinstance(aiae_ctx, Mapping):
+        return False
+    regime = aiae_ctx.get("regime")
+    cap = aiae_ctx.get("cap")
+    regime_info = aiae_ctx.get("regime_info")
+    if isinstance(regime, bool) or not isinstance(regime, int) or regime not in AIAE_REGIMES:
+        return False
+    if isinstance(cap, bool) or not isinstance(cap, (int, float)) or not math.isfinite(cap):
+        return False
+    if not 0 <= cap <= 100 or not isinstance(regime_info, Mapping):
+        return False
+    return all(regime_info.get(field) for field in ("emoji", "cn", "color", "action"))
+
+
+def _usable_aiae_context(aiae_ctx):
+    state = evaluate_aiae_context(aiae_ctx, now_ts=time.time())
+    return aiae_ctx if state["usable"] and _has_valid_decision_payload(aiae_ctx) else None
+
+
+def _locked_tomorrow_plan(aiae_state, vix_analysis):
+    """Return a fail-closed plan without synthesizing executable tactics."""
+    reason = aiae_state.get("reason") or "unverifiable"
+    quality_score = aiae_state.get("data_quality_score", 0)
+    age_sec = aiae_state.get("age_sec")
+    max_age_sec = aiae_state.get("max_age_sec")
+
+    if reason == "missing":
+        message = "AIAE 数据缺失，停止生成交易指令"
+    elif reason == "decision_locked":
+        message = f"AIAE 数据质量/风控未通过（质量分 {quality_score}/100），停止生成交易指令"
+    elif reason == "timestamp_missing_or_invalid":
+        message = "AIAE 时间戳缺失或无效，停止生成交易指令"
+    elif reason == "stale":
+        message = f"AIAE 数据已过期（{age_sec}秒 > {max_age_sec}秒），停止生成交易指令"
+    elif reason == "invalid_payload":
+        message = "AIAE 决策字段缺失或无效，停止生成交易指令"
+    else:
+        message = "AIAE 状态不可验证，停止生成交易指令"
+
+    directive = {
+        "priority": "risk",
+        "icon": "🔒",
+        "text": message,
+        "color": "#ef4444",
+    }
+    return {
+        "mode": "locked",
+        "decision_locked": True,
+        "lock_reason": reason,
+        "lock_message": message,
+        "lock_details": {
+            "present": aiae_state.get("present", False),
+            "fresh": aiae_state.get("fresh", False),
+            "age_sec": age_sec,
+            "max_age_sec": max_age_sec,
+            "data_quality_score": quality_score,
+        },
+        "primary_regime": None,
+        "validators": {
+            "vix": {
+                "value": vix_analysis.get("vix_val"),
+                "label": vix_analysis.get("label", ""),
+                "advisory_only": True,
+            },
+        },
+        "regime_matrix": [],
+        "directives": [directive],
+        "scenarios": [],
+        "risk_panel": {},
+        # 兼容旧消费者，但只暴露锁定信息，不生成任何 VIX 替代策略。
+        "framework": [message],
+        "current_tactics": {"regime": "🔒 决策锁定"},
+    }
 
 
 # ═══════════════════════════════════════════════════
@@ -73,22 +155,26 @@ def get_position_path(current_pos: float, vix_analysis: dict,
     P0-4 Fix: 增加 AIAE cap 上界约束
     当 AIAE=R5 (cap=15%) 但 VIX=18 (平静) 时,
     不再建议向上调仓 — 路径被 AIAE cap 钳位。
+
+    AIAE 缺失、锁定或过期时冻结路径，防止 VIX 单因子绕过主轴风控。
     """
     v_val = vix_analysis.get('vix_val', 20)
 
-    # P0-4: 获取 AIAE 仓位上限 (如果可用)
-    aiae_cap = 100  # 默认不限制
-    if aiae_ctx and aiae_ctx.get("cap") is not None:
-        aiae_cap = aiae_ctx["cap"]
-    elif aiae_ctx is None:
-        # 尝试从缓存读取 (兼容旧调用方式)
+    # 获取单一 AIAE 上下文；兼容旧调用方式时才从缓存读取。
+    effective_ctx = aiae_ctx
+    if effective_ctx is None:
         try:
             from services.cache_service import cache_manager
-            _ctx = cache_manager.get_json("aiae_ctx")
-            if _ctx and _ctx.get("cap") is not None:
-                aiae_cap = _ctx["cap"]
+            effective_ctx = cache_manager.get_json("aiae_ctx")
         except Exception:
-            pass
+            effective_ctx = None
+
+    usable_ctx = _usable_aiae_context(effective_ctx)
+    if not usable_ctx:
+        frozen_pos = round(max(10, min(100, float(current_pos))), 1)
+        return [frozen_pos] * 5
+
+    aiae_cap = usable_ctx.get("cap", 100)
 
     path = []
     # 模拟路径：基于 VIX 向常态(20)回归的假设进行预测
@@ -169,12 +255,19 @@ def _synthesize_directives(aiae_ctx, vix_analysis):
 def get_tomorrow_plan(vix_analysis, temp_score, aiae_ctx=None):
     """V2.0: 明日交易计划 · AIAE五档主轴 + ERP/VIX 验证
 
-    当 aiae_ctx 传入时, 使用 AIAE×ERP×VIX 三因子决策树; 否则降级为旧版 VIX 4阶查表。
+    仅在 AIAE 状态、质量和新鲜度全部通过时生成三因子决策；
+    任何缺失或降级状态都强制锁定，不允许 VIX 替代 AIAE 主轴。
     """
     v_val = vix_analysis.get('vix_val', 20)
+    aiae_state = evaluate_aiae_context(aiae_ctx, now_ts=time.time())
+    if not aiae_state["usable"]:
+        return _locked_tomorrow_plan(aiae_state, vix_analysis)
+    if not _has_valid_decision_payload(aiae_ctx):
+        invalid_state = dict(aiae_state, usable=False, decision_locked=True, reason="invalid_payload")
+        return _locked_tomorrow_plan(invalid_state, vix_analysis)
 
     # ========== 新版 V2.0 逻辑 ==========
-    if aiae_ctx and aiae_ctx.get("regime"):
+    if aiae_ctx.get("regime"):
         regime = aiae_ctx["regime"]
         regime_info = aiae_ctx["regime_info"]
         cap = aiae_ctx["cap"]
@@ -279,6 +372,9 @@ def get_tomorrow_plan(vix_analysis, temp_score, aiae_ctx=None):
         scenarios_compat = [{"case": s["condition"], "action": s["action"]} for s in scenarios]
 
         return {
+            "mode": "decision",
+            "decision_locked": False,
+            "lock_reason": None,
             "primary_regime": primary_regime,
             "validators": validators,
             "regime_matrix": regime_matrix,
@@ -290,26 +386,9 @@ def get_tomorrow_plan(vix_analysis, temp_score, aiae_ctx=None):
             "current_tactics": tactics_compat,
         }
 
-    # ========== 旧版降级: VIX 4阶查表 (无 aiae_ctx) ==========
-    matrix = [
-        {"id": "calm", "regime": "🟢 极度活跃", "vix_range": "< 15",
-         "tactics": "进攻：主攻低位AI/算力", "pos": "85-100%", "active": v_val < 15},
-        {"id": "normal", "regime": "🟡 常态回归", "vix_range": "15-25",
-         "tactics": "稳健：20日线择时对焦", "pos": "60-85%", "active": 15 <= v_val < 25},
-        {"id": "alert", "regime": "🔴 高度警觉", "vix_range": "25-35",
-         "tactics": "防御：增配红利/低波", "pos": "35-60%", "active": 25 <= v_val < 35},
-        {"id": "crisis", "regime": "🔴🔴 极端恐慌", "vix_range": "> 35",
-         "tactics": "熔断：现金为王，观察", "pos": "10-35%", "active": v_val >= 35},
-    ]
-    curr = next((m for m in matrix if m['active']), matrix[1])
-    if v_val < 25:
-        framework = ["🔥 优先：适度加仓硬科技龙头", "💎 持有：算力/AI 核心资产", "📊 布局：科创50/创业板ETF"]
-    elif v_val < 35:
-        framework = ["🛡️ 优先：严格执行20日止损线", "🌊 避险：增配中字头红利", "⚖️ 调仓：卖出高波非核心标的"]
-    else:
-        framework = ["⚠️ 核心：战略防御，保留现金", "🥇 避险：关注黄金/避险资产", "🛑 熔断：拒绝一切左侧接盘"]
-    scenarios = [{"case": "VIX<18", "action": "加仓科技主线"}, {"case": "VIX>30", "action": "降仓至50%以下"}]
-    return {"regime_matrix": matrix, "current_tactics": curr, "framework": framework, "scenarios": scenarios}
+    # 通过载荷校验后 regime 必然存在；保留防御性锁定以防未来协议扩展。
+    invalid_state = dict(aiae_state, usable=False, decision_locked=True, reason="invalid_payload")
+    return _locked_tomorrow_plan(invalid_state, vix_analysis)
 
 
 # ═══════════════════════════════════════════════════

@@ -1,0 +1,469 @@
+"""Versioned production strategy parameters and atomic CI publication."""
+
+import copy
+import json
+import math
+import os
+import shutil
+import threading
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Mapping
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+RUNTIME_CONFIG_PATH = PROJECT_ROOT / "config" / "strategy_runtime.json"
+REGIMES = ("BEAR", "RANGE", "BULL", "CRASH")
+
+with RUNTIME_CONFIG_PATH.open("r", encoding="utf-8") as _default_file:
+    DEFAULT_RUNTIME_CONFIG = json.load(_default_file)
+
+_cache_lock = threading.RLock()
+_publish_lock = threading.Lock()
+_cached_config = None
+_cached_mtime_ns = None
+
+
+def _number(value: Any, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{name} must be numeric")
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"{name} must be finite")
+    return result
+
+
+def _validate_range(value: Any, name: str, lower: float, upper: float) -> None:
+    number = _number(value, name)
+    if number < lower or number > upper:
+        raise ValueError(f"{name} must be between {lower} and {upper}")
+
+
+def validate_runtime_config(config: Mapping[str, Any]) -> None:
+    """Validate the complete runtime parameter document or raise ValueError."""
+    if not isinstance(config, Mapping):
+        raise ValueError("runtime config must be an object")
+    if config.get("schema_version") != 1:
+        raise ValueError("unsupported runtime config schema")
+    revision = config.get("revision")
+    if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
+        raise ValueError("revision must be a positive integer")
+
+    regime = config.get("regime", {})
+    _validate_range(regime.get("ma_period"), "regime.ma_period", 20, 300)
+    _validate_range(regime.get("slope_days"), "regime.slope_days", 1, 60)
+    _validate_range(regime.get("crash_return_3d"), "regime.crash_return_3d", -0.50, -0.01)
+    _validate_range(regime.get("bull_return_20d_min"), "regime.bull_return_20d_min", -0.10, 0.30)
+    _validate_range(regime.get("rebound_return_5d_min"), "regime.rebound_return_5d_min", 0.0, 0.30)
+
+    strategies = config.get("strategies", {})
+    for strategy in ("mr", "momentum", "gem", "dividend"):
+        caps = strategies.get(strategy, {}).get("position_caps", {})
+        for state in REGIMES:
+            _validate_range(caps.get(state), f"{strategy}.position_caps.{state}", 0, 100)
+
+    for strategy in ("mr", "momentum"):
+        losses = strategies.get(strategy, {}).get("stop_losses", {})
+        for state in REGIMES:
+            _validate_range(losses.get(state), f"{strategy}.stop_losses.{state}", 0, 0.50)
+
+    momentum = strategies.get("momentum", {})
+    single_caps = momentum.get("single_position_caps", {})
+    for state in REGIMES:
+        _validate_range(
+            single_caps.get(state),
+            f"momentum.single_position_caps.{state}",
+            0,
+            100,
+        )
+        if float(single_caps[state]) > float(momentum["position_caps"][state]):
+            raise ValueError(
+                f"momentum.single_position_caps.{state} must not exceed total position cap"
+            )
+    for state in ("BEAR", "RANGE", "BULL"):
+        _validate_range(
+            momentum.get("score_gates", {}).get(state),
+            f"momentum.score_gates.{state}",
+            0,
+            100,
+        )
+    _validate_range(
+        momentum.get("score_gates", {}).get("CRASH"),
+        "momentum.score_gates.CRASH",
+        100,
+        1000,
+    )
+    validation = momentum.get("validation", {})
+    execution = momentum.get("execution", {})
+    if execution.get("amount_unit") != "thousand_cny":
+        raise ValueError("momentum.execution.amount_unit must be thousand_cny")
+    _validate_range(
+        execution.get("liquidity_lookback_days"),
+        "momentum.execution.liquidity_lookback_days",
+        5,
+        120,
+    )
+    _validate_range(
+        execution.get("min_valid_amount_days"),
+        "momentum.execution.min_valid_amount_days",
+        5,
+        120,
+    )
+    if int(execution["min_valid_amount_days"]) > int(
+        execution["liquidity_lookback_days"]
+    ):
+        raise ValueError(
+            "momentum.execution.min_valid_amount_days must not exceed lookback"
+        )
+    _validate_range(
+        execution.get("min_median_turnover_cny"),
+        "momentum.execution.min_median_turnover_cny",
+        1_000_000,
+        100_000_000_000,
+    )
+    _validate_range(
+        execution.get("max_participation_rate"),
+        "momentum.execution.max_participation_rate",
+        0.001,
+        0.10,
+    )
+    if not isinstance(execution.get("pretrade_quote_required"), bool):
+        raise ValueError(
+            "momentum.execution.pretrade_quote_required must be boolean"
+        )
+    _validate_range(
+        execution.get("constituent_max_age_days"),
+        "momentum.execution.constituent_max_age_days",
+        1,
+        120,
+    )
+    _validate_range(
+        execution.get("constituent_top_n"),
+        "momentum.execution.constituent_top_n",
+        1,
+        20,
+    )
+    weight_bounds = execution.get("constituent_weight_sum_bounds_pct")
+    if not isinstance(weight_bounds, list) or len(weight_bounds) != 2:
+        raise ValueError(
+            "momentum.execution.constituent_weight_sum_bounds_pct must have two values"
+        )
+    _validate_range(
+        weight_bounds[0],
+        "momentum.execution.constituent_weight_sum_bounds_pct.lower",
+        50,
+        100,
+    )
+    _validate_range(
+        weight_bounds[1],
+        "momentum.execution.constituent_weight_sum_bounds_pct.upper",
+        100,
+        150,
+    )
+    if float(weight_bounds[0]) >= float(weight_bounds[1]):
+        raise ValueError(
+            "momentum.execution constituent weight lower bound must be below upper"
+        )
+    if not isinstance(validation.get("model_id"), str) or not validation["model_id"]:
+        raise ValueError("momentum.validation.model_id must be non-empty")
+    if not isinstance(validation.get("factor_version"), str) or not validation["factor_version"]:
+        raise ValueError("momentum.validation.factor_version must be non-empty")
+    artifact_path = validation.get("artifact_path")
+    if not isinstance(artifact_path, str) or not artifact_path.endswith(".json"):
+        raise ValueError("momentum.validation.artifact_path must be a JSON path")
+    universe_path = validation.get("universe_history_path")
+    if not isinstance(universe_path, str) or not universe_path.endswith(".json"):
+        raise ValueError("momentum.validation.universe_history_path must be a JSON path")
+    for date_key in ("validation_start", "holdout_start"):
+        try:
+            datetime.fromisoformat(str(validation.get(date_key)))
+        except (TypeError, ValueError):
+            raise ValueError(f"momentum.validation.{date_key} must be an ISO date")
+    if validation["holdout_start"] <= validation["validation_start"]:
+        raise ValueError("momentum.validation.holdout_start must follow validation_start")
+    _validate_range(validation.get("rebalance_days"), "momentum.validation.rebalance_days", 5, 63)
+    _validate_range(validation.get("holding_days"), "momentum.validation.holding_days", 5, 63)
+    _validate_range(validation.get("min_history_days"), "momentum.validation.min_history_days", 60, 1250)
+    _validate_range(validation.get("round_trip_cost_bps"), "momentum.validation.round_trip_cost_bps", 0, 200)
+    _validate_range(validation.get("max_artifact_age_days"), "momentum.validation.max_artifact_age_days", 1, 365)
+    _validate_range(validation.get("max_data_lag_days"), "momentum.validation.max_data_lag_days", 1, 90)
+    lifecycle = validation.get("regime_lifecycle")
+    if not isinstance(lifecycle, Mapping) or set(lifecycle) != set(REGIMES):
+        raise ValueError("momentum.validation.regime_lifecycle must cover all regimes")
+    allowed_lifecycle = {"disabled", "shadow", "enabled"}
+    if any(value not in allowed_lifecycle for value in lifecycle.values()):
+        raise ValueError("momentum.validation.regime_lifecycle contains invalid state")
+    promotion = validation.get("promotion", {})
+    _validate_range(promotion.get("min_oos_signals"), "momentum.validation.promotion.min_oos_signals", 1, 100000)
+    _validate_range(promotion.get("min_oos_win_rate"), "momentum.validation.promotion.min_oos_win_rate", 0, 1)
+    _validate_range(promotion.get("min_profit_factor"), "momentum.validation.promotion.min_profit_factor", 0, 100)
+    _validate_range(promotion.get("min_avg_excess_return"), "momentum.validation.promotion.min_avg_excess_return", -1, 1)
+    _validate_range(promotion.get("max_drawdown"), "momentum.validation.promotion.max_drawdown", 0, 1)
+    _validate_range(promotion.get("min_regime_signals"), "momentum.validation.promotion.min_regime_signals", 1, 100000)
+    _validate_range(promotion.get("min_regime_win_rate"), "momentum.validation.promotion.min_regime_win_rate", 0, 1)
+    _validate_range(promotion.get("min_regime_profit_factor"), "momentum.validation.promotion.min_regime_profit_factor", 0, 100)
+    _validate_range(promotion.get("min_regime_avg_excess_return"), "momentum.validation.promotion.min_regime_avg_excess_return", -1, 1)
+    _validate_range(promotion.get("min_regime_periods"), "momentum.validation.promotion.min_regime_periods", 1, 10000)
+    _validate_range(promotion.get("min_regime_positive_period_rate"), "momentum.validation.promotion.min_regime_positive_period_rate", 0, 1)
+    _validate_range(promotion.get("min_regime_wilson_lower_95"), "momentum.validation.promotion.min_regime_wilson_lower_95", 0, 1)
+    _validate_range(promotion.get("min_regime_period_profit_factor"), "momentum.validation.promotion.min_regime_period_profit_factor", 0, 100)
+    _validate_range(promotion.get("min_regime_period_avg_excess_return"), "momentum.validation.promotion.min_regime_period_avg_excess_return", -1, 1)
+    _validate_range(promotion.get("max_regime_period_drawdown"), "momentum.validation.promotion.max_regime_period_drawdown", 0, 1)
+    required_regimes = promotion.get("required_regimes")
+    if not isinstance(required_regimes, list) or not required_regimes:
+        raise ValueError("momentum.validation.promotion.required_regimes must be non-empty")
+    if any(state not in REGIMES for state in required_regimes):
+        raise ValueError("momentum.validation.promotion.required_regimes contains invalid regime")
+    if not isinstance(promotion.get("require_point_in_time_universe"), bool):
+        raise ValueError("momentum.validation.promotion.require_point_in_time_universe must be boolean")
+
+    mr = strategies.get("mr", {})
+    for state in ("BEAR", "RANGE", "BULL"):
+        params = mr.get("regimes", {}).get(state, {}).get("params", {})
+        if "stop_loss" in params:
+            raise ValueError(f"mr.regimes.{state}.params.stop_loss duplicates mr.stop_losses")
+        params_with_stop = dict(params)
+        params_with_stop["stop_loss"] = mr.get("stop_losses", {}).get(state)
+        _validate_mr_params(params_with_stop)
+        _validate_range(mr.get("score_gates", {}).get(state), f"mr.score_gates.{state}", 0, 100)
+    _validate_range(mr.get("score_gates", {}).get("CRASH"), "mr.score_gates.CRASH", 100, 1000)
+
+    _validate_erp_params(strategies.get("erp", {}).get("params", {}))
+
+
+def _normalize_mr_params(params: Mapping[str, Any]) -> dict:
+    normalized = dict(params)
+    if "N_trend" not in normalized and "ma_trend" in normalized:
+        normalized["N_trend"] = normalized.pop("ma_trend")
+    else:
+        normalized.pop("ma_trend", None)
+    return normalized
+
+
+def _validate_mr_params(params: Mapping[str, Any]) -> None:
+    params = _normalize_mr_params(params)
+    _validate_range(params.get("N_trend"), "mr.N_trend", 20, 300)
+    _validate_range(params.get("rsi_period"), "mr.rsi_period", 2, 60)
+    _validate_range(params.get("rsi_buy"), "mr.rsi_buy", 0, 50)
+    _validate_range(params.get("rsi_sell"), "mr.rsi_sell", 50, 100)
+    _validate_range(params.get("bias_buy"), "mr.bias_buy", -20, 0)
+    _validate_range(params.get("stop_loss"), "mr.stop_loss", 0.01, 0.50)
+    if params["rsi_buy"] >= params["rsi_sell"]:
+        raise ValueError("mr.rsi_buy must be below mr.rsi_sell")
+
+
+def _validate_erp_params(params: Mapping[str, Any]) -> None:
+    _validate_range(params.get("buy_threshold"), "erp.buy_threshold", 1, 100)
+    _validate_range(params.get("sell_threshold"), "erp.sell_threshold", 0, 99)
+    _validate_range(params.get("erp_window"), "erp.erp_window", 60, 3000)
+    _validate_range(params.get("stop_loss"), "erp.stop_loss", 0, 50)
+    if params["buy_threshold"] <= params["sell_threshold"]:
+        raise ValueError("erp.buy_threshold must exceed erp.sell_threshold")
+
+    weight_keys = ("w_erp_abs", "w_erp_pct", "w_m1", "w_vol", "w_credit")
+    weights = []
+    for key in weight_keys:
+        _validate_range(params.get(key), f"erp.{key}", 0, 1)
+        weights.append(float(params[key]))
+    if not math.isclose(sum(weights), 1.0, abs_tol=1e-8):
+        raise ValueError("ERP weights must sum to 1.0")
+
+
+def _read_config_strict(path: Path) -> dict:
+    with path.open("r", encoding="utf-8") as handle:
+        config = json.load(handle)
+    validate_runtime_config(config)
+    return config
+
+
+def load_runtime_config(*, force: bool = False, path: Path | str | None = None) -> dict:
+    """Load the validated runtime config, cached by mtime in production."""
+    global _cached_config, _cached_mtime_ns
+    target = Path(path) if path is not None else RUNTIME_CONFIG_PATH
+    if path is not None:
+        return _read_config_strict(target)
+
+    with _cache_lock:
+        mtime_ns = target.stat().st_mtime_ns
+        if force or _cached_config is None or mtime_ns != _cached_mtime_ns:
+            _cached_config = _read_config_strict(target)
+            _cached_mtime_ns = mtime_ns
+        return copy.deepcopy(_cached_config)
+
+
+def get_regime_rules() -> dict:
+    return load_runtime_config()["regime"]
+
+
+def get_position_cap(strategy: str, regime: str, *, as_ratio: bool = False) -> float:
+    caps = load_runtime_config()["strategies"][strategy]["position_caps"]
+    value = float(caps[regime.upper()])
+    return value / 100.0 if as_ratio else value
+
+
+def get_stop_loss(strategy: str, regime: str) -> float:
+    losses = load_runtime_config()["strategies"][strategy]["stop_losses"]
+    return float(losses[regime.upper()])
+
+
+def get_single_position_cap(
+    strategy: str, regime: str, *, as_ratio: bool = False
+) -> float:
+    caps = load_runtime_config()["strategies"][strategy]["single_position_caps"]
+    value = float(caps[regime.upper()])
+    return value / 100.0 if as_ratio else value
+
+
+def get_score_gate(strategy: str, regime: str) -> float:
+    gates = load_runtime_config()["strategies"][strategy]["score_gates"]
+    return float(gates[regime.upper()])
+
+
+def get_industry_validation_rules() -> dict:
+    """Return the versioned validation and promotion contract."""
+    return copy.deepcopy(
+        load_runtime_config()["strategies"]["momentum"]["validation"]
+    )
+
+
+def get_industry_execution_rules() -> dict:
+    """Return the versioned ETF liquidity and order-release contract."""
+    return copy.deepcopy(
+        load_runtime_config()["strategies"]["momentum"]["execution"]
+    )
+
+
+def get_mr_params(regime: str) -> dict:
+    state = regime.upper()
+    mr = load_runtime_config()["strategies"]["mr"]
+    source_state = "RANGE" if state == "CRASH" else state
+    params = _normalize_mr_params(mr["regimes"][source_state]["params"])
+    params["stop_loss"] = float(mr["stop_losses"][state])
+    return params
+
+
+def get_all_mr_params() -> dict:
+    return {state: get_mr_params(state) for state in ("BEAR", "RANGE", "BULL")}
+
+
+def get_erp_params() -> dict:
+    return load_runtime_config()["strategies"]["erp"]["params"]
+
+
+def get_runtime_metadata() -> dict:
+    config = load_runtime_config()
+    return {
+        "schema_version": config["schema_version"],
+        "revision": config["revision"],
+        "published_at": config.get("published_at"),
+        "published_by": config.get("published_by"),
+    }
+
+
+def _apply_ci_update(config: dict, ci_run: Mapping[str, Any]) -> None:
+    strategy = str(ci_run.get("strategy", "")).lower()
+    new_params = ci_run.get("new_params")
+    if not isinstance(new_params, Mapping) or not new_params:
+        raise ValueError("CI run has no publishable parameters")
+
+    if strategy == "mr":
+        regime = str(ci_run.get("regime", "")).upper()
+        if regime not in ("BEAR", "RANGE", "BULL"):
+            raise ValueError("MR publication requires BEAR, RANGE, or BULL")
+        normalized = _normalize_mr_params(new_params)
+        _validate_mr_params(normalized)
+        stop_loss = float(normalized.pop("stop_loss"))
+        config["strategies"]["mr"]["regimes"][regime]["params"] = normalized
+        config["strategies"]["mr"]["stop_losses"][regime] = stop_loss
+        config["strategies"]["mr"]["regimes"][regime]["published_run_id"] = ci_run.get("run_id")
+        config["strategies"]["mr"]["next_optimize_after"] = (
+            datetime.now() + timedelta(days=60)
+        ).date().isoformat()
+        return
+
+    if strategy == "erp":
+        params = dict(new_params)
+        _validate_erp_params(params)
+        config["strategies"]["erp"]["params"] = params
+        config["strategies"]["erp"]["published_run_id"] = ci_run.get("run_id")
+        return
+
+    raise ValueError(f"unsupported CI strategy: {strategy}")
+
+
+def _published_run_id(config: Mapping[str, Any], ci_run: Mapping[str, Any]) -> Any:
+    strategy = str(ci_run.get("strategy", "")).lower()
+    if strategy == "mr":
+        regime = str(ci_run.get("regime", "")).upper()
+        return (
+            config.get("strategies", {})
+            .get("mr", {})
+            .get("regimes", {})
+            .get(regime, {})
+            .get("published_run_id")
+        )
+    if strategy == "erp":
+        return config.get("strategies", {}).get("erp", {}).get("published_run_id")
+    return None
+
+
+def _atomic_write_config(path: Path, config: dict) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_name(
+        f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp"
+    )
+    backup_path = path.with_suffix(path.suffix + ".bak")
+    try:
+        with temp_path.open("w", encoding="utf-8", newline="\n") as handle:
+            json.dump(config, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+
+        _read_config_strict(temp_path)
+        if path.exists():
+            shutil.copy2(path, backup_path)
+        os.replace(temp_path, path)
+        return backup_path
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
+
+
+def publish_ci_parameters(
+    ci_run: Mapping[str, Any], *, path: Path | str | None = None,
+) -> dict:
+    """Validate and atomically publish one accepted CI parameter set."""
+    global _cached_config, _cached_mtime_ns
+    target = Path(path) if path is not None else RUNTIME_CONFIG_PATH
+
+    with _publish_lock:
+        current = _read_config_strict(target)
+        run_id = ci_run.get("run_id")
+        if run_id and _published_run_id(current, ci_run) == run_id:
+            return {
+                "revision": current["revision"],
+                "published_at": current.get("published_at"),
+                "published_by": current.get("published_by"),
+                "backup_path": str(target.with_suffix(target.suffix + ".bak")),
+                "already_published": True,
+            }
+        updated = copy.deepcopy(current)
+        _apply_ci_update(updated, ci_run)
+        updated["revision"] = current["revision"] + 1
+        updated["published_at"] = datetime.now().isoformat()
+        updated["published_by"] = f"ci:{ci_run.get('run_id', 'unknown')}"
+        validate_runtime_config(updated)
+        backup_path = _atomic_write_config(target, updated)
+
+        if target == RUNTIME_CONFIG_PATH:
+            with _cache_lock:
+                _cached_config = copy.deepcopy(updated)
+                _cached_mtime_ns = target.stat().st_mtime_ns
+
+        return {
+            "revision": updated["revision"],
+            "published_at": updated["published_at"],
+            "published_by": updated["published_by"],
+            "backup_path": str(backup_path),
+        }

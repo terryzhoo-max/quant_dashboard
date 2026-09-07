@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import tushare as ts
 import os
 import time
@@ -16,6 +17,9 @@ TUSHARE_TOKEN = config.TUSHARE_TOKEN
 DATA_DIR = "data_lake"
 FINA_INDICATOR_DIR = os.path.join(DATA_DIR, "financials")
 DAILY_PRICE_DIR = os.path.join(DATA_DIR, "daily_prices")
+# 产业追踪只读取这一前复权命名空间。它与实时动量的未复权缓存物理隔离，
+# 避免 fund_daily 覆盖 pro_bar(qfq) 历史后制造拆分式虚假涨跌。
+INDUSTRY_DAILY_PRICE_DIR = os.path.join(DATA_DIR, "industry_prices_qfq")
 
 # 初始化 Tushare
 ts.set_token(TUSHARE_TOKEN)
@@ -29,6 +33,8 @@ class FactorDataManager:
             os.makedirs(FINA_INDICATOR_DIR)
         if not os.path.exists(DAILY_PRICE_DIR):
             os.makedirs(DAILY_PRICE_DIR)
+        if not os.path.exists(INDUSTRY_DAILY_PRICE_DIR):
+            os.makedirs(INDUSTRY_DAILY_PRICE_DIR)
 
     def get_all_stocks(self) -> pd.DataFrame:
         """获取全市场 A 股列表 — V6.0: 30天自动刷新 (覆盖新上市/退市)"""
@@ -114,13 +120,17 @@ class FactorDataManager:
         available_cols = [c for c in cols if c in df.columns]
         return df[available_cols]
 
-    def sync_daily_prices(self, ts_codes: List[str], start_date: str = "20180101", end_date: Optional[str] = None, asset: str = 'E'):
+    def sync_daily_prices(self, ts_codes: List[str], start_date: str = "20180101",
+                          end_date: Optional[str] = None, asset: str = 'E',
+                          price_dir: Optional[str] = None):
         """同步日线行情 (含复权因子)"""
         if end_date is None:
             end_date = datetime.now().strftime("%Y%m%d")
+        target_dir = price_dir or DAILY_PRICE_DIR
+        os.makedirs(target_dir, exist_ok=True)
             
         for code in ts_codes:
-            file_path = os.path.join(DAILY_PRICE_DIR, f"{code}.parquet")
+            file_path = os.path.join(target_dir, f"{code}.parquet")
             
             # 增量逻辑
             start_sync_date = start_date
@@ -155,20 +165,81 @@ class FactorDataManager:
             except Exception as e:
                 logger.error("%s 行情获取失败: %s", code, e)
 
-    def get_last_sync_date(self, ts_codes: List[str]) -> str:
+    def sync_industry_prices(self, ts_codes: List[str], start_date: str = "20180101",
+                             end_date: Optional[str] = None):
+        """同步产业 ETF，并按官方 pct_chg 重建拆分连续收盘序列。"""
+        result = self.sync_daily_prices(
+            ts_codes,
+            start_date=start_date,
+            end_date=end_date,
+            asset='FD',
+            price_dir=INDUSTRY_DAILY_PRICE_DIR,
+        )
+        for code in ts_codes:
+            self._normalize_industry_split_adjustment(code)
+        return result
+
+    def _normalize_industry_split_adjustment(self, ts_code: str) -> None:
+        """
+        基金份额拆分时 close 会跳变，但 pct_chg 使用拆分后的 pre_close 计算。
+
+        以最新真实收盘价为锚，按 pct_chg 反推连续历史 close；raw_close 永久保留
+        原始价格用于审计。这样不删除公司行动日，也不把拆分误判为市场回撤。
+        """
+        file_path = os.path.join(INDUSTRY_DAILY_PRICE_DIR, f"{ts_code}.parquet")
+        if not os.path.exists(file_path):
+            return
+        try:
+            df = pd.read_parquet(file_path).sort_values("trade_date").reset_index(drop=True)
+            if df.empty or "close" not in df.columns or "pct_chg" not in df.columns:
+                logger.warning("%s 缺少 close/pct_chg，无法执行拆分连续化", ts_code)
+                return
+
+            current_close = pd.to_numeric(df["close"], errors="coerce")
+            if "raw_close" in df.columns:
+                raw_close = pd.to_numeric(df["raw_close"], errors="coerce").fillna(current_close)
+            else:
+                raw_close = current_close.copy()
+            if raw_close.isna().any() or (raw_close <= 0).any():
+                logger.warning("%s 原始 close 非法，跳过拆分连续化", ts_code)
+                return
+
+            reported_returns = pd.to_numeric(df["pct_chg"], errors="coerce") / 100.0
+            raw_returns = raw_close.pct_change()
+            reported_returns = reported_returns.where(
+                np.isfinite(reported_returns) & (reported_returns > -0.99),
+                raw_returns,
+            )
+            reported_returns.iloc[0] = 0.0
+            growth = (1.0 + reported_returns.fillna(0.0)).cumprod()
+            if growth.empty or not np.isfinite(growth.iloc[-1]) or growth.iloc[-1] <= 0:
+                logger.warning("%s pct_chg 累计因子非法，跳过拆分连续化", ts_code)
+                return
+
+            adjusted_close = growth / growth.iloc[-1] * raw_close.iloc[-1]
+            df["raw_close"] = raw_close.astype(float)
+            df["close"] = adjusted_close.round(6)
+            df["price_basis"] = "pct_chg_split_adjusted"
+            df.to_parquet(file_path)
+        except Exception as exc:
+            logger.error("%s 拆分连续化失败: %s", ts_code, exc)
+
+    def get_last_sync_date(self, ts_codes: List[str], price_dir: Optional[str] = None) -> str:
         """获取这些股票里最晚的一个交易日期"""
+        target_dir = price_dir or DAILY_PRICE_DIR
         dates = []
         for code in ts_codes:
-            file_path = os.path.join(DAILY_PRICE_DIR, f"{code}.parquet")
+            file_path = os.path.join(target_dir, f"{code}.parquet")
             if os.path.exists(file_path):
                 df = pd.read_parquet(file_path)
                 if not df.empty:
                     dates.append(str(df['trade_date'].max()))
         return max(dates) if dates else "N/A"
 
-    def get_price_payload(self, ts_code: str) -> pd.DataFrame:
+    def get_price_payload(self, ts_code: str, price_dir: Optional[str] = None) -> pd.DataFrame:
         """读取行情数据并计算未来收益率"""
-        file_path = os.path.join(DAILY_PRICE_DIR, f"{ts_code}.parquet")
+        target_dir = price_dir or DAILY_PRICE_DIR
+        file_path = os.path.join(target_dir, f"{ts_code}.parquet")
         if not os.path.exists(file_path):
             return pd.DataFrame()
         
@@ -186,52 +257,280 @@ class FactorDataManager:
             cols.append('vol')
         return df[[c for c in cols if c in df.columns]]
 
-    def check_data_freshness(self, ts_codes: List[str]) -> dict:
+    def get_industry_price_payload(self, ts_code: str) -> pd.DataFrame:
+        """读取产业追踪专用的前复权行情。"""
+        return self.get_price_payload(ts_code, price_dir=INDUSTRY_DAILY_PRICE_DIR)
+
+    @staticmethod
+    def _clean_trade_date(value) -> Optional[str]:
+        """将字符串/Timestamp 统一为 YYYYMMDD；非法值返回 None。"""
+        try:
+            text = str(value).strip()
+            if text.endswith(".0"):
+                text = text[:-2]
+            compact = text.replace("-", "").replace("/", "")
+            if len(compact) >= 8 and compact[:8].isdigit() and compact[:4] in {
+                str(year) for year in range(1990, 2101)
+            }:
+                return datetime.strptime(compact[:8], "%Y%m%d").strftime("%Y%m%d")
+            parsed = pd.to_datetime(value)
+            if pd.isna(parsed):
+                return None
+            return parsed.strftime("%Y%m%d")
+        except Exception:
+            return None
+
+    def _load_open_trading_days(self) -> Optional[List[str]]:
+        cal_path = os.path.join(DATA_DIR, "trading_calendar.json")
+        if not os.path.exists(cal_path):
+            return None
+        try:
+            with open(cal_path, "r", encoding="utf-8") as f:
+                values = json.load(f)
+            clean = sorted({str(v).replace("-", "")[:8] for v in values})
+            return [v for v in clean if len(v) == 8 and v.isdigit()]
+        except Exception as exc:
+            logger.warning("交易日历读取失败: %s", exc)
+            return None
+
+    def _expected_trade_date(self, as_of=None) -> tuple:
+        """返回最近已收盘交易日及日历来源。"""
+        current = pd.Timestamp(as_of).to_pydatetime() if as_of is not None else datetime.now()
+        target = current
+        if as_of is None and current.hour < 15:
+            target = current - timedelta(days=1)
+        target_str = target.strftime("%Y%m%d")
+
+        open_days = self._load_open_trading_days()
+        if open_days:
+            eligible = [d for d in open_days if d <= target_str]
+            if eligible:
+                return eligible[-1], open_days, "exchange_calendar"
+
+        # 通用因子功能保留工作日降级；产业决策层会因缺少交易所日历而锁定。
+        cursor = target
+        while cursor.weekday() >= 5:
+            cursor -= timedelta(days=1)
+        return cursor.strftime("%Y%m%d"), None, "weekday_fallback"
+
+    def check_data_freshness(self, ts_codes: List[str], price_dir: Optional[str] = None,
+                             min_history_rows: int = 1,
+                             max_abs_return: Optional[float] = None,
+                             as_of=None, require_calendar: bool = False) -> dict:
         """
-        V5.0: 检查因子数据新鲜度
-        返回: {daily_latest: str, fina_latest: str, is_stale: bool, stale_days: int}
+        全量检查行情新鲜度和基础完整性。
+
+        向后兼容保留 daily_latest/fina_latest/is_stale/stale_days 字段，并新增
+        每标的质量、交易日口径、覆盖率和 decision_locked。
         """
-        today = datetime.now().strftime("%Y%m%d")
+        target_dir = price_dir or DAILY_PRICE_DIR
+        codes = list(dict.fromkeys(ts_codes))
+        expected_date, open_days, calendar_source = self._expected_trade_date(as_of)
+        expected_window = []
+        if open_days:
+            expected_window = [d for d in open_days if d <= expected_date][-max(1, min_history_rows):]
+
         daily_dates = []
         fina_dates = []
+        items = {}
+        missing_codes = []
+        stale_codes = []
+        insufficient_codes = []
+        incomplete_codes = []
+        anomalous_codes = []
+        invalid_codes = []
 
-        for code in ts_codes[:5]:  # 只检查前5只，提速
-            # 日线数据
-            dp = os.path.join(DAILY_PRICE_DIR, f"{code}.parquet")
-            if os.path.exists(dp):
+        for code in codes:
+            issues = []
+            item = {
+                "exists": False,
+                "latest_trade_date": None,
+                "rows": 0,
+                "coverage_ratio": 0.0,
+                "stale_trading_days": 999,
+                "max_abs_return": None,
+                "issues": issues,
+                "is_usable": False,
+            }
+            dp = os.path.join(target_dir, f"{code}.parquet")
+            if not os.path.exists(dp):
+                issues.append("MISSING_DATA")
+                missing_codes.append(code)
+                items[code] = item
+                continue
+
+            item["exists"] = True
+            try:
                 df = pd.read_parquet(dp)
-                if not df.empty:
-                    daily_dates.append(str(df['trade_date'].max()))
+            except Exception:
+                issues.append("UNREADABLE_DATA")
+                invalid_codes.append(code)
+                items[code] = item
+                continue
+
+            if df.empty or "trade_date" not in df.columns or "close" not in df.columns:
+                issues.append("INVALID_SCHEMA")
+                invalid_codes.append(code)
+                items[code] = item
+                continue
+
+            work = df[["trade_date", "close"]].copy()
+            work["trade_date_clean"] = work["trade_date"].map(self._clean_trade_date)
+            if work["trade_date_clean"].isna().any():
+                issues.append("INVALID_DATE")
+            work = work.dropna(subset=["trade_date_clean"])
+            if work["trade_date_clean"].duplicated().any():
+                issues.append("DUPLICATE_TRADE_DATE")
+            work = work.sort_values("trade_date_clean").drop_duplicates(
+                subset=["trade_date_clean"], keep="last"
+            )
+            future_rows = int((work["trade_date_clean"] > expected_date).sum())
+            # 历史 as-of 查询允许缓存中存在其后的正常行情；实时查询才把未来日期
+            # 视为时钟/数据污染问题。
+            if future_rows and as_of is None:
+                issues.append("FUTURE_DATA")
+            work = work[work["trade_date_clean"] <= expected_date]
+
+            close_values = pd.to_numeric(work["close"], errors="coerce")
+            if close_values.isna().any():
+                issues.append("NON_FINITE_CLOSE")
+            if (close_values.dropna() <= 0).any():
+                issues.append("NON_POSITIVE_CLOSE")
+            work = work.assign(close=close_values).dropna(subset=["close"])
+
+            item["rows"] = int(len(work))
+            if len(work) < min_history_rows:
+                issues.append("INSUFFICIENT_HISTORY")
+                insufficient_codes.append(code)
+
+            present_dates = set(work["trade_date_clean"].tolist())
+            if expected_window:
+                item["coverage_ratio"] = round(
+                    len(present_dates.intersection(expected_window)) / len(expected_window), 4
+                )
+                if item["coverage_ratio"] < 0.95:
+                    issues.append("INCOMPLETE_RECENT_HISTORY")
+                    incomplete_codes.append(code)
+            elif len(work):
+                item["coverage_ratio"] = 1.0
+
+            if not work.empty:
+                latest = work["trade_date_clean"].iloc[-1]
+                item["latest_trade_date"] = latest
+                daily_dates.append(latest)
+                if open_days:
+                    stale_days = len([d for d in open_days if latest < d <= expected_date])
+                else:
+                    latest_dt = datetime.strptime(latest, "%Y%m%d")
+                    expected_dt = datetime.strptime(expected_date, "%Y%m%d")
+                    stale_days = len(pd.bdate_range(latest_dt + timedelta(days=1), expected_dt))
+                item["stale_trading_days"] = int(stale_days)
+                if latest < expected_date:
+                    issues.append("STALE_DATA")
+                    stale_codes.append(code)
+
+                returns = work["close"].pct_change().replace([np.inf, -np.inf], np.nan).dropna()
+                max_jump = float(returns.abs().max()) if not returns.empty else 0.0
+                item["max_abs_return"] = round(max_jump, 6)
+                if max_abs_return is not None and max_jump > max_abs_return:
+                    issues.append("PRICE_JUMP")
+                    anomalous_codes.append(code)
+
+            if any(issue in issues for issue in (
+                "INVALID_SCHEMA", "INVALID_DATE", "DUPLICATE_TRADE_DATE",
+                "FUTURE_DATA", "NON_FINITE_CLOSE", "NON_POSITIVE_CLOSE",
+            )):
+                invalid_codes.append(code)
+
+            item["issues"] = list(dict.fromkeys(issues))
+            item["is_usable"] = not item["issues"]
+            items[code] = item
+
             # 财务数据
             fp = os.path.join(FINA_INDICATOR_DIR, f"{code}.parquet")
             if os.path.exists(fp):
-                df = pd.read_parquet(fp)
-                if not df.empty and 'ann_date' in df.columns:
-                    fina_dates.append(str(df['ann_date'].max()))
+                try:
+                    fina_df = pd.read_parquet(fp)
+                    if not fina_df.empty and 'ann_date' in fina_df.columns:
+                        fina_dates.append(str(fina_df['ann_date'].max()))
+                except Exception:
+                    pass
 
         daily_latest = max(daily_dates) if daily_dates else 'N/A'
+        daily_earliest_latest = min(daily_dates) if daily_dates else 'N/A'
         fina_latest = max(fina_dates) if fina_dates else 'N/A'
 
-        # 判断是否过期: 日线数据超过1个自然日(周末+3)
-        stale_days = 0
-        is_stale = True
-        if daily_latest != 'N/A':
-            try:
-                last_dt = datetime.strptime(str(daily_latest)[:8], "%Y%m%d")
-                delta = (datetime.now() - last_dt).days
-                stale_days = delta
-                # 考虑周末: 周五收盘后到周一算3天, 不算过期
-                is_stale = delta > 3 if datetime.now().weekday() == 0 else delta > 1
-            except:
-                pass
+        missing_codes = list(dict.fromkeys(missing_codes))
+        stale_codes = list(dict.fromkeys(stale_codes))
+        insufficient_codes = list(dict.fromkeys(insufficient_codes))
+        incomplete_codes = list(dict.fromkeys(incomplete_codes))
+        anomalous_codes = list(dict.fromkeys(anomalous_codes))
+        invalid_codes = list(dict.fromkeys(invalid_codes))
+        reasons = []
+        if require_calendar and calendar_source != "exchange_calendar":
+            reasons.append("TRADING_CALENDAR_UNAVAILABLE")
+        for label, values in (
+            ("MISSING_DATA", missing_codes),
+            ("STALE_DATA", stale_codes),
+            ("INSUFFICIENT_HISTORY", insufficient_codes),
+            ("INCOMPLETE_HISTORY", incomplete_codes),
+            ("PRICE_ANOMALY", anomalous_codes),
+            ("INVALID_DATA", invalid_codes),
+        ):
+            if values:
+                reasons.append(f"{label}: {len(values)}/{len(codes)}")
+
+        stale_values = [v["stale_trading_days"] for v in items.values()
+                        if v["stale_trading_days"] != 999]
+        stale_days = max(stale_values) if stale_values else 999
+        decision_locked = bool(reasons)
 
         return {
             'daily_latest': daily_latest,
+            'daily_earliest_latest': daily_earliest_latest,
             'fina_latest': fina_latest,
-            'is_stale': is_stale,
+            'expected_trade_date': expected_date,
+            'calendar_source': calendar_source,
+            'is_stale': bool(missing_codes or stale_codes),
             'stale_days': stale_days,
-            'checked_at': datetime.now().strftime("%Y-%m-%d %H:%M")
+            'checked_count': len(codes),
+            'available_count': len(codes) - len(missing_codes),
+            'usable_count': sum(1 for item in items.values() if item['is_usable']),
+            'coverage_ratio': round(
+                sum(1 for item in items.values() if item['is_usable']) / len(codes), 4
+            ) if codes else 0.0,
+            'missing_codes': missing_codes,
+            'stale_codes': stale_codes,
+            'insufficient_codes': insufficient_codes,
+            'incomplete_codes': incomplete_codes,
+            'anomalous_codes': anomalous_codes,
+            'invalid_codes': invalid_codes,
+            'is_usable': not decision_locked,
+            'decision_locked': decision_locked,
+            'reasons': reasons,
+            'items': items,
+            'checked_at': datetime.now().isoformat(timespec="seconds")
         }
+
+    def check_industry_data_quality(self, ts_codes: List[str], as_of=None,
+                                    min_history_rows: int = 60,
+                                    max_abs_return: float = 0.35) -> dict:
+        """产业追踪强质量门：全池、交易日历、前复权跳变均须通过。"""
+        quality = self.check_data_freshness(
+            ts_codes,
+            price_dir=INDUSTRY_DAILY_PRICE_DIR,
+            min_history_rows=min_history_rows,
+            max_abs_return=max_abs_return,
+            as_of=as_of,
+            require_calendar=True,
+        )
+        quality["data_contract"] = {
+            "namespace": os.path.basename(INDUSTRY_DAILY_PRICE_DIR),
+            "source": "tushare.pro_bar",
+            "asset": "FD",
+            "adjustment": "qfq+fund_pct_chg_split_normalization",
+        }
+        return quality
 
     def smart_sync(self, ts_codes: List[str], force: bool = False):
         """

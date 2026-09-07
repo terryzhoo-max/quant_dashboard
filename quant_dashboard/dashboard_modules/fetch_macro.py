@@ -51,7 +51,7 @@ def _load_vix_disk(max_age_hours: int = 72) -> Optional[Tuple[float, float]]:
 
 
 def fetch_vix_for_dashboard() -> Tuple[float, float]:
-    """Production-grade VIX fetch: 磁盘缓存(周末) -> TradingView -> yfinance -> FRED -> CNBC -> 磁盘降级 -> Default"""
+    """Fetch VIX from observable sources or a bounded last-known-good cache."""
     # V6.0: 周末/节假日直接使用磁盘缓存 (VIX 不更新, 无需请求外部源)
     if datetime.now().weekday() >= 5:
         disk = _load_vix_disk(max_age_hours=96)  # 周末容忍4天
@@ -115,9 +115,8 @@ def fetch_vix_for_dashboard() -> Tuple[float, float]:
         logger.warning("All VIX sources failed, using disk cache fallback")
         return disk
 
-    # 6. Ultimate default fallback
-    logger.warning("All VIX data sources failed. Using default values.")
-    return 18.25, 18.25
+    logger.error("All VIX data sources and bounded caches failed")
+    raise RuntimeError("VIX_DATA_UNAVAILABLE")
 
 
 def _fetch_vix_tradingview() -> Tuple[Optional[float], Optional[float]]:
@@ -248,7 +247,7 @@ def _load_cny_disk(max_age_hours: int = 72) -> Optional[float]:
 
 
 def fetch_cny_for_dashboard() -> float:
-    """Production-grade CNY fetch: 磁盘缓存(周末) -> CNBC -> 磁盘降级 -> 默认值"""
+    """Fetch USD/CNY from an observable source or bounded last-known-good cache."""
     # 1. 周末/节假日直接使用磁盘缓存 (CNY 不更新)
     if datetime.now().weekday() >= 5:
         disk = _load_cny_disk(max_age_hours=96)  # 周末容忍4天
@@ -261,10 +260,14 @@ def fetch_cny_for_dashboard() -> float:
         r = requests.get(url, timeout=4, headers={'User-Agent': 'Mozilla/5.0'})
         if r.status_code == 200:
             quote = r.json().get('FormattedQuoteResult', {}).get('FormattedQuote', [{}])[0]
-            rate = float(quote.get('last', '7.23').replace(',', ''))
-            logger.info("CNY successfully fetched from CNBC: rate=%.4f", rate)
-            _save_cny_disk(rate)
-            return rate
+            raw_rate = quote.get('last')
+            if raw_rate not in (None, ""):
+                rate = float(str(raw_rate).replace(',', ''))
+                if 5.0 < rate < 9.0:
+                    logger.info("CNY successfully fetched from CNBC: rate=%.4f", rate)
+                    _save_cny_disk(rate)
+                    return rate
+                logger.warning("CNBC CNY value outside validity bounds: %s", rate)
     except Exception as e:
         logger.warning("CNBC CNY fetch failed: %s", e)
 
@@ -274,9 +277,8 @@ def fetch_cny_for_dashboard() -> float:
         logger.warning("All CNY sources failed, using disk cache fallback")
         return disk
 
-    # 4. 最终保底默认值
-    logger.warning("All CNY data sources failed. Using default values.")
-    return 7.23
+    logger.error("All CNY data sources and bounded caches failed")
+    raise RuntimeError("CNY_DATA_UNAVAILABLE")
 
 
 async def fetch_macro_data(executor) -> Tuple[float, float, float]:

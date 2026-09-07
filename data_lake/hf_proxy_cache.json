@@ -1,0 +1,57 @@
+{
+  "status": "success",
+  "hf_delta": -1.075,
+  "components_available": 3,
+  "components_total": 3,
+  "breakdown": {
+    "turnover": {
+      "weight": 0.35,
+      "weight_adjusted": 0.35,
+      "normalized": 0.4399,
+      "contribution": 0.4619
+    },
+    "etf_flow": {
+      "weight": 0.35,
+      "weight_adjusted": 0.35,
+      "normalized": -0.6066,
+      "contribution": -0.6369
+    },
+    "margin_delta": {
+      "weight": 0.3,
+      "weight_adjusted": 0.3,
+      "normalized": -1.0,
+      "contribution": -0.9
+    }
+  },
+  "turnover": {
+    "status": "success",
+    "latest_turnover": 3.4562,
+    "mean_20d": 3.2239,
+    "std_20d": 0.246,
+    "zscore": 0.944,
+    "normalized": 0.4399,
+    "data_points": 17,
+    "latest_date": "20260904"
+  },
+  "etf_flow": {
+    "status": "success",
+    "latest_flow": -14227223.52,
+    "rank_60d": 0.1967,
+    "normalized": -0.6066,
+    "etf_count": 3,
+    "data_points": 61,
+    "latest_date": "20260904"
+  },
+  "margin_delta": {
+    "status": "success",
+    "latest_rzye": 13316.43,
+    "base_rzye": 26302.5,
+    "delta_pct": -49.372,
+    "normalized": -1.0,
+    "days_span": 6,
+    "latest_date": "20260904",
+    "base_date": "20260828"
+  },
+  "computed_at": "2026-09-06T18:18:06.119493",
+  "latency_ms": 34819
+}

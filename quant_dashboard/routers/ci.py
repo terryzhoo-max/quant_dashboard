@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from typing import Optional
 from services.logger import get_logger
 from services import db as ac_db
+from services.strategy_params import publish_ci_parameters
 
 logger = get_logger("ci.api")
 router = APIRouter(prefix="/api/v1/ci", tags=["CI/CD"])
@@ -98,12 +99,22 @@ async def accept_ci_run(run_id: str):
             detail=f"仅 REVIEW 状态可被批准, 当前状态: {target.get('status')}"
         )
 
+    try:
+        publication = publish_ci_parameters(target)
+    except Exception as exc:
+        logger.error("[CI] 人工批准发布失败: run_id=%s: %s", run_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"参数发布失败，状态未变更: {exc}")
+
     ok = ac_db.update_ci_status(run_id, "ACCEPT")
     if not ok:
         raise HTTPException(status_code=500, detail="更新状态失败")
 
     logger.info("[CI] 人工批准: run_id=%s, strategy=%s", run_id, target.get("strategy"))
-    return {"status": "success", "message": f"CI run {run_id} 已批准"}
+    return {
+        "status": "success",
+        "message": f"CI run {run_id} 已批准并发布",
+        "publication": publication,
+    }
 
 
 # ── GET /ci/quality-gate — 质量门配置 ──

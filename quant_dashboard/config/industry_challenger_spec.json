@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "spec_revision": 1,
+  "model_id": "industry-bull-rs-v1",
+  "lifecycle": "shadow",
+  "frozen_at": "2026-09-06T15:00:00+00:00",
+  "backtest_start": "2020-01-01",
+  "design_data_end": "2023-12-31",
+  "validation_start": "2024-01-01",
+  "validation_end": "2025-12-31",
+  "confirmation_start": "2026-01-01",
+  "allowed_regimes": ["BULL"],
+  "rebalance_days": 20,
+  "holding_days": 20,
+  "min_history_days": 120,
+  "top_n": 2,
+  "round_trip_cost_bps": 20,
+  "filters": {
+    "min_return_20d": 0.0,
+    "min_return_60d": 0.0,
+    "max_annualized_volatility_20d": 0.6
+  },
+  "weights": {
+    "rps_20d": 0.5,
+    "rps_60d": 0.3,
+    "low_volatility": 0.2
+  },
+  "promotion": {
+    "min_confirmation_periods": 8,
+    "min_positive_period_rate": 0.55,
+    "min_wilson_lower_95": 0.3,
+    "min_profit_factor": 1.2,
+    "min_avg_excess_return": 0.0,
+    "max_drawdown": 0.15,
+    "require_point_in_time_universe": true,
+    "max_artifact_age_days": 35,
+    "max_data_lag_days": 10
+  },
+  "artifact_path": "config/industry_challenger_validation.json",
+  "forward_ledger_path": "data_lake/industry_challenger_forward.jsonl"
+}

@@ -40,7 +40,13 @@ class TestStaticRoutes:
         resp = client.get("/health")
         assert resp.status_code == 200
         data = resp.json()
-        assert data.get("status") in ("ok", "starting")
+        assert data.get("status") in ("ok", "degraded", "starting")
+        assert "data_quality" in data
+        assert "freshness" in data
+        assert "industry" in data["data_quality"]
+        assert "model_validation" in data["data_quality"]["industry"]
+        assert "industry" in data["freshness"]
+        assert "industry" in data["engines"]
 
 
 class TestDashboardAPI:
@@ -67,6 +73,53 @@ class TestRouterRegistration:
         """GET /api/v1/industry-tracking 应返回 200 (不再 404)"""
         resp = client.get("/api/v1/industry-tracking")
         assert resp.status_code != 404, f"industry-tracking 仍然 404!"
+
+    def test_industry_validation_exposes_fail_closed_evidence(self, client):
+        resp = client.get("/api/v1/industry-validation")
+
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["status"] == "success"
+        assert payload["data"]["ready"] is False
+        assert isinstance(payload["data"]["reasons"], list)
+
+    def test_industry_challenger_is_read_only_and_never_executable_in_shadow(self, client):
+        resp = client.get("/api/v1/industry-challenger")
+
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["status"] == "success"
+        assert payload["data"]["lifecycle"] == "shadow"
+        assert payload["data"]["execution_ready"] is False
+
+    def test_industry_forward_monitor_exposes_ledger_integrity(self, client):
+        resp = client.get("/api/v1/industry-forward-monitor")
+
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["status"] == "success"
+        assert payload["data"]["integrity_ok"] is True
+        assert payload["data"]["execution_allowed"] is False
+
+    def test_industry_universe_status_distinguishes_forward_and_history_coverage(self, client):
+        resp = client.get("/api/v1/industry-universe-status")
+
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["status"] == "success"
+        assert payload["data"]["integrity_ok"] is True
+        assert payload["data"]["current_date_covered"] is True
+        assert payload["data"]["historical_validation_covered"] is False
+        assert payload["data"]["execution_allowed"] is False
+
+    def test_industry_constituent_status_is_registered_and_fail_closed(self, client):
+        resp = client.get("/api/v1/industry-constituents-status")
+
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["status"] in {"success", "degraded"}
+        assert "integrity_ok" in payload["data"]
+        assert "verified_count" in payload["data"]
 
     def test_factor_analysis_method(self, client):
         """POST /api/v1/factor-analysis 应返回 200/422 (不再 405)"""

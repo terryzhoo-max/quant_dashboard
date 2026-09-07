@@ -74,6 +74,8 @@ def _check_sector_concentration(snapshot, positions, ctx):
 
 def _check_aiae_overheat(snapshot, positions, ctx):
     """AIAE ≥ R4 时禁止新建仓 (硬阻断)"""
+    if snapshot.get("decision_locked") is True:
+        return False, "AIAE 数据缺失、陈旧或质量不足，决策已锁定"
     regime = snapshot.get("aiae_regime", 3)
     direction = ctx.get("direction", "hold") if ctx else "hold"
     if regime >= 5:

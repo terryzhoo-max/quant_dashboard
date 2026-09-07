@@ -215,8 +215,9 @@ class TestHWDecay:
     def test_hw_no_decay_within_window(self, engine):
         """60 天内 HW 应保持不变"""
         import erp_params
+        from datetime import datetime, timedelta
         engine._score_high_water = 80.0
-        engine._hw_peak_date = "2026-05-20"  # 3天前
+        engine._hw_peak_date = (datetime.now() - timedelta(days=3)).date().isoformat()
         composite = 60.0
         # 模拟: composite < HW, 检查是否衰减
         if composite > engine._score_high_water:
@@ -224,7 +225,6 @@ class TestHWDecay:
         elif (erp_params.HW_DECAY_DAYS > 0
               and engine._hw_peak_date
               and engine._score_high_water >= erp_params.HW_TRIGGER_LEVEL):
-            from datetime import datetime
             days_since = (datetime.now().date() - datetime.strptime(engine._hw_peak_date, "%Y-%m-%d").date()).days
             if days_since > erp_params.HW_DECAY_DAYS:
                 engine._score_high_water = composite

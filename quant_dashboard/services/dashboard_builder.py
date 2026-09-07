@@ -1,5 +1,6 @@
 import asyncio
 import copy
+import math
 import time
 import threading
 import traceback
@@ -14,6 +15,7 @@ from services.logger import get_logger
 logger = get_logger("dashboard")
 from services.cache_service import cache_manager
 from services.cache_store import get_cache_ttl as _get_cache_ttl, get_global_aiae_ttl as _get_global_aiae_ttl
+from services.aiae_safety import build_aiae_context
 from services.position_engine import (
     get_vix_analysis, get_position_path, get_tomorrow_plan,
     get_institutional_mindset,
@@ -84,16 +86,17 @@ def _hot_data_reactor_tick():
 
             with _STRATEGY_LOCK:
                 _hot_ttl = _get_cache_ttl()
-                cache_manager.set_json("last_update", time.time(), ttl_seconds=_hot_ttl)
+                cache_manager.set_json("last_hot_update", time.time(), ttl_seconds=_hot_ttl)
                 cache_manager.set_json("dashboard_data", hot_data, ttl_seconds=_hot_ttl)
         elif has_strategy_cache:
             # 盘后安全网: 周期性续期缓存 TTL (30 分钟节流, O(1) 无数据拷贝)
-            # 防止 TTL 计算异常导致缓存过期 → 页面降级为 Fallback 假数据
+            # 防止 TTL 计算异常导致最后一次合格快照过早过期。
             _last_ka = getattr(_hot_data_reactor_tick, '_last_keepalive', 0)
             if time.time() - _last_ka > 1800:
                 _renew_ttl = _get_cache_ttl()
                 cache_manager.touch("dashboard_data", _renew_ttl)
                 cache_manager.touch("last_update", _renew_ttl)
+                cache_manager.touch("last_hot_update", _renew_ttl)
                 cache_manager.touch("aiae_ctx", _renew_ttl)
                 _hot_data_reactor_tick._last_keepalive = time.time()
                 logger.debug("盘后缓存续期: TTL=%ds", _renew_ttl)
@@ -113,9 +116,6 @@ async def _build_dashboard_data_full():
     current_time = time.time()
 
     # ── 全量刷新: 子模块并发编排 ──
-    latest_vix, vix_change, vix_status = 18.25, -1.5, "down"
-    latest_cny = 7.23
-
     ts.set_token(TUSHARE_TOKEN)
     pro = ts.pro_api()
     today_str = datetime.now().strftime('%Y%m%d')
@@ -124,12 +124,9 @@ async def _build_dashboard_data_full():
     try:
         # 第一层: 并发执行 I/O 和独立计算
         async def fetch_macro_safe():
-            try:
-                v, p, c = await fetch_macro_data(executor)
-                return v, p, c
-            except Exception as e:
-                logger.warning(f"Macro fetch partial failure: {e}")
-                return 18.25, 18.25, 7.23
+            # Fail closed: the outer build handler leaves the last-known-good
+            # cache untouched when primary macro inputs cannot be verified.
+            return await fetch_macro_data(executor)
 
         async def get_capital_flow():
             return await loop.run_in_executor(executor, compute_capital_flow, pro, today_str)
@@ -165,19 +162,31 @@ async def _build_dashboard_data_full():
         capital_a, capital_h, liquidity_score, total_money_z, z_s = cap_res
 
         # 处理 AIAE
-        aiae_regime = 3
-        aiae_cap = 65
-        aiae_v1_value = 0.0
-        aiae_regime_cn = "中性均衡"
-        if aiae_report.get("status") == "success":
-            aiae_regime = aiae_report["current"]["regime"]
-            # Under V5, use regime_basis_value (aiae_simple) as the representative value to keep consistency
-            aiae_v1_value = aiae_report["current"].get("regime_basis_value", aiae_report["current"]["aiae_v1"])
-            aiae_cap = aiae_report["position"]["matrix_position"]
-            aiae_regime_cn = aiae_report["current"]["regime_info"]["cn"]
-            logger.info(f"AIAE注入成功: BasisValue={aiae_v1_value:.2f}% Regime={aiae_regime} Cap={aiae_cap}%")
-        else:
-            logger.warning(f"AIAE降级: {aiae_report.get('message', 'unknown')}")
+        _full_aiae_ctx = build_aiae_context(aiae_report)
+        if _full_aiae_ctx.get("decision_locked") is not False:
+            logger.error("AIAE 上下文未通过状态、质量或仓位校验，停止发布 Dashboard")
+            raise RuntimeError("AIAE_CONTEXT_UNUSABLE")
+        try:
+            aiae_regime = int(_full_aiae_ctx["regime"])
+            aiae_cap = float(_full_aiae_ctx["cap"])
+            aiae_v1_value = float(_full_aiae_ctx["aiae_v1"])
+            aiae_regime_cn = str(_full_aiae_ctx["regime_cn"] or "").strip()
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError("AIAE_CONTEXT_UNUSABLE") from exc
+        if (
+            aiae_regime not in AIAE_REGIMES
+            or not math.isfinite(aiae_cap)
+            or not 0 <= aiae_cap <= 100
+            or not math.isfinite(aiae_v1_value)
+            or not aiae_regime_cn
+        ):
+            raise RuntimeError("AIAE_CONTEXT_UNUSABLE")
+        logger.info(
+            "AIAE注入成功: BasisValue=%.2f%% Regime=%s Cap=%s%%",
+            aiae_v1_value,
+            aiae_regime,
+            aiae_cap,
+        )
 
         # 第二层: 温度分析与热力图
         vix_analysis = get_vix_analysis(latest_vix)
@@ -195,6 +204,27 @@ async def _build_dashboard_data_full():
 
         temp_data, sector_heatmap = await asyncio.gather(temp_task, heatmap_task)
 
+        import aiae_params as AP
+        is_v5 = getattr(AP, 'V5_ENABLED', False)
+        fallback_thresholds = list(AP.V5_REGIME_THRESHOLDS) if is_v5 else list(AP.REGIME_THRESHOLDS)
+
+        # 单一 AIAE 上下文同时供全量响应、热更新与缓存使用，避免健康字段在组装时丢失。
+        _full_aiae_ctx.update({
+            "regime_cn": aiae_regime_cn,
+            "regime_info": _full_aiae_ctx.get("regime_info") or AIAE_REGIMES.get(aiae_regime, AIAE_REGIMES[3]),
+            "aiae_v1": round(aiae_v1_value, 2),
+            "erp_val": round(temp_data["erp_val"], 2),
+            "erp_label": temp_data["valuation_label"],
+            "erp_tier": temp_data["erp_tier"],
+            "margin_heat": _full_aiae_ctx.get("margin_heat"),
+            "fund_position": _full_aiae_ctx.get("fund_position"),
+            "fund_position_source": _full_aiae_ctx.get("fund_position_source"),
+            "fund_position_date": _full_aiae_ctx.get("fund_position_date"),
+            "regime_basis_value": aiae_v1_value,
+            "regime_thresholds": _full_aiae_ctx.get("regime_thresholds") or fallback_thresholds,
+            "regime_mode": _full_aiae_ctx.get("regime_mode") or ("V5_simple" if is_v5 else "V3_composite"),
+        })
+
         # Step 8: 组装最终响应
         final_data = assemble_dashboard_response(
             latest_vix=latest_vix, vix_change=vix_change,
@@ -205,42 +235,13 @@ async def _build_dashboard_data_full():
             mr_res=mr_res, div_res=div_res, mom_res=mom_res,
             aiae_regime=aiae_regime, aiae_cap=aiae_cap,
             aiae_v1_value=aiae_v1_value, aiae_regime_cn=aiae_regime_cn,
-            aiae_report=aiae_report,
+            aiae_report=aiae_report, aiae_ctx=_full_aiae_ctx,
             sector_heatmap=sector_heatmap,
             get_tomorrow_plan_fn=get_tomorrow_plan,
             get_position_path_fn=get_position_path,
             get_institutional_mindset_fn=get_institutional_mindset,
             liquidity_score=liquidity_score,
         )
-
-        import aiae_params as AP
-        is_v5 = getattr(AP, 'V5_ENABLED', False)
-        fallback_thresholds = list(AP.V5_REGIME_THRESHOLDS) if is_v5 else list(AP.REGIME_THRESHOLDS)
-
-        # P0-1: 构建并缓存原始 aiae_ctx (供 Hot-Refresh 复用)
-        _full_aiae_ctx = {
-            "regime": aiae_regime,
-            "regime_cn": aiae_regime_cn,
-            "regime_info": AIAE_REGIMES.get(aiae_regime, AIAE_REGIMES[3]),
-            "cap": aiae_cap,
-            "aiae_v1": round(aiae_v1_value, 2),
-            "slope": aiae_report.get("current", {}).get("slope", {}).get("slope", 0),
-            "slope_direction": aiae_report.get("current", {}).get("slope", {}).get("direction", "flat"),
-            "erp_val": round(temp_data["erp_val"], 2),
-            "erp_label": temp_data["valuation_label"],
-            "erp_tier": temp_data["erp_tier"],
-            "margin_heat": aiae_report.get("current", {}).get("margin_heat", 2.0),
-            "fund_position": aiae_report.get("current", {}).get("fund_position", 80),
-            # C1 Fix: 数据质量评分与决策锁定透传 (机构级合规字段)
-            "data_quality_score": aiae_report.get("data_quality_score", 100),
-            "decision_locked": aiae_report.get("decision_locked", False),
-            "fund_position_source": aiae_report.get("current", {}).get("fund_position_source", "manual_update"),
-            "fund_position_date": aiae_report.get("current", {}).get("fund_position_date", ""),
-            # V5 dynamic metadata
-            "regime_basis_value": aiae_report.get("current", {}).get("regime_basis_value", aiae_v1_value),
-            "regime_thresholds": aiae_report.get("current", {}).get("regime_thresholds", fallback_thresholds),
-            "regime_mode": aiae_report.get("current", {}).get("regime_mode", "V5_simple" if is_v5 else "V3_composite"),
-        }
 
         # 更新缓存 (P0-2: 原子写入, R7: 智能 TTL 防陈旧)
         _build_ttl = _get_cache_ttl()

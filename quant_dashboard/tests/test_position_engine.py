@@ -85,6 +85,15 @@ class TestPositionPath:
         # VIX从12.5向20回归，projected_vix更高，vix_gap为负，仓位应下调
         assert path[-1] <= 80.0, "低VIX路径应略下调(VIX回归假设)"
 
+    def test_path_is_frozen_when_aiae_is_stale(self, vix_low, mock_aiae_ctx):
+        """AIAE 失效时仓位路径应冻结，不能由低 VIX 单独驱动调仓。"""
+        mock_aiae_ctx["updated_at"] = "2000-01-01T00:00:00"
+        analysis = get_vix_analysis(vix_low)
+
+        path = get_position_path(80.0, analysis, aiae_ctx=mock_aiae_ctx)
+
+        assert path == [80.0] * 5
+
 
 class TestTomorrowPlan:
     """明日交易计划"""
@@ -93,6 +102,8 @@ class TestTomorrowPlan:
         analysis = get_vix_analysis(vix_normal)
         plan = get_tomorrow_plan(analysis, 50, aiae_ctx=mock_aiae_ctx)
         # V2.0 应返回 primary_regime
+        assert plan["mode"] == "decision"
+        assert plan["decision_locked"] is False
         assert "primary_regime" in plan
         assert plan["primary_regime"]["tier"] == 3
         assert "validators" in plan
@@ -100,11 +111,38 @@ class TestTomorrowPlan:
         assert len(plan["directives"]) == 3
 
     def test_plan_without_aiae_ctx(self, vix_normal):
-        """无 AIAE 上下文时应降级为 VIX 4阶查表"""
+        """无 AIAE 上下文时必须锁定，不得降级生成 VIX 加仓指令。"""
         analysis = get_vix_analysis(vix_normal)
         plan = get_tomorrow_plan(analysis, 50, aiae_ctx=None)
-        assert "regime_matrix" in plan
-        assert len(plan["regime_matrix"]) == 4
+        assert plan["mode"] == "locked"
+        assert plan["decision_locked"] is True
+        assert plan["lock_reason"] == "missing"
+        assert plan["primary_regime"] is None
+        assert plan["regime_matrix"] == []
+        assert "加仓" not in " ".join(d["text"] for d in plan["directives"])
+
+    def test_plan_with_stale_aiae_ctx_is_locked(self, vix_low, mock_aiae_ctx):
+        """AIAE 过期时即便 VIX 很低也不得回退为进攻建议。"""
+        mock_aiae_ctx["updated_at"] = "2000-01-01T00:00:00"
+        analysis = get_vix_analysis(vix_low)
+
+        plan = get_tomorrow_plan(analysis, 50, aiae_ctx=mock_aiae_ctx)
+
+        assert plan["mode"] == "locked"
+        assert plan["decision_locked"] is True
+        assert plan["lock_reason"] == "stale"
+        assert plan["regime_matrix"] == []
+        assert "停止生成交易指令" in plan["directives"][0]["text"]
+
+    def test_plan_with_incomplete_aiae_payload_is_locked(self, vix_normal, mock_aiae_ctx):
+        """健康字段通过但缺少决策核心字段时也必须 fail closed。"""
+        mock_aiae_ctx.pop("cap")
+        analysis = get_vix_analysis(vix_normal)
+
+        plan = get_tomorrow_plan(analysis, 50, aiae_ctx=mock_aiae_ctx)
+
+        assert plan["mode"] == "locked"
+        assert plan["lock_reason"] == "invalid_payload"
 
     def test_plan_regime_matrix_has_active(self, vix_normal, mock_aiae_ctx):
         """五档矩阵应有且仅有一个 active"""

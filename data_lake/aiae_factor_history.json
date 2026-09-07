@@ -1,0 +1,29 @@
+[
+  {
+    "date": "2026-09-06",
+    "aiae_v1": 21.31,
+    "regime": 3,
+    "hf_delta": -1.075,
+    "factors": {
+      "aiae_simple": {
+        "raw": 26.63,
+        "normalized": 26.63,
+        "weight": 0.55,
+        "contribution": 14.65
+      },
+      "fund_position": {
+        "raw": 82.0,
+        "normalized": 21.79,
+        "weight": 0.2,
+        "contribution": 4.36
+      },
+      "margin_heat": {
+        "raw": 1.03,
+        "normalized": 9.22,
+        "weight": 0.25,
+        "contribution": 2.31
+      }
+    },
+    "recorded_at": "2026-09-06T18:18:06.127335"
+  }
+]

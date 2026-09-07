@@ -43,8 +43,10 @@ import threading
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from config import TUSHARE_TOKEN, POSITION_CONFIG
+from config import TUSHARE_TOKEN
+from services.health_status import evaluate_aiae_context
 from services.logger import get_logger
+from services.strategy_params import get_position_cap
 
 logger = get_logger("gem_engine")
 
@@ -195,11 +197,6 @@ MDD_PENALTY_FACTOR    = 0.50
 # ── 流动性过滤 ──
 LIQUIDITY_MIN_RATIO = 0.20
 LIQUIDITY_LOOKBACK  = 10
-
-# ── Regime 仓位上限 ──
-_GEM_CAP = POSITION_CONFIG.get("gem_regime_cap", {
-    "BULL": 90, "RANGE": 70, "BEAR": 40, "CRASH": 0,
-})
 
 # ── 多维评分权重 ──
 SCORE_WEIGHTS = {
@@ -835,20 +832,9 @@ def compute_gem_signal(etf_data: dict, risk_free_rate: float = None) -> dict:
         from services.cache_service import cache_manager
         from aiae_params import SUB_STRATEGY_ALLOC, REGIME_THRESHOLDS
         aiae_ctx = cache_manager.get_json("aiae_ctx")
-        if aiae_ctx and aiae_ctx.get("regime"):
+        aiae_state = evaluate_aiae_context(aiae_ctx, now_ts=time.time())
+        if aiae_state["usable"] and aiae_ctx.get("regime"):
             aiae_regime = aiae_ctx.get("regime", 3)
-            # V3.1 P2-7: 缓存新鲜度保护 (>24h 降级为 R3 中性)
-            try:
-                _ctx_ts = aiae_ctx.get("updated_at") or aiae_ctx.get("ts")
-                if _ctx_ts:
-                    _ctx_age = (time.time() - datetime.fromisoformat(
-                        str(_ctx_ts)).timestamp()) / 3600
-                    if _ctx_age > 24:
-                        logger.warning(
-                            f"aiae_ctx 缓存过期 ({_ctx_age:.0f}h), 降级为 R3")
-                        aiae_regime = 3
-            except Exception:
-                pass
             matrix_pos  = aiae_ctx.get("cap", 55)
             gem_alloc_pct = SUB_STRATEGY_ALLOC.get(aiae_regime, {}).get("gem", 15) / 100.0
             aiae_gem_cap  = int(matrix_pos * gem_alloc_pct)
@@ -899,6 +885,8 @@ def compute_gem_signal(etf_data: dict, risk_free_rate: float = None) -> dict:
                 aiae_info["cap_applied"] = True
                 aiae_info["pre_cap_pos"] = adjusted_position
                 adjusted_position = aiae_gem_cap
+        elif aiae_state["present"]:
+            aiae_info["reason"] = f"AIAE约束未采用: {aiae_state['reason']}"
     except Exception as e:
         logger.debug(f"AIAE 约束穿透降级 (缓存不可用): {e}")
 
@@ -915,7 +903,7 @@ def compute_gem_signal(etf_data: dict, risk_free_rate: float = None) -> dict:
     except Exception:
         pass
 
-    regime_cap = _GEM_CAP.get(regime, 70)
+    regime_cap = get_position_cap("gem", regime)
     pre_regime_pos = adjusted_position
     if adjusted_position > regime_cap:
         adjusted_position = regime_cap
@@ -1107,7 +1095,7 @@ def _empty_signal(reason: str) -> dict:
             "conviction_label":  "N/A",
             "whipsaw":           {"active": False, "mode": "normal"},
             "regime":            "RANGE",
-            "regime_cap":        70,
+            "regime_cap":        get_position_cap("gem", "RANGE"),
             "regime_detail":     {},
             "aiae":              {"active": False},
             "market_stress":     False,

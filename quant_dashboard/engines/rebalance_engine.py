@@ -19,6 +19,7 @@ AlphaCore V5.0 · 精确调仓指令生成器
 
 import json
 import os
+import time
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -113,14 +114,26 @@ def generate_rebalance_orders(
     if target_position_pct is None or regime is None:
         try:
             from services.cache_service import cache_manager
+            from services.health_status import evaluate_aiae_context
             aiae_ctx = cache_manager.get_json("aiae_ctx")
-            if aiae_ctx:
+            aiae_state = evaluate_aiae_context(aiae_ctx, now_ts=time.time())
+            if aiae_state["usable"]:
                 if target_position_pct is None:
                     target_position_pct = aiae_ctx.get("cap", 50)
                 if regime is None:
                     regime = aiae_ctx.get("regime", 3)
+            else:
+                return {
+                    "status": "error",
+                    "decision_locked": True,
+                    "error": f"AIAE context unavailable: {aiae_state['reason']}",
+                }
         except Exception:
-            pass
+            return {
+                "status": "error",
+                "decision_locked": True,
+                "error": "AIAE context validation failed",
+            }
     if target_position_pct is None:
         target_position_pct = 50  # 安全默认
     if regime is None:
@@ -461,4 +474,3 @@ if __name__ == "__main__":
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
         print(f"\n指令已保存: {out_path}")
-

@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AlphaCore | 产业深研终端 V5.0</title>
-    <meta name="description" content="AlphaCore 产业追踪深研终端 - 12大前沿产业ETF实时Alpha Score综合评分、动态RPS排名、真实价格百分位、买入止盈策略建议与风险警示 (覆盖半导体/AI/卫星互联/算力基建/新能源车/军工/有色等核心赛道)">    <link rel="stylesheet" href="./static/css/fonts.css?v=1">
+    <title>AlphaCore | 行业机构决策终端 V6.0</title>
+    <meta name="description" content="AlphaCore 行业机构决策终端：行业研究排序、动态RPS、历史价格位置，以及由Regime、AIAE、趋势、风险预算和止损共同约束的执行资格审查。">    <link rel="stylesheet" href="./static/css/fonts.css?v=1">
 
     <link rel="stylesheet" href="./static/css/styles.css?v=12">
     <link rel="stylesheet" href="./static/css/visual_excellence.css?v=3">
@@ -12,7 +12,7 @@
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
     <script>window.echarts || document.write('<script src="./static/vendor/echarts.min.js"><\/script>')</script>
     <script src="./static/js/alphacore_utils.js?v=2"></script>
-    <link rel="stylesheet" href="./static/css/industry.css?v=6">
+    <link rel="stylesheet" href="./static/css/industry.css?v=16">
 </head>
 <body class="industry-scope">
     <aside class="sidebar">
@@ -76,7 +76,7 @@
     <main class="dashboard">
         <header class="topbar">
             <div class="welcome-box" style="margin:0">
-                <h2 style="font-size: 1.5rem">产业深研终端 <span class="badge-beta">V5.0</span></h2>
+                <h2 style="font-size: 1.5rem">行业机构决策终端 <span class="badge-beta">V6.0</span></h2>
             </div>
             <div class="actions" style="display: flex; align-items: center; gap: 15px;">
                 <div class="date-picker-wrapper" style="display: flex; align-items: center; gap: 8px; background: rgba(59, 130, 246, 0.08); padding: 5px 12px; border-radius: 8px; border: 1px solid rgba(59, 130, 246, 0.2);">
@@ -90,6 +90,18 @@
         <div class="regime-banner" id="regime-banner">
             <span style="color:#64748b; font-size:0.82rem;">🔄 加载市场环境...</span>
         </div>
+
+        <section class="validation-strip glass-panel" id="industry-validation-strip" aria-live="polite">
+            <div class="validation-strip__status">⏳ 正在核验样本外证据...</div>
+        </section>
+
+        <section class="abstention-panel glass-panel" id="industry-abstention-panel" aria-live="polite">
+            <div class="abstention-panel__loading">⏳ 正在生成机构不交易决策包...</div>
+        </section>
+
+        <section class="challenger-panel glass-panel" id="industry-challenger-panel" aria-live="polite">
+            <div class="challenger-panel__loading">⏳ 正在读取预注册挑战者...</div>
+        </section>
 
         <!-- V4.0: 行业导航条 -->
         <div class="sector-pulse-nav glass-panel">
@@ -115,8 +127,8 @@
                 <!-- 左栏: Alpha Score 综合评分排行榜 -->
                 <div class="alpha-ranking glass-panel" id="alpha-ranking-panel">
                     <div class="alpha-ranking-header">
-                        <h3>🏆 Alpha 综合评分排行</h3>
-                        <span class="badge-count" id="alpha-a-count">-- 个强力</span>
+                        <h3>🏆 Alpha 研究排序</h3>
+                        <span class="badge-count" id="alpha-a-count">-- 个条件达标</span>
                     </div>
                     <div id="alpha-ranking-list">
                         <!-- JS 动态渲染 -->
@@ -145,10 +157,10 @@
                             <div class="metric-threshold">健康: >80 优秀 · <30 极弱</div>
                         </div>
                         <div class="stat-card glass-panel metric-card">
-                            <div class="label">价格百分位 (5Y)</div>
+                            <div class="label">5年价格位置</div>
                             <div id="gauge-value" style="height: 140px;"></div>
                             <div class="stat-desc" id="desc-value">侦测中...</div>
-                            <div class="metric-threshold">安全: <30 低估 · >70 高估</div>
+                            <div class="metric-threshold">仅表示历史位置，不代表PE/PB估值</div>
                         </div>
                         <div class="stat-card glass-panel metric-card">
                             <div class="label">成交拥挤度</div>
@@ -171,7 +183,7 @@
                             <div id="rs-line-chart" style="height: 260px;"></div>
                         </div>
                         <div class="glass-panel" style="padding: 20px;">
-                            <h3 style="font-size: 0.95rem; margin-bottom: 14px;">🧬 核心标的掘金</h3>
+                            <h3 style="font-size: 0.95rem; margin-bottom: 14px;">🧬 跟踪指数核心成分</h3>
                             <div id="list-constituents"></div>
                         </div>
                     </div>
@@ -180,7 +192,7 @@
 
             <!-- V4.0: 热力矩阵 (替代雷达图) -->
             <div class="heatmap-section glass-panel">
-                <h3 style="font-size: 1rem; margin-bottom: 16px;">🔥 行业多维热力矩阵 (Alpha × Heat × Momentum × Valuation × Trend)</h3>
+                <h3 style="font-size: 1rem; margin-bottom: 16px;">🔥 行业多维热力矩阵 (研究分 × 热度 × 动量 × 价格位置 × 趋势)</h3>
                 <div id="heatmap-chart" style="height: 320px;"></div>
             </div>
         </div>
@@ -188,10 +200,10 @@
 
     <div class="loading-overlay" id="loading-overlay">
         <div class="spinner"></div>
-        <p style="color: #fff; font-weight: 500; margin-top: 20px;">AlphaCore V5.0 正在计算 Alpha Score 综合评分矩阵...</p>
+        <p style="color: #fff; font-weight: 500; margin-top: 20px;">AlphaCore V6.0 正在计算研究排序与执行资格...</p>
     </div>
 
-    <script src="./static/js/industry.js?v=8"></script>
+    <script src="./static/js/industry.js?v=18"></script>
 <script src="./static/js/sidebar.js?v=3"></script>
 </body>
 </html>

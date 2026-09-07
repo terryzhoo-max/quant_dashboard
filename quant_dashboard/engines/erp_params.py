@@ -16,6 +16,8 @@ V3.0 Changelog:
   - O8 EMA 平滑状态持久化修复
 """
 
+from services.strategy_params import get_erp_params
+
 # ═══════════════════════════════════════════════════════════════
 #  V3.0 生产参数 (经回测优化 + OOS 验证 + V3.0 公式修复)
 # ═══════════════════════════════════════════════════════════════
@@ -169,6 +171,31 @@ OPTIMIZER_DEFAULTS = {
     "w_vol":          WEIGHTS["volatility"],
     "w_credit":       WEIGHTS["credit"],
 }
+
+
+def reload_runtime_params() -> dict:
+    """Reload CI-published ERP parameters without restarting the process."""
+    global BUY_THRESHOLD, SELL_THRESHOLD, ERP_WINDOW, STOP_LOSS
+
+    params = get_erp_params()
+    WEIGHTS.clear()
+    WEIGHTS.update({
+        "erp_abs": float(params["w_erp_abs"]),
+        "erp_pct": float(params["w_erp_pct"]),
+        "m1_trend": float(params["w_m1"]),
+        "volatility": float(params["w_vol"]),
+        "credit": float(params["w_credit"]),
+    })
+    BUY_THRESHOLD = float(params["buy_threshold"])
+    SELL_THRESHOLD = float(params["sell_threshold"])
+    ERP_WINDOW = int(params["erp_window"])
+    STOP_LOSS = float(params["stop_loss"])
+    OPTIMIZER_DEFAULTS.clear()
+    OPTIMIZER_DEFAULTS.update(params)
+    return params
+
+
+reload_runtime_params()
 
 # ═══════════════════════════════════════════════════════════════
 #  元信息

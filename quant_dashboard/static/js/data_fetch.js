@@ -39,10 +39,10 @@ async function fetchQuantData() {
             }
             document.getElementById('system-time').innerText = "🟡 " + result.message + " (自动同步中...)";
             
-            // 如果页面是空的，先拿Fallback撑一下门面
+            // 页面为空时展示明确的预热/不可用状态，不注入行业假行情。
             const vixVal = document.getElementById('val-vix');
             if (vixVal && (!vixVal.innerText.trim() || vixVal.innerText.includes('--'))) {
-                showFallbackData();
+                showFallbackData('DASHBOARD_WARMING_UP');
             }
             
             // UI/UX 亮点: Smart Polling 智能轮询
@@ -55,10 +55,10 @@ async function fetchQuantData() {
             showToast(`❌ API 错误: ${result.message}`, 'error');
         }
     } catch (error) {
-        console.warn("未能连接到本地 FastAPI 后端，展示模拟本地挂载数据...", error);
+        console.warn("未能连接到本地 FastAPI 后端，进入离线不可用状态...", error);
         document.getElementById('system-time').innerText = "⚠️ 离线模式 · 请启动 main.py 获取实时数据";
         showToast('⚠️ 离线模式: 无法连接 AlphaCore 后端', 'error');
-        showFallbackData();
+        showFallbackData('DASHBOARD_API_UNREACHABLE');
     }
 }
 

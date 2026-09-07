@@ -328,8 +328,8 @@ function renderAIAEHub(snapshot) {
     const rd = _REGIME_DEFS.find(d => d.r === regime) || _REGIME_DEFS[2];
 
     // C1 Fix: 数据质量评分与决策锁定
-    const dqs = (snapshot.data_quality_score !== undefined) ? snapshot.data_quality_score : 100;
-    const locked = snapshot.decision_locked === true;
+    const dqs = (snapshot.data_quality_score !== undefined) ? snapshot.data_quality_score : 0;
+    const locked = snapshot.decision_locked !== false;
 
     panel.classList.remove('initially-hidden');
 

@@ -188,7 +188,7 @@ def assemble_dashboard_response(
     # 策略结果
     mr_res, div_res, mom_res,
     # AIAE 数据
-    aiae_regime, aiae_cap, aiae_v1_value, aiae_regime_cn, aiae_report,
+    aiae_regime, aiae_cap, aiae_v1_value, aiae_regime_cn, aiae_report, aiae_ctx,
     # 行业热力图
     sector_heatmap,
     # 辅助函数引用
@@ -302,20 +302,7 @@ def assemble_dashboard_response(
                     "desc": vix_analysis.get("desc", ""),
                     "percentile": vix_analysis.get("percentile", 0)
                 },
-                "tomorrow_plan": get_tomorrow_plan_fn(vix_analysis, total_temp, {
-                    "regime": aiae_regime,
-                    "regime_cn": aiae_regime_cn,
-                    "regime_info": AIAE_REGIMES.get(aiae_regime, AIAE_REGIMES[3]),
-                    "cap": aiae_cap,
-                    "aiae_v1": round(aiae_v1_value, 1),
-                    "slope": aiae_report.get("current", {}).get("slope", {}).get("slope", 0),
-                    "slope_direction": aiae_report.get("current", {}).get("slope", {}).get("direction", "flat"),
-                    "erp_val": round(erp_val, 2),
-                    "erp_label": valuation_label,
-                    "erp_tier": erp_tier,
-                    "margin_heat": aiae_report.get("current", {}).get("margin_heat", 2.0),
-                    "fund_position": aiae_report.get("current", {}).get("fund_position", 80),
-                }),
+                "tomorrow_plan": get_tomorrow_plan_fn(vix_analysis, total_temp, aiae_ctx),
                 "capital_a": capital_a,
                 "capital_h": capital_h,
                 "signal": {
@@ -403,7 +390,7 @@ def assemble_dashboard_response(
                     "strategy_positions": strategy_positions,
                     "market_vix_multiplier": vix_analysis["multiplier"],
                     "strategy_filters": strategy_filters,
-                    "pos_path": get_position_path_fn(final_pos_val, vix_analysis),
+                    "pos_path": get_position_path_fn(final_pos_val, vix_analysis, aiae_ctx),
                     "mindset": get_institutional_mindset_fn(total_temp),
                     "holding_cycle_a": "5-8 个交易日",
                     "holding_cycle_hk": "15-22 个交易日",

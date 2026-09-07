@@ -164,7 +164,7 @@ def compute_alpha_score(p_df, heat_score: float, trend_5d: float, pe_pct: float)
     四因子加权:
       热度因子(30%): 直接取 heat_score
       动量因子(25%): 5D动量(60%) + 20D趋势(40%)，归一化到0-100
-      估值安全(25%): 100 - PE百分位 (低估=高分)
+      价格位置安全(25%): 100 - 5年价格百分位（不是 PE/PB 估值）
       趋势强度(20%): 站上MA20 + 站上MA60 + MA20斜率
     输出: alpha_score 0-100, alpha_grade A/B/C/D/F, trend_strength{}
     """
@@ -179,7 +179,7 @@ def compute_alpha_score(p_df, heat_score: float, trend_5d: float, pe_pct: float)
     mom_20d_score = min(100, max(0, 50 + ret_20d * 5))     # 20D 灵敏度略低
     f_momentum = mom_5d_score * 0.60 + mom_20d_score * 0.40
 
-    # --- 因子 3: 估值安全 (反转: 低PE=高分) ---
+    # --- 因子 3: 价格位置安全（反转：历史位置越低，得分越高）---
     f_valuation = min(100, max(0, 100 - pe_pct))
 
     # --- 因子 4: 趋势强度 (MA体系) ---
@@ -265,20 +265,20 @@ def compute_risk_alerts(vol_ratio: float, pe_pct: float, trend_5d: float,
             "metric": "crowd"
         })
 
-    # ⚠️ PE分位过高 — 估值泡沫
+    # ⚠️ 历史价格位置过高 — 延伸/回撤风险（不代表估值昂贵）
     if pe_pct > 80:
         alerts.append({
             "level": "danger",
             "icon": "🔴",
-            "text": f"PE分位 {pe_pct:.0f}% 历史极高估区域",
-            "metric": "pe"
+            "text": f"5年价格位置 {pe_pct:.0f}% 处于高位，回撤风险上升",
+            "metric": "price_position"
         })
     elif pe_pct > 70:
         alerts.append({
             "level": "warning",
             "icon": "🟡",
-            "text": f"PE分位 {pe_pct:.0f}% 估值偏高",
-            "metric": "pe"
+            "text": f"5年价格位置 {pe_pct:.0f}% 偏高，避免追价",
+            "metric": "price_position"
         })
 
     # ⚠️ 短期暴涨 + 拥挤 — 见顶信号
@@ -299,13 +299,13 @@ def compute_risk_alerts(vol_ratio: float, pe_pct: float, trend_5d: float,
             "metric": "overheat"
         })
 
-    # 🛡️ 正面信号: 深度价值区
+    # 🛡️ 正面信号: 低价格位置观察区
     if pe_pct < 15 and heat_score < 40:
         alerts.append({
             "level": "positive",
             "icon": "💎",
-            "text": f"PE仅 {pe_pct:.0f}% + 关注度低 → 深度价值区",
-            "metric": "deep_value"
+            "text": f"5年价格位置仅 {pe_pct:.0f}% 且关注度低，可纳入反转观察",
+            "metric": "low_price_position"
         })
 
     # 🛡️ 正面信号: 放量突破
@@ -313,7 +313,7 @@ def compute_risk_alerts(vol_ratio: float, pe_pct: float, trend_5d: float,
         alerts.append({
             "level": "positive",
             "icon": "🚀",
-            "text": f"放量 {vol_ratio:.1f}x 突破 +{trend_5d:.1f}%，估值安全",
+            "text": f"放量 {vol_ratio:.1f}x 突破 +{trend_5d:.1f}%，价格位置未过度延伸",
             "metric": "breakout"
         })
 
@@ -322,61 +322,14 @@ def compute_risk_alerts(vol_ratio: float, pe_pct: float, trend_5d: float,
 
 def generate_sector_advice(alpha_score: float, alpha_grade: str, heat_score: float,
                            pe_pct: float, trend_5d: float, trend_strength: dict) -> dict:
-    """
-    V3.0 五级投资建议矩阵
-    基于 Alpha Score 驱动，附带量化买入/止盈策略
-    """
-    above_ma20 = trend_strength.get("above_ma20", False)
-    above_ma60 = trend_strength.get("above_ma60", False)
-
-    if alpha_grade == "A":  # Alpha >= 80
-        return {
-            "text": "低估+放量+强势，最佳配置窗口",
-            "action": "strong_buy",
-            "label": "🟢 强力买入",
-            "buy_strategy": "分批建仓 20%→40%→60%，5-10个交易日完成",
-            "take_profit": "PE分位升至>70% 或 热度分降至<40 或 动量衰减连续3日",
-            "stop_loss": "跌破MA60 无条件止损",
-            "position_cap": "单行业上限60%"
-        }
-    elif alpha_grade == "B":  # Alpha 65-79
-        return {
-            "text": "热度好估值合理，可积极参与",
-            "action": "buy",
-            "label": "🟢 积极关注",
-            "buy_strategy": "左侧小仓试探 10%→20%，确认站稳MA20后加至30%",
-            "take_profit": "热度分降至<40 或 跌破MA20",
-            "stop_loss": "跌破MA60 或 5D回撤>-6%",
-            "position_cap": "单行业上限30%"
-        }
-    elif alpha_grade == "C":  # Alpha 50-64
-        return {
-            "text": "均衡态势，列入观察池等待确认",
-            "action": "watch",
-            "label": "🔵 跟踪观察",
-            "buy_strategy": "暂不建仓，等待Alpha升至65+再介入",
-            "take_profit": "—",
-            "stop_loss": "—",
-            "position_cap": "0%（仅观察）"
-        }
-    elif alpha_grade == "D":  # Alpha 35-49
-        return {
-            "text": "热度降温或估值偏高，谨慎持有",
-            "action": "caution",
-            "label": "🟡 谨慎持有",
-            "buy_strategy": "已持仓者减至半仓，新资金禁入",
-            "take_profit": "立即止盈已有浮盈仓位",
-            "stop_loss": "跌破MA60 全部离场",
-            "position_cap": "已持仓减至<15%"
-        }
-    else:  # F, Alpha < 35
-        return {
-            "text": "冷门+高估+弱势，严格回避",
-            "action": "avoid",
-            "label": "🔴 回避清仓",
-            "buy_strategy": "严禁新建仓",
-            "take_profit": "若持有立即清仓",
-            "stop_loss": "无条件清仓",
-            "position_cap": "0%"
-        }
+    """Deprecated research-only adapter; execution requires industry_policy context."""
+    return {
+        "text": "仅供研究排序；需通过统一 Regime、AIAE、趋势与风险闸门",
+        "action": "research_only",
+        "label": "⚪ 研究信号",
+        "buy_strategy": "请使用行业追踪接口返回的 execution 与 eligibility_checks",
+        "take_profit": "—",
+        "stop_loss": "—",
+        "position_cap": "0%",
+    }
 

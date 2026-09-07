@@ -8,7 +8,7 @@ import asyncio
 import logging
 import tushare as ts
 import pandas as pd
-from core_etf_config import CORE_ETFS, CORE_ETF_NAME_MAP, FALLBACK_MOMENTUM
+from core_etf_config import CORE_ETF_NAME_MAP
 
 logger = logging.getLogger("alphacore.heatmap")
 
@@ -62,7 +62,10 @@ async def compute_sector_heatmap(executor, mr_res, mom_res):
                 "change": round(chg_1d, 2),
                 "trend_5d": round(trend_5d, 2),
                 "ret_20d": ret_20d,
-                "status": "up" if chg_1d >= 0 else "down"
+                "status": "up" if chg_1d >= 0 else "down",
+                "data_status": "observed",
+                "data_as_of": str(df["trade_date"].iloc[-1]),
+                "is_synthetic": False,
             })
 
         # 计算 RPS (基于 20D 收益率的横向排名)
@@ -85,14 +88,6 @@ async def compute_sector_heatmap(executor, mr_res, mom_res):
     except Exception as e:
         logger.error(f"Heatmap V4.0 Logic Error: {e}")
 
-    # 兜底逻辑
-    if not sector_heatmap:
-        sector_heatmap = [
-            {"name": e["name"], "code": e["code"],
-             "change": 0, "trend_5d": FALLBACK_MOMENTUM.get(e["code"], 0),
-             "rps": int((i + 1) / len(CORE_ETFS) * 100),
-             "status": "up" if FALLBACK_MOMENTUM.get(e["code"], 0) > 0 else "down"}
-            for i, e in enumerate(CORE_ETFS)
-        ]
-
+    # Fail closed: an empty result is an unavailable market observation, not a
+    # reason to inject a deterministic ranking that resembles live quotes.
     return sector_heatmap

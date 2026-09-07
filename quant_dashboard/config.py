@@ -10,6 +10,8 @@ V5.1: 将所有引擎中的分散常量统一管理
 import os
 from pathlib import Path
 
+from services.strategy_params import load_runtime_config
+
 # ── 加载 .env 文件 (兼容 dotenv 未安装的环境) ──
 try:
     from dotenv import load_dotenv
@@ -71,11 +73,16 @@ CACHE_TTL_INTRADAY    = 300       # 盘中5分钟（09:30-15:00 工作日）
 CACHE_TTL_AFTERHOURS  = 3600      # 盘后1小时
 CACHE_TTL_WEEKEND     = 86400     # 周末24小时
 
-# ── Regime 判断参数（统一算法：_classify_regime_from_series）──
-REGIME_MA_PERIOD   = 120     # MA120 作为趋势锚定
-REGIME_SLOPE_DAYS  = 5       # 计算 MA120 斜率的周期
-REGIME_RET20_BULL  = 0.05    # 20日涨幅 > 5% → BULL 倾向
-REGIME_DIP_THRESH  = -0.03   # 3日 < -3% → CRASH 检测阈值
+# ── Regime / 策略参数兼容导出（权威来源：config/strategy_runtime.json）──
+_STRATEGY_RUNTIME = load_runtime_config()
+_REGIME_RULES = _STRATEGY_RUNTIME["regime"]
+_RUNTIME_STRATEGIES = _STRATEGY_RUNTIME["strategies"]
+
+REGIME_MA_PERIOD   = int(_REGIME_RULES["ma_period"])
+REGIME_SLOPE_DAYS  = int(_REGIME_RULES["slope_days"])
+REGIME_RET20_BULL  = float(_REGIME_RULES["bull_return_20d_min"])
+REGIME_DIP_THRESH  = float(_REGIME_RULES["crash_return_3d"])
+REGIME_REBOUND_RET5 = float(_REGIME_RULES["rebound_return_5d_min"])
 REGIME_MIN_DATA    = 300     # 最少需要 300 个交易日数据
 
 # ═══════════════════════════════════════════════════════
@@ -91,26 +98,12 @@ POSITION_CONFIG = {
 
     # ── 子策略 Regime 仓位上限 ──
     # 均值回归 (MR): 震荡主战场, 牛市低配防过度交易
-    "mr_regime_cap": {
-        "BEAR":  65,
-        "RANGE": 80,
-        "BULL":  35,
-        "CRASH":  0,
-    },
+    "mr_regime_cap": dict(_RUNTIME_STRATEGIES["mr"]["position_caps"]),
     # 动量轮动 (MOM): 牛市追强, 熊市防守
-    "mom_regime_cap": {
-        "BULL":  85,
-        "RANGE": 60,
-        "BEAR":  35,
-        "CRASH":  0,
-    },
+    "mom_regime_cap": dict(_RUNTIME_STRATEGIES["momentum"]["position_caps"]),
     # 双重动量 (GEM): 第1.5层战术配置, 绝对动量过滤天然防御
-    "gem_regime_cap": {
-        "BULL":  90,
-        "RANGE": 70,
-        "BEAR":  40,
-        "CRASH":  0,
-    },
+    "gem_regime_cap": dict(_RUNTIME_STRATEGIES["gem"]["position_caps"]),
+    "dividend_regime_cap": dict(_RUNTIME_STRATEGIES["dividend"]["position_caps"]),
 
     # ── 回测引擎统一上限 ──
     # 回测不受 AIAE 动态调整, 用固定值保证可重复性
@@ -121,19 +114,12 @@ POSITION_CONFIG = {
 MR_POS_CAP = {k: v / 100.0 for k, v in POSITION_CONFIG["mr_regime_cap"].items()}
 
 # ── 信号评分入场门槛（100分制）──
-MR_SCORE_GATE = {
-    "BEAR":  78,
-    "RANGE": 68,
-    "BULL":  60,
-    "CRASH": 999,
-}
+MR_SCORE_GATE = dict(_RUNTIME_STRATEGIES["mr"]["score_gates"])
 
 # ── 止损幅度（负数，浮亏超过该值触发）──
 MR_STOP_LOSS = {
-    "BEAR":  -0.05,   # 熊市：浮亏 5% 止损
-    "RANGE": -0.07,   # 震荡：浮亏 7% 止损
-    "BULL":  -0.06,   # 牛市：浮亏 6% 止损
-    "CRASH": -0.03,   # CRASH：浮亏 3% 即止
+    regime: -float(stop)
+    for regime, stop in _RUNTIME_STRATEGIES["mr"]["stop_losses"].items()
 }
 
 # ── 动量轮动策略参数 ──
@@ -145,7 +131,7 @@ MOMENTUM_MIN_HOLD   = 3       # 最少持仓数量
 # ── 前端 API ──
 API_BASE_URL = "http://127.0.0.1:8000"
 
-# ── mr_per_regime_params.json 路径 ──
+# ── 旧优化器产物路径（仅兼容离线工具；生产读取 strategy_runtime.json）──
 MR_PARAMS_FILE = "mr_per_regime_params.json"
 
 # ── 自动重优化周期（天）──

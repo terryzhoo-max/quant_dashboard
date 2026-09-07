@@ -2,15 +2,13 @@
 import asyncio
 import traceback
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Query
 
 import numpy as np
 import pandas as pd
-import tushare as ts
-from config import TUSHARE_TOKEN
 from models.schemas import BacktestRequest, BatchBacktestRequest, FactorAnalysisRequest
 from data_manager import FactorDataManager
 from backtest_engine import AlphaBacktester
@@ -23,22 +21,66 @@ from strategies_backtest import (
 )
 from erp_backtest_data import prepare_erp_backtest_data
 from momentum_backtest_engine import run_momentum_backtest, run_momentum_optimize
-from core_etf_config import CORE_ETFS, CORE_ETF_CODES, ETF_CONSTITUENTS, FALLBACK_MOMENTUM
+from core_etf_config import CORE_ETFS, CORE_ETF_CODES
 from engines.industry_engine import IndustryEngine
 from services.industry_tracker import (
     _tracking_cache_get, _tracking_cache_set, _get_tracking_ttl,
     compute_price_percentile, compute_dynamic_rps, compute_momentum_20d,
     compute_sector_heat_score, compute_alpha_score, compute_risk_alerts,
-    generate_sector_advice
 )
+from services.industry_policy import (
+    build_industry_abstention_plan,
+    build_industry_decision_context,
+    build_industry_liquidity_profile,
+    evaluate_industry_candidate,
+)
+from services.industry_validation import (
+    load_industry_validation_status,
+    run_local_industry_validation,
+)
+from services.industry_challenger import (
+    load_challenger_status,
+    run_local_challenger_validation,
+)
+from services.industry_forward_monitor import (
+    get_forward_monitor_status,
+    run_forward_monitor,
+)
+from services.industry_universe import (
+    get_industry_universe_status,
+    refresh_existing_industry_universe,
+)
+from services.industry_constituents import (
+    get_constituents_for_etf,
+    get_industry_constituent_status,
+    refresh_industry_constituents,
+)
+from services.market_regime import get_market_regime_snapshot
 
 router = APIRouter(prefix="/api/v1", tags=["industry"])
 executor = ThreadPoolExecutor(max_workers=6)
 logger = logging.getLogger("alphacore.industry")
 
-def get_etf_constituents(ts_code):
-    """V5.1 Fix P0#2: 统一引用 core_etf_config.ETF_CONSTITUENTS (Single Source of Truth)"""
-    return ETF_CONSTITUENTS.get(ts_code, [])
+def get_etf_constituent_snapshot(ts_code):
+    """Return only verified official tracking-index weights; never static guesses."""
+    return get_constituents_for_etf(ts_code)
+
+
+def _apply_data_lock(item: dict, reasons: list) -> None:
+    """Fail closed：数据质量未通过时覆盖一切买入型文案。"""
+    clean_reasons = list(dict.fromkeys(str(reason) for reason in reasons if reason))
+    item.update({
+        "decision_locked": True,
+        "decision_status": "data_locked",
+        "decision_lock_reasons": clean_reasons,
+        "advice": "行业数据质量或新鲜度未通过，禁止形成买入决策",
+        "advice_action": "data_locked",
+        "advice_label": "🔒 数据锁定",
+        "buy_strategy": "等待全部行业数据通过质量检查",
+        "take_profit": "—",
+        "stop_loss": "—",
+        "position_cap": "0%",
+    })
 
 
 # ─────────────────────────────────────────────
@@ -61,22 +103,16 @@ async def get_industry_detail(code: str):
 
             # 获取图表用价格数据
             dm = FactorDataManager()
-            p_df = dm.get_price_payload(code)
+            p_df = dm.get_industry_price_payload(code)
+            constituent_snapshot = get_etf_constituent_snapshot(code)
 
             if p_df.empty:
-                # Tushare实时拉取兜底
-                try:
-                    df_live = ts.pro_bar(ts_code=code, asset='FD', start_date='20241001', adj='qfq')
-                    if df_live is not None and not df_live.empty:
-                        p_df = df_live.sort_values('trade_date')
-                        p_df['trade_date'] = p_df['trade_date'].astype(str)
-                except Exception as e:
-                    logger.warning(f"[industry-detail] Tushare fallback failed for {code}: {e}")
-
-            if p_df.empty:
-                return {"code": code, "metrics": {"rps": 50, "pe_percentile": 50, "crowding": 1.0,
+                return {"code": code, "decision_locked": True,
+                        "decision_lock_reasons": ["MISSING_INDUSTRY_QFQ_DATA"],
+                        "metrics": {"rps": 50, "pe_percentile": 50, "price_percentile": 50, "crowding": 1.0,
                         "momentum_20d": {"ret_20d": 0, "label": "数据不足", "trend": "neutral"},
-                        "constituents": get_etf_constituents(code)},
+                        "constituents": constituent_snapshot.get("top_constituents", []),
+                        "constituent_snapshot": constituent_snapshot},
                         "chart_data": {"dates": [], "prices": [], "relative_strength": []}}
 
             p_df = p_df.sort_values('trade_date')
@@ -108,12 +144,41 @@ async def get_industry_detail(code: str):
 
             detail_data = {
                 "code": code,
+                "decision_locked": (
+                    cached_item.get("decision_locked", True) if cached_item else True
+                ),
+                "decision_lock_reasons": (
+                    cached_item.get("decision_lock_reasons", [])
+                    if cached_item else ["TRACKING_QUALITY_NOT_EVALUATED"]
+                ),
+                "decision_status": (
+                    cached_item.get("decision_status", "data_locked")
+                    if cached_item else "data_locked"
+                ),
+                "policy_qualified": bool(
+                    cached_item.get("policy_qualified", False) if cached_item else False
+                ),
+                "eligibility_checks": (
+                    cached_item.get("eligibility_checks", {}) if cached_item else {}
+                ),
+                "veto_reasons": (
+                    cached_item.get("veto_reasons", []) if cached_item else []
+                ),
+                "execution": (
+                    cached_item.get("execution", {}) if cached_item else {}
+                ),
+                "data_as_of": (
+                    cached_item.get("data_as_of") if cached_item
+                    else p_df['trade_date'].iloc[-1].strftime("%Y%m%d")
+                ),
                 "metrics": {
                     "rps": rps_val,
                     "pe_percentile": pe_val,
+                    "price_percentile": pe_val,
                     "crowding": crowding_val,
                     "momentum_20d": mom_20d,
-                    "constituents": get_etf_constituents(code)
+                    "constituents": constituent_snapshot.get("top_constituents", []),
+                    "constituent_snapshot": constituent_snapshot,
                 },
                 "chart_data": {
                     "dates": dates[-30:],
@@ -352,116 +417,12 @@ async def get_momentum_optimize(
 
 @router.get("/market/regime")
 async def get_market_regime():
-    """自动识别市场状态 BULL/RANGE/BEAR — 与 V4.0 激活参数面板使用相同算法"""
-    from mean_reversion_engine import _classify_regime_from_series
-    def _detect():
-        import numpy as np
-        ts.set_token(TUSHARE_TOKEN)
-        pro_ = ts.pro_api()
-        end_dt   = datetime.now().strftime("%Y%m%d")
-        start_dt = (datetime.now() - timedelta(days=300)).strftime("%Y%m%d")
-        df = pro_.index_daily(ts_code="000300.SH", start_date=start_dt, end_date=end_dt,
-                              fields="trade_date,close,pct_chg")
-        if df is None or len(df) < 30:
-            return {"status": "error", "message": "CSI300 数据不足"}
-        df = df.sort_values("trade_date").reset_index(drop=True)
-        close = df["close"].astype(float).values
-
-        # ── 统一算法 ──
-        info   = _classify_regime_from_series(close)
-        regime = info["regime"]
-        rc     = info["regime_color"]
-        ri     = info["regime_icon"]
-        regime_cn = info["regime_cn"]
-
-        latest = float(close[-1])
-        ma120  = info["ma120"]
-        ma60   = info["ma60"]
-        slope5 = info["slope5"]
-        ret5   = info["ret5"]
-        ret20  = info["ret20"]
-
-        pct    = df["pct_chg"].astype(float) / 100
-        vol20  = float(pct.iloc[-20:].std() * (252**0.5) * 100) if len(pct) >= 20 else 20.0
-        ret60  = float((close[-1]/close[-61] - 1)*100) if len(close) >= 61 else 0.0
-
-        desc_map = {
-            "BULL":  f"CSI300 ({latest:.0f}) 站上MA120 ({ma120:.0f})，均线向上，全力进攻。",
-            "RANGE": f"CSI300 ({latest:.0f}) 站上MA120 ({ma120:.0f})，均线走平，均衡配置。",
-            "BEAR":  f"CSI300 ({latest:.0f}) 跌破MA120 ({ma120:.0f})，防御优先。",
-            "CRASH": f"CSI300 ({latest:.0f}) 触发熔断，禁止新建仓。",
-        }
-        # 震荡反弹子状态
-        if regime == "RANGE" and not info["above_ma120"]:
-            desc_map["RANGE"] = f"CSI300 ({latest:.0f}) 跌破MA120 ({ma120:.0f})，近5日反弹+{ret5:.1f}%，谨慎。"
-
-        note_map = {
-            "BULL":  "全力进攻：信号达标即可满仓",
-            "RANGE": "均衡配置：仓位×0.77",
-            "BEAR":  "防御模式：止损收至-6%",
-            "CRASH": "禁止新建仓",
-        }
-        sg = {"BULL": 65, "RANGE": 68, "BEAR": 75, "CRASH": 999}.get(regime, 68)
-        sl = -6 if regime == "BEAR" else -8
-
-        # ── V6.0: 三层级联仓位建议 ──
-        # Layer 1: AIAE 缓存 (matrix_position, AIAE×ERP 交叉查表)
-        # Layer 2: config.POSITION_CONFIG (Regime 仓位上限)
-        # Layer 3: AUDIT 硬天花板 95%
-        # 输出: min(L1, L2, L3)
-        aiae_cap = None
-        pos_source = "regime"
-        try:
-            from services.cache_service import cache_manager
-            aiae_ctx = cache_manager.get_json("aiae_ctx")
-            if aiae_ctx and aiae_ctx.get("cap"):
-                aiae_cap = int(aiae_ctx["cap"])
-                pos_source = "aiae"
-        except Exception:
-            pass
-
-        try:
-            from config import POSITION_CONFIG as _PC
-            # 取动量 Regime Cap (产业追踪页更贴近动量逻辑)
-            regime_cap = _PC.get("mom_regime_cap", {}).get(regime, 66)
-            audit_cap = int(_PC.get("total_cap", 95))
-        except ImportError:
-            regime_cap = {"BULL": 85, "RANGE": 60, "BEAR": 35, "CRASH": 0}.get(regime, 66)
-            audit_cap = 95
-
-        # 三层取最严
-        candidates = [regime_cap, audit_cap]
-        if aiae_cap is not None:
-            candidates.append(aiae_cap)
-        pc = min(candidates)
-
-        return {
-            "status": "ok", "as_of": datetime.now().strftime("%Y-%m-%d"),
-            "latest_date": df["trade_date"].iloc[-1],
-            "csi300": round(latest, 2), "ma60": round(ma60, 2), "ma120": round(ma120, 2),
-            "above_ma120": info["above_ma120"], "ma120_rising": slope5 > 0,
-            "ma120_slope5": round(slope5, 4),
-            "ret5d": round(ret5, 2), "ret20d": round(ret20, 2),
-            "ret60d": round(ret60, 2), "vol20d": round(vol20, 1),
-            "regime": regime, "regime_cn": regime_cn,
-            "regime_color": rc, "regime_icon": ri,
-            "regime_desc": desc_map.get(regime, ""),
-            "pos_cap": pc, "score_gate": sg,
-            # V6.0: 分层仓位透明化
-            "aiae_cap": aiae_cap,       # AIAE 宏观建议 (可能为 null)
-            "regime_cap": regime_cap,    # Regime 仓位上限
-            "audit_cap": audit_cap,      # 审计硬天花板
-            "pos_source": pos_source,    # 数据来源: "aiae" 或 "regime"
-            "optimal_params": {
-                "top_n": 3, "rebalance_days": 5, "mom_window": 30,
-                "stop_loss": sl, "pos_cap": pc, "entry_threshold": sg,
-                "note": note_map.get(regime, ""),
-            },
-        }
+    """返回统一的 Regime、AIAE 安全状态与仓位参数快照。"""
     try:
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(executor, _detect)
+        return await loop.run_in_executor(executor, get_market_regime_snapshot)
     except Exception as e:
+        logger.error(f"Market Regime Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
 
 @router.get("/industry-tracking")
@@ -473,9 +434,34 @@ async def get_industry_tracking(date: Optional[str] = None):
         def run_ind_analysis():
             dm = FactorDataManager()
             target_dt = pd.to_datetime(date) if date else pd.Timestamp.now().normalize()
+            today = pd.Timestamp.now().normalize()
+            historical_query = bool(date) and target_dt.normalize() < today
 
             # V5.1 Fix P0#2: 统一引用 core_etf_config (Single Source of Truth)
             etf_list = CORE_ETFS
+            quality_kwargs = {}
+            if date:
+                quality_kwargs["as_of"] = target_dt.replace(hour=23, minute=59).to_pydatetime()
+            data_quality = dm.check_industry_data_quality(
+                CORE_ETF_CODES, **quality_kwargs
+            )
+            data_locked = bool(data_quality.get("decision_locked", True))
+            market_snapshot = {}
+            if not data_locked and not historical_query:
+                try:
+                    market_snapshot = get_market_regime_snapshot()
+                except Exception as exc:
+                    logger.warning("[industry-tracking] Regime snapshot error: %s", exc)
+                    market_snapshot = {"status": "error", "message": str(exc)}
+            decision_context = build_industry_decision_context(
+                data_quality,
+                market_snapshot,
+                historical_query=historical_query,
+            )
+            validation_status = decision_context["model_validation"]
+            global_lock = decision_context["decision_locked"]
+            global_lock_reasons = decision_context["decision_lock_reasons"]
+            quality_items = data_quality.get("items", {})
 
             sector_data = []
             # V4.0: 保存每个ETF的price_df用于detail API复用
@@ -483,22 +469,40 @@ async def get_industry_tracking(date: Optional[str] = None):
 
             for etf in etf_list:
                 code = etf['code']
-                p_df = dm.get_price_payload(code)
+                p_df = dm.get_industry_price_payload(code)
+                item_quality = quality_items.get(code, {})
                 if p_df.empty:
-                    sector_data.append({
+                    empty_item = {
                         "ts_code": code, "code": code, "name": etf['name'],
                         "trend_5d": 0.0, "ret_20d": 0.0,
                         "heat_score": 30.0, "heat_tier": "❄️ 冷淡",
                         "vol_ratio": 1.0, "vol_score": 50.0, "mom_score": 50.0, "crowd_score": 80.0,
-                        "pe_percentile": 50.0,
+                        "pe_percentile": 50.0, "price_percentile": 50.0,
                         "alpha_score": 30.0, "alpha_grade": "F",
-                        "f_heat": 30.0, "f_momentum": 50.0, "f_valuation": 50.0, "f_trend": 0.0,
+                        "research_score": 30.0,
+                        "f_heat": 30.0, "f_momentum": 50.0, "f_valuation": 50.0,
+                        "f_price_position_safety": 50.0, "f_trend": 0.0,
                         "trend_strength": {"above_ma20": False, "above_ma60": False, "ma20_slope": 0.0},
                         "risk_alerts": [],
                         "momentum_20d": {"ret_20d": 0.0, "label": "数据同步中", "trend": "neutral"},
-                        "advice": "数据同步中", "advice_action": "neutral", "advice_label": "⚪ 等待同步",
-                        "buy_strategy": "等待数据同步后再评估", "take_profit": "—", "stop_loss": "—", "position_cap": "0%"
-                    })
+                        "data_as_of": item_quality.get("latest_trade_date"),
+                        "data_quality": item_quality,
+                        "execution_quality": build_industry_liquidity_profile([]),
+                    }
+                    empty_context = build_industry_decision_context(
+                        {
+                            "decision_locked": True,
+                            "is_usable": False,
+                            "reasons": global_lock_reasons
+                            + item_quality.get("issues", ["MISSING_DATA"]),
+                            "expected_trade_date": data_quality.get("expected_trade_date"),
+                        },
+                        market_snapshot,
+                        model_validation_status=validation_status,
+                        historical_query=historical_query,
+                    )
+                    empty_item.update(evaluate_industry_candidate(empty_item, empty_context))
+                    sector_data.append(empty_item)
                     continue
 
                 # 过滤至目标日期
@@ -529,14 +533,7 @@ async def get_industry_tracking(date: Optional[str] = None):
                     heat['heat_score'], heat['crowd_score']
                 )
 
-                # V3.0: 生成五级建议 (入参升级为 alpha 驱动)
-                advice = generate_sector_advice(
-                    alpha['alpha_score'], alpha['alpha_grade'],
-                    heat['heat_score'], pe_pct, trend,
-                    alpha['trend_strength']
-                )
-
-                sector_data.append({
+                item = {
                     "ts_code": code, "code": code, "name": etf['name'],
                     "trend_5d": trend,
                     # V2.0 热度字段
@@ -546,58 +543,48 @@ async def get_industry_tracking(date: Optional[str] = None):
                     "vol_score": heat['vol_score'],
                     "mom_score": heat['mom_score'],
                     "crowd_score": heat['crowd_score'],
+                    # pe_percentile 仅为兼容旧前端；该值是历史价格位置，不是 PE/PB 估值。
                     "pe_percentile": pe_pct,
+                    "price_percentile": pe_pct,
                     # V3.0 Alpha Score 字段
                     "alpha_score": alpha['alpha_score'],
+                    "research_score": alpha['alpha_score'],
                     "alpha_grade": alpha['alpha_grade'],
                     "ret_20d": alpha['ret_20d'],
                     "f_heat": alpha['f_heat'],
                     "f_momentum": alpha['f_momentum'],
                     "f_valuation": alpha['f_valuation'],
+                    "f_price_position_safety": alpha['f_valuation'],
                     "f_trend": alpha['f_trend'],
                     "trend_strength": alpha['trend_strength'],
                     # V3.0 风险警示
                     "risk_alerts": alerts,
                     # V4.0 20D动量趋势 (替代北向资金)
                     "momentum_20d": mom_20d,
-                    # V3.0 五级建议
-                    "advice": advice['text'],
-                    "advice_action": advice['action'],
-                    "advice_label": advice['label'],
-                    "buy_strategy": advice.get('buy_strategy', '—'),
-                    "take_profit": advice.get('take_profit', '—'),
-                    "stop_loss": advice.get('stop_loss', '—'),
-                    "position_cap": advice.get('position_cap', '—')
-                })
-
-            # 影子排序数据兜底 (如果同步未就绪)
-            if all(r['trend_5d'] == 0.0 for r in sector_data):
-                # V5.1 Fix P0#2: 统一引用 core_etf_config.FALLBACK_MOMENTUM
-                fallback = FALLBACK_MOMENTUM
-                for r in sector_data:
-                    r['trend_5d'] = fallback.get(r['ts_code'], 0.0)
-                    heat = compute_sector_heat_score(pd.DataFrame(), r['trend_5d'])
-                    r.update({"heat_score": heat['heat_score'], "heat_tier": heat['heat_tier'], "vol_ratio": 1.0})
-                    pe_pct = 50.0  # V4.0: 兜底时用中性值而非硬编码
-                    r['pe_percentile'] = pe_pct
-                    alpha = compute_alpha_score(pd.DataFrame(), heat['heat_score'], r['trend_5d'], pe_pct)
-                    r.update({
-                        "alpha_score": alpha['alpha_score'], "alpha_grade": alpha['alpha_grade'],
-                        "ret_20d": 0.0, "f_heat": alpha['f_heat'], "f_momentum": alpha['f_momentum'],
-                        "f_valuation": alpha['f_valuation'], "f_trend": alpha['f_trend'],
-                        "trend_strength": alpha['trend_strength'], "risk_alerts": [],
-                        "momentum_20d": {"ret_20d": 0.0, "label": "数据兜底", "trend": "neutral"}
-                    })
-                    adv = generate_sector_advice(
-                        alpha['alpha_score'], alpha['alpha_grade'],
-                        heat['heat_score'], pe_pct, r['trend_5d'],
-                        alpha['trend_strength']
+                    "data_as_of": (
+                        p_df['trade_date'].iloc[-1].strftime("%Y%m%d")
+                        if not p_df.empty else item_quality.get("latest_trade_date")
+                    ),
+                    "data_quality": item_quality,
+                    "execution_quality": build_industry_liquidity_profile(
+                        p_df["amount"].tolist() if "amount" in p_df.columns else []
+                    ),
+                }
+                item_context = decision_context
+                if not item_quality.get("is_usable", not data_locked):
+                    item_context = build_industry_decision_context(
+                        {
+                            "decision_locked": True,
+                            "is_usable": False,
+                            "reasons": global_lock_reasons + item_quality.get("issues", []),
+                            "expected_trade_date": data_quality.get("expected_trade_date"),
+                        },
+                        market_snapshot,
+                        model_validation_status=validation_status,
+                        historical_query=historical_query,
                     )
-                    r.update({
-                        "advice": adv['text'], "advice_action": adv['action'], "advice_label": adv['label'],
-                        "buy_strategy": adv.get('buy_strategy', '—'), "take_profit": adv.get('take_profit', '—'),
-                        "stop_loss": adv.get('stop_loss', '—'), "position_cap": adv.get('position_cap', '—')
-                    })
+                item.update(evaluate_industry_candidate(item, item_context))
+                sector_data.append(item)
 
             # V3.0: 按 alpha_score 降序排列 (综合评分优先)
             sector_data.sort(key=lambda x: x.get('alpha_score', 0), reverse=True)
@@ -605,6 +592,10 @@ async def get_industry_tracking(date: Optional[str] = None):
             # V4.0: 计算动态RPS排名 (需要全部sector_data准备好后)
             for item in sector_data:
                 item['rps'] = compute_dynamic_rps(sector_data, item.get('ts_code') or item.get('code'))
+
+            abstention_plan = build_industry_abstention_plan(
+                sector_data, decision_context
+            )
 
             # 轮动矩阵
             try:
@@ -618,7 +609,21 @@ async def get_industry_tracking(date: Optional[str] = None):
                 "performance": sector_data,
                 "sector_heatmap": sector_data,
                 "rotation": rotation,
-                "last_update": datetime.now().strftime("%Y%m%d")
+                "last_update": datetime.now().strftime("%Y%m%d"),
+                "decision_locked": global_lock,
+                "decision_lock_reasons": global_lock_reasons,
+                "execution_context": decision_context,
+                "abstention_plan": abstention_plan,
+                "qualified_count": sum(1 for item in sector_data if item.get("policy_qualified")),
+                "candidate_count": sum(
+                    1 for item in sector_data
+                    if item.get("advice_action") == "candidate_eligible"
+                ),
+                "eligible_buy_count": sum(
+                    1 for item in sector_data
+                    if item.get("advice_action") == "eligible_buy"
+                ),
+                "_data_quality": data_quality,
             }
 
             # V6.0: 日期隔离缓存写入
@@ -637,18 +642,245 @@ async def get_industry_tracking(date: Optional[str] = None):
 
         loop = asyncio.get_running_loop()
         results = await loop.run_in_executor(executor, run_ind_analysis)
+        data_quality = results.pop("_data_quality", {})
 
         # V6.0: freshness 从 latest 缓存读取
         _, latest_ts, _ = _tracking_cache_get("latest")
         return {"status": "success", "data": results,
+                "decision_locked": bool(results.get("decision_locked", True)),
+                "decision_lock_reasons": results.get("decision_lock_reasons", []),
+                "data_quality": data_quality,
                 "data_freshness": {
                     "last_calc": latest_ts or datetime.now().isoformat(),
                     "etf_count": len(results.get("sector_heatmap", [])),
-                    "cache_ttl_sec": _get_tracking_ttl()
+                    "cache_ttl_sec": _get_tracking_ttl(),
+                    "expected_trade_date": data_quality.get("expected_trade_date"),
+                    "daily_latest": data_quality.get("daily_latest"),
+                    "daily_earliest_latest": data_quality.get("daily_earliest_latest"),
+                    "usable_count": data_quality.get("usable_count", 0),
+                    "coverage_ratio": data_quality.get("coverage_ratio", 0.0),
+                    "is_usable": data_quality.get("is_usable", False),
                 }}
     except Exception as e:
         logger.error(f"Industry Analysis Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
+
+
+@router.get("/industry-validation")
+async def get_industry_validation():
+    """Return independently re-evaluated industry model-promotion evidence."""
+    try:
+        loop = asyncio.get_running_loop()
+        status = await loop.run_in_executor(executor, load_industry_validation_status)
+        return {"status": "success", "data": status}
+    except Exception as exc:
+        logger.error("Industry validation status error: %s", traceback.format_exc())
+        return {
+            "status": "error",
+            "data": {
+                "ready": False,
+                "stage": "error",
+                "reasons": ["VALIDATION_STATUS_UNAVAILABLE"],
+            },
+            "message": str(exc),
+        }
+
+
+@router.post("/industry-validation/run")
+async def run_industry_validation_audit():
+    """Rebuild the versioned local shadow-validation artifact."""
+    try:
+        loop = asyncio.get_running_loop()
+        artifact = await loop.run_in_executor(executor, run_local_industry_validation)
+        status = load_industry_validation_status()
+        return {
+            "status": "success" if status["ready"] else "degraded",
+            "data": status,
+            "coverage": artifact.get("coverage", {}),
+        }
+    except Exception as exc:
+        logger.error("Industry validation run error: %s", traceback.format_exc())
+        return {
+            "status": "error",
+            "data": {"ready": False, "reasons": ["VALIDATION_RUN_FAILED"]},
+            "message": str(exc),
+        }
+
+
+@router.get("/industry-challenger")
+async def get_industry_challenger():
+    """Return isolated shadow evidence; this endpoint never grants execution."""
+    try:
+        loop = asyncio.get_running_loop()
+        status = await loop.run_in_executor(executor, load_challenger_status)
+        return {"status": "success", "data": status}
+    except Exception as exc:
+        logger.error("Industry challenger status error: %s", traceback.format_exc())
+        return {
+            "status": "error",
+            "data": {
+                "lifecycle": "shadow",
+                "evidence_ready": False,
+                "execution_ready": False,
+                "reasons": ["CHALLENGER_STATUS_UNAVAILABLE"],
+            },
+            "message": str(exc),
+        }
+
+
+@router.post("/industry-challenger/run")
+async def run_industry_challenger_audit():
+    """Rebuild the pre-registered challenger artifact without publishing it."""
+    try:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(executor, run_local_challenger_validation)
+        status = load_challenger_status()
+        return {
+            "status": "success" if status["evidence_ready"] else "degraded",
+            "data": status,
+        }
+    except Exception as exc:
+        logger.error("Industry challenger run error: %s", traceback.format_exc())
+        return {
+            "status": "error",
+            "data": {
+                "lifecycle": "shadow",
+                "evidence_ready": False,
+                "execution_ready": False,
+                "reasons": ["CHALLENGER_RUN_FAILED"],
+            },
+            "message": str(exc),
+        }
+
+
+@router.get("/industry-forward-monitor")
+async def get_industry_forward_monitor():
+    """Return hash-chain integrity and forward-only sample maturity."""
+    try:
+        loop = asyncio.get_running_loop()
+        status = await loop.run_in_executor(executor, get_forward_monitor_status)
+        return {"status": "success", "data": status}
+    except Exception as exc:
+        logger.error("Industry forward monitor status error: %s", traceback.format_exc())
+        return {
+            "status": "error",
+            "data": {
+                "integrity_ok": False,
+                "execution_allowed": False,
+                "integrity_errors": ["FORWARD_MONITOR_STATUS_UNAVAILABLE"],
+            },
+            "message": str(exc),
+        }
+
+
+@router.post("/industry-forward-monitor/run")
+async def run_industry_forward_monitor():
+    """Record an idempotent closed-session snapshot and settle matured signals."""
+    try:
+        loop = asyncio.get_running_loop()
+        status = await loop.run_in_executor(executor, run_forward_monitor)
+        return {"status": "success", "data": status}
+    except Exception as exc:
+        logger.error("Industry forward monitor run error: %s", traceback.format_exc())
+        return {
+            "status": "error",
+            "data": {
+                "integrity_ok": False,
+                "execution_allowed": False,
+                "integrity_errors": ["FORWARD_MONITOR_RUN_FAILED"],
+            },
+            "message": str(exc),
+        }
+
+
+@router.get("/industry-universe-status")
+async def get_industry_universe_registry_status():
+    """Return ETF-master lineage and prospective versus historical PIT coverage."""
+    try:
+        loop = asyncio.get_running_loop()
+        status = await loop.run_in_executor(executor, get_industry_universe_status)
+        return {"status": "success", "data": status}
+    except Exception as exc:
+        logger.error("Industry universe status error: %s", traceback.format_exc())
+        return {
+            "status": "error",
+            "data": {
+                "integrity_ok": False,
+                "current_date_covered": False,
+                "historical_validation_covered": False,
+                "execution_allowed": False,
+                "reasons": ["INDUSTRY_UNIVERSE_STATUS_UNAVAILABLE"],
+            },
+            "message": str(exc),
+        }
+
+
+@router.get("/industry-constituents-status")
+async def get_industry_constituents_registry_status():
+    """Return official tracking-index constituent coverage and integrity."""
+    try:
+        loop = asyncio.get_running_loop()
+        status = await loop.run_in_executor(executor, get_industry_constituent_status)
+        return {
+            "status": "success" if status.get("integrity_ok") else "degraded",
+            "data": status,
+        }
+    except Exception as exc:
+        logger.error("Industry constituent status error: %s", traceback.format_exc())
+        return {
+            "status": "error",
+            "data": {
+                "integrity_ok": False,
+                "verified_count": 0,
+                "reasons": ["INDUSTRY_CONSTITUENT_STATUS_UNAVAILABLE"],
+            },
+            "message": str(exc),
+        }
+
+
+@router.post("/industry-constituents/refresh")
+async def refresh_industry_constituent_registry():
+    """Refresh official monthly weights without falling back to static mappings."""
+    try:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(executor, refresh_industry_constituents)
+        status = await loop.run_in_executor(executor, get_industry_constituent_status)
+        return {"status": "success", "data": status}
+    except Exception as exc:
+        logger.error("Industry constituent refresh error: %s", traceback.format_exc())
+        return {
+            "status": "error",
+            "data": {
+                "integrity_ok": False,
+                "verified_count": 0,
+                "reasons": ["INDUSTRY_CONSTITUENT_REFRESH_FAILED"],
+            },
+            "message": str(exc),
+        }
+
+
+@router.post("/industry-universe/refresh")
+async def refresh_industry_universe_registry():
+    """Refresh authoritative ETF metadata without changing the policy freeze date."""
+    try:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(executor, refresh_existing_industry_universe)
+        await loop.run_in_executor(executor, refresh_industry_constituents)
+        await loop.run_in_executor(executor, run_local_industry_validation)
+        await loop.run_in_executor(executor, run_local_challenger_validation)
+        status = await loop.run_in_executor(executor, get_industry_universe_status)
+        return {"status": "success", "data": status}
+    except Exception as exc:
+        logger.error("Industry universe refresh error: %s", traceback.format_exc())
+        return {
+            "status": "error",
+            "data": {
+                "integrity_ok": False,
+                "execution_allowed": False,
+                "reasons": ["INDUSTRY_UNIVERSE_REFRESH_FAILED"],
+            },
+            "message": str(exc),
+        }
 
 @router.post("/sync/industry")
 async def sync_industry_data():
@@ -659,18 +891,25 @@ async def sync_industry_data():
         
         def do_sync():
             mgr = FactorDataManager()
-            # 同步 ETF 行情 (Tushare asset 'FD' 代表基金/ETF)
-            mgr.sync_daily_prices(etf_codes, asset='FD') 
+            # 同步至产业专用前复权命名空间，绝不与实时动量原始缓存混写。
+            mgr.sync_industry_prices(etf_codes)
             # 同时也同步一部分成分股行情(可选)
             engine = IndustryEngine()
             stocks = engine._get_industry_stocks()
             if not stocks.empty:
                 mgr.sync_daily_prices(stocks.head(10)['ts_code'].tolist())
-            return mgr.get_last_sync_date(etf_codes)
+            return mgr.check_industry_data_quality(etf_codes)
 
         loop = asyncio.get_running_loop()
-        last_date = await loop.run_in_executor(executor, do_sync)
-        return {"status": "success", "last_date": last_date}
+        quality = await loop.run_in_executor(executor, do_sync)
+        locked = bool(quality.get("decision_locked", True))
+        return {
+            "status": "degraded" if locked else "success",
+            "last_date": quality.get("daily_latest", "N/A"),
+            "decision_locked": locked,
+            "decision_lock_reasons": quality.get("reasons", []),
+            "data_quality": quality,
+        }
     except Exception as e:
         logger.error(f"Sync Error: {traceback.format_exc()}")
         return {"status": "error", "message": str(e)}

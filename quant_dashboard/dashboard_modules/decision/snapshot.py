@@ -10,7 +10,10 @@ AlphaCore · 快照构建器
   - _build_snapshot_from_cache() → dict
 """
 
+import time
+
 from services.logger import get_logger
+from services.health_status import evaluate_aiae_context
 
 logger = get_logger("ac.decision.snapshot")
 
@@ -91,6 +94,12 @@ def _build_snapshot_from_cache() -> dict:
 
     # AIAE 上下文 (V17.5: 扩展完整字段供仪表卡片使用)
     aiae_ctx = cache_manager.get_json("aiae_ctx")
+    # Fail closed even when the cache is missing or still uses the legacy schema.
+    snapshot["data_quality_score"] = 0
+    snapshot["decision_locked"] = True
+    snapshot["aiae_fresh"] = False
+    snapshot["aiae_age_sec"] = None
+    snapshot["aiae_unusable_reason"] = "missing"
     if aiae_ctx:
         snapshot["aiae_regime"] = aiae_ctx.get("regime", 3)
         snapshot["aiae_v1"] = aiae_ctx.get("aiae_v1", 22)
@@ -101,8 +110,12 @@ def _build_snapshot_from_cache() -> dict:
         snapshot["margin_heat"] = aiae_ctx.get("margin_heat", 2.0)
         snapshot["fund_position"] = aiae_ctx.get("fund_position", 80)
         # C1 Fix: 数据质量评分与决策锁定字段 (机构级合规透传)
-        snapshot["data_quality_score"] = aiae_ctx.get("data_quality_score", 100)
-        snapshot["decision_locked"] = aiae_ctx.get("decision_locked", False)
+        aiae_state = evaluate_aiae_context(aiae_ctx, now_ts=time.time())
+        snapshot["data_quality_score"] = aiae_state["data_quality_score"]
+        snapshot["decision_locked"] = not aiae_state["usable"]
+        snapshot["aiae_fresh"] = aiae_state["fresh"]
+        snapshot["aiae_age_sec"] = aiae_state["age_sec"]
+        snapshot["aiae_unusable_reason"] = aiae_state["reason"]
         snapshot["fund_position_source"] = aiae_ctx.get("fund_position_source", "manual_update")
         snapshot["fund_position_date"] = aiae_ctx.get("fund_position_date", "")
         # V5 dynamic metadata

@@ -1588,6 +1588,9 @@ class AIAEEngine:
         return {
             "status": "fallback",
             "message": reason,
+            # Fail closed: synthetic fallback values must never authorize a decision.
+            "data_quality_score": 0,
+            "decision_locked": True,
             "engine_version": self.VERSION,
             "updated_at": datetime.now().isoformat(),
             "current": {

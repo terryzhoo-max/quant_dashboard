@@ -27,9 +27,15 @@ from datetime import datetime, timedelta
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from services.fred_guard import fred_get_series
+from services.health_status import evaluate_aiae_context
+from services.strategy_params import get_position_cap, get_stop_loss
 
 
 logger = logging.getLogger("alphacore.momentum")
+
+# 实时轮动使用 Tushare fund_daily 原始口径，只能落在自己的命名空间。
+# 严禁再覆盖 data_lake/daily_prices 或产业追踪的 qfq 历史。
+MOMENTUM_RAW_PRICE_DIR = os.path.join("data_lake", "momentum_prices_raw")
 
 # ====== Tushare 初始化 ======
 from config import TUSHARE_TOKEN
@@ -86,19 +92,15 @@ def get_active_pool(regime: str) -> list:
 
 
 # ====== V3.0 Regime 自适应参数（含因子权重+止损+评分门槛） ======
-# position_cap 从 config.POSITION_CONFIG 统一读取
-from config import POSITION_CONFIG as _POS_CFG
-_MOM_CAP = _POS_CFG["mom_regime_cap"]
-
 REGIME_PARAMS = {
     "BULL": {
         "label":    "牛市",
         "strategy": "追强",      # 核心策略标签
         "top_n":    5,
         "momentum_threshold": 0,
-        "position_cap": _MOM_CAP["BULL"],     # ← 中心化
+        "position_cap": get_position_cap("momentum", "BULL"),
         "single_cap":   30,
-        "stop_loss":    -8,      # V3.0: 分状态止损
+        "stop_loss":    -get_stop_loss("momentum", "BULL") * 100,
         "volatility_filter": False,
         # V3.1: 因子权重与回测引擎对齐（8.2Y验证 Sharpe 0.541）
         "w_mom_s":  0.50,       # 牛市：重短期动量（追强）
@@ -114,9 +116,9 @@ REGIME_PARAMS = {
         "strategy": "均衡",
         "top_n":    4,
         "momentum_threshold": 2,
-        "position_cap": _MOM_CAP["RANGE"],    # ← 中心化
+        "position_cap": get_position_cap("momentum", "RANGE"),
         "single_cap":   25,
-        "stop_loss":    -7,
+        "stop_loss":    -get_stop_loss("momentum", "RANGE") * 100,
         "volatility_filter": True,
         "w_mom_s":  0.40,       # V3.1: 均衡配置
         "w_mom_m":  0.15,
@@ -131,9 +133,9 @@ REGIME_PARAMS = {
         "strategy": "防守",
         "top_n":    3,
         "momentum_threshold": 5,
-        "position_cap": _MOM_CAP["BEAR"],     # ← 中心化
+        "position_cap": get_position_cap("momentum", "BEAR"),
         "single_cap":   20,
-        "stop_loss":    -5,
+        "stop_loss":    -get_stop_loss("momentum", "BEAR") * 100,
         "volatility_filter": True,
         "w_mom_s":  0.20,       # V3.1: 熊市重波动+趋势防守
         "w_mom_m":  0.15,
@@ -144,6 +146,15 @@ REGIME_PARAMS = {
         "rebalance_days": 20,      # V3.1: 熊市减少调仓摩擦
     },
 }
+
+
+def _runtime_regime_params(regime: str) -> dict:
+    """Return static signal tuning plus live cap/stop parameters."""
+    state = regime if regime in REGIME_PARAMS else "RANGE"
+    params = dict(REGIME_PARAMS[state])
+    params["position_cap"] = get_position_cap("momentum", regime)
+    params["stop_loss"] = -get_stop_loss("momentum", regime) * 100
+    return params
 
 # 行业组仓位上限
 GROUP_POSITION_CAP = 40  # 单行业组合计 ≤ 40%
@@ -158,7 +169,7 @@ VOLUME_RATIO_MIN = 0.8    # 量比最低要求
 
 def _fetch_single_mom_etf(item, start_date, end_date, days, pro):
     code = item["code"]
-    cache_file = f"data_lake/daily_prices/{code}.parquet"
+    cache_file = os.path.join(MOMENTUM_RAW_PRICE_DIR, f"{code}.parquet")
     tag = "[DEF]" if item.get("type") == "defense" else "[OFF]"
     try:
         df = pro.fund_daily(ts_code=code, start_date=start_date, end_date=end_date)
@@ -358,7 +369,10 @@ def assess_market_environment(hs300_df, etf_data: dict) -> dict:
         env["layer3_cap"] = 85
 
     # ---- 三层取最严 ----
-    env["final_cap"] = min(env["layer1_cap"], env["layer2_cap"], env["layer3_cap"])
+    env["regime_cap"] = get_position_cap("momentum", env["regime"])
+    env["final_cap"] = min(
+        env["layer1_cap"], env["layer2_cap"], env["layer3_cap"], env["regime_cap"]
+    )
 
     # ---- Layer 4: AIAE 宏观约束穿透 (V6.0) ----
     # 读取 AIAE 缓存, 用 min() 约束: 只可能压低仓位, 不会放大
@@ -368,20 +382,9 @@ def assess_market_environment(hs300_df, etf_data: dict) -> dict:
         from services.cache_service import cache_manager
         from aiae_params import SUB_STRATEGY_ALLOC
         aiae_ctx = cache_manager.get_json("aiae_ctx")
-        if aiae_ctx and aiae_ctx.get("regime"):
+        aiae_state = evaluate_aiae_context(aiae_ctx, now_ts=time.time())
+        if aiae_state["usable"] and aiae_ctx.get("regime"):
             aiae_regime = aiae_ctx.get("regime", 3)
-            # V3.1 P2-B: 缓存新鲜度保护 (>24h 降级为 R3 中性)
-            try:
-                import time as _time
-                _ts = aiae_ctx.get("updated_at") or aiae_ctx.get("ts")
-                if _ts:
-                    _age = (_time.time() - datetime.fromisoformat(
-                        str(_ts)).timestamp()) / 3600
-                    if _age > 24:
-                        logger.warning("aiae_ctx 缓存过期 (%.0fh), 降级为 R3", _age)
-                        aiae_regime = 3
-            except Exception:
-                pass
             matrix_pos = aiae_ctx.get("cap", 55)
             mom_alloc_pct = SUB_STRATEGY_ALLOC.get(aiae_regime, {}).get("mom", 25) / 100.0
             aiae_mom_cap = int(matrix_pos * mom_alloc_pct)
@@ -389,10 +392,12 @@ def assess_market_environment(hs300_df, etf_data: dict) -> dict:
             if aiae_mom_cap < env["final_cap"]:
                 env["aiae_cap_info"] = f"AIAE R{aiae_regime}约束: {env['final_cap']}%→{aiae_mom_cap}%"
                 env["final_cap"] = aiae_mom_cap
+        elif aiae_state["present"]:
+            env["aiae_cap_info"] = f"AIAE约束未采用: {aiae_state['reason']}"
     except Exception:
         pass  # 缓存不可用时降级为纯三层行为
 
-    env["regime_label"] = REGIME_PARAMS[env["regime"]]["label"]
+    env["regime_label"] = _runtime_regime_params(env["regime"])["label"]
 
     logger.info("环境评估: %s", env['regime'])
     logger.info("  L1(趋势): %s → %d%%", env['layer1_trend'], env['layer1_cap'])
@@ -517,7 +522,7 @@ def calculate_momentum_score(indicators: dict, regime: str) -> dict:
     ⑥ 量价配合             固定5分
     ⑦ RSI方向 + 均线偏离    固定5分
     """
-    params = REGIME_PARAMS.get(regime, REGIME_PARAMS["RANGE"])
+    params = _runtime_regime_params(regime)
     w_s  = params["w_mom_s"]
     w_m  = params["w_mom_m"]
     w_sl = params["w_slope"]
@@ -667,7 +672,7 @@ def cross_validate_signal(indicators: dict, regime: str) -> dict:
         result = mr_calc_score(mr_indicators)
         mr_total = result["total"]
 
-        safety_gate = REGIME_PARAMS.get(regime, REGIME_PARAMS["RANGE"])["signal_safety_gate"]
+        safety_gate = _runtime_regime_params(regime)["signal_safety_gate"]
 
         if mr_total < safety_gate:
             return {
@@ -691,9 +696,8 @@ _MOM_HOLDINGS_KEY = "mom_holdings"  # cache key
 
 # Regime自适应止损阈值（与回测引擎完全对齐）
 CUMULATIVE_STOP_THRESHOLDS = {
-    "BULL":  -0.99,   # 牛市不止损（追强）
-    "RANGE": -0.10,   # 震荡-10%止损
-    "BEAR":  -0.07,   # 熊市-7%止损
+    state: -get_stop_loss("momentum", state)
+    for state in ("BULL", "RANGE", "BEAR", "CRASH")
 }
 
 
@@ -731,7 +735,7 @@ def _check_cumulative_stop(ts_code: str, current_price: float, regime: str,
         return {"triggered": False, "pnl": 0, "threshold": 0, "message": ""}
 
     pnl = (current_price - entry_price) / entry_price
-    threshold = CUMULATIVE_STOP_THRESHOLDS.get(regime, -0.10)
+    threshold = -get_stop_loss("momentum", regime)
 
     if pnl <= threshold:
         return {
@@ -791,7 +795,7 @@ def generate_signals(etf_data: dict, env: dict) -> dict:
     6. 分散化约束
     """
     regime = env["regime"]
-    params = REGIME_PARAMS.get(regime, REGIME_PARAMS["RANGE"])
+    params = _runtime_regime_params(regime)
     position_cap = env["final_cap"]
     stop_loss = params.get("stop_loss", -8)
 
@@ -1006,7 +1010,7 @@ def generate_signals(etf_data: dict, env: dict) -> dict:
         "xv_warnings":      sum(1 for r in all_results if r.get("xv_warning")),
         # V3.1 累计止损统计
         "stop_loss_count":  len(stop_loss_events),
-        "cum_stop_threshold": CUMULATIVE_STOP_THRESHOLDS.get(regime, -0.10) * 100,
+        "cum_stop_threshold": -get_stop_loss("momentum", regime) * 100,
         "tracked_holdings":  len(new_holdings),
         # V3.1 因子权重（供前端可视化）
         "factor_weights": {
@@ -1043,7 +1047,7 @@ def _empty_overview(env):
         "regime_label": env["regime_label"],
         "regime_strategy": "",
         "position_cap": env["final_cap"],
-        "stop_loss": -8,
+        "stop_loss": -get_stop_loss("momentum", env["regime"]) * 100,
         "layer1_trend": env["layer1_trend"],
         "layer2_vix": env["layer2_vix"],
         "layer3_crash": env["layer3_crash"],
@@ -1090,9 +1094,16 @@ def run_momentum_strategy() -> dict:
 
     # 5. 统一 Regime 覆盖（只替换分类，保留 VIX/极端风险的仓位约束）
     env["regime"]       = unified_regime
-    env["regime_label"] = REGIME_PARAMS.get(unified_regime, REGIME_PARAMS["RANGE"])["label"]
+    env["regime_label"] = _runtime_regime_params(unified_regime)["label"]
     env["regime_cn"]    = regime_meta.get("regime_cn", "震荡")
     env["regime_icon"]  = regime_meta.get("regime_icon", "🟡")
+    env["regime_cap"]   = get_position_cap("momentum", unified_regime)
+    cap_candidates = [
+        env["layer1_cap"], env["layer2_cap"], env["layer3_cap"], env["regime_cap"]
+    ]
+    if env.get("aiae_cap") is not None:
+        cap_candidates.append(env["aiae_cap"])
+    env["final_cap"] = min(cap_candidates)
 
     # 6. CRASH 熔断 + 极端风险 → 直接空仓
     if unified_regime == "CRASH" or env["layer3_crash"]:
