@@ -366,10 +366,13 @@ async def health_check():
         if macro.get("market_temp"):
             data_freshness["market_temp"] = macro["market_temp"].get("confidence", "unknown")
 
-    # 产业决策使用独立 qfq 数据契约；其质量失败必须进入全局健康状态，
-    # 否则行业页已锁定而 /health 仍会误报 OK。
+    # 只有行业数据契约失败才影响应用健康；模型验证/Regime 生命周期
+    # 只锁定交易执行，不能阻止安全禁用策略的应用版本完成部署。
     industry_quality = _get_industry_quality_status()
-    industry_locked = bool(industry_quality.get("decision_locked", True))
+    industry_execution_locked = bool(
+        industry_quality.get("decision_locked", True)
+    )
+    industry_data_locked = not bool(industry_quality.get("is_usable", False))
 
     # Batch 11: SQLite 数据库统计
     db_info = {}
@@ -391,11 +394,13 @@ async def health_check():
 
     status = health_state["status"]
     health_reasons = list(health_state["reasons"])
-    if industry_locked:
+    if industry_data_locked:
         health_reasons.append("industry_data_locked")
         if status == "ok":
             status = "degraded"
-    overall_decision_locked = bool(health_state["decision_locked"] or industry_locked)
+    overall_decision_locked = bool(
+        health_state["decision_locked"] or industry_execution_locked
+    )
     dashboard_engine_status = (
         "cold" if not dashboard_ready
         else "ready" if health_state["dashboard_fresh"]
@@ -418,7 +423,7 @@ async def health_check():
             "aiae_decision_locked": health_state["decision_locked"],
             "decision_locked": overall_decision_locked,
             "industry": {
-                "decision_locked": industry_locked,
+                "decision_locked": industry_execution_locked,
                 "is_usable": industry_quality.get("is_usable", False),
                 "execution_policy_ready": industry_quality.get(
                     "execution_policy_ready", False
@@ -488,8 +493,8 @@ async def health_check():
                 "age_sec": None,
             },
             "industry": {
-                "status": "degraded" if industry_locked else "ready",
-                "decision_locked": industry_locked,
+                "status": "degraded" if industry_execution_locked else "ready",
+                "decision_locked": industry_execution_locked,
                 "reasons": industry_quality.get("reasons", []),
                 "validation_stage": (
                     industry_quality.get("model_validation") or {}

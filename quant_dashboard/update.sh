@@ -29,7 +29,7 @@ IMAGE_NAME="quant_dashboard-quant_dashboard"
 LOCK_FILE="/tmp/alphacore_update.lock"
 LOG_FILE="/root/backups/update.log"
 HEALTH_URL="http://localhost:8000/health"
-HEALTH_TIMEOUT=240      # 健康检查最大等待秒数（Dashboard 预热默认 120s 后才开始）
+HEALTH_TIMEOUT=600      # 健康检查最大等待秒数
 HEALTH_INTERVAL=3       # 检查间隔
 MIN_DISK_MB=2048        # 最低剩余磁盘 (2 GB)
 
@@ -124,13 +124,10 @@ cd "$APP_DIR"
 
 OLD_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
-git stash --include-untracked -q 2>/dev/null || true
-if ! git pull 2>&1 | tee -a "$LOG_FILE"; then
-    log "❌ git pull 失败!"
-    git stash pop -q 2>/dev/null || true
+if ! git pull --ff-only 2>&1 | tee -a "$LOG_FILE"; then
+    log "❌ git pull --ff-only 失败! 本地修改已保留, 旧服务未受影响"
     exit 1
 fi
-git stash drop -q 2>/dev/null || true
 
 NEW_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 if [ "$OLD_COMMIT" = "$NEW_COMMIT" ]; then
@@ -148,7 +145,7 @@ log "⏳ [2/5] 构建新镜像 (旧服务保持运行中)..."
 cd "$CODE_DIR"
 
 # 保存旧镜像 ID 用于回滚
-OLD_IMAGE_ID=$(docker images -q "$IMAGE_NAME" 2>/dev/null | head -1)
+OLD_IMAGE_ID=$(docker inspect --format '{{.Image}}' quant_dashboard_app 2>/dev/null || true)
 if [ -n "$OLD_IMAGE_ID" ]; then
     # 给旧镜像打回滚标签 (防止被 prune 清理)
     docker tag "$OLD_IMAGE_ID" "${IMAGE_NAME}:rollback" 2>/dev/null || true
