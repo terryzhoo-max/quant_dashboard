@@ -42,8 +42,7 @@ from typing import Optional, Dict, List
 
 # ===== 统一从 config 读取 Token =====
 from config import TUSHARE_TOKEN
-ts.set_token(TUSHARE_TOKEN)
-pro = ts.pro_api()
+pro = ts.pro_api(TUSHARE_TOKEN)
 
 # ===== 常量 =====
 CACHE_DIR = "data_lake"

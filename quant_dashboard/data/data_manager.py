@@ -21,9 +21,8 @@ DAILY_PRICE_DIR = os.path.join(DATA_DIR, "daily_prices")
 # 避免 fund_daily 覆盖 pro_bar(qfq) 历史后制造拆分式虚假涨跌。
 INDUSTRY_DAILY_PRICE_DIR = os.path.join(DATA_DIR, "industry_prices_qfq")
 
-# 初始化 Tushare
-ts.set_token(TUSHARE_TOKEN)
-pro = ts.pro_api()
+# 初始化 Tushare。直接传递 token，避免模块导入时写用户目录 tk.csv。
+pro = ts.pro_api(TUSHARE_TOKEN)
 
 class FactorDataManager:
     def __init__(self):

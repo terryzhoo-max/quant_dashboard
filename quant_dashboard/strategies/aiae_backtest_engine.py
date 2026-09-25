@@ -27,8 +27,7 @@ RESULT_FILE_PREFIX = "aiae_mr_backtest_results"
 TRAIN_START = "2018-01-01"
 TRAIN_END   = "2026-03-31"
 
-ts.set_token(TUSHARE_TOKEN)
-pro = ts.pro_api()
+pro = ts.pro_api(TUSHARE_TOKEN)
 
 # MR 严格最优参数 (防守宽基极速下跌)
 MR_PARAMS = {

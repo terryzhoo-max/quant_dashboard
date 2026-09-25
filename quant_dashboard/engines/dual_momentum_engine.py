@@ -50,8 +50,7 @@ from services.strategy_params import get_position_cap
 
 logger = get_logger("gem_engine")
 
-ts.set_token(TUSHARE_TOKEN)
-pro = ts.pro_api()
+pro = ts.pro_api(TUSHARE_TOKEN)
 
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)

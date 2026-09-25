@@ -41,8 +41,9 @@ from services import db as ac_db
 logger = logging.getLogger("alphacore.erp_timing")
 
 TUSHARE_TOKEN = os.environ.get("TUSHARE_TOKEN", CONFIG_TOKEN)
-ts.set_token(TUSHARE_TOKEN)
-pro = ts.pro_api()
+# Keep module import side-effect free; ``set_token`` writes ~/tk.csv and can
+# abort API startup for restricted/service accounts.
+pro = ts.pro_api(TUSHARE_TOKEN)
 
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)

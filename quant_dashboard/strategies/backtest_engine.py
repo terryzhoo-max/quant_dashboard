@@ -18,8 +18,7 @@ from datetime import datetime, timedelta
 
 # Tushare Token
 from config import TUSHARE_TOKEN
-ts.set_token(TUSHARE_TOKEN)
-pro = ts.pro_api()
+pro = ts.pro_api(TUSHARE_TOKEN)
 
 
 class Indicators:

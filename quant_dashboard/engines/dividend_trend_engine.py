@@ -37,8 +37,7 @@ logger = logging.getLogger("alphacore.dividend")
 
 # ====== Tushare 初始化 ======
 from config import TUSHARE_TOKEN
-ts.set_token(TUSHARE_TOKEN)
-pro = ts.pro_api()
+pro = ts.pro_api(TUSHARE_TOKEN)
 
 # ====== 标的池与固定权重 ======
 DIVIDEND_POOL = [

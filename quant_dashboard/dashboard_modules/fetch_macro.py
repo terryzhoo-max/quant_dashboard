@@ -213,12 +213,35 @@ def _fetch_vix_cnbc() -> Optional[float]:
 
 # ── V7.0: CNY 磁盘降级缓存 ──
 _CNY_CACHE_PATH = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "data_lake", "cny_cache.json")
+_CNY_MAX_SOURCE_AGE_HOURS = 240  # 10 calendar days, bounded for weekends/holidays
 
 
-def _save_cny_disk(rate: float):
+def _cny_observation_age_hours(value) -> Optional[float]:
+    """Return source-observation age while handling naive/aware timestamps."""
+    try:
+        if hasattr(value, "to_pydatetime"):
+            observed_at = value.to_pydatetime()
+        elif isinstance(value, datetime):
+            observed_at = value
+        else:
+            observed_at = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        now = datetime.now(observed_at.tzinfo) if observed_at.tzinfo else datetime.now()
+        age_hours = (now - observed_at).total_seconds() / 3600
+        return age_hours if age_hours >= -6 else None
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _save_cny_disk(rate: float, source: str = "unknown", observed_at=None):
     """CNY 成功获取后写入磁盘缓存"""
     try:
-        payload = {"rate": rate, "timestamp": datetime.now().isoformat()}
+        now_iso = datetime.now().isoformat()
+        payload = {
+            "rate": rate,
+            "timestamp": now_iso,
+            "source": source,
+            "observed_at": str(observed_at or now_iso),
+        }
         tmp = _CNY_CACHE_PATH + ".tmp"
         with open(tmp, 'w') as f:
             json.dump(payload, f)
@@ -239,10 +262,67 @@ def _load_cny_disk(max_age_hours: int = 72) -> Optional[float]:
         if age_hours > max_age_hours:
             logger.debug("CNY 磁盘缓存已过期 (%.1fh > %dh)", age_hours, max_age_hours)
             return None
-        logger.info("CNY 从磁盘缓存加载: rate=%.4f, age=%.1fh", data["rate"], age_hours)
-        return data["rate"]
+        source_age = _cny_observation_age_hours(data.get("observed_at", data["timestamp"]))
+        if source_age is None or source_age > _CNY_MAX_SOURCE_AGE_HOURS:
+            logger.debug(
+                "CNY 源观测已过期 (source_age=%s, max=%dh)",
+                f"{source_age:.1f}h" if source_age is not None else "invalid",
+                _CNY_MAX_SOURCE_AGE_HOURS,
+            )
+            return None
+        rate = float(data["rate"])
+        if not 5.0 < rate < 9.0:
+            return None
+        logger.info(
+            "CNY 从磁盘缓存加载: rate=%.4f, age=%.1fh, source=%s",
+            rate,
+            age_hours,
+            data.get("source", "legacy"),
+        )
+        return rate
     except Exception as e:
         logger.debug("CNY 磁盘缓存读取失败: %s", e)
+        return None
+
+
+def _fetch_cny_fred() -> Optional[Tuple[float, str]]:
+    """Fetch a bounded official USD/CNY observation from FRED (DEXCHUS)."""
+    try:
+        from fredapi import Fred
+        from config import FRED_API_KEY
+
+        fred = Fred(api_key=FRED_API_KEY)
+        series = fred_get_series(
+            "DEXCHUS",
+            lambda: fred.get_series(
+                "DEXCHUS",
+                observation_start=(datetime.now() - timedelta(days=20)),
+            ),
+        )
+        if series is None or series.empty:
+            return None
+        series = series.dropna()
+        if series.empty:
+            return None
+
+        observed_at = series.index[-1]
+        source_age = _cny_observation_age_hours(observed_at)
+        rate = float(series.iloc[-1])
+        if source_age is None or source_age > _CNY_MAX_SOURCE_AGE_HOURS:
+            logger.warning("FRED CNY observation stale: age=%s", source_age)
+            return None
+        if not 5.0 < rate < 9.0:
+            logger.warning("FRED CNY value outside validity bounds: %s", rate)
+            return None
+
+        observed_iso = (
+            observed_at.to_pydatetime().isoformat()
+            if hasattr(observed_at, "to_pydatetime")
+            else str(observed_at)
+        )
+        return rate, observed_iso
+    except Exception as e:
+        logger.warning("FRED CNY fetch failed: %s", e)
         return None
 
 
@@ -265,13 +345,26 @@ def fetch_cny_for_dashboard() -> float:
                 rate = float(str(raw_rate).replace(',', ''))
                 if 5.0 < rate < 9.0:
                     logger.info("CNY successfully fetched from CNBC: rate=%.4f", rate)
-                    _save_cny_disk(rate)
+                    _save_cny_disk(rate, source="cnbc")
                     return rate
                 logger.warning("CNBC CNY value outside validity bounds: %s", rate)
     except Exception as e:
         logger.warning("CNBC CNY fetch failed: %s", e)
 
-    # 3. 磁盘降级
+    # 3. FRED 官方日频汇率回退。严格校验源观测日期，不能把旧值通过
+    # 重新写缓存伪装成新数据。
+    fred_result = _fetch_cny_fred()
+    if fred_result is not None:
+        rate, observed_at = fred_result
+        logger.info(
+            "CNY successfully fetched from FRED DEXCHUS: rate=%.4f, observed_at=%s",
+            rate,
+            observed_at,
+        )
+        _save_cny_disk(rate, source="fred:DEXCHUS", observed_at=observed_at)
+        return rate
+
+    # 4. 磁盘降级
     disk = _load_cny_disk(max_age_hours=168)  # 容忍7天
     if disk is not None:
         logger.warning("All CNY sources failed, using disk cache fallback")

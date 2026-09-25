@@ -19,8 +19,7 @@ import os
 from datetime import datetime, timedelta
 
 from config import TUSHARE_TOKEN
-ts.set_token(TUSHARE_TOKEN)
-pro = ts.pro_api()
+pro = ts.pro_api(TUSHARE_TOKEN)
 
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)

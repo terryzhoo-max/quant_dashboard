@@ -1,5 +1,7 @@
 """The dashboard's browser fallback must be a fail-closed unavailable state."""
 
+import json
+from datetime import datetime
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -75,6 +77,7 @@ def test_vix_all_sources_failed_raises_instead_of_using_default(monkeypatch):
 
 def test_cny_all_sources_failed_raises_instead_of_using_default(monkeypatch):
     monkeypatch.setattr(fetch_macro, "_load_cny_disk", lambda **_kwargs: None)
+    monkeypatch.setattr(fetch_macro, "_fetch_cny_fred", lambda: None)
     monkeypatch.setattr(
         fetch_macro.requests,
         "get",
@@ -83,6 +86,56 @@ def test_cny_all_sources_failed_raises_instead_of_using_default(monkeypatch):
 
     with pytest.raises(RuntimeError, match="CNY_DATA_UNAVAILABLE"):
         fetch_macro.fetch_cny_for_dashboard()
+
+
+def test_cny_uses_bounded_fred_fallback_and_persists_provenance(monkeypatch):
+    class EmptyCnbcResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"FormattedQuoteResult": {"FormattedQuote": [{"code": 1}]}}
+
+    saved = {}
+    monkeypatch.setattr(fetch_macro, "_load_cny_disk", lambda **_kwargs: None)
+    monkeypatch.setattr(fetch_macro.requests, "get", lambda *_args, **_kwargs: EmptyCnbcResponse())
+    monkeypatch.setattr(
+        fetch_macro,
+        "_fetch_cny_fred",
+        lambda: (6.6975, "2026-09-18T00:00:00"),
+    )
+    monkeypatch.setattr(
+        fetch_macro,
+        "_save_cny_disk",
+        lambda rate, source="unknown", observed_at=None: saved.update(
+            rate=rate, source=source, observed_at=observed_at
+        ),
+    )
+
+    assert fetch_macro.fetch_cny_for_dashboard() == 6.6975
+    assert saved == {
+        "rate": 6.6975,
+        "source": "fred:DEXCHUS",
+        "observed_at": "2026-09-18T00:00:00",
+    }
+
+
+def test_cny_disk_rejects_stale_source_observation(monkeypatch, tmp_path):
+    cache_path = tmp_path / "cny_cache.json"
+    cache_path.write_text(
+        json.dumps(
+            {
+                "rate": 6.7,
+                "timestamp": datetime.now().isoformat(),
+                "source": "fred:DEXCHUS",
+                "observed_at": "2000-01-01T00:00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(fetch_macro, "_CNY_CACHE_PATH", str(cache_path))
+
+    assert fetch_macro._load_cny_disk(max_age_hours=168) is None
 
 
 def test_dashboard_builder_never_substitutes_a_neutral_aiae_regime():

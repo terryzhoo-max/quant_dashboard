@@ -53,8 +53,11 @@ from typing import Optional, Dict, List, Tuple
 from config import TUSHARE_TOKEN
 import aiae_params as AP  # V3.0: 参数中心 (Single Source of Truth)
 from services import db as ac_db
-ts.set_token(TUSHARE_TOKEN)
-pro = ts.pro_api()
+# Do not call ``ts.set_token`` here: it writes ``tk.csv`` to the user's home
+# directory during module import and can prevent the whole API from starting
+# under a restricted/service account.  Passing the token directly keeps
+# startup side-effect free and uses the same authenticated Pro client.
+pro = ts.pro_api(TUSHARE_TOKEN)
 
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)

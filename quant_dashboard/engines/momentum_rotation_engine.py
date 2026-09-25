@@ -39,8 +39,7 @@ MOMENTUM_RAW_PRICE_DIR = os.path.join("data_lake", "momentum_prices_raw")
 
 # ====== Tushare 初始化 ======
 from config import TUSHARE_TOKEN
-ts.set_token(TUSHARE_TOKEN)
-pro = ts.pro_api()
+pro = ts.pro_api(TUSHARE_TOKEN)
 
 # ====== 标的池定义 ======
 # 进攻型标的池（21只 · 全市场ALL状态可用）
