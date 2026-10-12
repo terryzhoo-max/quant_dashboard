@@ -204,25 +204,32 @@ log "  ✅ 容器已切换"
 log ""
 
 # ══════════════════════════════════════════════════
-#  Step 4: 健康检查 (轮询, 最多 60s)
+#  Step 4: 部署就绪检查 (轮询, 最多 HEALTH_TIMEOUT)
 # ══════════════════════════════════════════════════
-log "⏳ [4/5] 健康检查 (最多 ${HEALTH_TIMEOUT}s)..."
+log "⏳ [4/5] 部署就绪检查 (最多 ${HEALTH_TIMEOUT}s)..."
 
 WAITED=0
 HEALTHY=false
 HEALTH_JSON=""
+HEALTH_MODE=""
+LAST_READINESS=""
 
 while [ "$WAITED" -lt "$HEALTH_TIMEOUT" ]; do
     RESP=$(curl -s --max-time 3 "$HEALTH_URL" 2>/dev/null || echo "")
     if [ -n "$RESP" ]; then
-        STATUS=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "")
-        if [ "$STATUS" = "ok" ]; then
-            # 必须是 ok, starting 不算通过
+        READINESS=$(printf '%s' "$RESP" | python3 -m services.deployment_readiness 2>/dev/null || echo "")
+        READY=$(printf '%s' "$READINESS" | python3 -c "import sys,json; print(str(json.load(sys.stdin).get('ready',False)).lower())" 2>/dev/null || echo "false")
+        STATUS=$(printf '%s' "$READINESS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','invalid'))" 2>/dev/null || echo "invalid")
+        MODE=$(printf '%s' "$READINESS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('mode','not_ready'))" 2>/dev/null || echo "not_ready")
+        REASONS=$(printf '%s' "$READINESS" | python3 -c "import sys,json; print(','.join(map(str,json.load(sys.stdin).get('health_reasons',[]))) or 'none')" 2>/dev/null || echo "invalid_health_json")
+        LAST_READINESS="$READINESS"
+        if [ "$READY" = "true" ]; then
             HEALTHY=true
             HEALTH_JSON="$RESP"
+            HEALTH_MODE="$MODE"
             break
-        elif [ "$STATUS" = "starting" ] && [ $((WAITED % 15)) -eq 0 ] && [ "$WAITED" -gt 0 ]; then
-            log "  ⏳ 服务预热中... (${WAITED}s)"
+        elif [ $((WAITED % 15)) -eq 0 ] && [ "$WAITED" -gt 0 ]; then
+            log "  ⏳ 服务尚未就绪... (${WAITED}s, status=${STATUS}, reasons=${REASONS})"
         fi
     fi
     sleep "$HEALTH_INTERVAL"
@@ -230,10 +237,18 @@ while [ "$WAITED" -lt "$HEALTH_TIMEOUT" ]; do
 done
 
 if [ "$HEALTHY" = true ]; then
-    log "  ✅ 健康检查通过 (${WAITED}s)"
+    if [ "$HEALTH_MODE" = "safe_degraded" ]; then
+        HEALTH_REASONS=$(printf '%s' "$LAST_READINESS" | python3 -c "import sys,json; print(','.join(map(str,json.load(sys.stdin).get('health_reasons',[]))) or 'none')" 2>/dev/null || echo "unknown")
+        log "  ✅ 部署就绪 (${WAITED}s, 业务数据安全降级: ${HEALTH_REASONS})"
+    else
+        log "  ✅ 健康检查通过 (${WAITED}s)"
+    fi
     CONTAINER_REMOVED=false  # 健康通过, 取消安全恢复标记
 else
-    log "  ❌ 健康检查超时 (${HEALTH_TIMEOUT}s)!"
+    log "  ❌ 部署就绪检查超时 (${HEALTH_TIMEOUT}s)!"
+    if [ -n "$LAST_READINESS" ]; then
+        log "  📋 最终就绪状态: ${LAST_READINESS}"
+    fi
     log ""
     log "  📋 容器日志 (最近 30 行):"
     docker logs --tail 30 quant_dashboard_app 2>&1 | tee -a "$LOG_FILE"
@@ -248,12 +263,14 @@ else
 
         # 验证回滚是否成功
         sleep 10
-        ROLLBACK_STATUS=$(curl -s --max-time 3 "$HEALTH_URL" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "")
-        if [ "$ROLLBACK_STATUS" = "ok" ]; then
+        ROLLBACK_JSON=$(curl -s --max-time 3 "$HEALTH_URL" 2>/dev/null || echo "")
+        ROLLBACK_READINESS=$(printf '%s' "$ROLLBACK_JSON" | python3 -m services.deployment_readiness 2>/dev/null || echo "")
+        ROLLBACK_READY=$(printf '%s' "$ROLLBACK_READINESS" | python3 -c "import sys,json; print(str(json.load(sys.stdin).get('ready',False)).lower())" 2>/dev/null || echo "false")
+        if [ "$ROLLBACK_READY" = "true" ]; then
             log "  ✅ 回滚成功, 旧版本已恢复运行"
             CONTAINER_REMOVED=false
         else
-            log "  ⚠️  回滚后健康检查未通过 (status=$ROLLBACK_STATUS)"
+            log "  ⚠️  回滚后部署就绪检查未通过 (${ROLLBACK_READINESS:-no_response})"
             log "     请手动检查: docker logs quant_dashboard_app"
         fi
     else
