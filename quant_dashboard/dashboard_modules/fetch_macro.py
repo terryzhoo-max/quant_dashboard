@@ -214,6 +214,7 @@ def _fetch_vix_cnbc() -> Optional[float]:
 # ── V7.0: CNY 磁盘降级缓存 ──
 _CNY_CACHE_PATH = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "data_lake", "cny_cache.json")
 _CNY_MAX_SOURCE_AGE_HOURS = 240  # 10 calendar days, bounded for weekends/holidays
+_ECB_DAILY_RATES_URL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml"
 
 
 def _cny_observation_age_hours(value) -> Optional[float]:
@@ -326,6 +327,51 @@ def _fetch_cny_fred() -> Optional[Tuple[float, str]]:
         return None
 
 
+def _fetch_cny_ecb() -> Optional[Tuple[float, str]]:
+    """Fetch bounded USD/CNY via the ECB's official EUR reference rates."""
+    try:
+        from xml.etree import ElementTree
+
+        response = requests.get(
+            _ECB_DAILY_RATES_URL,
+            timeout=6,
+            headers={"User-Agent": "AlphaCore/1.0"},
+        )
+        response.raise_for_status()
+        root = ElementTree.fromstring(response.content)
+        observation = next(
+            (node for node in root.iter() if node.attrib.get("time")),
+            None,
+        )
+        if observation is None:
+            return None
+
+        rates = {
+            node.attrib["currency"]: float(node.attrib["rate"])
+            for node in observation
+            if node.attrib.get("currency") and node.attrib.get("rate")
+        }
+        usd_per_eur = rates.get("USD")
+        cny_per_eur = rates.get("CNY")
+        if not usd_per_eur or not cny_per_eur:
+            return None
+
+        observed_at = observation.attrib["time"]
+        source_age = _cny_observation_age_hours(observed_at)
+        if source_age is None or source_age > _CNY_MAX_SOURCE_AGE_HOURS:
+            logger.warning("ECB CNY observation stale: age=%s", source_age)
+            return None
+
+        rate = cny_per_eur / usd_per_eur
+        if not 5.0 < rate < 9.0:
+            logger.warning("ECB USD/CNY cross rate outside validity bounds: %s", rate)
+            return None
+        return rate, observed_at
+    except Exception as e:
+        logger.warning("ECB CNY fetch failed: %s", e)
+        return None
+
+
 def fetch_cny_for_dashboard() -> float:
     """Fetch USD/CNY from an observable source or bounded last-known-good cache."""
     # 1. 周末/节假日直接使用磁盘缓存 (CNY 不更新)
@@ -351,7 +397,20 @@ def fetch_cny_for_dashboard() -> float:
     except Exception as e:
         logger.warning("CNBC CNY fetch failed: %s", e)
 
-    # 3. FRED 官方日频汇率回退。严格校验源观测日期，不能把旧值通过
+    # 3. ECB 官方日频参考汇率回退。由 CNY/EUR ÷ USD/EUR 得到 USD/CNY，
+    # 严格保留并校验同一观测日期。
+    ecb_result = _fetch_cny_ecb()
+    if ecb_result is not None:
+        rate, observed_at = ecb_result
+        logger.info(
+            "CNY successfully fetched from ECB reference rates: rate=%.4f, observed_at=%s",
+            rate,
+            observed_at,
+        )
+        _save_cny_disk(rate, source="ecb:EUR_REFERENCE", observed_at=observed_at)
+        return rate
+
+    # 4. FRED 官方日频汇率回退。严格校验源观测日期，不能把旧值通过
     # 重新写缓存伪装成新数据。
     fred_result = _fetch_cny_fred()
     if fred_result is not None:
@@ -364,7 +423,7 @@ def fetch_cny_for_dashboard() -> float:
         _save_cny_disk(rate, source="fred:DEXCHUS", observed_at=observed_at)
         return rate
 
-    # 4. 磁盘降级
+    # 5. 磁盘降级
     disk = _load_cny_disk(max_age_hours=168)  # 容忍7天
     if disk is not None:
         logger.warning("All CNY sources failed, using disk cache fallback")

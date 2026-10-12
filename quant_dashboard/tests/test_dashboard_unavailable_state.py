@@ -77,6 +77,7 @@ def test_vix_all_sources_failed_raises_instead_of_using_default(monkeypatch):
 
 def test_cny_all_sources_failed_raises_instead_of_using_default(monkeypatch):
     monkeypatch.setattr(fetch_macro, "_load_cny_disk", lambda **_kwargs: None)
+    monkeypatch.setattr(fetch_macro, "_fetch_cny_ecb", lambda: None)
     monkeypatch.setattr(fetch_macro, "_fetch_cny_fred", lambda: None)
     monkeypatch.setattr(
         fetch_macro.requests,
@@ -99,6 +100,7 @@ def test_cny_uses_bounded_fred_fallback_and_persists_provenance(monkeypatch):
     saved = {}
     monkeypatch.setattr(fetch_macro, "_load_cny_disk", lambda **_kwargs: None)
     monkeypatch.setattr(fetch_macro.requests, "get", lambda *_args, **_kwargs: EmptyCnbcResponse())
+    monkeypatch.setattr(fetch_macro, "_fetch_cny_ecb", lambda: None)
     monkeypatch.setattr(
         fetch_macro,
         "_fetch_cny_fred",
@@ -117,6 +119,83 @@ def test_cny_uses_bounded_fred_fallback_and_persists_provenance(monkeypatch):
         "rate": 6.6975,
         "source": "fred:DEXCHUS",
         "observed_at": "2026-09-18T00:00:00",
+    }
+
+
+def test_cny_ecb_fallback_computes_usd_cross_rate_from_fresh_official_xml(monkeypatch):
+    observed_at = datetime.now().date().isoformat()
+    payload = f"""<?xml version="1.0" encoding="UTF-8"?>
+    <gesmes:Envelope xmlns:gesmes="http://www.gesmes.org/xml/2002-08-01"
+                     xmlns="http://www.ecb.int/vocabulary/2002-08-01/eurofxref">
+      <Cube><Cube time="{observed_at}">
+        <Cube currency="USD" rate="1.1206"/>
+        <Cube currency="CNY" rate="7.4992"/>
+      </Cube></Cube>
+    </gesmes:Envelope>""".encode("utf-8")
+
+    class EcbResponse:
+        content = payload
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+    monkeypatch.setattr(fetch_macro.requests, "get", lambda *_args, **_kwargs: EcbResponse())
+
+    rate, source_date = fetch_macro._fetch_cny_ecb()
+
+    assert rate == pytest.approx(7.4992 / 1.1206)
+    assert source_date == observed_at
+
+
+def test_cny_ecb_fallback_rejects_stale_official_observation(monkeypatch):
+    payload = b"""<?xml version="1.0" encoding="UTF-8"?>
+    <gesmes:Envelope xmlns:gesmes="http://www.gesmes.org/xml/2002-08-01"
+                     xmlns="http://www.ecb.int/vocabulary/2002-08-01/eurofxref">
+      <Cube><Cube time="2000-01-01">
+        <Cube currency="USD" rate="1.1206"/>
+        <Cube currency="CNY" rate="7.4992"/>
+      </Cube></Cube>
+    </gesmes:Envelope>"""
+
+    class EcbResponse:
+        content = payload
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+    monkeypatch.setattr(fetch_macro.requests, "get", lambda *_args, **_kwargs: EcbResponse())
+
+    assert fetch_macro._fetch_cny_ecb() is None
+
+
+def test_cny_uses_bounded_ecb_fallback_and_persists_provenance(monkeypatch):
+    class EmptyCnbcResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"FormattedQuoteResult": {"FormattedQuote": [{"code": 1}]}}
+
+    saved = {}
+    monkeypatch.setattr(fetch_macro, "_load_cny_disk", lambda **_kwargs: None)
+    monkeypatch.setattr(fetch_macro.requests, "get", lambda *_args, **_kwargs: EmptyCnbcResponse())
+    monkeypatch.setattr(fetch_macro, "_fetch_cny_ecb", lambda: (6.692129, "2026-10-09"))
+    monkeypatch.setattr(fetch_macro, "_fetch_cny_fred", lambda: None)
+    monkeypatch.setattr(
+        fetch_macro,
+        "_save_cny_disk",
+        lambda rate, source="unknown", observed_at=None: saved.update(
+            rate=rate, source=source, observed_at=observed_at
+        ),
+    )
+
+    assert fetch_macro.fetch_cny_for_dashboard() == 6.692129
+    assert saved == {
+        "rate": 6.692129,
+        "source": "ecb:EUR_REFERENCE",
+        "observed_at": "2026-10-09",
     }
 
 
