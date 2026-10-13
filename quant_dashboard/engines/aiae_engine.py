@@ -1490,7 +1490,7 @@ class AIAEEngine:
 
         except Exception as e:
             _log(f"generate_report 异常: {e}", "ERROR")
-            logger.debug("Traceback", exc_info=True)
+            _logger.debug("Traceback", exc_info=True)
             return self._fallback_report(str(e))
 
     def _get_erp_value(self) -> float:

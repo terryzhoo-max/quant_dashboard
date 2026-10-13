@@ -21,12 +21,14 @@ import os
 import re
 import json
 import time
+import logging
 import urllib.request
 from datetime import datetime
 from typing import Dict, Optional
 
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
+_logger = logging.getLogger("alphacore.data.jpx")
 
 _JPX_MARGIN_CACHE = os.path.join(CACHE_DIR, "jpx_margin_auto.json")
 _JPX_FOREIGN_CACHE = os.path.join(CACHE_DIR, "jpx_foreign_auto.json")
@@ -193,7 +195,7 @@ def fetch_jpx_margin() -> Optional[Dict]:
         return _load_margin_cache()
     except Exception as e:
         _log(f"JPX Margin 取得失敗: {e}", "ERROR")
-        logger.debug("Traceback", exc_info=True)
+        _logger.debug("Traceback", exc_info=True)
         return _load_margin_cache()
 
 
@@ -362,7 +364,7 @@ def fetch_jpx_foreign_flow() -> Optional[Dict]:
         return _load_foreign_cache()
     except Exception as e:
         _log(f"JPX Foreign 取得失敗: {e}", "ERROR")
-        logger.debug("Traceback", exc_info=True)
+        _logger.debug("Traceback", exc_info=True)
         return _load_foreign_cache()
 
 

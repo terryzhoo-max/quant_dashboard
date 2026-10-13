@@ -26,6 +26,7 @@ import numpy as np
 import time
 import os
 import json
+import logging
 
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
@@ -35,6 +36,7 @@ from services.fred_guard import fred_get_series, should_retry_fred_error
 FRED_API_KEY = os.environ.get("FRED_API_KEY", CONFIG_FRED_API_KEY)
 CACHE_DIR = "data_lake"
 os.makedirs(CACHE_DIR, exist_ok=True)
+_logger = logging.getLogger("alphacore.aiae_us")
 
 # ===== 频率感知 TTL 常量 (V1.1 优化) =====
 TTL_M2       = 14 * 86400   # 14天 (M2 月频数据)
@@ -890,7 +892,7 @@ class AIAEUSEngine:
 
         except Exception as e:
             _log(f"generate_report 异常: {e}", "ERROR")
-            logger.debug("Traceback", exc_info=True)
+            _logger.debug("Traceback", exc_info=True)
             return self._fallback_report(str(e))
 
     def _fallback_report(self, reason: str) -> Dict:
