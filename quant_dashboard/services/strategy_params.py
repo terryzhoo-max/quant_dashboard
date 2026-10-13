@@ -9,11 +9,20 @@ import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Mapping
+from zoneinfo import ZoneInfo
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_CONFIG_PATH = PROJECT_ROOT / "config" / "strategy_runtime.json"
 REGIMES = ("BEAR", "RANGE", "BULL", "CRASH")
+MR_REGIMES = ("BEAR", "RANGE", "BULL")
+MR_LIFECYCLE_STATUSES = {
+    "validated",
+    "stale",
+    "rejected",
+    "insufficient_evidence",
+}
+RUNTIME_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 with RUNTIME_CONFIG_PATH.open("r", encoding="utf-8") as _default_file:
     DEFAULT_RUNTIME_CONFIG = json.load(_default_file)
@@ -37,6 +46,44 @@ def _validate_range(value: Any, name: str, lower: float, upper: float) -> None:
     number = _number(value, name)
     if number < lower or number > upper:
         raise ValueError(f"{name} must be between {lower} and {upper}")
+
+
+def _parse_runtime_datetime(value: Any, name: str = "runtime datetime") -> datetime:
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be an ISO datetime") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=RUNTIME_TIMEZONE)
+    return parsed
+
+
+def _validate_mr_lifecycle(mr: Mapping[str, Any]) -> None:
+    lifecycle = mr.get("lifecycle")
+    if not isinstance(lifecycle, Mapping) or set(lifecycle) != set(MR_REGIMES):
+        raise ValueError("mr.lifecycle must cover BEAR, RANGE, and BULL")
+    for state in MR_REGIMES:
+        entry = lifecycle.get(state)
+        if not isinstance(entry, Mapping):
+            raise ValueError(f"mr.lifecycle.{state} must be an object")
+        status = entry.get("status")
+        if status not in MR_LIFECYCLE_STATUSES:
+            raise ValueError(f"mr.lifecycle.{state}.status is invalid")
+        for key in ("validated_at", "next_validate_after"):
+            _parse_runtime_datetime(
+                entry.get(key), f"mr.lifecycle.{state}.{key}"
+            )
+        try:
+            datetime.fromisoformat(str(entry.get("data_through"))).date()
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"mr.lifecycle.{state}.data_through must be an ISO date"
+            ) from exc
+        run_id = entry.get("validation_run_id")
+        if not isinstance(run_id, str) or not run_id.strip():
+            raise ValueError(
+                f"mr.lifecycle.{state}.validation_run_id must be non-empty"
+            )
 
 
 def validate_runtime_config(config: Mapping[str, Any]) -> None:
@@ -218,7 +265,8 @@ def validate_runtime_config(config: Mapping[str, Any]) -> None:
         raise ValueError("momentum.validation.promotion.require_point_in_time_universe must be boolean")
 
     mr = strategies.get("mr", {})
-    for state in ("BEAR", "RANGE", "BULL"):
+    _validate_mr_lifecycle(mr)
+    for state in MR_REGIMES:
         params = mr.get("regimes", {}).get(state, {}).get("params", {})
         if "stop_loss" in params:
             raise ValueError(f"mr.regimes.{state}.params.stop_loss duplicates mr.stop_losses")
@@ -343,7 +391,51 @@ def get_mr_params(regime: str) -> dict:
 
 
 def get_all_mr_params() -> dict:
-    return {state: get_mr_params(state) for state in ("BEAR", "RANGE", "BULL")}
+    return {state: get_mr_params(state) for state in MR_REGIMES}
+
+
+def get_mr_lifecycle(
+    regime: str, *, as_of: datetime | None = None
+) -> dict:
+    """Return the configured and effective MR parameter lifecycle."""
+    state = regime.upper()
+    if state == "CRASH":
+        state = "RANGE"
+    if state not in MR_REGIMES:
+        raise ValueError(f"unsupported MR regime: {regime}")
+    raw = copy.deepcopy(
+        load_runtime_config()["strategies"]["mr"]["lifecycle"][state]
+    )
+    configured_status = raw["status"]
+    effective_status = configured_status
+    reason = f"lifecycle_{configured_status}"
+    now = as_of or datetime.now(RUNTIME_TIMEZONE)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=RUNTIME_TIMEZONE)
+    if (
+        configured_status == "validated"
+        and now
+        > _parse_runtime_datetime(
+            raw["next_validate_after"],
+            f"mr.lifecycle.{state}.next_validate_after",
+        )
+    ):
+        effective_status = "stale"
+        reason = "validation_expired"
+    raw.update({
+        "configured_status": configured_status,
+        "status": effective_status,
+        "allow_new_entries": effective_status == "validated",
+        "reason": reason,
+    })
+    return raw
+
+
+def get_all_mr_lifecycle(*, as_of: datetime | None = None) -> dict[str, dict]:
+    return {
+        state: get_mr_lifecycle(state, as_of=as_of)
+        for state in MR_REGIMES
+    }
 
 
 def get_erp_params() -> dict:

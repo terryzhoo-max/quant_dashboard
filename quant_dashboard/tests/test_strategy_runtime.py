@@ -4,8 +4,12 @@ import copy
 import json
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
+from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
+from services import strategy_params
 from services.strategy_params import (
     DEFAULT_RUNTIME_CONFIG,
     get_erp_params,
@@ -17,6 +21,7 @@ from services.strategy_params import (
     get_stop_loss,
     get_industry_validation_rules,
     get_industry_execution_rules,
+    get_mr_lifecycle,
     publish_ci_parameters,
     validate_runtime_config,
 )
@@ -102,6 +107,48 @@ class TestRuntimeParameterContract(unittest.TestCase):
         self.assertIn("N_trend", params)
         self.assertNotIn("ma_trend", params)
         self.assertEqual(params["stop_loss"], get_stop_loss("mr", "RANGE"))
+
+    def test_mr_lifecycle_marks_expired_validation_stale(self):
+        config = copy.deepcopy(DEFAULT_RUNTIME_CONFIG)
+        config["strategies"]["mr"]["lifecycle"]["BEAR"].update({
+            "status": "validated",
+            "next_validate_after": "2026-09-26T00:00:00+08:00",
+        })
+
+        with patch.object(strategy_params, "load_runtime_config", return_value=config):
+            lifecycle = get_mr_lifecycle(
+                "BEAR",
+                as_of=datetime(2026, 10, 13, tzinfo=ZoneInfo("Asia/Shanghai")),
+            )
+
+        self.assertEqual(lifecycle["configured_status"], "validated")
+        self.assertEqual(lifecycle["status"], "stale")
+        self.assertFalse(lifecycle["allow_new_entries"])
+        self.assertEqual(lifecycle["reason"], "validation_expired")
+
+    def test_mr_lifecycle_allows_entries_only_when_effectively_validated(self):
+        config = copy.deepcopy(DEFAULT_RUNTIME_CONFIG)
+        config["strategies"]["mr"]["lifecycle"]["RANGE"].update({
+            "status": "validated",
+            "next_validate_after": "2026-12-12T00:00:00+08:00",
+        })
+
+        with patch.object(strategy_params, "load_runtime_config", return_value=config):
+            lifecycle = get_mr_lifecycle(
+                "RANGE",
+                as_of=datetime(2026, 10, 13, tzinfo=ZoneInfo("Asia/Shanghai")),
+            )
+
+        self.assertEqual(lifecycle["status"], "validated")
+        self.assertTrue(lifecycle["allow_new_entries"])
+        self.assertEqual(lifecycle["reason"], "lifecycle_validated")
+
+    def test_mr_lifecycle_contract_requires_all_trading_regimes(self):
+        invalid = copy.deepcopy(DEFAULT_RUNTIME_CONFIG)
+        del invalid["strategies"]["mr"]["lifecycle"]["BULL"]
+
+        with self.assertRaisesRegex(ValueError, "lifecycle must cover"):
+            validate_runtime_config(invalid)
 
     def test_erp_weights_are_normalized(self):
         params = get_erp_params()
