@@ -23,9 +23,14 @@ from typing import Dict, Optional
 from services.logger import get_logger
 from services import db as ac_db
 from services.strategy_params import (
+    get_all_mr_params,
     get_erp_params,
     get_mr_params,
     publish_ci_parameters,
+)
+from services.mr_validation import (
+    compare_regime,
+    run_frozen_oos_validation,
 )
 
 logger = get_logger("ci.pipeline")
@@ -171,8 +176,8 @@ def _build_diff_summary(strategy: str, old_params: dict, new_params: dict) -> st
 
 
 def _publish_accepted_run(ci_run: dict) -> dict:
-    """Publish an auto-accepted run before its ACCEPT state is persisted."""
-    if ci_run.get("status") != "ACCEPT":
+    """Publish an accepted challenger or revalidated incumbent."""
+    if ci_run.get("status") not in {"ACCEPT", "REVALIDATED"}:
         return ci_run
 
     try:
@@ -207,16 +212,13 @@ def _publish_accepted_run(ci_run: dict) -> dict:
 #  MR 均值回归 CI (三态分别优化)
 # ═══════════════════════════════════════════════════════════
 
-def run_mr_ci(regime: str = None) -> list:
+def run_mr_ci(regime: str = None, *, dry_run: bool = False) -> list:
     """
     运行 MR 策略 CI
     如果 regime 为 None, 则全部三态都跑
     返回: [ci_run_dict, ...]
     """
     results = []
-    old_data = _load_json_safe(MR_PARAMS_FILE)
-    old_regimes = old_data.get("regimes", {})
-
     regimes_to_run = [regime] if regime else ["BEAR", "RANGE", "BULL"]
 
     for r in regimes_to_run:
@@ -225,9 +227,7 @@ def run_mr_ci(regime: str = None) -> list:
 
         try:
             # 读取旧参数
-            old_regime = old_regimes.get(r, {})
             old_params = get_mr_params(r)
-            old_kpi = old_regime.get("train_kpi", old_regime.get("valid_kpi", {}))
 
             # 调用已有优化器 (内存安全)
             from strategies.mr_per_regime_optimizer import (
@@ -246,11 +246,26 @@ def run_mr_ci(regime: str = None) -> list:
                 continue
 
             new_params = new_result.get("params", {})
-            new_kpi = new_result.get("valid_kpi", new_result.get("train_kpi", {}))
-
-            # 质量门检查
+            incumbent_params = get_all_mr_params()
+            challenger_params = {
+                state: dict(params)
+                for state, params in incumbent_params.items()
+            }
+            challenger_params[r] = dict(new_params)
+            validation_result = run_frozen_oos_validation(
+                incumbent=incumbent_params,
+                challenger=challenger_params,
+            )
+            old_kpi = validation_result["incumbent"]["by_regime"][r]
+            new_kpi = validation_result["challenger"]["by_regime"][r]
+            comparison = compare_regime(old_kpi, new_kpi)
+            status = {
+                "ACCEPT_CHALLENGER": "ACCEPT",
+                "REVALIDATE_INCUMBENT": "REVALIDATED",
+                "INSUFFICIENT_EVIDENCE": "INSUFFICIENT_EVIDENCE",
+                "REJECT": "REJECT",
+            }[comparison["decision"]]
             gate_results = _check_quality_gate(new_kpi)
-            status = _compute_ab_decision(old_kpi, new_kpi, gate_results)
 
             ci_run = {
                 "run_id": run_id,
@@ -263,10 +278,21 @@ def run_mr_ci(regime: str = None) -> list:
                 "new_metrics": new_kpi,
                 "quality_gate": gate_results,
                 "diff_summary": _build_diff_summary(f"MR-{r}", old_params, new_params),
+                "dry_run": bool(dry_run),
+                "validation": {
+                    "method": "frozen_oos",
+                    "oos_start": validation_result["oos_start"],
+                    "data_through": validation_result["data_through"],
+                    "decision": comparison["decision"],
+                    "reason": comparison["reason"],
+                    "incumbent": old_kpi,
+                    "challenger": new_kpi,
+                },
             }
 
-            _publish_accepted_run(ci_run)
-            ac_db.save_ci_run(ci_run)
+            if not dry_run:
+                _publish_accepted_run(ci_run)
+                ac_db.save_ci_run(ci_run)
             results.append(ci_run)
             logger.info("[CI] MR-%s 完成: status=%s, sharpe=%.3f",
                         r, ci_run["status"], new_kpi.get("sharpe", 0))
@@ -285,7 +311,8 @@ def run_mr_ci(regime: str = None) -> list:
                 "quality_gate": [{"rule": "执行", "passed": False, "actual": str(e)}],
                 "diff_summary": f"CI 执行异常: {e}",
             }
-            ac_db.save_ci_run(ci_run)
+            if not dry_run:
+                ac_db.save_ci_run(ci_run)
             results.append(ci_run)
 
     return results

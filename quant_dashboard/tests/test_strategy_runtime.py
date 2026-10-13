@@ -173,6 +173,18 @@ class TestCIParameterPublication(unittest.TestCase):
             encoding="utf-8",
         )
 
+    @staticmethod
+    def _validation(decision="ACCEPT_CHALLENGER"):
+        return {
+            "method": "frozen_oos",
+            "oos_start": "2026-03-28",
+            "data_through": "2026-10-12",
+            "decision": decision,
+            "reason": "test",
+            "incumbent": {"sharpe": 0.8},
+            "challenger": {"sharpe": 0.9},
+        }
+
     def test_mr_publication_is_atomic_versioned_and_backed_up(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "strategy_runtime.json"
@@ -184,6 +196,8 @@ class TestCIParameterPublication(unittest.TestCase):
                 "run_id": "mr-test-1",
                 "strategy": "mr",
                 "regime": "RANGE",
+                "status": "ACCEPT",
+                "validation": self._validation(),
                 "new_params": {
                     "ma_trend": 90,
                     "rsi_period": 12,
@@ -211,6 +225,8 @@ class TestCIParameterPublication(unittest.TestCase):
                 "run_id": "mr-test-1",
                 "strategy": "mr",
                 "regime": "RANGE",
+                "status": "ACCEPT",
+                "validation": self._validation(),
                 "new_params": {
                     "N_trend": 90,
                     "rsi_period": 12,
@@ -222,6 +238,49 @@ class TestCIParameterPublication(unittest.TestCase):
             }, path=target)
             self.assertTrue(repeated["already_published"])
             self.assertEqual(repeated["revision"], result["revision"])
+
+    def test_mr_non_publishable_validation_is_rejected_without_revision(self):
+        for status in ("REJECT", "INSUFFICIENT_EVIDENCE"):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as tmp:
+                target = Path(tmp) / "strategy_runtime.json"
+                self._write_baseline(target)
+                before = target.read_bytes()
+
+                with self.assertRaisesRegex(ValueError, "not publishable"):
+                    publish_ci_parameters({
+                        "run_id": f"mr-{status}",
+                        "strategy": "mr",
+                        "regime": "RANGE",
+                        "status": status,
+                        "validation": self._validation(status),
+                    }, path=target)
+
+                self.assertEqual(target.read_bytes(), before)
+
+    def test_revalidate_incumbent_updates_only_lifecycle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "strategy_runtime.json"
+            self._write_baseline(target)
+            before = json.loads(target.read_text(encoding="utf-8"))
+
+            result = publish_ci_parameters({
+                "run_id": "mr-revalidate-1",
+                "strategy": "mr",
+                "regime": "BEAR",
+                "status": "REVALIDATED",
+                "validation": self._validation("REVALIDATE_INCUMBENT"),
+            }, path=target)
+
+            after = json.loads(target.read_text(encoding="utf-8"))
+            self.assertEqual(
+                after["strategies"]["mr"]["regimes"]["BEAR"]["params"],
+                before["strategies"]["mr"]["regimes"]["BEAR"]["params"],
+            )
+            lifecycle = after["strategies"]["mr"]["lifecycle"]["BEAR"]
+            self.assertEqual(lifecycle["status"], "validated")
+            self.assertEqual(lifecycle["data_through"], "2026-10-12")
+            self.assertEqual(lifecycle["validation_run_id"], "mr-revalidate-1")
+            self.assertEqual(result["revision"], before["revision"] + 1)
 
     def test_invalid_publication_leaves_runtime_file_unchanged(self):
         with tempfile.TemporaryDirectory() as tmp:

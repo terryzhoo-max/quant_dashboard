@@ -454,26 +454,64 @@ def get_runtime_metadata() -> dict:
 
 def _apply_ci_update(config: dict, ci_run: Mapping[str, Any]) -> None:
     strategy = str(ci_run.get("strategy", "")).lower()
-    new_params = ci_run.get("new_params")
-    if not isinstance(new_params, Mapping) or not new_params:
-        raise ValueError("CI run has no publishable parameters")
 
     if strategy == "mr":
         regime = str(ci_run.get("regime", "")).upper()
-        if regime not in ("BEAR", "RANGE", "BULL"):
+        if regime not in MR_REGIMES:
             raise ValueError("MR publication requires BEAR, RANGE, or BULL")
-        normalized = _normalize_mr_params(new_params)
-        _validate_mr_params(normalized)
-        stop_loss = float(normalized.pop("stop_loss"))
-        config["strategies"]["mr"]["regimes"][regime]["params"] = normalized
-        config["strategies"]["mr"]["stop_losses"][regime] = stop_loss
+        status = str(ci_run.get("status", "")).upper()
+        if status not in {"ACCEPT", "REVALIDATED"}:
+            raise ValueError(f"MR CI status {status or 'missing'} is not publishable")
+        validation = ci_run.get("validation")
+        if not isinstance(validation, Mapping):
+            raise ValueError("MR publication requires frozen OOS validation")
+        expected_decision = {
+            "ACCEPT": "ACCEPT_CHALLENGER",
+            "REVALIDATED": "REVALIDATE_INCUMBENT",
+        }[status]
+        if validation.get("method") != "frozen_oos":
+            raise ValueError("MR publication requires frozen_oos method")
+        if validation.get("decision") != expected_decision:
+            raise ValueError("MR publication status and validation decision disagree")
+        try:
+            oos_start = datetime.fromisoformat(str(validation["oos_start"])).date()
+            data_through = datetime.fromisoformat(
+                str(validation["data_through"])
+            ).date()
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("MR validation dates must be ISO dates") from exc
+        if data_through < oos_start:
+            raise ValueError("MR validation data_through precedes oos_start")
+
+        if status == "ACCEPT":
+            new_params = ci_run.get("new_params")
+            if not isinstance(new_params, Mapping) or not new_params:
+                raise ValueError("CI run has no publishable parameters")
+            normalized = _normalize_mr_params(new_params)
+            _validate_mr_params(normalized)
+            stop_loss = float(normalized.pop("stop_loss"))
+            config["strategies"]["mr"]["regimes"][regime]["params"] = normalized
+            config["strategies"]["mr"]["stop_losses"][regime] = stop_loss
+
+        validated_at = datetime.now(RUNTIME_TIMEZONE)
+        next_validate_after = validated_at + timedelta(days=60)
         config["strategies"]["mr"]["regimes"][regime]["published_run_id"] = ci_run.get("run_id")
+        config["strategies"]["mr"]["lifecycle"][regime] = {
+            "status": "validated",
+            "validated_at": validated_at.isoformat(),
+            "data_through": data_through.isoformat(),
+            "validation_run_id": str(ci_run.get("run_id") or "unknown"),
+            "next_validate_after": next_validate_after.isoformat(),
+        }
         config["strategies"]["mr"]["next_optimize_after"] = (
-            datetime.now() + timedelta(days=60)
-        ).date().isoformat()
+            next_validate_after.date().isoformat()
+        )
         return
 
     if strategy == "erp":
+        new_params = ci_run.get("new_params")
+        if not isinstance(new_params, Mapping) or not new_params:
+            raise ValueError("CI run has no publishable parameters")
         params = dict(new_params)
         _validate_erp_params(params)
         config["strategies"]["erp"]["params"] = params
@@ -490,9 +528,9 @@ def _published_run_id(config: Mapping[str, Any], ci_run: Mapping[str, Any]) -> A
         return (
             config.get("strategies", {})
             .get("mr", {})
-            .get("regimes", {})
+            .get("lifecycle", {})
             .get(regime, {})
-            .get("published_run_id")
+            .get("validation_run_id")
         )
     if strategy == "erp":
         return config.get("strategies", {}).get("erp", {}).get("published_run_id")
