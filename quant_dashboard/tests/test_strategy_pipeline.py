@@ -60,6 +60,19 @@ class TestAcceptedRunPublication(unittest.TestCase):
 
 
 class TestMrDryRun(unittest.TestCase):
+    @patch("strategies.mr_per_regime_optimizer.optimize_regime")
+    @patch("services.strategy_pipeline.ac_db.init_db")
+    def test_formal_run_initializes_ci_schema_before_optimization(
+        self, init_db, optimize
+    ):
+        init_db.side_effect = RuntimeError("schema unavailable")
+
+        with self.assertRaisesRegex(RuntimeError, "schema unavailable"):
+            run_mr_ci("BEAR")
+
+        init_db.assert_called_once_with()
+        optimize.assert_not_called()
+
     @patch("services.strategy_pipeline.ac_db.save_ci_run")
     @patch("services.strategy_pipeline._publish_accepted_run")
     @patch("services.strategy_pipeline.run_frozen_oos_validation")
@@ -92,9 +105,17 @@ class TestMrDryRun(unittest.TestCase):
             "challenger": {"by_regime": {"RANGE": metrics}},
         }
 
-        result = run_mr_ci("RANGE", dry_run=True)
+        result = run_mr_ci(
+            "RANGE", dry_run=True, price_dir="D:/market-data"
+        )
 
         self.assertTrue(result[0]["dry_run"])
+        self.assertEqual(
+            validate.call_args.kwargs["price_dir"], "D:/market-data"
+        )
+        self.assertEqual(
+            optimize.call_args.kwargs["price_dir"], "D:/market-data"
+        )
         publish.assert_not_called()
         save.assert_not_called()
 

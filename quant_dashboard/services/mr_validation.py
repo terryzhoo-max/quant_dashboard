@@ -74,7 +74,7 @@ def _signal_for_asset(
     prices: pd.Series,
     labels: pd.Series,
     params_by_regime: Mapping[str, Mapping[str, float]],
-) -> tuple[pd.Series, dict[str, int]]:
+) -> tuple[pd.Series, pd.Series]:
     prices = prices.ffill().astype(float)
     ma_cache = {
         int(params["N_trend"]): prices.rolling(
@@ -89,7 +89,7 @@ def _signal_for_asset(
         for params in params_by_regime.values()
     }
     signal = pd.Series(0.0, index=prices.index)
-    entries = {state: 0 for state in MR_REGIMES}
+    entries = pd.Series(False, index=prices.index, dtype=bool)
     in_position = False
     entry_price = 0.0
 
@@ -130,7 +130,7 @@ def _signal_for_asset(
                 in_position = True
                 entry_price = price
                 signal.iloc[idx] = 1.0
-                entries[regime] += 1
+                entries.iloc[idx] = True
     return signal, entries
 
 
@@ -197,14 +197,13 @@ def run_parameter_set(
         raise ValueError("parameter set must cover BEAR, RANGE, and BULL")
 
     desired = pd.DataFrame(0.0, index=shared_index, columns=price_frame.columns)
-    trades_by_regime = {state: 0 for state in MR_REGIMES}
+    entry_events = pd.DataFrame(False, index=shared_index, columns=price_frame.columns)
     for code in price_frame.columns:
         signal, entries = _signal_for_asset(
             price_frame[code], labels, params_by_regime
         )
         desired[code] = signal
-        for state in MR_REGIMES:
-            trades_by_regime[state] += entries[state]
+        entry_events[code] = entries
 
     executed = _lag_positions(desired)
     raw_weights = executed * 0.10
@@ -225,6 +224,11 @@ def run_parameter_set(
     eval_returns = net_returns.loc[evaluation_mask]
     eval_weights = weights.loc[evaluation_mask]
     eval_labels = labels.loc[evaluation_mask]
+    eval_entries = entry_events.loc[evaluation_mask]
+    trades_by_regime = {
+        state: int(eval_entries.loc[eval_labels == state].to_numpy().sum())
+        for state in MR_REGIMES
+    }
     result = {
         "oos_start": eval_returns.index[0].date().isoformat(),
         "data_through": eval_returns.index[-1].date().isoformat(),
@@ -358,7 +362,12 @@ def load_frozen_oos_data(
 ) -> tuple[pd.DataFrame, pd.Series]:
     """Load local-only prices and cap all series at their common latest date."""
     directory = Path(price_dir)
-    files = sorted(directory.glob("*.parquet"))
+    from strategies.mr_per_regime_optimizer import MR_POOL
+
+    universe = [item["code"] for item in MR_POOL]
+    requested_codes = list(dict.fromkeys([BENCHMARK_CODE, *universe]))
+    files = [directory / f"{code}.parquet" for code in requested_codes]
+    files = [path for path in files if path.exists()]
     series = {}
     for path in files:
         try:

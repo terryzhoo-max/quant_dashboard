@@ -1,6 +1,7 @@
 """Frozen out-of-sample validation for mean-reversion parameters."""
 
 from datetime import date
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -10,6 +11,7 @@ from services.mr_validation import (
     classify_regimes,
     compare_incumbent_and_challenger,
     compare_regime,
+    run_parameter_set,
 )
 
 
@@ -92,3 +94,27 @@ def test_insufficient_regime_evidence_cannot_be_published():
         "decision": "INSUFFICIENT_EVIDENCE",
         "reason": "regime_days",
     }
+
+
+def test_trade_evidence_excludes_warmup_entries():
+    index = pd.bdate_range("2026-03-20", periods=10)
+    prices = pd.DataFrame({"AAA": np.linspace(10, 11, len(index))}, index=index)
+    benchmark = pd.Series(np.linspace(100, 101, len(index)), index=index)
+    labels = pd.Series("RANGE", index=index)
+    signal = pd.Series(0.0, index=index)
+    entries = pd.Series(False, index=index)
+    entries.iloc[1] = True
+
+    with patch(
+        "services.mr_validation._signal_for_asset",
+        return_value=(signal, entries),
+    ):
+        result = run_parameter_set(
+            prices=prices,
+            benchmark=benchmark,
+            params_by_regime=_parameter_set(),
+            oos_start=index[5].date(),
+            regime_labels=labels,
+        )
+
+    assert result["by_regime"]["RANGE"]["trades"] == 0

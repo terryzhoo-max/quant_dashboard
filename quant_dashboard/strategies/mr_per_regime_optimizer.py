@@ -112,11 +112,12 @@ MAX_TOTAL_POS = 0.85
 
 # ─── 数据加载 ─────────────────────────────────────────────────────────────────
 
-def load_prices(codes, start, end):
+def load_prices(codes, start, end, *, price_dir=None):
     frames = {}
+    data_dir = os.fspath(price_dir) if price_dir is not None else DAILY_PRICE_DIR
     s_dt, e_dt = pd.to_datetime(start), pd.to_datetime(end)
     for code in codes:
-        fp = os.path.join(DAILY_PRICE_DIR, f"{code}.parquet")
+        fp = os.path.join(data_dir, f"{code}.parquet")
         if not os.path.exists(fp): continue
         try:
             df = pd.read_parquet(fp)
@@ -245,7 +246,7 @@ def portfolio_backtest(price_mat, bm_series, p):
 
 # ─── 单态优化 ─────────────────────────────────────────────────────────────────
 
-def optimize_regime(regime_name, period_cfg, grid):
+def optimize_regime(regime_name, period_cfg, grid, *, price_dir=None):
     print(f"\n{'='*55}")
     print(f"  优化 [{regime_name}] 状态 — {period_cfg['desc']}")
     print(f"  训练: {period_cfg['train'][0]} ~ {period_cfg['train'][1]}")
@@ -255,8 +256,12 @@ def optimize_regime(regime_name, period_cfg, grid):
     all_codes = list(dict.fromkeys([e["code"] for e in MR_POOL] + [BENCHMARK_CODE]))
     extended_start = pd.to_datetime(period_cfg["train"][0]) - pd.Timedelta(days=180)
 
-    prices_full = load_prices(all_codes, extended_start.strftime("%Y-%m-%d"),
-                              period_cfg["valid"][1])
+    prices_full = load_prices(
+        all_codes,
+        extended_start.strftime("%Y-%m-%d"),
+        period_cfg["valid"][1],
+        price_dir=price_dir,
+    )
     bm_full     = prices_full[BENCHMARK_CODE].copy()
     etf_cols    = [c for c in prices_full.columns if c != BENCHMARK_CODE]
 

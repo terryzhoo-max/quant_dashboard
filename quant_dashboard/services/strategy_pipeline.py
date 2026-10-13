@@ -212,13 +212,20 @@ def _publish_accepted_run(ci_run: dict) -> dict:
 #  MR 均值回归 CI (三态分别优化)
 # ═══════════════════════════════════════════════════════════
 
-def run_mr_ci(regime: str = None, *, dry_run: bool = False) -> list:
+def run_mr_ci(
+    regime: str = None,
+    *,
+    dry_run: bool = False,
+    price_dir: str | os.PathLike | None = None,
+) -> list:
     """
     运行 MR 策略 CI
     如果 regime 为 None, 则全部三态都跑
     返回: [ci_run_dict, ...]
     """
     results = []
+    if not dry_run:
+        ac_db.init_db()
     regimes_to_run = [regime] if regime else ["BEAR", "RANGE", "BULL"]
 
     for r in regimes_to_run:
@@ -238,7 +245,12 @@ def run_mr_ci(regime: str = None, *, dry_run: bool = False) -> list:
                 logger.warning("[CI] MR-%s: 无对应 REGIME_PERIODS, 跳过", r)
                 continue
 
-            new_result = optimize_regime(r, REGIME_PERIODS[r], REGIME_GRIDS[r])
+            new_result = optimize_regime(
+                r,
+                REGIME_PERIODS[r],
+                REGIME_GRIDS[r],
+                price_dir=price_dir,
+            )
             gc.collect()  # 释放回测 DataFrame
 
             if not new_result:
@@ -252,9 +264,14 @@ def run_mr_ci(regime: str = None, *, dry_run: bool = False) -> list:
                 for state, params in incumbent_params.items()
             }
             challenger_params[r] = dict(new_params)
+            validation_kwargs = {
+                "incumbent": incumbent_params,
+                "challenger": challenger_params,
+            }
+            if price_dir is not None:
+                validation_kwargs["price_dir"] = price_dir
             validation_result = run_frozen_oos_validation(
-                incumbent=incumbent_params,
-                challenger=challenger_params,
+                **validation_kwargs,
             )
             old_kpi = validation_result["incumbent"]["by_regime"][r]
             new_kpi = validation_result["challenger"]["by_regime"][r]
@@ -312,7 +329,15 @@ def run_mr_ci(regime: str = None, *, dry_run: bool = False) -> list:
                 "diff_summary": f"CI 执行异常: {e}",
             }
             if not dry_run:
-                ac_db.save_ci_run(ci_run)
+                try:
+                    ac_db.save_ci_run(ci_run)
+                except Exception as persist_error:
+                    logger.error(
+                        "[CI] MR-%s 错误记录持久化失败: %s",
+                        r,
+                        persist_error,
+                        exc_info=True,
+                    )
             results.append(ci_run)
 
     return results
