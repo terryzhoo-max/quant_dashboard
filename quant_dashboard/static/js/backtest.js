@@ -121,6 +121,51 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     };
 
+    let mrRuntimeParamWarning = '';
+
+    function applyRuntimeMrParams(payload) {
+        const mr = payload && payload.mr;
+        if (!mr || !mr.regimes || !mr.stop_loss) {
+            throw new Error('MR runtime payload is incomplete');
+        }
+        const runtimePresets = {};
+        ['BEAR', 'RANGE', 'BULL'].forEach(regime => {
+            const block = mr.regimes[regime] || {};
+            const params = block.params || {};
+            const bias_buy = Number(params.bias_buy);
+            const stop_loss = Math.abs(Number(mr.stop_loss[regime]));
+            if (!Number.isFinite(bias_buy) || !Number.isFinite(stop_loss)) {
+                throw new Error(`MR ${regime} runtime values are invalid`);
+            }
+            runtimePresets[regime] = {
+                N_trend: Number(params.N_trend),
+                rsi_period: Number(params.rsi_period),
+                rsi_buy: Number(params.rsi_buy),
+                rsi_sell: Number(params.rsi_sell),
+                bias_buy: bias_buy * 10,
+                stop_loss: stop_loss * 100
+            };
+        });
+        STRATEGY_PARAMS.mr.presets = runtimePresets;
+        const rangeDefaults = runtimePresets.RANGE;
+        STRATEGY_PARAMS.mr.params.forEach(param => {
+            if (Object.prototype.hasOwnProperty.call(rangeDefaults, param.key)) {
+                param.default = rangeDefaults[param.key];
+            }
+        });
+    }
+
+    async function hydrateRuntimeMrParams() {
+        try {
+            const response = await fetch('/api/v1/params/strategy-config');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            applyRuntimeMrParams(await response.json());
+        } catch (error) {
+            mrRuntimeParamWarning = `MR 参数同步失败，保留当前表单值：${error.message}`;
+            console.warn(mrRuntimeParamWarning);
+        }
+    }
+
     // === Drawer Toggle ===
     function openDrawer() {
         configDrawer.classList.add('open');
@@ -145,6 +190,9 @@ document.addEventListener('DOMContentLoaded', function() {
             <span class="strategy-icon">${config.icon || '📊'}</span>
             <span class="strategy-desc-text">${config.desc || ''}</span>
         </div>`;
+        if (stratKey === 'mr' && mrRuntimeParamWarning) {
+            html += `<div class="param-sync-warning" role="status">⚠️ ${mrRuntimeParamWarning}</div>`;
+        }
 
         // Regime preset buttons
         if (config.presets) {
@@ -244,7 +292,9 @@ document.addEventListener('DOMContentLoaded', function() {
         return params;
     }
 
-    renderStrategyParams(strategySelect.value);
+    hydrateRuntimeMrParams().finally(() => {
+        renderStrategyParams(strategySelect.value);
+    });
     // Auto-fill recommended ticker on strategy switch
     strategySelect.addEventListener('change', () => {
         const config = STRATEGY_PARAMS[strategySelect.value];
