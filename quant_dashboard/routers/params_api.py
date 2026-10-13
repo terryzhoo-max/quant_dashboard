@@ -16,7 +16,11 @@ from config import (
     MOMENTUM_LOOKBACK, MOMENTUM_VOL_MIN, MOMENTUM_GROUP_CAP,
     AUDIT_CONFIG,
 )
-from services.strategy_params import get_runtime_metadata, load_runtime_config
+from services.strategy_params import (
+    get_all_mr_lifecycle,
+    get_runtime_metadata,
+    load_runtime_config,
+)
 
 router = APIRouter(prefix="/api/v1/params", tags=["params"])
 
@@ -85,6 +89,7 @@ async def get_strategy_config():
             },
             "pos_cap": dict(strategies["mr"]["position_caps"]),
             "regimes": dict(strategies["mr"]["regimes"]),
+            "lifecycle": get_all_mr_lifecycle(),
             "asset_params": asset_params,
         },
         "momentum": {

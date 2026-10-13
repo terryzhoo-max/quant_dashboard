@@ -33,7 +33,6 @@ DAILY_DIR = os.path.join(DATA_LAKE, "daily_prices")
 FINA_DIR  = os.path.join(DATA_LAKE, "financials")
 
 OPTIMIZATION_FILES = {
-    "均值回归": "mr_optimization_results.json",
     "红利趋势": "dividend_optimization_results.json",
     "行业动量": "optimizer_results.json",
     "ERP择时": "erp_optimization_results.json",
@@ -585,6 +584,64 @@ def audit_strategy_health():
         },
     }
 
+    # MR freshness is evidence-based and per regime.  Legacy optimizer file
+    # timestamps are not a valid production lifecycle signal.
+    mr_weight = STRATEGY_WEIGHTS["均值回归"]
+    try:
+        from services.strategy_params import get_all_mr_lifecycle
+
+        mr_lifecycle = get_all_mr_lifecycle()
+        status_scores = {
+            "validated": 100,
+            "stale": 40,
+            "insufficient_evidence": 35,
+            "rejected": 20,
+        }
+        mr_score = min(
+            status_scores.get(item.get("status"), 0)
+            for item in mr_lifecycle.values()
+        )
+        all_validated = (
+            set(mr_lifecycle) == {"BEAR", "RANGE", "BULL"}
+            and all(
+                item.get("status") == "validated"
+                for item in mr_lifecycle.values()
+            )
+        )
+        mr_status = "pass" if all_validated else "fail"
+        lifecycle_detail = "; ".join(
+            f"{state}={item.get('status')}@{item.get('data_through', 'unknown')}"
+            for state, item in sorted(mr_lifecycle.items())
+        )
+        validated_count = sum(
+            item.get("status") == "validated"
+            for item in mr_lifecycle.values()
+        )
+        checks.append({
+            "name": "均值回归",
+            "status": mr_status,
+            "detail": f"{validated_count}/3 状态有效 · {lifecycle_detail}",
+            "meta": "来源: strategy_runtime.json runtime lifecycle · 权重: 35%",
+            "score": mr_score,
+            "explanation": "均值回归参数按市场状态使用冻结样本外证据管理；文件时间戳不能替代验证。",
+            "threshold": "🟢 3/3 validated | 🔴 stale/rejected/insufficient_evidence",
+            "action": "执行均值回归 dry-run 验证，并仅发布通过证据门槛的状态",
+        })
+    except Exception as exc:
+        mr_score = 0
+        checks.append({
+            "name": "均值回归",
+            "status": "fail",
+            "detail": f"运行时生命周期不可用: {exc}",
+            "meta": "来源: strategy_runtime.json runtime lifecycle · 权重: 35%",
+            "score": 0,
+            "explanation": "无法证明生产参数有效时必须禁止新开仓。",
+            "threshold": "🟢 生命周期完整且有效 | 🔴 缺失或非法",
+            "action": "修复 strategy_runtime.json 生命周期后重新验证",
+        })
+    check_scores.append(mr_score)
+    check_weights.append(mr_weight)
+
     for name, filename in OPTIMIZATION_FILES.items():
         fp = os.path.join(PROJECT_ROOT, filename)
         w = STRATEGY_WEIGHTS.get(name, 0.15)
@@ -759,26 +816,9 @@ def audit_strategy_health():
             # 评分: 3套完整=100, 2套=75, 1套=50, 0套=20
             s = {3: 100, 2: 75, 1: 50, 0: 20}.get(regime_ok, 20)
 
-            # 检查权威运行时配置的最后发布时间
-            regime_gen = regime_data.get("published_at") if isinstance(regime_data, dict) else None
-            regime_age_info = ""
-            if regime_gen:
-                try:
-                    clean = str(regime_gen).replace("T", " ").split(".")[0]
-                    dt = datetime.strptime(clean, "%Y-%m-%d %H:%M:%S")
-                    r_age = (datetime.now() - dt).total_seconds() / 86400
-                    regime_age_info = f" · 优化于 {int(r_age)} 天前"
-                    # Regime 过期也扣分 (半衰期 90 天, 因为 regime 切换频率低)
-                    if r_age > 90:
-                        age_penalty = min(30, int((r_age - 90) * 0.3))
-                        s = max(20, s - age_penalty)
-                except Exception:
-                    pass
-
             detail_str = f"{regime_ok}/3 套参数完整"
             if regime_details:
                 detail_str += f" · 质量分: {', '.join(regime_details)}"
-            detail_str += regime_age_info
             if regime_issues:
                 detail_str += f" · 问题: {'; '.join(regime_issues)}"
 
