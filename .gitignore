@@ -14,6 +14,7 @@ ENV/
 .vscode/
 .idea/
 .gemini/
+.worktrees/
 
 # Project Specific
 quant_dashboard/__pycache__/
