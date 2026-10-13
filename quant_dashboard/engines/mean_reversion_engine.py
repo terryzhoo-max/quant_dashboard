@@ -23,7 +23,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from services.retry import retry_with_backoff
 from services.health_status import evaluate_aiae_context
 from services.strategy_params import (
+    get_all_mr_lifecycle,
     get_all_mr_params as _runtime_all_mr_params,
+    get_mr_lifecycle,
     get_mr_params,
     get_position_cap,
     get_regime_rules,
@@ -295,13 +297,12 @@ def load_regime_params(regime: str = None) -> dict:
 
 
 def needs_reoptimize() -> bool:
-    """检查是否超过60天未重优化"""
+    """Return true when any tradable regime lacks effective validation."""
     try:
-        runtime = load_runtime_config()
-        next_date = pd.to_datetime(
-            runtime["strategies"]["mr"].get("next_optimize_after", "2000-01-01")
+        return any(
+            lifecycle["status"] != "validated"
+            for lifecycle in get_all_mr_lifecycle().values()
         )
-        return pd.Timestamp.now() >= next_date
     except Exception:
         return True
 
@@ -309,11 +310,12 @@ def needs_reoptimize() -> bool:
 def get_all_regime_params() -> dict:
     """返回三态完整参数摘要（供API和前端使用）"""
     runtime = load_runtime_config()
-    published_at = runtime.get("published_at") or "baseline"
+    lifecycle = get_all_mr_lifecycle()
     return {
         state: {
             "params": get_mr_params(state),
-            "optimized_at": published_at,
+            "optimized_at": lifecycle[state]["validated_at"],
+            "lifecycle": lifecycle[state],
             "pos_cap": get_position_cap("mr", state, as_ratio=True),
             "score_gate": get_score_gate("mr", state),
             "revision": runtime["revision"],
@@ -409,6 +411,7 @@ def detect_regime() -> dict:
 
         info    = _classify_regime_from_series(close_arr)
         regime  = info["regime"]
+        lifecycle = get_mr_lifecycle(regime)
         params  = load_regime_params(regime)
         pos_cap = get_position_cap("mr", regime, as_ratio=True)
         score_gate = get_score_gate("mr", regime)
@@ -451,15 +454,25 @@ def detect_regime() -> dict:
             "ret5":        info["ret5"],
             "ret20":       info["ret20"],
             "above_ma120": info["above_ma120"],
+            "parameter_lifecycle": lifecycle["status"],
+            "allow_new_entries": lifecycle["allow_new_entries"],
+            "lifecycle_reason": lifecycle["reason"],
+            "parameter_data_through": lifecycle["data_through"],
             "needs_reoptimize": needs_reoptimize(),
         }
     except Exception as e:
+        lifecycle = get_mr_lifecycle("RANGE")
         return {
             "regime":     "RANGE",
             "regime_cn":  "震荡市",
             "params":     get_mr_params("RANGE"),
             "pos_cap":    get_position_cap("mr", "RANGE", as_ratio=True),
             "score_gate": get_score_gate("mr", "RANGE"),
+            "parameter_lifecycle": lifecycle["status"],
+            "allow_new_entries": False,
+            "lifecycle_reason": lifecycle["reason"],
+            "parameter_data_through": lifecycle["data_through"],
+            "needs_reoptimize": True,
             "error":      str(e),
         }
 
@@ -556,6 +569,10 @@ def calculate_indicators(df: pd.DataFrame, regime_info: dict = None) -> dict:
         "pos_cap":         regime_info["pos_cap"],
         "score_gate":      regime_info["score_gate"],
         "needs_reopt":     regime_info.get("needs_reoptimize", False),
+        "parameter_lifecycle": regime_info.get("parameter_lifecycle", "stale"),
+        "allow_new_entries": regime_info.get("allow_new_entries", False),
+        "lifecycle_reason": regime_info.get("lifecycle_reason", "lifecycle_missing"),
+        "parameter_data_through": regime_info.get("parameter_data_through"),
     }
 
 
@@ -649,18 +666,28 @@ def generate_signal(indicators: dict, score: int) -> str:
     bias_buy = p["bias_buy"]
     sl       = abs(p.get("stop_loss", 0.07))   # V4.3: abs() 兼容正负号
 
-    # CRASH：全面禁入
-    if regime == "CRASH":
-        return "no_entry"
-    if regime == "BULL" and score < score_gate:
-        return "hold"
-
     # V4.3: stop_loss 统一用 abs 比较
     cost_price = indicators.get("cost_price")
     if cost_price and cost_price > 0:
         ret = (close / cost_price) - 1
         if ret <= -sl:
             return "stop_loss"
+
+    # Exit paths always remain active, even when entry parameters are stale.
+    if rsi >= rsi_sell:
+        return "sell"
+
+    if close >= ma20 and pb > 0.6:
+        return "sell_half"
+
+    if score < score_gate * 0.75:
+        return "sell_weak"
+
+    # CRASH and a weak BULL score block entries only after all exits were checked.
+    if regime == "CRASH":
+        return "no_entry"
+    if regime == "BULL" and score < score_gate:
+        return "hold"
 
     # V4.3: trend_ok 按 Regime 差异化宽度
     #   BEAR: 允许5%偏离（熊市超跌是主战场，不能过滤掉）
@@ -674,16 +701,9 @@ def generate_signal(indicators: dict, score: int) -> str:
         trend_ok = close > ma_n
 
     if trend_ok and (rsi <= rsi_buy or bias <= bias_buy) and score >= score_gate:
+        if not indicators.get("allow_new_entries", False):
+            return "no_entry"
         return "buy"
-
-    if rsi >= rsi_sell:
-        return "sell"
-
-    if close >= ma20 and pb > 0.6:
-        return "sell_half"
-
-    if score < score_gate * 0.75:
-        return "sell_weak"
 
     return "hold"
 
@@ -740,6 +760,10 @@ def _fetch_and_calc_mr(code, regime_info, start_date, end_date, pro):
             "ts_code":       code,
             "name":          name,
             "signal":        signal,
+            "parameter_lifecycle": indicators.get("parameter_lifecycle", "stale"),
+            "allow_new_entries": indicators.get("allow_new_entries", False),
+            "lifecycle_reason": indicators.get("lifecycle_reason", "lifecycle_missing"),
+            "parameter_data_through": indicators.get("parameter_data_through"),
             "signal_score":  score,
             "score_breakdown": breakdown,
             "rsi":           round(indicators["rsi"], 1),
