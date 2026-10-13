@@ -1,37 +1,19 @@
 """
-AlphaCore V5.0 · 生产就绪检查 (Production Readiness Check)
-============================================================
+AlphaCore · 生产就绪检查 (Production Readiness Check)
+======================================================
 一键验证全系统关键路径。部署前 / 每日启动时运行。
 
-用法: python engines/production_check.py
+用法:
+  python engines/production_check.py
+  python engines/production_check.py --code-only
 """
+import argparse
+import json
 import sys
 import os
+import re
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-PASS = 0
-WARN = 0
-FAIL = 0
-
-
-def _check(name, fn):
-    global PASS, WARN, FAIL
-    try:
-        ok, msg = fn()
-        if ok == "pass":
-            PASS += 1
-            print(f"  [PASS] {name}: {msg}")
-        elif ok == "warn":
-            WARN += 1
-            print(f"  [WARN] {name}: {msg}")
-        else:
-            FAIL += 1
-            print(f"  [FAIL] {name}: {msg}")
-    except Exception as e:
-        FAIL += 1
-        print(f"  [FAIL] {name}: {e}")
-
 
 # ═══════════════════════════════════════════════════════
 #  1. 引擎导入链
@@ -40,8 +22,22 @@ def _check(name, fn):
 def check_aiae_params():
     import engines.aiae_params as AP
     assert AP.V5_ENABLED, "V5_ENABLED is False"
-    assert AP.VERSION == "5.0", f"VERSION={AP.VERSION}"
-    return "pass", f"V{AP.VERSION}, V5_ENABLED=True"
+    version_parts = str(AP.VERSION).split(".")
+    assert version_parts and version_parts[0].isdigit(), f"invalid VERSION={AP.VERSION}"
+    assert int(version_parts[0]) == 5, f"unsupported major VERSION={AP.VERSION}"
+
+    thresholds = [float(value) for value in AP.V5_REGIME_THRESHOLDS]
+    assert len(thresholds) == 4, f"expected 4 V5 thresholds, got {len(thresholds)}"
+    assert all(
+        left < right for left, right in zip(thresholds, thresholds[1:])
+    ), f"V5 thresholds are not strictly increasing: {thresholds}"
+    assert set(AP.POSITION_MATRIX) == {
+        "erp_gt6", "erp_4_6", "erp_2_4", "erp_lt2"
+    }, "V5 position matrix ERP tiers are incomplete"
+    assert all(len(row) == 5 for row in AP.POSITION_MATRIX.values()), (
+        "V5 position matrix must cover all 5 regimes"
+    )
+    return "pass", f"V{AP.VERSION}, V5 contract valid, thresholds={thresholds}"
 
 
 def check_aiae_engine():
@@ -54,6 +50,7 @@ def check_aiae_engine():
 
 def check_backtest_engine():
     from engines.aiae_backtest_v4 import AIAEBacktestV4
+    assert callable(AIAEBacktestV4), "AIAEBacktestV4 is not callable"
     return "pass", "AIAEBacktestV4 importable"
 
 
@@ -184,68 +181,157 @@ def check_dividend_aiae_integration():
 # ═══════════════════════════════════════════════════════
 
 def check_frontend_v5_sync():
+    """Validate the runtime threshold contract instead of display text."""
+    from engines import aiae_params as AP
+
     base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    files = {
-        'strategy.html': ['22.8'],
-        'decision.html': ['24%'],
-        'static/js/decision/hub_core.js': ['22.8'],
-    }
-    issues = []
-    for fname, markers in files.items():
-        path = os.path.join(base, fname)
-        if not os.path.exists(path):
-            issues.append(f"{fname}: not found")
-            continue
-        with open(path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        for marker in markers:
-            if marker not in content:
-                issues.append(f"{fname}: missing V5 marker '{marker}'")
-    if issues:
-        return "warn", "; ".join(issues)
-    return "pass", "V5 markers found in all frontend files"
+    decision_path = os.path.join(base, "decision.html")
+    hub_path = os.path.join(base, "static", "js", "decision", "hub_core.js")
+
+    if not os.path.exists(decision_path):
+        return "fail", "decision.html not found"
+    if not os.path.exists(hub_path):
+        return "fail", "static/js/decision/hub_core.js not found"
+
+    with open(decision_path, "r", encoding="utf-8") as handle:
+        decision_html = handle.read()
+    if "static/js/decision/hub_core.js" not in decision_html:
+        return "fail", "decision.html does not load hub_core.js"
+
+    with open(hub_path, "r", encoding="utf-8") as handle:
+        hub_source = handle.read()
+    match = re.search(
+        r"_DEFAULT_REGIME_THRESHOLDS\s*=\s*(\[[^\]]+\])",
+        hub_source,
+    )
+    if not match:
+        return "fail", "frontend default regime thresholds are not parseable"
+
+    try:
+        frontend_thresholds = [float(value) for value in json.loads(match.group(1))]
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        return "fail", f"invalid frontend threshold array: {exc}"
+
+    backend_thresholds = [float(value) for value in AP.V5_REGIME_THRESHOLDS]
+    if frontend_thresholds != backend_thresholds:
+        return "fail", (
+            f"threshold mismatch: frontend={frontend_thresholds}, "
+            f"backend={backend_thresholds}"
+        )
+    if "snapshot.regime_thresholds" not in hub_source:
+        return "fail", "hub_core.js does not consume backend regime thresholds"
+
+    return "pass", f"frontend/backend thresholds aligned: {backend_thresholds}"
 
 
 # ═══════════════════════════════════════════════════════
-#  Run all checks
+#  Check groups and runner
 # ═══════════════════════════════════════════════════════
+
+ENGINE_CHECKS = (
+    "Engine Import Chain",
+    (
+        ("aiae_params", check_aiae_params),
+        ("aiae_engine", check_aiae_engine),
+        ("backtest_v4", check_backtest_engine),
+        ("sub_engines", check_sub_engines),
+        ("drift_monitor", check_drift_monitor),
+    ),
+)
+SIGNAL_CHECKS = (
+    "V5 Signal Pipeline",
+    (
+        ("regime_classify", check_v5_regime_classify),
+        ("position_matrix", check_v5_position_matrix),
+    ),
+)
+DATA_CHECKS = (
+    "Runtime Data Integrity",
+    (
+        ("history_parquet", check_history_parquet),
+        ("backtest_results", check_backtest_results),
+    ),
+)
+ALLOCATION_CHECKS = (
+    "Allocation Consistency",
+    (
+        ("alloc_matrix", check_sub_strategy_alloc),
+        ("dividend_aiae", check_dividend_aiae_integration),
+    ),
+)
+FRONTEND_CHECKS = (
+    "Frontend Runtime Contract",
+    (("frontend_sync", check_frontend_v5_sync),),
+)
+
+
+def build_check_groups(code_only: bool = False):
+    """Return deterministic check groups for CI or full server validation."""
+    groups = [ENGINE_CHECKS, SIGNAL_CHECKS]
+    if not code_only:
+        groups.append(DATA_CHECKS)
+    groups.extend((ALLOCATION_CHECKS, FRONTEND_CHECKS))
+    return groups
+
+
+def run_checks(groups, emit=print):
+    """Run check groups and return pass/warn/fail counts."""
+    summary = {"pass": 0, "warn": 0, "fail": 0}
+    total_groups = len(groups)
+
+    for index, (title, checks) in enumerate(groups, start=1):
+        emit(f"\n[{index}/{total_groups}] {title}")
+        for name, check_fn in checks:
+            try:
+                status, message = check_fn()
+                if status not in summary:
+                    invalid_status = status
+                    status = "fail"
+                    message = f"invalid check status: {invalid_status!r}; {message}"
+            except Exception as exc:
+                status, message = "fail", str(exc)
+            summary[status] += 1
+            emit(f"  [{status.upper()}] {name}: {message}")
+
+    return summary
+
+
+def _print_summary(summary, emit=print):
+    total = sum(summary.values())
+    emit("\n" + "=" * 60)
+    if summary["fail"]:
+        emit(
+            f"  RESULT: {summary['fail']} FAILED / {summary['warn']} WARN / "
+            f"{summary['pass']} PASS (of {total})"
+        )
+        emit("  STATUS: NOT READY FOR PRODUCTION")
+    elif summary["warn"]:
+        emit(f"  RESULT: {summary['warn']} WARN / {summary['pass']} PASS (of {total})")
+        emit("  STATUS: READY WITH WARNINGS")
+    else:
+        emit(f"  RESULT: {summary['pass']}/{total} PASSED")
+        emit("  STATUS: PRODUCTION READY")
+    emit("=" * 60)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="AlphaCore production readiness gate")
+    parser.add_argument(
+        "--code-only",
+        action="store_true",
+        help="skip server-local runtime data checks (intended for CI)",
+    )
+    args = parser.parse_args(argv)
+
+    print("=" * 60)
+    print("  AlphaCore Production Readiness Check")
+    print(f"  Mode: {'CODE ONLY' if args.code_only else 'FULL'}")
+    print("=" * 60)
+
+    summary = run_checks(build_check_groups(code_only=args.code_only))
+    _print_summary(summary)
+    return 1 if summary["fail"] else 0
+
 
 if __name__ == "__main__":
-    print("=" * 60)
-    print("  AlphaCore V5.0 Production Readiness Check")
-    print("=" * 60)
-
-    print("\n[1/5] Engine Import Chain")
-    _check("aiae_params", check_aiae_params)
-    _check("aiae_engine", check_aiae_engine)
-    _check("backtest_v4", check_backtest_engine)
-    _check("sub_engines", check_sub_engines)
-    _check("drift_monitor", check_drift_monitor)
-
-    print("\n[2/5] V5 Signal Pipeline")
-    _check("regime_classify", check_v5_regime_classify)
-    _check("position_matrix", check_v5_position_matrix)
-
-    print("\n[3/5] Data Integrity")
-    _check("history_parquet", check_history_parquet)
-    _check("backtest_results", check_backtest_results)
-
-    print("\n[4/5] Quota Consistency")
-    _check("alloc_matrix", check_sub_strategy_alloc)
-    _check("dividend_aiae", check_dividend_aiae_integration)
-
-    print("\n[5/5] Frontend V5 Sync")
-    _check("frontend_sync", check_frontend_v5_sync)
-
-    print("\n" + "=" * 60)
-    total = PASS + WARN + FAIL
-    if FAIL > 0:
-        print(f"  RESULT: {FAIL} FAILED / {WARN} WARN / {PASS} PASS (of {total})")
-        print("  STATUS: NOT READY FOR PRODUCTION")
-    elif WARN > 0:
-        print(f"  RESULT: {WARN} WARN / {PASS} PASS (of {total})")
-        print("  STATUS: READY WITH WARNINGS")
-    else:
-        print(f"  RESULT: {PASS}/{total} PASSED")
-        print("  STATUS: PRODUCTION READY")
-    print("=" * 60)
+    raise SystemExit(main())

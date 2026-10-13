@@ -56,3 +56,10 @@ jobs:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY || 'ci_dummy_key' }}
         run: |
           python -m pytest tests/ -v --tb=short
+
+      - name: Production Readiness Contract
+        env:
+          TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN || 'ci_dummy_token' }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY || 'ci_dummy_key' }}
+        run: |
+          python engines/production_check.py --code-only
