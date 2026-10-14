@@ -2,6 +2,7 @@ import time
 import pytest
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import patch
 from services.cache_service import stale_while_revalidate, cache_manager
 from dashboard_modules.fetch_macro import fetch_cny_for_dashboard, _save_cny_disk, _load_cny_disk
 
@@ -109,17 +110,15 @@ def test_cny_disk_cache_behavior():
     # 测试 fetch_cny_for_dashboard，我们可以用 mock 模拟网络失败
     # 在非周末时，fetch_cny_for_dashboard 会优先发起请求。
     # 我们可以通过 mock 故意让 CNBC 请求失败，看它是否能自动回滚到磁盘上的 7.2458
-    import requests
-    original_get = requests.get
-
-    def mock_get(url, **kwargs):
-        raise requests.exceptions.RequestException("CNBC Down")
-
     import dashboard_modules.fetch_macro as fm
-    fm.requests.get = mock_get
-
-    try:
+    with (
+        patch.object(
+            fm.requests,
+            "get",
+            side_effect=fm.requests.exceptions.RequestException("CNBC Down"),
+        ),
+        patch.object(fm, "_fetch_cny_ecb", return_value=None),
+        patch.object(fm, "_fetch_cny_fred", return_value=None),
+    ):
         cny = fetch_cny_for_dashboard()
         assert cny == test_rate  # 应该读取磁盘缓存值
-    finally:
-        fm.requests.get = original_get
