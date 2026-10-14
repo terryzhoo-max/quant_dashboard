@@ -588,24 +588,44 @@ def audit_strategy_health():
     # timestamps are not a valid production lifecycle signal.
     mr_weight = STRATEGY_WEIGHTS["均值回归"]
     try:
-        from services.strategy_params import get_all_mr_lifecycle
+        from services.strategy_params import get_all_mr_lifecycle, load_runtime_config
 
         mr_lifecycle = get_all_mr_lifecycle()
         status_scores = {
             "validated": 100,
+            "disabled": 70,
             "stale": 40,
             "insufficient_evidence": 35,
             "rejected": 20,
         }
-        mr_score = min(
-            status_scores.get(item.get("status"), 0)
-            for item in mr_lifecycle.values()
-        )
+        # Smart scoring: regime with position_cap=0 AND non-validated
+        # status is a deliberate risk management decision, not a failure.
+        try:
+            position_caps = (
+                load_runtime_config()
+                .get("strategies", {})
+                .get("mr", {})
+                .get("position_caps", {})
+            )
+        except Exception:
+            position_caps = {}
+        effective_scores = []
+        for state, item in mr_lifecycle.items():
+            raw_status = item.get("status", "")
+            cap = position_caps.get(state, 100)
+            if cap == 0 and raw_status in ("rejected", "insufficient_evidence"):
+                effective_scores.append(status_scores["disabled"])
+            else:
+                effective_scores.append(status_scores.get(raw_status, 0))
+        mr_score = min(effective_scores) if effective_scores else 0
+        _VALID_STATES = {"validated", "disabled"}
         all_validated = (
             set(mr_lifecycle) == {"BEAR", "RANGE", "BULL"}
             and all(
                 item.get("status") == "validated"
-                for item in mr_lifecycle.values()
+                or (position_caps.get(state, 100) == 0
+                    and item.get("status") in ("rejected", "insufficient_evidence"))
+                for state, item in mr_lifecycle.items()
             )
         )
         mr_status = "pass" if all_validated else "fail"

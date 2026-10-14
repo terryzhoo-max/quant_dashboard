@@ -27,6 +27,7 @@ from services.strategy_params import (
     get_erp_params,
     get_mr_params,
     publish_ci_parameters,
+    record_ci_outcome,
 )
 from services.mr_validation import (
     compare_regime,
@@ -309,6 +310,18 @@ def run_mr_ci(
 
             if not dry_run:
                 _publish_accepted_run(ci_run)
+                if ci_run.get("status") in ("INSUFFICIENT_EVIDENCE", "REJECT"):
+                    try:
+                        record_ci_outcome(ci_run)
+                        logger.info(
+                            "[CI] MR-%s lifecycle recorded: %s",
+                            r, ci_run["status"],
+                        )
+                    except Exception as rec_err:
+                        logger.error(
+                            "[CI] MR-%s lifecycle record failed: %s",
+                            r, rec_err, exc_info=True,
+                        )
                 ac_db.save_ci_run(ci_run)
             results.append(ci_run)
             logger.info("[CI] MR-%s 完成: status=%s, sharpe=%.3f",

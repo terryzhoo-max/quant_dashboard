@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "revision": 4,
-  "published_at": "2026-09-07T09:00:00+08:00",
-  "published_by": "manual:industry-constituent-lineage",
+  "revision": 7,
+  "published_at": "2026-10-14T23:46:24.336310+08:00",
+  "published_by": "ci_outcome:7d62f73d-1ab",
   "regime": {
     "ma_period": 120,
     "slope_days": 5,
@@ -12,50 +12,103 @@
   },
   "strategies": {
     "mr": {
-      "position_caps": {"BEAR": 65, "RANGE": 80, "BULL": 35, "CRASH": 0},
-      "stop_losses": {"BEAR": 0.05, "RANGE": 0.10, "BULL": 0.06, "CRASH": 0.03},
-      "score_gates": {"BEAR": 78, "RANGE": 68, "BULL": 60, "CRASH": 999},
+      "position_caps": {
+        "BEAR": 0,
+        "RANGE": 80,
+        "BULL": 35,
+        "CRASH": 0
+      },
+      "stop_losses": {
+        "BEAR": 0.05,
+        "RANGE": 0.1,
+        "BULL": 0.06,
+        "CRASH": 0.03
+      },
+      "score_gates": {
+        "BEAR": 78,
+        "RANGE": 68,
+        "BULL": 60,
+        "CRASH": 999
+      },
       "regimes": {
         "BEAR": {
-          "params": {"N_trend": 120, "rsi_period": 6, "rsi_buy": 20, "rsi_sell": 52, "bias_buy": -2.0}
+          "params": {
+            "N_trend": 120,
+            "rsi_period": 6,
+            "rsi_buy": 20,
+            "rsi_sell": 52,
+            "bias_buy": -2.0
+          }
         },
         "RANGE": {
-          "params": {"N_trend": 120, "rsi_period": 14, "rsi_buy": 30, "rsi_sell": 65, "bias_buy": -2.5}
+          "params": {
+            "N_trend": 120,
+            "rsi_period": 14,
+            "rsi_buy": 30,
+            "rsi_sell": 65,
+            "bias_buy": -2.5
+          }
         },
         "BULL": {
-          "params": {"N_trend": 60, "rsi_period": 14, "rsi_buy": 35, "rsi_sell": 75, "bias_buy": -1.5}
+          "params": {
+            "N_trend": 60,
+            "rsi_period": 14,
+            "rsi_buy": 35,
+            "rsi_sell": 75,
+            "bias_buy": -1.5
+          }
         }
       },
       "lifecycle": {
         "BEAR": {
-          "status": "stale",
-          "validated_at": "2026-07-28T00:00:00+08:00",
-          "data_through": "2024-04-30",
-          "validation_run_id": "legacy-mr-20260728",
-          "next_validate_after": "2026-09-26T00:00:00+08:00"
+          "status": "rejected",
+          "validated_at": "2026-10-14T23:46:14.787618+08:00",
+          "data_through": "2026-10-14",
+          "validation_run_id": "9c95033c-097",
+          "next_validate_after": "2026-10-28T23:46:14.787618+08:00"
         },
         "RANGE": {
-          "status": "stale",
-          "validated_at": "2026-07-28T00:00:00+08:00",
-          "data_through": "2024-09-23",
-          "validation_run_id": "legacy-mr-20260728",
-          "next_validate_after": "2026-09-26T00:00:00+08:00"
+          "status": "insufficient_evidence",
+          "validated_at": "2026-10-14T23:46:19.601800+08:00",
+          "data_through": "2026-10-14",
+          "validation_run_id": "b7dea18d-6c8",
+          "next_validate_after": "2026-11-13T23:46:19.601800+08:00"
         },
         "BULL": {
-          "status": "stale",
-          "validated_at": "2026-07-28T00:00:00+08:00",
-          "data_through": "2026-03-27",
-          "validation_run_id": "legacy-mr-20260728",
-          "next_validate_after": "2026-09-26T00:00:00+08:00"
+          "status": "insufficient_evidence",
+          "validated_at": "2026-10-14T23:46:24.336310+08:00",
+          "data_through": "2026-10-14",
+          "validation_run_id": "7d62f73d-1ab",
+          "next_validate_after": "2026-11-13T23:46:24.336310+08:00"
         }
       },
       "next_optimize_after": "2026-09-26"
     },
     "momentum": {
-      "position_caps": {"BEAR": 35, "RANGE": 60, "BULL": 85, "CRASH": 0},
-      "single_position_caps": {"BEAR": 12, "RANGE": 15, "BULL": 20, "CRASH": 0},
-      "stop_losses": {"BEAR": 0.05, "RANGE": 0.07, "BULL": 0.08, "CRASH": 0.03},
-      "score_gates": {"BEAR": 75, "RANGE": 68, "BULL": 65, "CRASH": 999},
+      "position_caps": {
+        "BEAR": 35,
+        "RANGE": 60,
+        "BULL": 85,
+        "CRASH": 0
+      },
+      "single_position_caps": {
+        "BEAR": 12,
+        "RANGE": 15,
+        "BULL": 20,
+        "CRASH": 0
+      },
+      "stop_losses": {
+        "BEAR": 0.05,
+        "RANGE": 0.07,
+        "BULL": 0.08,
+        "CRASH": 0.03
+      },
+      "score_gates": {
+        "BEAR": 75,
+        "RANGE": 68,
+        "BULL": 65,
+        "CRASH": 999
+      },
       "execution": {
         "amount_unit": "thousand_cny",
         "liquidity_lookback_days": 20,
@@ -65,7 +118,10 @@
         "pretrade_quote_required": true,
         "constituent_max_age_days": 45,
         "constituent_top_n": 5,
-        "constituent_weight_sum_bounds_pct": [95, 105]
+        "constituent_weight_sum_bounds_pct": [
+          95,
+          105
+        ]
       },
       "validation": {
         "model_id": "industry-alpha-v1",
@@ -102,16 +158,30 @@
           "min_regime_period_profit_factor": 1.2,
           "min_regime_period_avg_excess_return": 0.0,
           "max_regime_period_drawdown": 0.15,
-          "required_regimes": ["BEAR", "RANGE", "BULL"],
+          "required_regimes": [
+            "BEAR",
+            "RANGE",
+            "BULL"
+          ],
           "require_point_in_time_universe": true
         }
       }
     },
     "gem": {
-      "position_caps": {"BEAR": 40, "RANGE": 70, "BULL": 90, "CRASH": 0}
+      "position_caps": {
+        "BEAR": 40,
+        "RANGE": 70,
+        "BULL": 90,
+        "CRASH": 0
+      }
     },
     "dividend": {
-      "position_caps": {"BEAR": 45, "RANGE": 70, "BULL": 85, "CRASH": 0}
+      "position_caps": {
+        "BEAR": 45,
+        "RANGE": 70,
+        "BULL": 85,
+        "CRASH": 0
+      }
     },
     "erp": {
       "params": {
@@ -119,8 +189,8 @@
         "sell_threshold": 40,
         "erp_window": 1008,
         "stop_loss": 0,
-        "w_erp_abs": 0.20,
-        "w_erp_pct": 0.30,
+        "w_erp_abs": 0.2,
+        "w_erp_pct": 0.3,
         "w_m1": 0.35,
         "w_vol": 0.08,
         "w_credit": 0.07

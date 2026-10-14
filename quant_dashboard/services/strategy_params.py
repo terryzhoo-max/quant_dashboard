@@ -412,8 +412,9 @@ def get_mr_lifecycle(
     now = as_of or datetime.now(RUNTIME_TIMEZONE)
     if now.tzinfo is None:
         now = now.replace(tzinfo=RUNTIME_TIMEZONE)
+    _DEGRADABLE = {"validated", "insufficient_evidence", "rejected"}
     if (
-        configured_status == "validated"
+        configured_status in _DEGRADABLE
         and now
         > _parse_runtime_datetime(
             raw["next_validate_after"],
@@ -449,6 +450,71 @@ def get_runtime_metadata() -> dict:
         "revision": config["revision"],
         "published_at": config.get("published_at"),
         "published_by": config.get("published_by"),
+    }
+
+
+def record_ci_outcome(
+    ci_run: Mapping[str, Any], *, path: Path | str | None = None,
+) -> dict:
+    """Record a non-passing CI result in lifecycle without changing params.
+
+    For INSUFFICIENT_EVIDENCE and REJECT outcomes, updates the lifecycle
+    status and timestamps so audit reflects reality rather than 'stale'.
+    """
+    global _cached_config, _cached_mtime_ns
+    strategy = str(ci_run.get("strategy", "")).lower()
+    if strategy != "mr":
+        raise ValueError(f"record_ci_outcome only supports MR, got: {strategy}")
+
+    regime = str(ci_run.get("regime", "")).upper()
+    if regime not in MR_REGIMES:
+        raise ValueError(f"unsupported regime: {regime}")
+
+    status = str(ci_run.get("status", "")).upper()
+    lifecycle_map = {
+        "INSUFFICIENT_EVIDENCE": "insufficient_evidence",
+        "REJECT": "rejected",
+    }
+    lifecycle_status = lifecycle_map.get(status)
+    if not lifecycle_status:
+        raise ValueError(f"record_ci_outcome does not handle status: {status}")
+
+    validation = ci_run.get("validation") or {}
+    data_through = str(
+        validation.get("data_through", datetime.now(RUNTIME_TIMEZONE).date().isoformat())
+    )
+    retry_days = 30 if lifecycle_status == "insufficient_evidence" else 14
+
+    target = Path(path) if path is not None else RUNTIME_CONFIG_PATH
+    now = datetime.now(RUNTIME_TIMEZONE)
+    next_va = now + timedelta(days=retry_days)
+
+    with _publish_lock:
+        current = _read_config_strict(target)
+        updated = copy.deepcopy(current)
+        updated["strategies"]["mr"]["lifecycle"][regime] = {
+            "status": lifecycle_status,
+            "validated_at": now.isoformat(),
+            "data_through": data_through,
+            "validation_run_id": str(ci_run.get("run_id") or "unknown"),
+            "next_validate_after": next_va.isoformat(),
+        }
+        updated["revision"] = current["revision"] + 1
+        updated["published_at"] = now.isoformat()
+        updated["published_by"] = f"ci_outcome:{ci_run.get('run_id', 'unknown')}"
+        validate_runtime_config(updated)
+        backup_path = _atomic_write_config(target, updated)
+
+        if target == RUNTIME_CONFIG_PATH:
+            with _cache_lock:
+                _cached_config = copy.deepcopy(updated)
+                _cached_mtime_ns = target.stat().st_mtime_ns
+
+    return {
+        "regime": regime,
+        "status": lifecycle_status,
+        "next_validate_after": next_va.isoformat(),
+        "backup_path": str(backup_path),
     }
 
 
