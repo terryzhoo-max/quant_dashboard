@@ -625,7 +625,8 @@ function _renderERPChartNotePIT(dom, pit) {
         ' 个交易日) 的 ERP 滚动分位, 无后视, 与综合评分 D2 同口径: ≥P80 强买 / P60–80 超配 / P40–60 中性 / P20–40 低配 / <P20 危险。' +
         '危险/强买需双重确认: 同时低于/高于长期中枢 (自2015年扩展中位数, 当前 ' + pit.anchor + '%), 否则降一档; ' +
         'ERP<' + pit.abs_floor + '% 无条件危险 (长期泡沫的硬约束)。' +
-        '样本内时间占比: 危险 ' + (share.danger ?? '--') + '% · 低配 ' + (share.under ?? '--') + '% · 强买 ' + (share.strong ?? '--') +
+        '样本内时间占比' + (pit.zone_share_since ? ' (' + pit.zone_share_since + ' 起, 仅统计已满' + pit.window_years + '年窗口的交易日)' : '') +
+        ': 危险 ' + (share.danger ?? '--') + '% · 低配 ' + (share.under ?? '--') + '% · 强买 ' + (share.strong ?? '--') +
         '%。估值区间≠交易信号, 仓位以综合信号为准。';
 }
 
@@ -645,7 +646,8 @@ function _renderERPChartKPIsPIT(stats, pit, signalData) {
         ${sub ? `<div style="font-size:0.6rem;color:#94a3b8;margin-top:2px;">${sub}</div>` : ''}
     </div>`;
     container.innerHTML = [
-        card('估值区间', z.label, z.color, ['近' + pit.window_years + '年 P' + (pct != null ? Math.round(pct) : '--'), sigText].filter(Boolean).join('<br>'), 1.8),
+        card('估值区间', z.label, z.color, ['近' + pit.window_years + '年 P' + (pct != null ? Math.round(pct) : '--') +
+             (pit.current_zone_days ? ' · 已持续 ' + pit.current_zone_days + ' 个交易日' : ''), sigText].filter(Boolean).join('<br>'), 1.8),
         card('当前 ERP', (stats.current != null ? stats.current : '--') + '%', z.color),
         card('距危险线', buf == null ? '--' : ((buf >= 0 ? '+' : '') + buf + 'pp'), bufColor,
              '危险线 ' + (pit.danger_line ?? '--') + '%' + (pit.floor_binding ? ' (绝对下限)' : '')),
@@ -942,7 +944,7 @@ function renderERPChartKPIs(stats, signalData, episodes) {
     const curEp = (episodes || []).find(ep => ep.ongoing);
     let zoneSub = '';
     if (zone.key === 'strong' && curEp) {
-        zoneSub = '已持续 ' + curEp.n + ' 个数据点 · 高出强买线 ' + gap.toFixed(2) + 'pp';
+        zoneSub = '已持续约 ' + (curEp.n * 3) + ' 个交易日 (' + curEp.n + ' 个采样点) · 高出强买线 ' + gap.toFixed(2) + 'pp';
     } else if (gap != null) {
         zoneSub = '距强买线 ' + (gap >= 0 ? '+' : '') + gap.toFixed(2) + 'pp';
     }

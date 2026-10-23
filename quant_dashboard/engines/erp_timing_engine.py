@@ -1142,8 +1142,23 @@ class ERPTimingEngine:
                     "zone": zones,
                 }
                 last = bands.iloc[-1]
-                valid_z = bands['zone'].dropna()
+                # 历史占比只统计"已满 ERP_WINDOW 窗口"的点 (口径一致); 不足时退回全部有效点并标注
+                full_z = bands.loc[bands['full_window'].astype(bool), 'zone'].dropna()
+                valid_z = full_z if len(full_z) else bands['zone'].dropna()
+                share_basis = "full_window" if len(full_z) else "partial_window"
+                share_since = (erp_df.loc[valid_z.index[0], 'trade_date'].strftime('%Y-%m-%d')
+                               if len(valid_z) else None)
                 share = {k: round(float((valid_z == k).mean() * 100), 1) for k in ("strong", "over", "neutral", "under", "danger")} if len(valid_z) else {}
+                # 区间段落按"日频交易日"统计 (图表数据每 3 个交易日采样一点, 不宜用来计时长)
+                d_dates = erp_df['trade_date'].dt.strftime('%Y-%m-%d').tolist()
+                d_zones = [z if isinstance(z, str) else None for z in bands['zone']]
+                cur_z = last['zone'] if isinstance(last['zone'], str) else None
+                cur_days = 0
+                if cur_z:
+                    for z in reversed(d_zones):
+                        if z != cur_z:
+                            break
+                        cur_days += 1
                 pit = {
                     "window_days": int(erp_params.ERP_WINDOW),
                     "window_years": round(erp_params.ERP_WINDOW / 252, 1),
@@ -1157,9 +1172,13 @@ class ERPTimingEngine:
                     "strong_buy_line": None if pd.isna(last['strong']) else round(float(last['strong']), 2),
                     "anchor": None if pd.isna(last['anchor']) else round(float(last['anchor']), 2),
                     "zone_share_pct": share,
-                    "danger_episodes": zone_episodes(zones, dates, "danger"),
-                    "under_episodes": zone_episodes(zones, dates, "under"),
-                    "strong_episodes": zone_episodes(zones, dates, "strong"),
+                    "zone_share_basis": share_basis,
+                    "zone_share_since": share_since,
+                    "current_zone_days": cur_days,
+                    "episode_unit": "trading_days",
+                    "danger_episodes": zone_episodes(d_zones, d_dates, "danger", merge_gap=5),
+                    "under_episodes": zone_episodes(d_zones, d_dates, "under", merge_gap=5),
+                    "strong_episodes": zone_episodes(d_zones, d_dates, "strong", merge_gap=5),
                 }
                 if pit["danger_line"] is not None:
                     pit["buffer_to_danger_pp"] = round(erp_current - pit["danger_line"], 2)

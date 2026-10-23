@@ -33,6 +33,8 @@ def compute_erp_pit_bands(erp: pd.Series, window: int = 1008, abs_floor: float =
     strong   : max(P80, over)                — 高于此线 (且高于中枢) = 强买
     anchor   : 扩展窗口 ERP 中位数 (长期中枢)
     zone     : 五档之一; 历史不足 min_periods 时为 None (不做判定)
+    full_window : 当日之前已满 window 个有效观测 (统计"历史占比"时只用这些点,
+                  避免样本前段 252~1007 天的短窗口分位混入, 口径不一致)
     """
     s = pd.to_numeric(erp, errors="coerce").astype(float)
     window = int(window)
@@ -56,8 +58,11 @@ def compute_erp_pit_bands(erp: pd.Series, window: int = 1008, abs_floor: float =
     zone[valid & (s < under)] = "under"
     zone[valid & (((s < danger) & (s < anchor)) | (s < abs_floor))] = "danger"   # 最高优先级
 
+    full_window = s.rolling(window, min_periods=1).count() >= window
+
     return pd.DataFrame({"pct": pct, "danger": danger, "under": under, "over": over,
-                         "strong": strong, "anchor": anchor, "zone": zone}, index=s.index)
+                         "strong": strong, "anchor": anchor, "zone": zone,
+                         "full_window": full_window}, index=s.index)
 
 
 def zone_episodes(zones, dates, key: str, merge_gap: int = 3) -> list[dict]:

@@ -68,3 +68,17 @@ def test_zone_episodes_merge_short_gaps():
     assert len(eps) == 2
     assert eps[0]["start"] == "d0" and eps[0]["end"] == "d3" and eps[0]["points"] == 3
     assert eps[1]["ongoing"] is True
+
+
+def test_full_window_flag_marks_only_complete_windows():
+    s = _series(1300)
+    b = compute_erp_pit_bands(s, window=1008, abs_floor=3.0)
+    assert not b["full_window"].iloc[:1007].any()
+    assert b["full_window"].iloc[1007:].all()
+
+
+def test_episodes_count_trading_days_on_daily_zones():
+    zones = ["danger"] * 10 + ["neutral"] * 2 + ["danger"] * 5
+    dates = [f"d{i}" for i in range(len(zones))]
+    eps = zone_episodes(zones, dates, "danger", merge_gap=5)
+    assert len(eps) == 1 and eps[0]["points"] == 15 and eps[0]["ongoing"] is True
