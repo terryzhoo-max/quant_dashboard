@@ -6,6 +6,8 @@ POST /api/v1/portfolio/trailing-stops/{code}/rebaseline   遗留持仓重新基�
 POST /api/v1/portfolio/trailing-stops/{code}/sleeve       core / satellite
 POST /api/v1/portfolio/trailing-stops/{code}/ack          台账外已执行的分批止盈手动确认
 POST /api/v1/portfolio/trailing-stops/{code}/anchor       人工设定建仓日 (成交记录超出通达信 60 天导出范围时)
+GET  /api/v1/portfolio/drawdown                  组合级回撤: 实盘净值 / 分档刹车 / 前瞻 MDD / 预算仓位
+POST /api/v1/portfolio/drawdown/baseline         重设回撤基准 (必须填写理由, 留痕; date 为空 = 撤销)
 POST /api/v1/portfolio/trades/import             导入通达信历史成交 .txt (GBK/UTF-8, 幂等去重)
 POST /api/v1/portfolio/trades/scan               扫描 data_lake/trade_imports 文件夹, 自动累积
 GET  /api/v1/portfolio/trades                    成交台账
@@ -58,7 +60,8 @@ async def get_trailing_stops():
         from services.trailing_stop_service import ensure_prices_async, get_report
         data = await asyncio.to_thread(get_report)        # 只读; 仅在出现未提交的新收盘时补跑日终
         # 缺行情 / 行情滞后的持仓 → 后台增量同步, 页面不等待
-        data["price_sync"] = ensure_prices_async(data.get("price_sync_needed") or [])
+        data["price_sync"] = ensure_prices_async((data.get("price_sync_needed") or [])
+                                                 + (data.get("price_sync_history") or []))
         return R.ok(data)
     except Exception as e:
         logger.exception("trailing-stops failed")
@@ -112,6 +115,32 @@ async def post_anchor(ts_code: str, body: AnchorBody):
         return R.ok(data, "建仓日已设定 (已写入审计日志)")
     except ValueError as e:
         return R.error(str(e), "ERR_ANCHOR")
+
+
+@router.get("/drawdown")
+async def get_drawdown():
+    try:
+        from services.trailing_stop_service import build_report
+        data = await asyncio.to_thread(build_report)
+        return R.ok(data.get("drawdown") or {})
+    except Exception as e:
+        logger.exception("drawdown failed")
+        return R.error(str(e), "ERR_DRAWDOWN")
+
+
+@router.post("/drawdown/baseline")
+async def post_drawdown_baseline(body: AnchorBody):
+    try:
+        from services.trailing_stop_service import clear_drawdown_baseline, set_drawdown_baseline
+        if not body.date.strip():
+            data = await asyncio.to_thread(clear_drawdown_baseline)
+            _clear_cache()
+            return R.ok(data, "已撤销回撤基准, 恢复按实盘高水位计算")
+        data = await asyncio.to_thread(set_drawdown_baseline, body.date.strip(), body.reason)
+        _clear_cache()
+        return R.ok(data, "回撤基准已重设 (已写入审计日志)")
+    except ValueError as e:
+        return R.error(str(e), "ERR_DD_BASELINE")
 
 
 @router.post("/trades/scan")

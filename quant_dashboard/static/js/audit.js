@@ -562,15 +562,22 @@ function extractKPIs(data) {
     const sh = data.modules?.strategy_health;
     if (sh) {
         const stratChecks = sh.checks?.filter(c => c.name !== 'Regime 三态参数') || [];
-        let maxAge = 0, oldestName = '';
+        // 等级以后端各策略差异化 TTL + 质量折算后的 status 为准 (红利90/180天, ERP180/360天...),
+        // 不再用前端硬编码的 30/60 天统一阈值; 展示最需关注的策略 (状态最差, 同级取最旧)
+        const rank = { pass: 0, warn: 1, fail: 2 };
+        let maxAge = 0, oldestName = '', aLevel = 'pass';
         for (const c of stratChecks) {
             const m = c.detail?.match(/(\d+)天前/);
-            if (m) { const a = parseInt(m[1]); if (a > maxAge) { maxAge = a; oldestName = c.name; } }
+            if (!m) continue;
+            const a = parseInt(m[1]);
+            const lv = rank[c.status] !== undefined ? c.status : 'fail';
+            if (!oldestName || rank[lv] > rank[aLevel] || (rank[lv] === rank[aLevel] && a > maxAge)) {
+                maxAge = a; oldestName = c.name; aLevel = lv;
+            }
         }
-        const aLevel = maxAge <= 30 ? 'pass' : (maxAge <= 60 ? 'warn' : 'fail');
         kpis.push({
             label: '⚙️ 参数新鲜', value: `${maxAge}天`, numericValue: maxAge, suffix: '天',
-            sub: `最旧: ${oldestName || '全部就绪'}`, level: aLevel,
+            sub: oldestName ? `${aLevel === 'pass' ? '最旧' : '最需关注'}: ${oldestName}` : '最旧: 全部就绪', level: aLevel,
             indicator: aLevel === 'pass' ? '● 有效' : (aLevel === 'warn' ? '◐ 建议优化' : '○ 需重优化'),
         });
     }

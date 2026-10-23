@@ -1027,10 +1027,9 @@ def compute_from_store(store: Optional[Mapping[str, Any]] = None,
         except Exception as e:
             return {"status": "empty", "message": f"持仓文件不可读: {e}"}
     positions = store.get("positions", {}) or {}
-    total = store.get("broker_total_asset") or 0
-    if not total:
-        mv = sum(float(p.get("broker_market_value", 0) or 0) for p in positions.values())
-        total = mv + float(store.get("cash", 0) or 0)
+    # 2026-10-23: 总资产 = 持仓市值 + 可用资金 (券商「资产」字段口径不稳定, 可能漏计当日卖出资金)
+    mv = sum(float(p.get("broker_market_value", 0) or 0) for p in positions.values())
+    total = mv + float(store.get("cash", 0) or 0) if mv > 0 else (store.get("broker_total_asset") or 0)
     cfg = load_portfolio_vol_config()
     asof = date.today()
     ttl = float(cfg.get("cache_ttl_seconds") or 0)
@@ -1128,13 +1127,15 @@ def _verdict(gap, effective, portfolio) -> tuple[str, str, str]:
 def build_decision_view(market: Optional[Mapping[str, Any]],
                         portfolio: Optional[Mapping[str, Any]],
                         aiae_ctx: Optional[Mapping[str, Any]],
-                        enforce: Optional[bool] = None) -> dict:
+                        enforce: Optional[bool] = None,
+                        drawdown: Optional[Mapping[str, Any]] = None) -> dict:
     """把三层约束合成一个可执行结论.
 
     上限瀑布:
       AIAE 矩阵上限 (base_cap)
         × 市场尾部刹车系数              → 波动调整后上限
-        ∧ 组合波动预算 (目标/结构波动)  → 有效上限 = 两者取小
+        ∧ 组合波动预算 (目标/结构波动)
+        ∧ 组合回撤刹车 (可选, 仅在分档触发时) → 有效上限 = 取最严
       vs 实际仓位 → 偏离 → 结论 (同时检查单票上限)
 
     原则: 上限是天花板, 不是目标。低于上限不构成买入理由, 加仓仍需信号确认。
@@ -1159,6 +1160,10 @@ def build_decision_view(market: Optional[Mapping[str, Any]],
         candidates["aiae_vol"] = vol_adj_cap
     if pf_cap is not None:
         candidates["portfolio_budget"] = pf_cap
+    dd = dict(drawdown or {})
+    dd_cap = _num(dd.get("cap_pct")) if dd.get("tier") else None
+    if dd_cap is not None:
+        candidates["drawdown_brake"] = dd_cap
     binding = min(candidates, key=candidates.get) if candidates else None
     effective = round(candidates[binding], 1) if binding else None
 
@@ -1172,6 +1177,9 @@ def build_decision_view(market: Optional[Mapping[str, Any]],
         {"key": "portfolio", "label": "∧ 组合波动预算", "value": pf_cap,
          "note": (f"目标 {portfolio.get('target_vol', 0) * 100:.0f}% ÷ 结构波动 {portfolio.get('sleeve_vol', 0) * 100:.0f}%"
                   if pf_cap is not None else "无持仓数据")},
+        *([{"key": "drawdown", "label": "∧ 组合回撤刹车", "value": dd_cap,
+            "note": (f"净值回撤 {abs(_num(dd.get('dd')) or 0) * 100:.1f}% · {dd.get('label') or ''}" if dd_cap is not None
+                     else f"净值回撤 {abs(_num(dd.get('dd')) or 0) * 100:.1f}%, 未触发")}] if dd else []),
         {"key": "effective", "label": "= 有效上限", "value": effective, "note": "取最严约束"},
         {"key": "actual", "label": "实际仓位", "value": actual,
          "note": f"截至 {portfolio.get('as_of')}" if portfolio.get("as_of") else ""},
@@ -1180,7 +1188,8 @@ def build_decision_view(market: Optional[Mapping[str, Any]],
     gap = round(actual - effective, 1) if actual is not None and effective is not None else None
     level, verdict, instruction = _verdict(gap, effective, portfolio)
 
-    binding_label = {"aiae_vol": "AIAE × 市场刹车", "portfolio_budget": "组合波动预算"}.get(binding, "—")
+    binding_label = {"aiae_vol": "AIAE × 市场刹车", "portfolio_budget": "组合波动预算",
+                     "drawdown_brake": "组合回撤刹车"}.get(binding, "—")
     target = _num(portfolio.get("target_vol"))
     caveats = []
     if not enforce:

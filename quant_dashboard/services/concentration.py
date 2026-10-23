@@ -161,8 +161,10 @@ def compute_concentration(store: Mapping[str, Any],
             continue
         theme, basis = classify_theme(code, p.get("name", ""), industry_map, overrides)
         rows.append({"ts_code": code, "name": p.get("name", code), "value": mv, "theme": theme, "basis": basis})
-    if not total_asset:
-        total_asset = sum(r["value"] for r in rows) + float((store or {}).get("cash", 0) or 0)
+    # 2026-10-23: 总资产以 持仓市值+可用资金 为准 (券商「资产」字段可能漏计当日卖出资金)
+    _computed = sum(r["value"] for r in rows) + float((store or {}).get("cash", 0) or 0)
+    if _computed > 0:
+        total_asset = _computed
 
     equity = sum(r["value"] for r in rows if r["theme"] not in NON_EQUITY_THEMES)
     if equity <= 0:

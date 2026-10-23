@@ -221,8 +221,19 @@ def warmup_hk_erp_cache():
             raise Exception(f"HK ERP {mkt} warmup failed: {status}")
 
 
+_LAST_HK_AIAE_WARM_TS = 0.0
+_HK_AIAE_DEDUP_SEC = 15 * 60
+
+
 def warmup_hk_aiae_cache():
-    """预热 HK AIAE 引擎"""
+    """预热 HK AIAE 引擎
+
+    2026-10-23: 启动时 Global_AIAE 刚算完 HK (约 80s), 紧接着这里又 refresh()+全量重算一次.
+    15 分钟内已有成功结果则跳过, 避免重复拉取 yfinance/Tushare.
+    """
+    if time.time() - _LAST_HK_AIAE_WARM_TS < _HK_AIAE_DEDUP_SEC:
+        logger.info("HK AIAE 预热跳过 · %d 秒前已由 Global AIAE 计算", int(time.time() - _LAST_HK_AIAE_WARM_TS))
+        return
     from aiae_hk_engine import get_hk_aiae_engine
     engine = get_hk_aiae_engine()
     engine.refresh()
@@ -263,6 +274,9 @@ def warmup_global_aiae_cache():
         us_report = us_engine.generate_report()
         jp_report = jp_engine.generate_report()
         hk_report = hk_engine.generate_report()
+        if hk_report.get('status') in ('success', 'fallback'):
+            global _LAST_HK_AIAE_WARM_TS
+            _LAST_HK_AIAE_WARM_TS = time.time()
         cn_aiae_v1, cn_regime = 22.0, 3
         try:
             cn_engine = get_aiae_engine()

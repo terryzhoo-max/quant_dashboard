@@ -20,6 +20,7 @@ AlphaCore · 跟踪止盈执行闭环 (I/O 编排层)
 from __future__ import annotations
 
 import copy
+import math
 import hashlib
 import json
 import os
@@ -29,6 +30,7 @@ from typing import Any, Callable, Mapping, Optional
 
 import pandas as pd
 
+from services import drawdown_service as _dds
 from services.logger import get_logger
 from services.trade_import import closed_round_trips, load_ledger, reconcile_positions
 from services.trailing_stop import (
@@ -343,7 +345,7 @@ def build_report(*, store: Optional[Mapping[str, Any]] = None, ledger: Optional[
     for r in rows:
         r["weight"] = round((r.get("market_value") or 0) / total_mv, 4)
 
-    equity = float(store.get("broker_total_asset") or 0) or (total_mv + float(store.get("cash") or 0))
+    equity, cash, equity_basis = _dds.marked_equity(store, sum(r.get("market_value") or 0 for r in rows))
     heat = portfolio_heat(rows, equity, cfg)
     adds = averaging_down(trades, holdings, store.get("import_date"),
                           breaches={r["ts_code"]: r.get("first_breach") for r in rows if r.get("first_breach")})
@@ -352,6 +354,8 @@ def build_report(*, store: Optional[Mapping[str, Any]] = None, ledger: Optional[
             r["reunderwrite"] = reunderwrite_preview(r, equity, cfg)
     reentry = reentry_watch(trades, holdings, loader, cfg, today)
     corr = correlation_risk(rows, loader)
+    ddm = _dds.section(holdings=holdings, trades=trades, loader=loader, store=store, state=state, cfg=cfg,
+                       equity=equity, invested_value=sum(r.get("market_value") or 0 for r in rows), rows=rows)
 
     summary: dict[str, int] = {}
     for r in rows:
@@ -382,14 +386,19 @@ def build_report(*, store: Optional[Mapping[str, Any]] = None, ledger: Optional[
         "summary": summary,
         "at_risk_market_value": round(at_risk_mv, 2),
         "equity": round(equity, 2),
+        "equity_basis": {"basis": equity_basis, "cash": round(cash, 2) if cash is not None else None,
+                         "broker_total_asset": store.get("broker_total_asset"), "snapshot_date": store.get("import_date"),
+                         "note": "总资产 = 最新收盘持仓市值 + 快照现金 (同一时点口径)"},
         "heat": heat,
         "correlation": corr,
+        "drawdown": ddm,
         "averaging_down": adds,
         "reentry": reentry,
         "positions": rows,
         "orders": orders,
         "price_sync_needed": [r["ts_code"] for r in rows
                               if r.get("status") == "NO_DATA" or (r.get("data_lag_days") or 0) > 1],
+        "price_sync_history": [c for c in (ddm.get("missing_prices") or []) if c not in holdings],
         "ledger": {
             **ledger_freshness(ledger, today),
             "trades": len(trades),
@@ -433,6 +442,7 @@ def _snapshot_of(report: Mapping[str, Any]) -> dict:
         "regime": report.get("regime"), "summary": report.get("summary"), "heat": report.get("heat"),
         "correlation": {k: (report.get("correlation") or {}).get(k) for k in ("avg_corr", "n_eff", "n")},
         "meta": report.get("meta"),
+        "drawdown": _dd_brief(report.get("drawdown")),
         "positions": [{k: r.get(k) for k in keys} for r in report.get("positions", [])],
     }
 
@@ -499,6 +509,7 @@ def commit_eod(report: Mapping[str, Any], *, regime: str, today: str) -> None:
             fp = fresh["positions"].setdefault(r["ts_code"], {})
             fp["published"] = {"anchor": r.get("anchor_date"), "date": r.get("as_of"),
                                "ratio": round(float(r["stop"]) / float(r["close"]), 6)}
+        _dds.publish(fresh, report.get("drawdown"), report["as_of"])
         fresh["last_eod"] = {"as_of": report["as_of"], "at": datetime.now().isoformat(timespec="seconds"),
                              "config_hash": (report.get("meta") or {}).get("config_hash")}
         save_state(fresh)
@@ -516,6 +527,9 @@ def commit_eod(report: Mapping[str, Any], *, regime: str, today: str) -> None:
             "as_of": report["as_of"], "generated_at": report.get("generated_at"),
             "positions": [{k: r.get(k) for k in ("ts_code", "name", "status", "stop", "close")} for r in rows],
         }, ttl_seconds=24 * 3600)
+        brief = _dd_brief(report.get("drawdown"))
+        if brief:
+            cache_manager.set_json("drawdown_brake", {**brief, "as_of": report["as_of"]}, ttl_seconds=30 * 24 * 3600)  # 长 TTL: 过期由合规层按 as_of 判定, 不静默消失
     except Exception:
         pass
     logger.info("跟踪止盈日终提交 · as_of %s · %s", report["as_of"], report.get("summary"))
@@ -561,6 +575,7 @@ def build_actions(report: Mapping[str, Any]) -> list[dict]:
                                     f"若保留: 新止损 {ru.get('new_stop')} (−{(ru.get('stop_distance_pct') or 0):.0%}), "
                                     f"风险预算内最多 {ru.get('max_qty')} 股"
                                     + (f", 需减 {ru.get('reduce_qty')} 股" if ru.get("reduce_qty") else ""))})
+    acts.extend(_drawdown_actions(report.get("drawdown") or {}))
     for r in rows:
         if r.get("status") == "ACTION" and r.get("pending_partial"):
             pp = r["pending_partial"]
@@ -594,8 +609,22 @@ def build_actions(report: Mapping[str, Any]) -> list[dict]:
     if report.get("price_sync_needed"):
         acts.append({"priority": 6, "type": "SYNC", "title": f"{len(report['price_sync_needed'])} 只持仓行情缺失或滞后",
                      "detail": "已触发后台同步; 未补齐前相关结论可能过时"})
+    if report.get("price_sync_history"):
+        acts.append({"priority": 6, "type": "SYNC", "title": f"{len(report['price_sync_history'])} 只已清仓标的缺行情",
+                     "detail": "组合净值按其卖出前的持仓计算, 缺行情的日子按 0 收益处理, 回撤读数可能偏乐观; 已触发后台同步"})
     acts.sort(key=lambda a: (a["priority"], -(a.get("value") or 0)))
     return acts
+
+
+# ═══════════════════════════════════════════════════════
+#  组合级回撤: 编排在 services/drawdown_service.py (此处保留旧名, 兼容调用方)
+# ═══════════════════════════════════════════════════════
+
+derisk_plan = _dds.derisk_plan
+_dd_brief = _dds.brief
+_drawdown_actions = _dds.actions
+set_drawdown_baseline = _dds.set_baseline
+clear_drawdown_baseline = _dds.clear_baseline
 
 
 # ═══════════════════════════════════════════════════════
@@ -977,6 +1006,9 @@ def scan_and_alert(report: Optional[dict] = None, *, push: bool = True) -> list[
             fired.append({"rule_id": f"trailing_{status.lower()}", "severity": sev, "icon": icon,
                           "title": title, "detail": detail, "value": r.get("close") or 0})
             sent[r["ts_code"]] = key
+        dd_alert = _dds.alert(report.get("drawdown"), sent)
+        if dd_alert:
+            fired.append(dd_alert)
         if fired:
             save_state(st)
     if not fired:
@@ -1007,6 +1039,12 @@ def daily_job() -> dict:
     except Exception as e:
         scanned = {"error": str(e)}
     sync = sync_prices(codes) if codes else {}
+    try:
+        led_codes = sorted({t["ts_code"] for t in load_ledger().get("trades", [])} - set(codes))
+        if led_codes:
+            sync_prices(led_codes)            # 已清仓标的: 组合净值回溯需要其行情
+    except Exception as e:
+        logger.warning("历史标的行情同步失败: %s", e)
     report = build_report(store=store, persist=True)        # 日终: 计算 + 提交 (唯一写入方)
     fired = scan_and_alert(report)
     try:

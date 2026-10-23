@@ -55,5 +55,40 @@
   "risk": {
     "per_position_pct": 0.02,
     "heat_limit_pct": 0.12
+  },
+  "drawdown": {
+    "_comment": "组合级回撤刹车 (剔除资金进出的时间加权净值, 收盘确认)。校准见 docs/drawdown_control.md; 改档位前请重跑校准, 不要追单点最优。",
+    "tiers": [
+      {
+        "dd": 0.12,
+        "cap": 75,
+        "label": "一档 · 禁止加仓",
+        "no_add": true
+      },
+      {
+        "dd": 0.2,
+        "cap": 50,
+        "label": "二档 · 降至 50%"
+      },
+      {
+        "dd": 0.28,
+        "cap": 25,
+        "label": "三档 · 降至 25%"
+      }
+    ],
+    "rerisk_recover": 0.5,
+    "gz": {
+      "dmax": 0.25,
+      "m": 2.0
+    },
+    "forecast": {
+      "horizon": 250,
+      "block": 20,
+      "sims": 2000,
+      "lookback": 250,
+      "seed": 7,
+      "demean": true,
+      "ewma_lambda": 0.94
+    }
   }
 }

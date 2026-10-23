@@ -67,7 +67,7 @@ ETF_NAME = "沪深300ETF"
 IN_SAMPLE_START  = "20180101"
 IN_SAMPLE_END    = "20231231"
 OUT_SAMPLE_START = "20240101"
-OUT_SAMPLE_END   = "20251231"
+OUT_SAMPLE_END   = datetime.now().strftime("%Y%m%d")  # 滚动至今: 样本外覆盖最新行情
 
 # 宏观数据提前拉取期 (给ERP分位足够回溯窗口)
 MACRO_PRE_FETCH  = "20150101"

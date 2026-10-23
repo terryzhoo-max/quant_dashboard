@@ -1,5 +1,6 @@
 """AlphaCore 共享缓存容器 — 跨模块状态管理"""
 from datetime import datetime
+from services.market_clock import CN_TZ
 
 
 def get_cache_ttl() -> int:
@@ -9,7 +10,7 @@ def get_cache_ttl() -> int:
     缓存不应在无刷新机制时自行过期，否则页面降级为 Fallback 假数据，
     导致信号方向误导 (e.g. 真实 Regime=4/Cap=44% 显示为 Regime=3/Cap=65%)。
     """
-    now = datetime.now()
+    now = datetime.now(CN_TZ).replace(tzinfo=None)  # A 股时段按北京时间判断
     weekday = now.weekday()
     if weekday >= 5:
         return 259200   # 72h: 覆盖整个周末到 Monday 08:30
@@ -24,7 +25,7 @@ def get_cache_ttl() -> int:
 
 def get_global_aiae_ttl() -> int:
     """海外 AIAE TTL: 盘中15分钟 / 盘后6小时 / 周末24小时"""
-    now = datetime.now()
+    now = datetime.now(CN_TZ).replace(tzinfo=None)  # A 股时段按北京时间判断
     weekday = now.weekday()
     if weekday >= 5:
         return 86400

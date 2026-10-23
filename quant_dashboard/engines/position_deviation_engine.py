@@ -93,10 +93,19 @@ class PositionDeviationEngine:
         total_asset = portfolio.get("broker_total_asset", 0)
         total_mv = portfolio.get("broker_ref_market_value", 0)
 
-        if total_asset <= 0:
-            # 手动计算
-            total_mv = sum(p.get("broker_market_value", 0) for p in positions.values())
-            total_asset = total_mv + cash
+        # 2026-10-23: 总资产自洽校验.
+        # 通达信导出的「资产」字段口径不稳定: 有时 = 参考市值 + 可用, 有时 = 参考市值 + 余额
+        # (当日卖出资金只进入「可用」不进「余额」). 例: 10-23 导出 资产=1,472,315 ≈ 市值+18 元,
+        # 漏掉了 50,105 元可用资金, 使实际仓位被算成 100.0% (真实 96.7%).
+        # 规则: 以 持仓市值合计 + 可用资金 为准; 券商字段只在两者差异 <0.5% 时采用。
+        pos_mv = sum(p.get("broker_market_value", 0) for p in positions.values())
+        if pos_mv > 0:
+            total_mv = pos_mv
+        computed_asset = total_mv + cash
+        if total_asset <= 0 or (computed_asset > 0 and abs(total_asset - computed_asset) / computed_asset > 0.005):
+            if total_asset > 0:
+                _log(f"券商总资产 {total_asset:,.0f} 与 市值+可用 {computed_asset:,.0f} 不一致, 采用后者", "WARN")
+            total_asset = computed_asset
 
         # 1. 实际仓位
         actual_position_pct = (total_mv / total_asset * 100) if total_asset > 0 else 0

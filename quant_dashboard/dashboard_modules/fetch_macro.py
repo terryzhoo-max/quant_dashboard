@@ -11,6 +11,7 @@ import json
 from datetime import datetime, timedelta
 from typing import Tuple, Optional
 from services.fred_guard import fred_get_series
+from services.market_clock import CN_TZ
 
 logger = logging.getLogger("alphacore.fetch_macro")
 
@@ -53,7 +54,7 @@ def _load_vix_disk(max_age_hours: int = 72) -> Optional[Tuple[float, float]]:
 def fetch_vix_for_dashboard() -> Tuple[float, float]:
     """Fetch VIX from observable sources or a bounded last-known-good cache."""
     # V6.0: 周末/节假日直接使用磁盘缓存 (VIX 不更新, 无需请求外部源)
-    if datetime.now().weekday() >= 5:
+    if datetime.now(CN_TZ).replace(tzinfo=None).weekday() >= 5:  # 周末按北京时间判断
         disk = _load_vix_disk(max_age_hours=96)  # 周末容忍4天
         if disk:
             return disk
@@ -372,10 +373,27 @@ def _fetch_cny_ecb() -> Optional[Tuple[float, str]]:
         return None
 
 
+def _cny_disk_observation() -> Optional[Tuple[float, str, str]]:
+    """读取磁盘缓存的 (rate, observed_at, source), 校验观测日期与取值范围。"""
+    try:
+        if not _os.path.exists(_CNY_CACHE_PATH):
+            return None
+        with open(_CNY_CACHE_PATH) as f:
+            data = json.load(f)
+        observed_at = str(data.get("observed_at", data.get("timestamp")))
+        age = _cny_observation_age_hours(observed_at)
+        rate = float(data["rate"])
+        if age is None or age > _CNY_MAX_SOURCE_AGE_HOURS or not 5.0 < rate < 9.0:
+            return None
+        return rate, observed_at, str(data.get("source", "legacy"))
+    except Exception:
+        return None
+
+
 def fetch_cny_for_dashboard() -> float:
     """Fetch USD/CNY from an observable source or bounded last-known-good cache."""
     # 1. 周末/节假日直接使用磁盘缓存 (CNY 不更新)
-    if datetime.now().weekday() >= 5:
+    if datetime.now(CN_TZ).replace(tzinfo=None).weekday() >= 5:  # 周末按北京时间判断
         disk = _load_cny_disk(max_age_hours=96)  # 周末容忍4天
         if disk is not None:
             return disk
@@ -413,6 +431,19 @@ def fetch_cny_for_dashboard() -> float:
     # 4. FRED 官方日频汇率回退。严格校验源观测日期，不能把旧值通过
     # 重新写缓存伪装成新数据。
     fred_result = _fetch_cny_fred()
+    # ECB 临时超时时, FRED (美方日频, 通常滞后数日) 可能比上一次成功的 ECB 观测更旧。
+    # 取观测日期更新的那一个, 避免汇率在新旧观测之间来回跳动。
+    if fred_result is not None:
+        disk_obs = _cny_disk_observation()
+        if disk_obs is not None:
+            fred_age = _cny_observation_age_hours(fred_result[1])
+            disk_age = _cny_observation_age_hours(disk_obs[1])
+            if disk_age is not None and (fred_age is None or disk_age < fred_age):
+                logger.info(
+                    "CNY: 主源暂不可用, 使用更新的缓存观测 rate=%.4f observed_at=%s (source=%s), 而非更旧的 FRED 观测 %s",
+                    disk_obs[0], disk_obs[1], disk_obs[2], fred_result[1],
+                )
+                return disk_obs[0]
     if fred_result is not None:
         rate, observed_at = fred_result
         logger.info(

@@ -113,10 +113,10 @@
     function renderRuler(v) {
         const steps = Object.fromEntries((v.waterfall || []).map((s) => [s.key, s]));
         const eff = num(v.effective_cap_pct), act = num(v.actual_pct);
-        const bind = v.verdict?.binding === 'portfolio_budget' ? 'portfolio' : v.verdict?.binding === 'aiae_vol' ? 'market' : null;
+        const bind = { portfolio_budget: 'portfolio', aiae_vol: 'market', drawdown_brake: 'drawdown' }[v.verdict?.binding] || null;
         // 同值约束合并成一个标记 (如 AIAE 60% 未被刹车压低时 "AIAE = 刹车后 60%"), 相邻标记错行避免重叠
         const groups = [];
-        [['aiae', 'AIAE'], ['market', '刹车后'], ['portfolio', '波动预算']].forEach(([k, short]) => {
+        [['aiae', 'AIAE'], ['market', '刹车后'], ['portfolio', '波动预算'], ['drawdown', '回撤刹车']].forEach(([k, short]) => {
             const val = num(steps[k]?.value);
             if (val == null) return;
             const g = groups.find((x) => Math.abs(x.val - val) < 0.05);

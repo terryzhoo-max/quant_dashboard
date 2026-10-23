@@ -84,7 +84,9 @@ def _setup_handler():
 def _setup_file_handler():
     """P4: 文件日志轮转 — 持久化日志用于事后审计"""
     from logging.handlers import RotatingFileHandler
-    log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
+    # 2026-10-23: 允许用 ALPHACORE_LOG_DIR 重定向 (pytest 设为临时目录, 避免测试日志混入生产日志)
+    log_dir = os.environ.get("ALPHACORE_LOG_DIR") or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, "alphacore.log")
     handler = RotatingFileHandler(

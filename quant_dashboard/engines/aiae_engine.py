@@ -1343,7 +1343,9 @@ class AIAEEngine:
             except Exception as e:
                 _log(f"因子趋势记录失败 (non-fatal): {e}", "WARN")
 
-            _log(f"报告生成完成 ({time.time()-t0:.1f}s) | AIAE={aiae_v1}% Regime={regime} Pos={matrix_position}%")
+            _basis = aiae_simple if getattr(AP, 'V5_ENABLED', False) else aiae_v1
+            _log(f"报告生成完成 ({time.time()-t0:.1f}s) | AIAE_V1={aiae_v1}% 分档依据={_basis}% "
+                 f"({'V5_simple' if getattr(AP, 'V5_ENABLED', False) else 'V3_composite'}) Regime={regime} Pos={matrix_position}%")
 
             # C1: 收集数据过期告警 + 数据质量评分
             stale_warnings = []

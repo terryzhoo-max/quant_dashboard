@@ -62,3 +62,45 @@ def test_audit_fails_when_any_regime_is_stale():
     check = next(check for check in result["checks"] if check["name"] == "均值回归")
     assert check["status"] == "fail"
     assert check["score"] == 40
+
+
+def _run_audit(lifecycle, caps=None):
+    caps = caps if caps is not None else {"BEAR": 0, "RANGE": 80, "BULL": 35, "CRASH": 0}
+    runtime = {"strategies": {"mr": {"position_caps": caps}}}
+    with patch(
+        "services.strategy_params.get_all_mr_lifecycle", return_value=lifecycle
+    ), patch(
+        "services.strategy_params.load_runtime_config", return_value=runtime
+    ):
+        result = audit_engine.audit_strategy_health()
+    return result, next(c for c in result["checks"] if c["name"] == "均值回归")
+
+
+def test_audit_treats_gated_unvalidated_regimes_as_controlled_disable():
+    """insufficient_evidence with entries blocked is fail-closed, not a failure."""
+    lifecycle = _validated_lifecycle()
+    lifecycle["BEAR"].update({"status": "rejected", "allow_new_entries": False})
+    for state in ("RANGE", "BULL"):
+        lifecycle[state].update({
+            "status": "insufficient_evidence",
+            "allow_new_entries": False,
+        })
+    result, check = _run_audit(lifecycle)
+
+    assert check["status"] == "warn"
+    assert check["score"] == 70
+    assert "闸门关闭" in check["detail"]
+    assert (result.get("circuit_breaker") or {}).get("reason") != "核心路径联锁"
+
+
+def test_audit_fails_when_unvalidated_regime_still_allows_entries():
+    lifecycle = _validated_lifecycle()
+    lifecycle["RANGE"].update({
+        "status": "insufficient_evidence",
+        "allow_new_entries": True,
+    })
+    _, check = _run_audit(lifecycle)
+
+    assert check["status"] == "fail"
+    assert check["score"] == 20
+

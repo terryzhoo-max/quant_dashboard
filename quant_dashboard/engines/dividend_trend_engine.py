@@ -28,6 +28,7 @@ import time
 import logging
 from datetime import datetime, timedelta
 import traceback
+from typing import Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from services.health_status import evaluate_aiae_context
 from services.strategy_params import get_position_cap
@@ -129,49 +130,115 @@ _DIVIDEND_D_TTM_FALLBACK = {
     '159201.SZ': 0.055,
 }
 
-def _fetch_ttm_dividends() -> dict:
-    """从 Tushare 获取 ETF 近12个月累计分红 (24h缓存)"""
+_TTM_DISK_CACHE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                               "data_lake", "div_ttm_cache.json")
+_TTM_MAX_AGE = timedelta(hours=24)
+_TTM_MAX_YIELD_PCT = 15.0   # 宽基/红利 ETF 股息率 >15% 视为数据错误
+_ttm_lock = __import__("threading").Lock()
+_ttm_state = {"ts": None}
+
+
+def _load_ttm_disk():
     try:
-        from services.cache_service import cache_manager
-        cached = cache_manager.get_json("div_ttm_cache", None)
-        if cached and cached.get("_ts"):
-            ts_str = cached["_ts"]
-            cache_time = datetime.fromisoformat(ts_str)
-            if datetime.now() - cache_time < timedelta(hours=24):
-                return cached.get("data", _DIVIDEND_D_TTM_FALLBACK)
+        import json as _json
+        with open(_TTM_DISK_CACHE, "r", encoding="utf-8") as f:
+            c = _json.load(f)
+        if c.get("method") != "v2_implemented_exdate_365d":
+            return None, None  # 旧口径缓存 (重复计数), 作废
+        return c.get("data"), datetime.fromisoformat(c["_ts"])
     except Exception:
-        pass
+        return None, None
+
+
+def _sum_ttm_dividend(df: pd.DataFrame, today: datetime) -> Optional[float]:
+    """近 365 天每份派息合计.
+
+    2026-10-23 修复: 原实现按公告日取 400 天并直接 sum(div_cash), 同一次分红的
+    「预案/实施」等多条记录被重复累加, 且 400 天窗口会多算一次年度分红,
+    导致 510880 TTM=2.746 元 (价格约 3 元 → 股息率 ~90%), 触发 yield_floor
+    使趋势卖出永久失效.
+    现规则: 仅 div_proc 含"实施" → 按除息日去重 → 除息日在近 365 天内.
+    """
+    if df is None or df.empty or "div_cash" not in df.columns:
+        return None
+    d = df.copy()
+    d["div_cash"] = pd.to_numeric(d["div_cash"], errors="coerce")
+    d = d.dropna(subset=["div_cash"])
+    d = d[d["div_cash"] > 0]
+    if "div_proc" in d.columns:
+        impl = d[d["div_proc"].astype(str).str.contains("实施", na=False)]
+        if not impl.empty:
+            d = impl
+    key = "ex_date" if "ex_date" in d.columns else ("record_date" if "record_date" in d.columns else None)
+    if key:
+        d = d.dropna(subset=[key])
+        d[key] = d[key].astype(str)
+        cutoff = (today - timedelta(days=365)).strftime("%Y%m%d")
+        d = d[(d[key] > cutoff) & (d[key] <= today.strftime("%Y%m%d"))]
+        d = d.drop_duplicates(subset=[key])
+    return round(float(d["div_cash"].sum()), 4)
+
+
+def _fetch_ttm_dividends() -> dict:
+    """从 Tushare 获取 ETF 近12个月累计分红 (24h 磁盘缓存, 并行获取)"""
+    today = datetime.now()
+    end = today.strftime("%Y%m%d")
+    start = (today - timedelta(days=400)).strftime("%Y%m%d")
+
+    def _one(code):
+        try:
+            df = pro.fund_div(ts_code=code, start_date=start, end_date=end,
+                              fields="ts_code,div_proc,ex_date,record_date,div_cash")
+            v = _sum_ttm_dividend(df, today)
+            return code, (v if v is not None else _DIVIDEND_D_TTM_FALLBACK[code])
+        except Exception:
+            return code, _DIVIDEND_D_TTM_FALLBACK[code]
 
     try:
-        end = datetime.now().strftime("%Y%m%d")
-        start = (datetime.now() - timedelta(days=400)).strftime("%Y%m%d")
-        result = {}
-        for code in _DIVIDEND_D_TTM_FALLBACK:
-            try:
-                df = pro.fund_div(ts_code=code, start_date=start, end_date=end,
-                                  fields="ts_code,div_cash")
-                if df is not None and not df.empty:
-                    result[code] = round(float(df["div_cash"].sum()), 4)
-                else:
-                    result[code] = _DIVIDEND_D_TTM_FALLBACK[code]
-            except Exception:
-                result[code] = _DIVIDEND_D_TTM_FALLBACK[code]
-
-        # 写入缓存
+        with ThreadPoolExecutor(max_workers=4, thread_name_prefix="div-ttm") as pool:
+            result = dict(pool.map(_one, list(_DIVIDEND_D_TTM_FALLBACK)))
         try:
-            from services.cache_service import cache_manager
-            cache_manager.set_json("div_ttm_cache",
-                                   {"_ts": datetime.now().isoformat(), "data": result},
-                                   ttl_seconds=86400)
-            logger.info("TTM分红已动态更新: %s", result)
-        except Exception:
-            pass
+            import json as _json
+            os.makedirs(os.path.dirname(_TTM_DISK_CACHE), exist_ok=True)
+            tmp = _TTM_DISK_CACHE + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                _json.dump({"_ts": today.isoformat(), "method": "v2_implemented_exdate_365d",
+                            "data": result}, f, ensure_ascii=False)
+            os.replace(tmp, _TTM_DISK_CACHE)
+        except Exception as e:
+            logger.debug("TTM 分红磁盘缓存写入失败: %s", e)
+        logger.info("TTM分红已动态更新(实施+除息日去重+365天): %s", result)
         return result
     except Exception as e:
         logger.warning("TTM分红获取失败, 使用静态保底值: %s", e)
-        return _DIVIDEND_D_TTM_FALLBACK
+        return dict(_DIVIDEND_D_TTM_FALLBACK)
 
-DIVIDEND_D_TTM = _fetch_ttm_dividends()
+
+def get_ttm_dividends() -> dict:
+    """惰性获取 (2026-10-23: 不再在 import 时联网, 原先每次启动阻塞 ~73s)."""
+    global DIVIDEND_D_TTM
+    ts_ = _ttm_state["ts"]
+    if ts_ is not None and datetime.now() - ts_ < _TTM_MAX_AGE:
+        return DIVIDEND_D_TTM
+    with _ttm_lock:
+        ts_ = _ttm_state["ts"]
+        if ts_ is not None and datetime.now() - ts_ < _TTM_MAX_AGE:
+            return DIVIDEND_D_TTM
+        data, cached_at = _load_ttm_disk()
+        if data and cached_at and datetime.now() - cached_at < _TTM_MAX_AGE:
+            DIVIDEND_D_TTM = data
+            _ttm_state["ts"] = cached_at
+        else:
+            DIVIDEND_D_TTM = _fetch_ttm_dividends()
+            _ttm_state["ts"] = datetime.now()
+    return DIVIDEND_D_TTM
+
+
+# import 时只读磁盘缓存或静态值, 不联网
+_disk_data, _disk_ts = _load_ttm_disk()
+DIVIDEND_D_TTM = _disk_data or dict(_DIVIDEND_D_TTM_FALLBACK)
+if _disk_data and _disk_ts and datetime.now() - _disk_ts < _TTM_MAX_AGE:
+    _ttm_state["ts"] = _disk_ts
 
 
 # 股息率估值固定阈值（方案A）
@@ -282,8 +349,15 @@ def calculate_indicators(df, code, p: dict) -> dict:
             vol_30d = round(float(daily_ret.std() * np.sqrt(252) * 100), 1)
 
     # TTM 股息率（静态近似 · 方案A）
-    trailing_dividend = DIVIDEND_D_TTM.get(code, 0.05)
+    trailing_dividend = get_ttm_dividends().get(code, 0.05)
     real_ttm_yield    = (trailing_dividend / float(close.iloc[-1])) * 100
+    # 2026-10-23: 合理性校验 — 股息率 >15% 必为数据错误 (重复计数/单位), 回退静态值
+    if real_ttm_yield > _TTM_MAX_YIELD_PCT:
+        _fb = _DIVIDEND_D_TTM_FALLBACK.get(code, 0.05)
+        logger.warning("TTM股息率异常 %s: %.1f%% (分红%.4f/价%.3f) → 回退静态值 %.4f",
+                       code, real_ttm_yield, trailing_dividend, float(close.iloc[-1]), _fb)
+        trailing_dividend = _fb
+        real_ttm_yield = (_fb / float(close.iloc[-1])) * 100
 
     idx = len(df) - 1
     return {

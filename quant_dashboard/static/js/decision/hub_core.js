@@ -893,14 +893,18 @@ function renderNarrative(data) {
     console.info('[Narrative] 渲染完成 (%d 段)', Math.floor(parts.length / 2));
 }
 
-async function generateNarrative() {
-    const btn = document.getElementById('btn-narrative-gen');
+// 默认不外联: 只有显式传入 useAI=true (「AI 生成 · 外联」按钮) 才允许后端调用外部 LLM
+async function generateNarrative(useAI = false) {
+    const btn = document.getElementById(useAI ? 'btn-narrative-ai' : 'btn-narrative-gen');
+    const btnLabel = btn ? btn.textContent : '';
     const body = document.getElementById('narrative-body');
     if (btn) { btn.classList.add('generating'); btn.disabled = true; btn.textContent = '⏳ 生成中...'; }
-    if (body) body.innerHTML = '<div class="loading-spinner">🤖 AI 正在分析市场数据...</div>';
+    if (body) body.innerHTML = useAI
+        ? '<div class="loading-spinner">🤖 调用外部 LLM 分析中...</div>'
+        : '<div class="loading-spinner">⏳ 规则引擎生成中...</div>';
 
     try {
-        const resp = await AC.secureFetch(`${API_BASE}/narrative/generate`, { method: 'POST' });
+        const resp = await AC.secureFetch(`${API_BASE}/narrative/generate?force_deterministic=${useAI ? 'false' : 'true'}`, { method: 'POST' });
         const data = await resp.json();
         if (data.status === 'success') {
             renderNarrative(data);
@@ -911,7 +915,7 @@ async function generateNarrative() {
         console.error('[Narrative] 生成失败:', e);
         if (body) body.innerHTML = '<div style="text-align:center;padding:20px;color:#f87171;">⚠️ 生成失败，请重试</div>';
     } finally {
-        if (btn) { btn.classList.remove('generating'); btn.disabled = false; btn.textContent = '🔄 重新生成'; }
+        if (btn) { btn.classList.remove('generating'); btn.disabled = false; btn.textContent = btnLabel; }
     }
 }
 

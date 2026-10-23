@@ -513,6 +513,29 @@ class AIAEJPEngine(BaseAIAEEngine):
               30%権重因子几乎沦为常数, 信号区分度不足.
               新区間 ±1500 覆盖 99% 実際周次流量 + 極端情境余量.
         """
+        # 2026-10-23: 改为基于真实历史的稳健自校准.
+        # 原固定区间 ±1500亿円/周 来自错误换算 (8兆/52周≈1540亿, 注释误写为 60~150亿),
+        # 实际周度流量常超出区间 (如 2026-10 第2周 -3435亿), 因子频繁贴边失去区分度.
+        # 新方法: 近 3 年 (≤156 周) 周度流量的 中位数/MAD 稳健 z 分数, tanh 平滑映射到 [6, 30]:
+        #   norm = 18 + 12 × tanh(z / 2)     (中位数 → 18 中性, |z|=2 → 约 ±9.1)
+        # 历史不足 26 周时退回旧线性区间 (并记录), 历史由 jpx_data_fetcher 自动回填.
+        hist = []
+        try:
+            from jpx_data_fetcher import load_foreign_history
+            hist = list(load_foreign_history().values())[-156:]
+        except Exception:
+            hist = []
+        if len(hist) >= 26:
+            arr = np.asarray(hist, dtype=float)
+            med = float(np.median(arr))
+            mad = float(np.median(np.abs(arr - med))) * 1.4826
+            if mad > 1e-9:
+                z = (net_buy_billion - med) / mad
+                normalized = 18 + 12 * float(np.tanh(z / 2.0))
+                self._foreign_norm_diag = {"method": "robust_z", "weeks": len(arr), "median": round(med, 1),
+                                           "mad_sigma": round(mad, 1), "z": round(z, 2)}
+                return max(6, min(30, round(normalized, 2)))
+        self._foreign_norm_diag = {"method": "fixed_linear_fallback", "weeks": len(hist)}
         normalized = 6 + (net_buy_billion - (-1500)) / (1500 - (-1500)) * (30 - 6)
         return max(6, min(30, round(normalized, 2)))
 
@@ -712,6 +735,7 @@ class AIAEJPEngine(BaseAIAEEngine):
             aiae_core = self.compute_aiae_core(mktcap, m2)
             margin_heat = self.compute_margin_heat(margin_t, mktcap)
             foreign_norm = self.normalize_foreign_flow(foreign_net)
+            _log(f"外资流向正规化: net={foreign_net}億円 → {foreign_norm} {getattr(self, '_foreign_norm_diag', {})}")
             aiae_v1 = self.compute_jp_aiae_v1(aiae_core, margin_heat, foreign_norm)
 
             regime = self.classify_regime(aiae_v1)

@@ -224,7 +224,8 @@ def is_market_hours() -> str:
     - "after"     : 收盘后 (工作日 15:05-次日09:15)
     - "weekend"   : 周末/节假日
     """
-    now = _datetime.now()
+    from services.market_clock import CN_TZ
+    now = _datetime.now(CN_TZ).replace(tzinfo=None)  # A 股时段按北京时间判断
     weekday = now.weekday()  # 0=Mon, 6=Sun
     if weekday >= 5:
         return "weekend"

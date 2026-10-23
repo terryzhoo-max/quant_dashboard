@@ -130,6 +130,8 @@
 }
 .vb-mark.m-portfolio { border-color: var(--vb-budget); }
 .vb-mark.m-portfolio span { color: rgba(34, 211, 238, 0.8); }
+.vb-mark.m-drawdown { border-color: var(--vb-danger); }
+.vb-mark.m-drawdown span { color: var(--vb-danger-t); }
 .vb-mark.bind span { font-weight: 700; color: #a5f3fc; }
 .vb-ruler-axis { display: flex; justify-content: space-between; font-size: 0.52rem; color: #475569; font-family: var(--vb-mono); }
 

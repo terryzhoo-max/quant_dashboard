@@ -120,42 +120,19 @@ def get_margin_risk_ratio(pro, date_str):
 
 def get_market_breadth(pro, date_str):
     """
-    V11.0: 沪深300成分股高于250MA占比 (真实统计)
+    V12.0 (2026-10-23): 沪深300 全部成分股站上 250MA 占比, 增量 hfq 面板
+    原 V11.0 逐只 pro_bar 采样前 50 只, 单项耗时 ~13 分钟且样本非随机.
+    详见 services/breadth_panel.py
     权重: A股 20%
     """
     try:
-        df_cons = tushare_retry(pro.index_weight, index_code='399300.SZ', start_date=date_str, end_date=date_str)
-        if df_cons is None or df_cons.empty:
-            _start = (datetime.strptime(date_str, '%Y%m%d') - timedelta(days=30)).strftime('%Y%m%d')
-            df_cons = tushare_retry(pro.index_weight, index_code='399300.SZ', start_date=_start, end_date=date_str)
-        if df_cons is None or df_cons.empty:
-            logger.warning("Breadth: 沪深300成分股数据缺失, 降级50.0")
+        from services.breadth_panel import compute_breadth
+        breadth, valid, info = compute_breadth(pro, date_str)
+        if breadth is None:
+            logger.warning("Breadth: 有效样本不足(%d只), 降级50.0 %s", valid, info)
             return 50.0
-        codes = df_cons['con_code'].unique().tolist()
-
-        above_count = 0
-        valid_count = 0
-        for code in codes[:50]:
-            try:
-                df_daily = tushare_retry(ts.pro_bar, ts_code=code, adj='qfq', start_date=
-                    (datetime.strptime(date_str, '%Y%m%d') - timedelta(days=400)).strftime('%Y%m%d'),
-                    end_date=date_str)
-                if df_daily is not None and len(df_daily) >= 250:
-                    df_daily = df_daily.sort_values('trade_date')
-                    ma250 = df_daily['close'].rolling(250).mean().iloc[-1]
-                    close = df_daily['close'].iloc[-1]
-                    valid_count += 1
-                    if close > ma250:
-                        above_count += 1
-            except Exception:
-                continue
-
-        if valid_count < 10:
-            logger.warning("Breadth: 有效样本不足(%d只), 降级50.0", valid_count)
-            return 50.0
-
-        breadth = round(above_count / valid_count * 100, 1)
-        logger.info("Breadth: 沪深300采样 %d只, 站上250MA: %d只 (%.1f%%)", valid_count, above_count, breadth)
+        logger.info("Breadth: 沪深300成分股 %d只有效, 站上250MA %.1f%% (数据日=%s, 补拉%d只, %.1fs)",
+                    valid, breadth, info.get("panel_last"), info.get("full_fetched", 0), info.get("seconds", 0))
         return breadth
     except Exception as e:
         logger.warning("Breadth: 市场宽度计算异常, 降级中性: %s", e)
@@ -170,16 +147,16 @@ def get_real_turnover_score(pro, date_str):
     返回: (score, is_degraded)
     """
     try:
-        # daily_basic 才有 turnover_rate 字段 (daily 只有 vol/amount)
-        df, actual_date = _find_latest_trade_date(
-            pro, date_str, pro.daily_basic,
-            fields='ts_code,trade_date,turnover_rate'
-        )
-        if df is None:
-            logger.warning("Turnover: 最近7日均无换手率数据, 降级")
+        # 2026-10-23: 与 HF_PROXY 共用按日缓存 (原先这里再拉一次全市场 daily_basic)
+        from services.tushare_daily_cache import recent_trade_dates, get_turnover_medians
+        _dates = recent_trade_dates(5, end=date_str)
+        _series = get_turnover_medians(pro, _dates)
+        actual_date = next((d for d in _dates if d in _series), None)
+        if actual_date is None:
+            logger.warning("Turnover: 最近5个交易日均无换手率数据, 降级")
             return 50.0, True
 
-        today_median_turnover = df['turnover_rate'].median()
+        today_median_turnover = _series[actual_date]["turnover_rate"]
 
         _end = actual_date
         _start = (datetime.strptime(actual_date, '%Y%m%d') - timedelta(days=35)).strftime('%Y%m%d')

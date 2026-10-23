@@ -32,9 +32,10 @@ DATA_LAKE = os.path.join(PROJECT_ROOT, "data_lake")
 DAILY_DIR = os.path.join(DATA_LAKE, "daily_prices")
 FINA_DIR  = os.path.join(DATA_LAKE, "financials")
 
+# V6.8: 各辅助策略"覆盖实盘参数"的验证证据 (而非实盘不读取的优化器输出)
 OPTIMIZATION_FILES = {
-    "红利趋势": "dividend_optimization_results.json",
-    "行业动量": "optimizer_results.json",
+    "红利趋势": "dividend_regime_validation.json",
+    "行业动量": "config/industry_validation.json",
     "ERP择时": "erp_optimization_results.json",
 }
 
@@ -72,7 +73,8 @@ _TS_CHECK_CACHE = None
 
 
 def _today_str():
-    return datetime.now().strftime("%Y%m%d")
+    from services.market_clock import CN_TZ
+    return datetime.now(CN_TZ).strftime("%Y%m%d")
 
 
 # V6.6: 交易日历自维护 (替代硬编码假期列表)
@@ -123,7 +125,8 @@ def _is_trading_day(dt):
 
 def _last_trading_day():
     """获取最近一个交易日 (今天15:00后算今天, 否则算昨天)"""
-    now = datetime.now()
+    from services.market_clock import CN_TZ
+    now = datetime.now(CN_TZ).replace(tzinfo=None)  # A 股收盘 15:00 为北京时间
     target = now if now.hour >= 15 else now - timedelta(days=1)
     while not _is_trading_day(target):
         target -= timedelta(days=1)
@@ -136,13 +139,15 @@ def _stale_days(date_str):
         clean = str(date_str).replace("-", "")[:8]
         dt = datetime.strptime(clean, "%Y%m%d")
         # 计算自然日差
-        cal_days = (datetime.now() - dt).days
+        from services.market_clock import CN_TZ
+        cn_today = datetime.now(CN_TZ).replace(tzinfo=None)
+        cal_days = (cn_today - dt).days
         if cal_days <= 0:
             return 0
         # 快速路径: 1-2 自然日 → 计算精确交易日
         trading_days = 0
         cursor = dt + timedelta(days=1)
-        end = datetime.now()
+        end = cn_today
         # 限制循环上限防止极端值卡死
         max_iter = min(cal_days, 400)
         for _ in range(max_iter):
@@ -514,6 +519,282 @@ def _optimized_age_days(opt_at_str, mtime_fallback):
     return max(0, age), datetime.fromtimestamp(mtime_fallback).strftime("%Y-%m-%d"), "文件修改时间"
 
 
+# ═══════════════════════════════════════════════════════
+#  V6.8 辅助策略证据审计
+#  原则: 时效性只对"覆盖实盘参数"的证据有意义。
+#    - 证据参数 ≠ 实盘参数 → 证据不适用 (30, fail)
+#    - 证据适用 → 按证据数据截止日的滞后天数做 TTL 线性衰减
+#    - 证据质量为负 (样本外跑输 / 分状态无增益) → 最高 70 (warn)
+# ═══════════════════════════════════════════════════════
+def _ttl_score(age_days, fresh, stale):
+    if age_days <= fresh:
+        return 100, "pass"
+    if age_days <= stale:
+        return int(100 - (age_days - fresh) / (stale - fresh) * 40), "warn"
+    return max(20, int(60 - (age_days - stale) * 0.5)), "fail"
+
+
+def _param_diffs(live, evidence, keys):
+    """返回 [(key, live, evidence)] 不一致列表; 缺失视为不一致。"""
+    diffs = []
+    for k in keys:
+        lv = (live or {}).get(k)
+        ev = (evidence or {}).get(k)
+        try:
+            same = lv is not None and ev is not None and abs(float(lv) - float(ev)) < 1e-9
+        except (TypeError, ValueError):
+            same = lv == ev
+        if not same:
+            diffs.append((k, lv, ev))
+    return diffs
+
+
+def _parse_day(value):
+    s = str(value or "").strip()
+    for fmt, n in (("%Y-%m-%d", 10), ("%Y%m%d", 8)):
+        try:
+            return datetime.strptime(s[:n], fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _audit_dividend_evidence(fresh, stale, w):
+    name = "红利趋势"
+    fn = OPTIMIZATION_FILES[name]
+    fp = os.path.join(PROJECT_ROOT, fn)
+    run_cmd = "在项目根目录执行 python -m strategies.dividend_backtest_engine regime，用最新行情重做分状态验证"
+    base = {
+        "name": name,
+        "meta": f"证据: {fn} · 绑定: dividend_trend_engine.REGIME_PARAMS · 权重: {int(w*100)}%",
+        "explanation": "红利趋势实盘使用代码内固定的四状态参数 (REGIME_PARAMS)。只有覆盖这套参数、且用近期行情做过的分状态验证才能证明它仍然有效；优化器输出的另一套参数实盘并不读取。",
+        "threshold": f"🟢 证据覆盖实盘参数且数据滞后≤{fresh}天 | 🟡 {fresh+1}-{stale}天或证据质量偏弱 | 🔴 >{stale}天/参数不一致/缺失",
+    }
+    if not os.path.exists(fp):
+        return {**base, "status": "fail", "score": 30, "detail": "无分状态验证证据", "action": run_cmd}
+    try:
+        with open(fp, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return {**base, "status": "fail", "score": 20, "detail": "验证证据损坏 (JSON解析失败)", "action": run_cmd}
+
+    rr = data.get("regime_results") or {}
+    ev_params = data.get("params") or {
+        "BEAR": (rr.get("BEAR") or {}).get("adaptive_params"),
+        "RANGE": (rr.get("RANGE_2") or rr.get("RANGE_1") or {}).get("adaptive_params"),
+        "BULL": (rr.get("BULL") or {}).get("adaptive_params"),
+    }
+    keys = ("ma_trend", "rsi_buy", "rsi_sell", "bias_buy", "bias_sell", "ma_defend")
+    binding = "一致"
+    try:
+        from engines.dividend_trend_engine import REGIME_PARAMS as live_params
+    except Exception as exc:
+        live_params = None
+        binding = f"未校验({type(exc).__name__})"
+    if live_params is not None:
+        bad = {
+            st: _param_diffs(live_params.get(st), ev_params.get(st), keys)
+            for st in ("BEAR", "RANGE", "BULL")
+        }
+        bad = {st: d for st, d in bad.items() if d}
+        if bad:
+            desc = "; ".join(
+                f"{st}: " + ", ".join(f"{k} 实盘{lv}/证据{ev}" for k, lv, ev in d[:2])
+                for st, d in bad.items()
+            )
+            return {**base, "status": "fail", "score": 30,
+                    "detail": f"证据参数与实盘不一致，证据不适用 · {desc}",
+                    "action": "实盘参数已变更但未重新验证: " + run_cmd}
+
+    data_through = _parse_day(data.get("data_through"))
+    if data_through is None:
+        ends = [_parse_day(str(v.get("period", "")).split("~")[-1])
+                for v in rr.values() if isinstance(v, dict) and v.get("period")]
+        ends = [d for d in ends if d]
+        data_through = max(ends) if ends else None
+    if data_through is None:
+        return {**base, "status": "fail", "score": 30, "detail": "证据缺少数据截止日期", "action": run_cmd}
+
+    lag = max(0, (datetime.now().date() - data_through).days)
+    s, status = _ttl_score(lag, fresh, stale)
+    detail = f"证据数据截止: {data_through} ({lag}天前) · 参数绑定: {binding}"
+    wins, total = data.get("win_count"), data.get("total_count")
+    if total:
+        detail += f" · 分状态参数胜出 {wins}/{total}"
+        if not wins:
+            s = min(s, 70)
+            if status == "pass":
+                status = "warn"
+    if live_params is None:
+        s = min(s, 80)
+        if status == "pass":
+            status = "warn"
+    action = None if status == "pass" else run_cmd
+    if total and not wins:
+        action = (action + "；" if action else "") + "分状态参数在所有区间均未优于统一参数，复核是否应回退为统一 RANGE 参数"
+    return {**base, "status": status, "score": s, "detail": detail, "action": action}
+
+
+def _audit_momentum_evidence(fresh, stale, w):
+    name = "行业动量"
+    from services.industry_validation import load_industry_validation_status
+
+    st = load_industry_validation_status()
+    reasons = list(st.get("reasons") or [])
+    stage = st.get("stage")
+    ready = bool(st.get("ready"))
+    try:
+        from services.strategy_params import load_runtime_config
+        max_age = load_runtime_config()["strategies"]["momentum"]["validation"]["max_artifact_age_days"]
+    except Exception:
+        max_age = "?"
+    base = {
+        "name": name,
+        "meta": f"证据: {OPTIMIZATION_FILES[name]} (industry_validation 门控) · 权重: {int(w*100)}%",
+        "explanation": "行业动量的实盘执行由 industry_validation 证据门控 (fail-closed)：证据过期、数据滞后或未通过晋升门槛时禁止执行。审计复用同一套判定，保证与引擎一致。",
+        "threshold": "🟢 已晋升(全部门槛通过) | 🟡 证据新鲜但未晋升(闸门关闭) | 🔴 证据过期/数据滞后/缺失",
+        "action": "在行业页面重新运行验证 (POST /industry-validation/run)，或执行 python -c \"from services.industry_validation import run_local_industry_validation as r; r()\"",
+    }
+    data_end = st.get("data_end_date") or "未知"
+    lag = st.get("data_lag_days")
+    age = st.get("artifact_age_days")
+    detail = f"数据截止: {data_end}" + (f" ({lag}天前)" if lag is not None else "")
+    if age is not None:
+        detail += f" · 证据生成 {age:.0f}天前 (上限{max_age}天)"
+    if stage in ("missing", "invalid"):
+        return {**base, "status": "fail", "score": 20, "detail": f"验证证据{'缺失' if stage == 'missing' else '损坏'}"}
+    stale_flags = {"VALIDATION_ARTIFACT_STALE", "VALIDATION_DATA_STALE"} & set(reasons)
+    if stale_flags:
+        return {**base, "status": "fail", "score": 40,
+                "detail": detail + " · 证据过期，执行闸门关闭"}
+    if ready:
+        return {**base, "status": "pass", "score": 100, "detail": detail + " · 已晋升", "action": None}
+    shown = ", ".join(reasons[:3]) + (" …" if len(reasons) > 3 else "")
+    return {**base, "status": "warn", "score": 70,
+            "detail": detail + f" · 未晋升(闸门关闭): {shown}",
+            "action": "证据新鲜但未达晋升门槛，无需紧急处理；持续影子观察，待指标达标后再晋升"}
+
+
+def _audit_erp_evidence(fresh, stale, w):
+    name = "ERP择时"
+    fn = OPTIMIZATION_FILES[name]
+    fp = os.path.join(PROJECT_ROOT, fn)
+    run_cmd = "在项目根目录执行 python -m strategies.erp_backtest_optimizer，经审核把 best_params 发布到 strategy_runtime.json；或为当前实盘参数补做样本外验证"
+    base = {
+        "name": name,
+        "meta": f"证据: {fn} · 绑定: strategy_runtime.json erp.params · 权重: {int(w*100)}%",
+        "explanation": "ERP 择时实盘读取 strategy_runtime.json 中的 erp.params。优化结果只有在其 best_params 与实盘参数一致时，才构成实盘参数的验证证据。",
+        "threshold": f"🟢 证据覆盖实盘参数且样本外截止≤{fresh}天 | 🟡 {fresh+1}-{stale}天或样本外跑输 | 🔴 >{stale}天/参数不一致/缺失",
+    }
+    if not os.path.exists(fp):
+        return {**base, "status": "fail", "score": 30, "detail": "无优化验证证据", "action": run_cmd}
+    try:
+        with open(fp, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return {**base, "status": "fail", "score": 20, "detail": "验证证据损坏 (JSON解析失败)", "action": run_cmd}
+
+    from services.strategy_params import get_erp_params
+    live = get_erp_params()
+    diffs = _param_diffs(live, data.get("best_params"), tuple(live.keys()))
+    if diffs:
+        desc = ", ".join(f"{k} 实盘{lv}/证据{ev}" for k, lv, ev in diffs[:3])
+        return {**base, "status": "fail", "score": 30,
+                "detail": f"实盘参数未经该优化验证，证据不适用 · {desc}",
+                "action": run_cmd}
+
+    meta = data.get("meta") or {}
+    oos = str(meta.get("out_sample", ""))
+    data_through = _parse_day(oos.split("→")[-1]) if "→" in oos else None
+    if data_through is None:
+        data_through = _parse_day(meta.get("timestamp"))
+    if data_through is None:
+        return {**base, "status": "fail", "score": 30, "detail": "证据缺少样本外截止日期", "action": run_cmd}
+    lag = max(0, (datetime.now().date() - data_through).days)
+    s, status = _ttl_score(lag, fresh, stale)
+    detail = f"样本外截止: {data_through} ({lag}天前) · 参数绑定: 一致"
+    alpha = (data.get("best_out_sample") or {}).get("alpha")
+    if alpha is not None and alpha < 0:
+        detail += f" · 样本外超额 {alpha*100:+.1f}%"
+        s = min(s, 70)
+        if status == "pass":
+            status = "warn"
+    return {**base, "status": status, "score": s, "detail": detail,
+            "action": None if status == "pass" else run_cmd}
+
+
+def _score_mr_lifecycle(mr_lifecycle, position_caps=None):
+    """
+    均值回归三态生命周期评分 (V6.7)。
+
+    以引擎真实的新开仓闸门 allow_new_entries 为准, 而非仅凭 position_cap 推断:
+      - validated 且允许开仓                 → 100 (pass)
+      - 未验证, 但闸门已关闭且未过复验期     → 70  (受控停用 / 等待复验, warn)
+        (rejected / insufficient_evidence, 或 position_cap=0)
+      - stale (复验期已过仍未复验)            → 40  (fail, 需立即复验)
+      - 未验证却允许新开仓 (裸跑)             → 20  (fail)
+    """
+    position_caps = position_caps or {}
+    entries = {}
+    for state, item in (mr_lifecycle or {}).items():
+        status = item.get("status", "")
+        # get_mr_lifecycle 会给出 allow_new_entries; 缺失时按引擎规则推导
+        allow = item.get("allow_new_entries", status == "validated")
+        cap = position_caps.get(state, 100)
+        if status == "validated" and allow:
+            s = 100
+        elif allow and cap != 0:
+            s = 20                      # 未验证却放行新开仓 → 真正的风险
+        elif status == "stale":
+            s = 40                      # 复验已逾期
+        elif status in ("rejected", "insufficient_evidence") or cap == 0:
+            s = 70                      # fail-closed, 等待下次复验
+        else:
+            s = 0                       # 未知状态
+        entries[state] = (s, item)
+
+    complete = set(entries) == {"BEAR", "RANGE", "BULL"}
+    score = min((s for s, _ in entries.values()), default=0)
+    if not complete:
+        score = min(score, 40)
+    validated_count = sum(1 for s, _ in entries.values() if s == 100)
+
+    if complete and validated_count == 3:
+        status = "pass"
+    elif complete and score >= 60:
+        status = "warn"
+    else:
+        status = "fail"
+
+    parts = []
+    for state in sorted(entries):
+        s, item = entries[state]
+        seg = f"{state}={item.get('status')}@{item.get('data_through', 'unknown')}"
+        if s == 70:
+            nva = str(item.get("next_validate_after", ""))[:10]
+            seg += f"(闸门关闭{', ' + nva + '复验' if nva else ''})"
+        parts.append(seg)
+    detail = f"{validated_count}/3 状态有效 · " + "; ".join(parts)
+
+    if status == "pass":
+        action = None
+    elif any(s in (20, 0) for s, _ in entries.values()):
+        action = "立即将未验证状态的 position_cap 设为 0 或修复生命周期, 禁止未验证参数开仓"
+    elif any(s == 40 for s, _ in entries.values()) or not complete:
+        action = "执行均值回归 dry-run 验证，并仅发布通过证据门槛的状态"
+    else:
+        due = sorted(
+            str(item.get("next_validate_after", ""))[:10]
+            for s, item in entries.values() if s == 70 and item.get("next_validate_after")
+        )
+        action = (
+            f"无需紧急处理：引擎已禁止未验证状态新开仓。"
+            f"{'最早复验日 ' + due[0] + '，届时' if due else ''}执行 dry-run 验证并发布通过证据门槛的状态"
+        )
+    return {"score": score, "status": status, "detail": detail,
+            "action": action, "validated_count": validated_count}
+
+
 def audit_strategy_health():
     checks = []
     check_scores = []   # (score, weight, name) 三元组
@@ -543,15 +824,6 @@ def audit_strategy_health():
     _fresh_default = AUDIT_CFG.get("strategy_fresh_days", 30)
     _stale_default = AUDIT_CFG.get("strategy_stale_days", 60)
 
-    # V6.2 各策略参数的质量分参考基准 (用于将 Quality 因子融入时效衰减)
-    # 若 quality_score 高于基准，表示参数稳健，折算 age 变小，衰减减慢；反之加速衰减。
-    STRATEGY_QUALITY_BENCHMARKS = {
-        "均值回归": 0.50,
-        "行业动量": 0.50,
-        "红利趋势": 0.50,
-        "ERP择时":  0.50,
-    }
-
     # V6.0: 策略权重 — 按实际交易占比 + 风险贡献分配
     # 均值回归: 主力策略, 贡献 60%+ 交易信号 → 最高权重
     # 行业动量: 中频轮动, 与 MR 互补 → 中等
@@ -564,26 +836,6 @@ def audit_strategy_health():
         "_regime":        0.15,    # Regime 三态参数 (均值回归基础设施)
     }
 
-    # 策略参数解释映射
-    STRATEGY_EXPLANATIONS = {
-        "均值回归": {
-            "explanation": "均值回归参数包括偏离度阈值、持有天数、ATR波动率乘数等。过期参数无法反映当前市场波动率环境，导致均值回归策略在升波跌市中过早接盘或在低波市中信号过少。",
-            "action": "执行 python mr_auto_optimize.py 重新优化参数",
-        },
-        "红利趋势": {
-            "explanation": "红利趋势参数包括股息率阈值、趋势确认周期、位置管理乘数等。股息率对标基准需跟踪利率环境变化，利率上行期应提高股息率门槛。",
-            "action": "执行红利策略参数优化器重新校准",
-        },
-        "行业动量": {
-            "explanation": "动量轮动参数包括动量窗口(20/60日)、换仓频率、拥挤度过滤阈等。动量周期存在显著的时变性，需至少每季度校准一次，否则可能追高在动量更换的拐点。",
-            "action": "执行 python run_optimizer.py 重新搜索最优参数",
-        },
-        "ERP择时": {
-            "explanation": "ERP择时参数包括 ERP Z-Score 阈值、仓位调节曲线、滴答速度等。宏观择时模型需与经济周期同步，参数过期可能导致在流动性危机时仍维持高仓位。",
-            "action": "执行 python erp_backtest_optimizer.py 重新优化宏观参数",
-        },
-    }
-
     # MR freshness is evidence-based and per regime.  Legacy optimizer file
     # timestamps are not a valid production lifecycle signal.
     mr_weight = STRATEGY_WEIGHTS["均值回归"]
@@ -591,15 +843,6 @@ def audit_strategy_health():
         from services.strategy_params import get_all_mr_lifecycle, load_runtime_config
 
         mr_lifecycle = get_all_mr_lifecycle()
-        status_scores = {
-            "validated": 100,
-            "disabled": 70,
-            "stale": 40,
-            "insufficient_evidence": 35,
-            "rejected": 20,
-        }
-        # Smart scoring: regime with position_cap=0 AND non-validated
-        # status is a deliberate risk management decision, not a failure.
         try:
             position_caps = (
                 load_runtime_config()
@@ -609,43 +852,21 @@ def audit_strategy_health():
             )
         except Exception:
             position_caps = {}
-        effective_scores = []
-        for state, item in mr_lifecycle.items():
-            raw_status = item.get("status", "")
-            cap = position_caps.get(state, 100)
-            if cap == 0 and raw_status in ("rejected", "insufficient_evidence"):
-                effective_scores.append(status_scores["disabled"])
-            else:
-                effective_scores.append(status_scores.get(raw_status, 0))
-        mr_score = min(effective_scores) if effective_scores else 0
-        _VALID_STATES = {"validated", "disabled"}
-        all_validated = (
-            set(mr_lifecycle) == {"BEAR", "RANGE", "BULL"}
-            and all(
-                item.get("status") == "validated"
-                or (position_caps.get(state, 100) == 0
-                    and item.get("status") in ("rejected", "insufficient_evidence"))
-                for state, item in mr_lifecycle.items()
-            )
-        )
-        mr_status = "pass" if all_validated else "fail"
-        lifecycle_detail = "; ".join(
-            f"{state}={item.get('status')}@{item.get('data_through', 'unknown')}"
-            for state, item in sorted(mr_lifecycle.items())
-        )
-        validated_count = sum(
-            item.get("status") == "validated"
-            for item in mr_lifecycle.values()
-        )
+        mr_eval = _score_mr_lifecycle(mr_lifecycle, position_caps)
+        mr_score = mr_eval["score"]
         checks.append({
             "name": "均值回归",
-            "status": mr_status,
-            "detail": f"{validated_count}/3 状态有效 · {lifecycle_detail}",
+            "status": mr_eval["status"],
+            "detail": mr_eval["detail"],
             "meta": "来源: strategy_runtime.json runtime lifecycle · 权重: 35%",
             "score": mr_score,
-            "explanation": "均值回归参数按市场状态使用冻结样本外证据管理；文件时间戳不能替代验证。",
-            "threshold": "🟢 3/3 validated | 🔴 stale/rejected/insufficient_evidence",
-            "action": "执行均值回归 dry-run 验证，并仅发布通过证据门槛的状态",
+            "explanation": (
+                "均值回归参数按市场状态使用冻结样本外证据管理；文件时间戳不能替代验证。"
+                "未通过验证的状态由引擎 allow_new_entries 闸门禁止新开仓（fail-closed，平仓/止损不受影响），"
+                "属于受控停用而非裸跑；只有验证过期(stale)仍未复验才判定为失败。"
+            ),
+            "threshold": "🟢 3/3 validated | 🟡 未验证但闸门已关闭(等待复验) | 🔴 验证过期(stale)/闸门未关闭",
+            "action": mr_eval["action"],
         })
     except Exception as exc:
         mr_score = 0
@@ -662,133 +883,29 @@ def audit_strategy_health():
     check_scores.append(mr_score)
     check_weights.append(mr_weight)
 
-    for name, filename in OPTIMIZATION_FILES.items():
-        fp = os.path.join(PROJECT_ROOT, filename)
+    # V6.8: 辅助策略 — 审计"覆盖实盘参数的验证证据", 参数不一致即证据无效
+    for name, auditor in (
+        ("红利趋势", _audit_dividend_evidence),
+        ("行业动量", _audit_momentum_evidence),
+        ("ERP择时", _audit_erp_evidence),
+    ):
         w = STRATEGY_WEIGHTS.get(name, 0.15)
-        
-        # 获取该策略的差异化 TTL
         ttl = STRATEGY_TTLS.get(name, {"fresh": _fresh_default, "stale": _stale_default})
-        s_fresh = ttl["fresh"]
-        s_stale = ttl["stale"]
-
-        if os.path.exists(fp):
-            mtime = os.path.getmtime(fp)
-
-            # 读取文件大小验证非空
-            fsize = os.path.getsize(fp)
-            if fsize < 50:
-                check_scores.append(20)
-                check_weights.append(w)
-                strategy_exp = STRATEGY_EXPLANATIONS.get(name, {})
-                checks.append({
-                    "name": f"{name} 参数文件",
-                    "status": "fail",
-                    "detail": f"文件异常 ({fsize} bytes)",
-                    "score": 20,
-                    "explanation": f"{name}参数文件损坏或为空，策略引擎将使用默认参数运行，实盘表现可能严重偏离回测结果。",
-                    "threshold": f"🟢 ≤{s_fresh}天: 参数有效 | 🟡 {s_fresh+1}-{s_stale}天: 建议重优化 | 🔴 >{s_stale}天/损坏: 必须修复",
-                    "action": strategy_exp.get("action", "重新执行参数优化器"),
-                })
-                continue
-
-            # V6.3: 优先从 JSON 内部提取真实优化时间与损坏标记
-            opt_at_str, quality_score, is_corrupted = _extract_optimize_meta(fp, name)
-
-            # 机构级风控加固：如果参数文件存在但 JSON 解析异常，直接 20分 FAIL 熔断，禁止降级
-            if is_corrupted:
-                check_scores.append(20)
-                check_weights.append(w)
-                strategy_exp = STRATEGY_EXPLANATIONS.get(name, {})
-                checks.append({
-                    "name": f"{name}",
-                    "status": "fail",
-                    "detail": "参数文件已损坏 (JSON解析失败)",
-                    "meta": f"文件: {filename} · 权重: {int(w*100)}%",
-                    "score": 20,
-                    "explanation": f"{name}参数文件格式破损，策略加载将直接崩溃，触发风控一票否决机制。",
-                    "threshold": "🟢 解析成功 | 🔴 语法损坏",
-                    "action": strategy_exp.get("action", "重新执行参数优化器"),
-                })
-                continue
-
-            age_days, date_display, time_source = _optimized_age_days(opt_at_str, mtime)
-
-            # V6.2 质量-时效二维折算 (Quality-Adjusted Age Decay)
-            # 基准折算：quality_mult = benchmark / quality_score
-            # 限幅在 [0.6, 1.8] 区间，防止异常数据造成时间失真
-            quality_mult = 1.0
-            if quality_score is not None and quality_score > 0:
-                benchmark = STRATEGY_QUALITY_BENCHMARKS.get(name, 0.50)
-                quality_mult = min(1.8, max(0.6, benchmark / quality_score))
-            
-            adjusted_age = age_days * quality_mult
-
-            # V6.2: 线性衰减评分基于折算天数 (adjusted_age)
-            #   [0, s_fresh] → 100
-            #   (s_fresh, s_stale] → 100 → 60 线性衰减
-            #   (s_stale, ∞) → 60 → 20 缓衰减 (每天 -0.5)
-            if adjusted_age <= s_fresh:
-                s = 100
-                status = "pass"
-            elif adjusted_age <= s_stale:
-                decay_ratio = (adjusted_age - s_fresh) / (s_stale - s_fresh)
-                s = int(100 - decay_ratio * 40)   # 100 → 60
-                status = "warn"
-            else:
-                s = max(20, int(60 - (adjusted_age - s_stale) * 0.5))
-                status = "fail"
-
-            # V6.1 生产级安全加固：mtime 降级防瞒报惩罚
-            if time_source == "文件修改时间":
-                s = min(s, 80)
-                if status == "pass":
-                    status = "warn"
-
-            check_scores.append(s)
-            check_weights.append(w)
-            strategy_exp = STRATEGY_EXPLANATIONS.get(name, {})
-
-            # 构建增强 meta: 质量分数 + 时间来源 (包含瞒报风控警告与折算系数)
-            meta_parts = [f"文件: {filename} ({fsize/1024:.1f}KB)"]
-            if quality_score is not None:
-                meta_parts.append(f"质量分: {quality_score:.3f}")
-            if time_source == "文件修改时间":
-                meta_parts.append("时间源: mtime(未解析到生成时间,强制封顶80分)")
-            else:
-                meta_parts.append(f"时间源: {time_source}")
-                if quality_score is not None:
-                    meta_parts.append(f"折算系数: {quality_mult:.2f}x")
-            meta_parts.append(f"权重: {int(w*100)}%")
-
-            # 增强 detail 显示真实天数与折算有效天数
-            detail_str = f"最后优化: {date_display} ({int(age_days)}天前)"
-            if abs(quality_mult - 1.0) > 0.02 and time_source != "文件修改时间":
-                detail_str += f" · 有效折算: {int(adjusted_age)}天"
-
-            checks.append({
-                "name": f"{name}",
-                "status": status,
-                "detail": detail_str,
-                "meta": " · ".join(meta_parts),
-                "score": s,
-                "explanation": strategy_exp.get("explanation", f"{name}策略的核心参数文件，定期优化可确保策略与当前市场环境匹配。"),
-                "threshold": f"🟢 ≤{s_fresh}天: 参数新鲜 | 🟡 {s_fresh+1}-{s_stale}天: 线性衰减 | 🔴 >{s_stale}天: 策略可能失效",
-                "action": strategy_exp.get("action", "执行对应策略的参数优化器"),
-            })
-        else:
-            check_scores.append(0)
-            check_weights.append(w)
-            strategy_exp = STRATEGY_EXPLANATIONS.get(name, {})
-            checks.append({
-                "name": f"{name}",
-                "status": "fail",
-                "detail": "参数文件不存在",
-                "meta": f"期望: {filename} · 权重: {int(w*100)}%",
-                "score": 0,
-                "explanation": f"{name}参数文件缺失，该策略引擎无法运行。需先执行参数优化生成配置文件。",
-                "threshold": f"🟢 ≤{s_fresh}天 | 🟡 {s_fresh+1}-{s_stale}天 | 🔴 文件缺失",
-                "action": strategy_exp.get("action", "执行对应策略的参数优化器"),
-            })
+        try:
+            check = auditor(ttl["fresh"], ttl["stale"], w)
+        except Exception as exc:
+            logger.error("Audit: %s 证据审计异常: %s", name, exc)
+            check = {
+                "name": name, "status": "fail", "score": 0,
+                "detail": f"证据审计异常: {str(exc)[:80]}",
+                "meta": f"权重: {int(w*100)}%",
+                "explanation": "无法评估该策略实盘参数的验证证据。",
+                "threshold": "🟢 证据有效 | 🔴 无法评估",
+                "action": "检查审计日志中的异常信息",
+            }
+        check_scores.append(check["score"])
+        check_weights.append(w)
+        checks.append(check)
 
     # ── Regime 参数文件深度校验 V6.0 ──
     # 不仅检查数量, 还验证 BULL/RANGE/BEAR 每套参数的关键字段完整性
@@ -1095,6 +1212,91 @@ def _get_live_portfolio():
         return [], 0, 0, False, None, 0
 
 
+# ═══════════════════════════════════════════════════════
+#  V6.9 相关性集中度 (Correlation-Cluster Concentration)
+#  行业标签无法识别"标签不同、同涨同跌"的敞口 (如 半导体/PCB/科创50)。
+#  方法: 近 N 日日收益相关矩阵 → 平均连接层次聚类 (簇间平均ρ≥阈值才合并)
+#        → 以最大相关簇占总资产比例评分; 附有效独立敞口数与分散比。
+# ═══════════════════════════════════════════════════════
+def _load_daily_returns(codes, window=120):
+    """从本地 data_lake/daily_prices 读取收盘价并计算日收益 (不调用外部 API)。"""
+    frames = {}
+    for code in codes:
+        fp = os.path.join(PROJECT_ROOT, "data_lake", "daily_prices", f"{code}.parquet")
+        if not os.path.exists(fp):
+            continue
+        try:
+            df = pd.read_parquet(fp, columns=["trade_date", "close"])
+        except Exception:
+            continue
+        df["trade_date"] = pd.to_datetime(df["trade_date"].astype(str).str[:8], format="%Y%m%d", errors="coerce")
+        s = df.dropna().drop_duplicates("trade_date").set_index("trade_date")["close"].sort_index()
+        frames[code] = s
+    if not frames:
+        return pd.DataFrame()
+    prices = pd.DataFrame(frames).sort_index().iloc[-(window + 1):]
+    rets = prices.pct_change(fill_method=None).iloc[1:]
+    # 剔除超出涨跌幅限制的单日跳变 (送转/除权未复权造成的伪收益)
+    return rets.mask(rets.abs() > 0.205)
+
+
+def _correlation_clusters(returns, weights, threshold=0.6, min_obs=60):
+    """
+    纯函数: 平均连接层次聚类。
+    returns: DataFrame(日期 × 代码); weights: {代码: 占总资产%}
+    返回 dict: clusters [(codes, weight, avg_rho)], n_eff, div_ratio, covered, uncovered
+    """
+    codes = [c for c in weights if c in returns.columns and returns[c].count() >= min_obs]
+    uncovered = [c for c in weights if c not in codes]
+    if not codes:
+        return {"clusters": [], "n_eff": None, "div_ratio": None, "covered": [], "uncovered": uncovered}
+    corr = returns[codes].corr(min_periods=min_obs)
+
+    def rho(a, b):
+        v = corr.at[a, b]
+        return float(v) if pd.notna(v) else 0.0   # 数据不足的配对视为不相关, 不强行合并
+
+    clusters = [[c] for c in codes]
+    while len(clusters) > 1:
+        best, pair = -2.0, None
+        for i in range(len(clusters)):
+            for j in range(i + 1, len(clusters)):
+                avg = float(np.mean([rho(a, b) for a in clusters[i] for b in clusters[j]]))
+                if avg > best:
+                    best, pair = avg, (i, j)
+        if best < threshold:
+            break
+        i, j = pair
+        clusters[i] = clusters[i] + clusters[j]
+        del clusters[j]
+
+    out = []
+    for cl in clusters:
+        w = sum(weights[c] for c in cl)
+        pairs = [rho(a, b) for k, a in enumerate(cl) for b in cl[k + 1:]]
+        out.append((sorted(cl, key=lambda c: -weights[c]), w, float(np.mean(pairs)) if pairs else 1.0))
+    for c in uncovered:   # 无数据持仓单独成簇 (保守: 不与他人合并, 但计入权重)
+        out.append(([c], weights[c], None))
+    out.sort(key=lambda x: -x[1])
+
+    total = sum(x[1] for x in out) or 1.0
+    n_eff = 1.0 / sum((x[1] / total) ** 2 for x in out)
+
+    div_ratio = None
+    try:
+        w_vec = np.array([weights[c] for c in codes], dtype=float)
+        w_vec = w_vec / w_vec.sum()
+        cov = returns[codes].cov(min_periods=min_obs).fillna(0.0).values
+        vols = np.sqrt(np.clip(np.diag(cov), 0, None))
+        port_vol = float(np.sqrt(max(w_vec @ cov @ w_vec, 0)))
+        if port_vol > 0:
+            div_ratio = float(w_vec @ vols / port_vol)
+    except Exception:
+        pass
+    return {"clusters": out, "n_eff": n_eff, "div_ratio": div_ratio,
+            "covered": codes, "uncovered": uncovered}
+
+
 def audit_risk_control():
     checks = []
     scores = []
@@ -1173,17 +1375,31 @@ def audit_risk_control():
         worst_name = ""
         sl_summary = {}  # 汇总每类资产的止损线
 
+        # V6.8: 止损口径统一为"剩余持仓的买入均价" (机构标准: 已实现盈利不得抵扣剩余仓位亏损)。
+        # 券商"盈亏比例"按摊薄成本计算, 且估值引擎仅在导入当日使用它, 隔日改用买入均价重算,
+        # 导致同一持仓的止损合规随导入日期翻转。这里用 市值/数量 得到未四舍五入的现价, 对买入均价计算。
+        breaches = []          # (pnl_pct, text)
+        masked = []            # 摊薄口径未破线、但按买入均价已破线的持仓
         for p in pos_list:
-            pnl_pct = p.get("pnl_pct", 0)
             ts_code = p.get("ts_code", "")
             name = p.get("name", ts_code or "?")
+            reported_pct = float(p.get("pnl_pct", 0) or 0)
+            cost = float(p.get("cost", 0) or 0)
+            amount = float(p.get("amount", 0) or 0)
+            mv = float(p.get("market_value", 0) or 0)
+            px = mv / amount if amount > 0 and mv > 0 else float(p.get("price", 0) or 0)
+            pnl_pct = (px / cost - 1) * 100 if cost > 0 and px > 0 else reported_pct
             sl_line, asset_class, asset_label = _get_stop_loss_line(ts_code, name)
             sl_summary[asset_label] = sl_line
             if pnl_pct < sl_line:
-                breach_list.append(f"{name}[{asset_label}] ({pnl_pct:.1f}% < {sl_line}%)")
+                breaches.append((pnl_pct, f"{name}[{asset_label}] ({pnl_pct:.1f}% < {sl_line}%)"))
+                if reported_pct >= sl_line:
+                    masked.append(f"{name}(摊薄{reported_pct:+.1f}%)")
             if pnl_pct < worst_loss:
                 worst_loss = pnl_pct
                 worst_name = name
+        breaches.sort(key=lambda x: x[0])
+        breach_list = [text for _, text in breaches]
 
         breach_count = len(breach_list)
         s = 100 if breach_count == 0 else max(0, 100 - breach_count * 25)
@@ -1204,7 +1420,8 @@ def audit_risk_control():
             "name": f"止损合规 ({sl_display})",
             "status": "pass" if breach_count == 0 else "fail",
             "detail": detail,
-            "meta": f"四类差异化止损 · [{data_source}]" + (f" · 最大浮亏: {worst_loss:.1f}%" if worst_loss < 0 else ""),
+            "meta": f"四类差异化止损 · 口径: 买入均价 · [{data_source}]" + (f" · 最大浮亏: {worst_loss:.1f}%" if worst_loss < 0 else "")
+                    + (f" · 券商摊薄口径掩盖 {len(masked)} 只: {'、'.join(masked[:3])}" if masked else ""),
             "score": s,
             "explanation": f"V23.0 四类差异化止损 (对齐信号评分系统 mr_asset_class_params.json): 个股波动最大允许-12%; 行业ETF-8%; 宽基ETF波动最小纪律最严-6%; 海外ETF含汇率风险-8%。审计红线取各Regime中最宽松的止损值作为最后防线。",
             "threshold": "🟢 0只违规: 纪律严格 | 🟡 1只: 立即处理 | 🔴 ≥2只: 止损纪律崩溃",
@@ -1242,6 +1459,65 @@ def audit_risk_control():
                 "explanation": f"单一行业敞口超过{int(SECTOR_LIMIT)}%意味着行业Beta风险集中。行业性政策打压会导致同行业持仓同步暴跌。分散行业是对冲系统性风险的核心手段。",
                 "threshold": f"🟢 ≤{int(SECTOR_LIMIT)}%: 行业分散达标 | 🟡 {int(SECTOR_LIMIT)+1}-60%: 偏集中 | 🔴 >60%: 行业风险过大",
                 "action": "增配不同行业标的，降低单一行业敞口至40%以下",
+            })
+
+        # ── 检查 3b: 相关性集中度 V6.9 (识别跨行业标签的同向敞口) ──
+        CORR_LIMIT = AUDIT_CFG.get("corr_cluster_limit", SECTOR_LIMIT)
+        CORR_THR = AUDIT_CFG.get("corr_cluster_threshold", 0.6)
+        CORR_WIN = AUDIT_CFG.get("corr_window_days", 120)
+        try:
+            w_map, name_map = {}, {}
+            for p in pos_list:
+                code = p.get("ts_code", "")
+                pname = p.get("name", code)
+                if not code or code.split(".")[0].startswith(("131", "204")) or "逆回购" in pname:
+                    continue
+                w = p.get("weight", 0)
+                if w <= 0:
+                    w = p.get("market_value", 0) / max(total_asset, 1) * 100
+                if w > 0:
+                    w_map[code] = w_map.get(code, 0) + w
+                    name_map[code] = pname
+            res = _correlation_clusters(_load_daily_returns(list(w_map), CORR_WIN), w_map, CORR_THR,
+                                        min_obs=max(20, CORR_WIN // 2))
+            if not res["clusters"]:
+                raise ValueError("无可用持仓")
+            top_codes, top_w, top_rho = res["clusters"][0]
+            uncovered_w = sum(w_map[c] for c in res["uncovered"])
+            s = 100 if top_w <= CORR_LIMIT else (70 if top_w <= 60 else 40)
+            status = "pass" if top_w <= CORR_LIMIT else ("warn" if top_w <= 60 else "fail")
+            if uncovered_w > 30 and status == "pass":
+                s, status = 80, "warn"   # 覆盖不足时不得给满分
+            names = "、".join(name_map[c] for c in top_codes[:4]) + (f" 等{len(top_codes)}只" if len(top_codes) > 4 else "")
+            rho_txt = f"簇内平均ρ={top_rho:.2f}" if top_rho is not None and len(top_codes) > 1 else "单一持仓"
+            meta = [f"{len(res['clusters'])}个相关簇", f"有效独立敞口≈{res['n_eff']:.1f}组"]
+            if res["div_ratio"] is not None:
+                meta.append(f"分散比 {res['div_ratio']:.2f}")
+            meta.append(f"合并阈值 ρ≥{CORR_THR} · 窗口{CORR_WIN}日")
+            if res["uncovered"]:
+                meta.append(f"无行情数据 {len(res['uncovered'])}只({uncovered_w:.0f}%) 单独计")
+            scores.append(s)
+            checks.append({
+                "name": "相关性集中度",
+                "status": status,
+                "detail": f"最大相关簇: {names} 占总资产 {top_w:.1f}% ({rho_txt})",
+                "meta": " · ".join(meta),
+                "score": s,
+                "explanation": f"行业标签会把同涨同跌的持仓拆散 (如半导体、PCB、科创50 同属一条产业链)。本项用近{CORR_WIN}日收益相关性做层次聚类，把平均相关≥{CORR_THR}的持仓视为同一风险敞口。有效独立敞口=按簇权重计算的赫芬达尔倒数; 分散比=加权个体波动/组合波动, 越接近1分散越差。",
+                "threshold": f"🟢 最大相关簇≤{int(CORR_LIMIT)}% | 🟡 {int(CORR_LIMIT)+1}-60% | 🔴 >60%: 组合实质上是单一押注",
+                "action": None if status == "pass" else f"将最大相关簇压降至总资产{int(CORR_LIMIT)}%以下，或增配与其低相关(ρ<{CORR_THR})的资产",
+            })
+        except Exception as exc:
+            logger.error("Audit: 相关性集中度计算失败: %s", exc)
+            scores.append(70)
+            checks.append({
+                "name": "相关性集中度",
+                "status": "warn",
+                "detail": f"无法计算: {str(exc)[:60]}",
+                "score": 70,
+                "explanation": "相关性集中度依赖本地日线行情；计算失败时无法确认真实敞口，不给满分。",
+                "threshold": "🟢 可计算且最大相关簇达标 | 🟡 无法计算",
+                "action": "同步持仓标的日线数据 (data_lake/daily_prices)",
             })
 
         # ── 检查 4: 持仓分散度 (阈值从AUDIT_CFG) ──

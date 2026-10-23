@@ -1,7 +1,7 @@
 """
 AlphaCore P3-A · 合规引擎单元测试
 ==================================
-覆盖全部 9 条 COMPLIANCE_RULES 的 hard_block / soft_warn / info 路径。
+覆盖全部 10 条 COMPLIANCE_RULES 的 hard_block / soft_warn / info 路径。
 """
 
 import pytest
@@ -267,7 +267,7 @@ class TestRunComplianceCheck:
             result = run_compliance_check(snap, positions=[], context=ctx)
         assert result["status"] == "passed"
         assert result["failed_count"] == 0
-        assert len(result["checks"]) == 9
+        assert len(result["checks"]) == 10
 
     def test_vix_crisis_returns_blocked(self):
         """VIX 危机 → 硬阻断"""
@@ -295,8 +295,8 @@ class TestRunComplianceCheck:
         assert "summary" in result
         assert isinstance(result["summary"], str)
 
-    def test_rule_count_is_9(self):
-        assert len(COMPLIANCE_RULES) == 9
+    def test_rule_count_is_10(self):
+        assert len(COMPLIANCE_RULES) == 10
 
 
 # ═══════════════════════════════════════════════════
@@ -320,3 +320,26 @@ class TestStopBreachNoAdd:
     def test_clean_or_selling_passes(self):
         assert self._run(["GREEN", "YELLOW"])["passed"] is True
         assert self._run(["RED"], direction="sell")["passed"] is True
+
+
+# ═══════════════════════════════════════════════════
+#  R10: 组合回撤刹车
+# ═══════════════════════════════════════════════════
+
+class TestDrawdownBrake:
+    def _run(self, brake, direction="buy"):
+        rule = [r for r in COMPLIANCE_RULES if r.id == "drawdown_brake"][0]
+        return rule.check(_snap(), [], {"direction": direction, "drawdown_brake": brake})
+
+    def test_tier_blocks_buys(self):
+        r = self._run({"tier": 2, "cap_pct": 50, "dd": -0.226, "label": "二档", "invested_pct": 99.5,
+                       "reduce_value": 692000})
+        assert r["passed"] is False and r["severity"] == "hard_block" and "692,000" in r["detail"]
+
+    def test_stale_data_is_soft_warn(self):
+        r = self._run({"tier": 0, "dd": -0.05, "as_of": "2026-01-02"})
+        assert r["passed"] is False and r["severity"] == "soft_warn" and "未更新" in r["detail"]
+
+    def test_no_tier_or_selling_passes(self):
+        assert self._run({"tier": 0, "dd": -0.05})["passed"] is True
+        assert self._run({"tier": 3, "dd": -0.3}, direction="sell")["passed"] is True

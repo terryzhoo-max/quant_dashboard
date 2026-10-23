@@ -312,6 +312,16 @@ class TestDecisionView(unittest.TestCase):
         self.assertEqual(v["effective_cap_pct"], 33.2)
         self.assertTrue(any("AIAE" in c for c in v["caveats"]))
 
+    def test_drawdown_brake_binds_when_tiered(self):
+        pf = dict(self.pf, max_equity_pct=80, invested_pct=95)
+        v = pv.build_decision_view(self.mk, pf, self.ctx, enforce=True,
+                                   drawdown={"tier": 3, "cap_pct": 25, "dd": -0.3, "label": "三档"})
+        self.assertEqual(v["effective_cap_pct"], 25)
+        self.assertEqual(v["verdict"]["binding"], "drawdown_brake")
+        self.assertIn("drawdown", [s["key"] for s in v["waterfall"]])
+        v2 = pv.build_decision_view(self.mk, pf, self.ctx, enforce=True, drawdown={"tier": 0, "dd": -0.05})
+        self.assertEqual(v2["verdict"]["binding"], "aiae_vol")
+
     def test_no_portfolio_is_insufficient(self):
         v = pv.build_decision_view(self.mk, {"status": "empty"}, None, enforce=True)
         self.assertEqual(v["status"], "insufficient")

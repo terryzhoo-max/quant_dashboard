@@ -87,61 +87,13 @@ echo       OK - Python !PY_VER! ^(!PYTHON_SOURCE!^)
 echo [3/5] Checking dependencies...
 
 set "MISSING="
-
-"%PYTHON_EXE%" %PYTHON_ARGS% -c "import fastapi" >nul 2>&1
-if errorlevel 1 set "MISSING=!MISSING! fastapi"
-
-"%PYTHON_EXE%" %PYTHON_ARGS% -c "import uvicorn" >nul 2>&1
-if errorlevel 1 set "MISSING=!MISSING! uvicorn"
-
-"%PYTHON_EXE%" %PYTHON_ARGS% -c "import pandas" >nul 2>&1
-if errorlevel 1 set "MISSING=!MISSING! pandas"
-
-"%PYTHON_EXE%" %PYTHON_ARGS% -c "import numpy" >nul 2>&1
-if errorlevel 1 set "MISSING=!MISSING! numpy"
-
-"%PYTHON_EXE%" %PYTHON_ARGS% -c "import pyarrow" >nul 2>&1
-if errorlevel 1 set "MISSING=!MISSING! pyarrow"
-
-"%PYTHON_EXE%" %PYTHON_ARGS% -c "import simplejson" >nul 2>&1
-if errorlevel 1 set "MISSING=!MISSING! simplejson"
-
-"%PYTHON_EXE%" %PYTHON_ARGS% -c "import tushare" >nul 2>&1
-if errorlevel 1 set "MISSING=!MISSING! tushare"
-
-"%PYTHON_EXE%" %PYTHON_ARGS% -c "import multipart" >nul 2>&1
-if errorlevel 1 set "MISSING=!MISSING! python-multipart"
-
-"%PYTHON_EXE%" %PYTHON_ARGS% -c "import scipy" >nul 2>&1
-if errorlevel 1 set "MISSING=!MISSING! scipy"
-
-"%PYTHON_EXE%" %PYTHON_ARGS% -c "import requests" >nul 2>&1
-if errorlevel 1 set "MISSING=!MISSING! requests"
-
-"%PYTHON_EXE%" %PYTHON_ARGS% -c "import dotenv" >nul 2>&1
-if errorlevel 1 set "MISSING=!MISSING! python-dotenv"
-
-"%PYTHON_EXE%" %PYTHON_ARGS% -c "import fredapi" >nul 2>&1
-if errorlevel 1 set "MISSING=!MISSING! fredapi"
-
-"%PYTHON_EXE%" %PYTHON_ARGS% -c "import redis" >nul 2>&1
-if errorlevel 1 set "MISSING=!MISSING! redis"
-
-"%PYTHON_EXE%" %PYTHON_ARGS% -c "import apscheduler" >nul 2>&1
-if errorlevel 1 set "MISSING=!MISSING! apscheduler"
-
-"%PYTHON_EXE%" %PYTHON_ARGS% -c "import sklearn" >nul 2>&1
-if errorlevel 1 set "MISSING=!MISSING! scikit-learn"
-
-"%PYTHON_EXE%" %PYTHON_ARGS% -c "import yfinance" >nul 2>&1
-if errorlevel 1 set "MISSING=!MISSING! yfinance"
-
-"%PYTHON_EXE%" %PYTHON_ARGS% -c "import akshare" >nul 2>&1
-if errorlevel 1 set "MISSING=!MISSING! akshare"
-
-"%PYTHON_EXE%" %PYTHON_ARGS% -c "import httpx" >nul 2>&1
-if errorlevel 1 set "MISSING=!MISSING! httpx"
-
+:: 2026-10-23: single-process check via find_spec (was 18 separate python imports, ~30-60s)
+"%PYTHON_EXE%" %PYTHON_ARGS% "%PROJECT_DIR%\_dev_tools\check_deps.py" > "%TEMP%\alphacore_missing.txt" 2>nul
+if errorlevel 1 set "MISSING= (dependency check failed)"
+set "MISSING_LIST="
+set /p MISSING_LIST=<"%TEMP%\alphacore_missing.txt"
+if defined MISSING_LIST set "MISSING= !MISSING_LIST!"
+del "%TEMP%\alphacore_missing.txt" >nul 2>&1
 if not "!MISSING!"=="" (
     echo [WARN] Missing:!MISSING!
     set /p "YN=       Auto-install? (Y/N): "

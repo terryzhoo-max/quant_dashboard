@@ -498,8 +498,8 @@ REGIME_PERIODS = {
     },
     "RANGE_2": {
         "start": "2025-01-01",
-        "end":   "2026-03-26",
-        "label": "[RANGE] 震荡 2025年整理",
+        "end":   datetime.now().strftime("%Y-%m-%d"),  # 滚动至今: 让复验用上最新行情
+        "label": "[RANGE] 震荡 2025年至今",
     },
 }
 
@@ -537,6 +537,7 @@ def run_regime_validation() -> dict:
     range_p   = V31_REGIME_PARAMS["RANGE"]
 
     results = {}
+    data_through = None   # 证据实际覆盖到的最后交易日 (供审计计算时效)
 
     for regime_key, period in REGIME_PERIODS.items():
         start, end = period["start"], period["end"]
@@ -556,6 +557,9 @@ def run_regime_validation() -> dict:
 
         bm_full  = prices_all[BENCHMARK_CODE]
         etf_full = prices_all.drop(columns=[BENCHMARK_CODE], errors="ignore")
+        if len(prices_all.index):
+            last_day = prices_all.index.max()
+            data_through = last_day if data_through is None else max(data_through, last_day)
 
         # 只截取目标区间作为评估窗口（但用全段数据预热指标）
         eval_start = pd.to_datetime(start)
@@ -663,6 +667,9 @@ def run_regime_validation() -> dict:
     out = {
         "status":      "success",
         "generated":   datetime.now().isoformat(),
+        "generated_at": datetime.now().isoformat(),
+        "data_through": data_through.strftime("%Y-%m-%d") if data_through is not None else None,
+        "params":      V31_REGIME_PARAMS,   # 被验证的参数 (审计据此与实盘 REGIME_PARAMS 绑定校验)
         "description": "V3.1 分状态参数验证 — 自适应参数 vs 统一RANGE参数对比",
         "regime_results": results,
         "win_count":   wins,

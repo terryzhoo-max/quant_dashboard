@@ -481,7 +481,11 @@ def generate_daily_narrative(force_deterministic: bool = False) -> dict:
 
 
 def get_daily_narrative() -> dict:
-    """获取今日叙事 (优先缓存, 未命中则生成)"""
+    """获取今日叙事 (优先缓存, 未命中则用本地规则引擎生成)
+
+    页面加载走这条路径, 默认不外联: 缓存未命中时强制确定性引擎,
+    外部 LLM 只能经 POST /narrative/generate?force_deterministic=false 手动触发。
+    """
     try:
         from services.cache_service import cache_manager
         cached = cache_manager.get_json("daily_narrative")
@@ -492,4 +496,4 @@ def get_daily_narrative() -> dict:
     except Exception:
         pass
 
-    return generate_daily_narrative()
+    return generate_daily_narrative(force_deterministic=True)

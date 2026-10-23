@@ -19,6 +19,23 @@ class _SuppressConnectionReset(logging.Filter):
         return "ConnectionResetError" not in record.getMessage()
 _proactor_logger.addFilter(_SuppressConnectionReset())
 
+
+class _SuppressPollingAccessLog(logging.Filter):
+    """2026-10-23: 前端每分钟轮询 /decision/alerts, 200 OK 的访问日志无信息量, 过滤掉 (错误码仍保留)"""
+    _QUIET_PATHS = ("/api/v1/decision/alerts", "/health")
+
+    def filter(self, record):
+        try:
+            args = record.args or ()
+            path = str(args[2]) if len(args) >= 5 else ""
+            status = int(args[4]) if len(args) >= 5 else 0
+            return not (status < 400 and path.startswith(self._QUIET_PATHS))
+        except Exception:
+            return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_SuppressPollingAccessLog())
+
 import os as _env_os
 import copy
 import time
@@ -84,7 +101,7 @@ async def lifespan(app: FastAPI):
     # 使用受控线程池替代 8 个裸 daemon Thread
     import atexit
     _warmup_workers = _env_int("STARTUP_WARMUP_WORKERS", 1, min_value=1)
-    _warmup_stagger = _env_int("STARTUP_WARMUP_STAGGER_SECONDS", 60, min_value=0)
+    _warmup_stagger = _env_int("STARTUP_WARMUP_STAGGER_SECONDS", 15, min_value=0)  # 2026-10-23: 60->15, data now served from disk caches
     _startup_pool = _SchedPoolExecutor(max_workers=_warmup_workers, thread_name_prefix="warmup")
     app.state._startup_pool = _startup_pool
 
@@ -278,7 +295,8 @@ async def lifespan(app: FastAPI):
     scheduler.start()
     app.state.scheduler = scheduler
 
-    _logger.info("AlphaCore 服务启动完成 · APScheduler(Redis就绪) 已激活全自动数据流水线")
+    _cache_backend = "Redis" if getattr(cache_manager, "use_redis", False) else "内存缓存(Redis不可用)"
+    _logger.info("AlphaCore 服务启动完成 · APScheduler(内存JobStore) + 缓存后端=%s · 已激活全自动数据流水线", _cache_backend)
     yield
     # ── Shutdown: 先关线程池, 再关调度器 ──
     _startup_pool.shutdown(wait=False)

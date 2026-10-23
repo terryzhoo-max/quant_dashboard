@@ -63,7 +63,11 @@ async def get_portfolio_vol_budget(refresh: bool = False):
             aiae_ctx = cache_manager.get_json("aiae_ctx")
         except Exception:
             aiae_ctx = None
-        view = build_decision_view(market, portfolio, aiae_ctx)
+        try:
+            dd_brake = cache_manager.get_json("drawdown_brake")     # 跟踪止盈日终写入
+        except Exception:
+            dd_brake = None
+        view = build_decision_view(market, portfolio, aiae_ctx, drawdown=dd_brake)
         return R.ok(view)
     except Exception as e:
         logger.error("vol-budget 计算失败: %s", e)

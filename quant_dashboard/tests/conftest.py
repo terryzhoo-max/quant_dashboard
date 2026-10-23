@@ -10,6 +10,10 @@ import pytest
 # 确保项目根目录在 sys.path 中
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# 2026-10-23: 测试日志写入临时目录, 不再混入 logs/alphacore.log (须在 import services.logger 之前)
+import tempfile as _tempfile
+os.environ.setdefault("ALPHACORE_LOG_DIR", os.path.join(_tempfile.gettempdir(), "alphacore_test_logs"))
+
 
 @pytest.fixture
 def vix_low():

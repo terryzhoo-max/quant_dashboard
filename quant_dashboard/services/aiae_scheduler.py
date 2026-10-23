@@ -118,6 +118,18 @@ def update_aiae_fund_position_task(retry_count: int = 0):
             engine = get_aiae_engine()
             current_date = engine._fund_position_date
             current_pos = engine._fund_position
+            current_src = getattr(engine, "_fund_position_source", None)
+
+            # 2026-10-23 口径守卫:
+            # (1) 时间不倒退: 10-23 09:50 同花顺超时后, 乐咕 10-16 的旧数据覆盖了同花顺 10-22 的新数据
+            if current_date and str(latest_date) < str(current_date):
+                logger.warning(f"放弃更新: 新数据日期 {latest_date} 早于现有 {current_date} ({current_src})")
+                return {"status": "skipped", "reason": "older_than_current", "date": current_date, "position": current_pos}
+            # (2) 不混用口径: 乐咕(股票型基金仓位, 约 90%+) 与 同花顺(偏股基金估算, 约 83%)
+            #     水平相差 ~13 个百分点, 直接替换会使 AIAE_V1 跳变约 1.5pt. 已有同花顺序列时不接受乐咕值
+            if source == "lg_api" and current_src == "ths_api":
+                logger.warning(f"放弃备用通道值 {latest_pos}% (乐咕口径与同花顺不可比), 保留同花顺 {current_pos}% ({current_date})")
+                return {"status": "skipped", "reason": "incompatible_source", "date": current_date, "position": current_pos}
             
             # 判断是否产生数据更新
             if latest_date != current_date or abs(latest_pos - current_pos) > 0.01:

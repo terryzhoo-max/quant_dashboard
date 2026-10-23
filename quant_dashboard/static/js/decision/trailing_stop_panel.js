@@ -27,7 +27,8 @@
     const ACT = {
         EXIT: ['red', '卖出'], DECIDE: ['legacy', '决策'], TRIM: ['action', '止盈'], RESIZE: ['amber', '减仓'],
         HEAT: ['amber', '热度'], CONCENTRATION: ['amber', '集中度'], REENTRY: ['blue', '再入场'],
-        IMPORT: ['muted', '数据'], SYNC: ['muted', '数据'],
+        IMPORT: ['muted', '数据'], SYNC: ['muted', '数据'], DRAWDOWN: ['red', '回撤'], DD_BUDGET: ['amber', '预算'],
+        RESTATE: ['muted', '重述'],
     };
     const ANCHOR = {
         exact: '台账精确', pre_window: '早于台账', approx: '近似', rebaselined: '已重设',
@@ -74,8 +75,13 @@
         const urgent = acts.filter((a) => a.priority <= 3);
         let level = 'ok';
         let text = '全部持仓在止损线内, 按收盘确认规则继续持有';
+        const bk = d.drawdown?.brake || {};
         if (s.RED) { level = 'red'; text = `${s.RED} 只已触发止损, 规则要求下一交易日开盘卖出`; }
-        else if (s.LEGACY) {
+        else if (bk.tier) {
+            level = bk.tier >= 2 ? 'red' : 'legacy';
+            text = `组合净值回撤 ${pct(Math.abs(bk.dd))} · ${bk.label}${bk.reduce_value ? `, 需降仓约 ${money(bk.reduce_value)}` : ''}; 回撤恢复前禁止加仓`
+                + (s.LEGACY ? `; 另有 ${s.LEGACY} 只遗留越线待决` : '');
+        } else if (s.LEGACY) {
             level = 'legacy';
             text = `${s.LEGACY} 只持仓在系统跟踪前已越过止损线 (占总资产 ${pct(h.breached_pct, 0)}), 需在下一交易日开盘前逐只决策`;
         } else if (s.ACTION) { level = 'action'; text = `${s.ACTION} 只进入分批止盈, 卖出约 1/3 锁定利润`; }
@@ -119,8 +125,17 @@
         const breachCls = (h.breached_pct || 0) > 0.2 ? 'bad' : (h.breached_pct || 0) > 0 ? 'warn' : '';
         const heatCls = h.over_limit ? 'bad' : (h.heat_pct || 0) > (h.limit_pct || 1) * 0.75 ? 'warn' : '';
         const neffCls = c.n_eff != null && c.n_eff < 2 ? 'bad' : c.n_eff != null && c.n_eff < 4 ? 'warn' : '';
+        const bk = d.drawdown?.brake;
+        const tiers = d.drawdown?.policy?.tiers || [];
+        const ddMax = (tiers[tiers.length - 1]?.dd || 0.28) * 1.25;
+        const ddCard = bk ? `
+            <button class="ts-kpi ts-kpi-dd ${bk.tier >= 2 ? 'bad' : bk.tier ? 'warn' : ''}" data-act="goto-dd" title="查看组合回撤">
+                <span>组合回撤 · ${bk.tier ? `${bk.tier} 档` : '未触发'}</span><b>−${pct(Math.abs(bk.dd || 0))}</b>
+                <div class="ts-meter ts-meter-dd"><i style="width:${Math.min(100, Math.abs(bk.dd || 0) / ddMax * 100).toFixed(1)}%"></i>${tiers.map((t) => `<b style="left:${(t.dd / ddMax * 100).toFixed(1)}%"></b>`).join('')}</div>
+                <em>仓位上限 ${bk.cap_pct}% · 当前 ${bk.invested_pct ?? '--'}%</em>
+            </button>` : '';
         return `
-        <div class="ts-kpis">
+        <div class="ts-kpis ${bk ? 'has-dd' : ''}">${ddCard}
             <div class="ts-kpi ${breachCls}">
                 <span>已越过止损线</span><b>${pct(h.breached_pct, 0)}</b>
                 ${meter(h.breached_pct, null, 1)}
@@ -154,6 +169,7 @@
         if (a.type === 'TRIM') return `<button class="ts-mini" data-act="ack" data-code="${code}" data-stage="2">已在台账外执行</button>`;
         if (a.type === 'IMPORT') return '<button class="ts-mini" data-act="import">导入成交</button>';
         if (a.type === 'SYNC') return '<button class="ts-mini" data-act="run">同步行情</button>';
+        if (a.type === 'DRAWDOWN') return '<button class="ts-mini ghost" data-act="goto-dd">查看回撤</button>';
         if (a.ts_code) return `<button class="ts-mini ghost" data-act="goto" data-code="${code}">查看</button>`;
         return '';
     }
@@ -178,6 +194,178 @@
         }).join('');
         return `<div class="ts-block"><div class="ts-block-title">行动队列 <em>按优先级 · 规则要求的先于判断类的</em></div>
             <div class="ts-acts">${items}</div></div>`;
+    }
+
+    // ═══════════════ ③b 组合回撤 (MDD) ═══════════════
+    const TIER_CLS = ['ok', 'warm', 'hot', 'hot'];
+
+    // 双联图: 上 = 净值与高水位; 下 = 水下曲线 (自高点回撤), 档位为水平色带 —— 档位线是常数, 不随高水位漂移, 一眼读出离下一档多远
+    // 按容器实际像素宽度绘制 (viewBox = 像素), 文字不被拉伸; 尺寸变化时重绘
+    function ddChart(dd, width) {
+        const c = dd.curve;
+        if (!c || !c.nav || c.nav.length < 2) return '<div class="ts-empty">台账覆盖期不足两个交易日, 暂无净值曲线</div>';
+        const tiers = dd.policy?.tiers || [];
+        const n = c.nav.length;
+        const W = Math.max(280, Math.round(width || 600)), L = 40, R = W < 420 ? 54 : 66;
+        const T1 = 18, H1 = 60;                // 净值面板 (标题在面板上方, 不压线)
+        const T2 = T1 + H1 + 24, H2 = 112;     // 水下面板
+        const H = T2 + H2 + 20;
+        const X = (i) => L + (i / (n - 1)) * (W - L - R);
+        const lo1 = Math.min(...c.nav) * 0.995, hi1 = Math.max(...c.hwm) * 1.005;
+        const Y1 = (v) => T1 + (1 - (v - lo1) / (hi1 - lo1)) * H1;
+        const uw = c.nav.map((v, i) => v / c.hwm[i] - 1);
+        const deepest = Math.min(...uw);
+        const floor = Math.min(deepest - 0.02, -((tiers[tiers.length - 1]?.dd || 0.28) + 0.04));
+        const Y2 = (v) => T2 + (v / floor) * H2;
+        const line = (arr, Y) => arr.map((v, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join('');
+        const edges = [0].concat(tiers.map((t) => -t.dd), [floor]);
+        const bands = edges.slice(0, -1).map((top, k) => {
+            const y0 = Y2(top), y1 = Y2(Math.max(edges[k + 1], floor));
+            const lbl = k === 0 ? '正常' : `${k} 档 ≤${tiers[k - 1].cap}%`;
+            return `<rect x="${L}" y="${y0.toFixed(1)}" width="${W - L - R}" height="${Math.max(0, y1 - y0).toFixed(1)}" class="ts-dd-band b${k}"/>
+                ${k ? `<line x1="${L}" x2="${W - R}" y1="${y0.toFixed(1)}" y2="${y0.toFixed(1)}" class="ts-dd-bandline b${k}"/>
+                <text x="${W - R + 6}" y="${(y0 + 10).toFixed(1)}" class="ts-dd-blabel b${k}">−${Math.round(tiers[k - 1].dd * 100)}%</text>
+                <text x="${W - R + 6}" y="${(y0 + 21).toFixed(1)}" class="ts-dd-blabel sub b${k}">${lbl}</text>` : ''}`;
+        }).join('');
+        const uwArea = `${line(uw, Y2)}L${X(n - 1).toFixed(1)},${Y2(0).toFixed(1)}L${X(0).toFixed(1)},${Y2(0).toFixed(1)}Z`;
+        const ev = (dd.brake?.events || []).map((e) => {
+            const i = c.d.indexOf((e.date || '').slice(5));
+            if (i < 0) return '';
+            return `<g class="ts-dd-ev ${e.dir}"><line x1="${X(i).toFixed(1)}" x2="${X(i).toFixed(1)}" y1="${T1}" y2="${(T2 + H2).toFixed(1)}"/>
+                <circle cx="${X(i).toFixed(1)}" cy="${Y2(uw[i]).toFixed(1)}" r="3.5"><title>${esc(e.date)} 回撤 ${pct(Math.abs(e.dd))} → ${e.to} 档</title></circle></g>`;
+        }).join('');
+        const last = uw[n - 1];
+        const xl = [0, Math.floor((n - 1) / 2), n - 1].map((i) => `<text x="${X(i).toFixed(1)}" y="${H - 5}" class="ts-dd-axis" text-anchor="${i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}">${esc(c.d[i])}</text>`).join('');
+        const yl = `<text x="${L - 6}" y="${(Y1(c.hwm[n - 1]) + 3).toFixed(1)}" class="ts-dd-axis" text-anchor="end">${fx(c.hwm[n - 1], 3)}</text>
+            <text x="${L - 6}" y="${(Y2(0) + 3).toFixed(1)}" class="ts-dd-axis" text-anchor="end">0%</text>`;
+        return `<svg class="ts-dd-chart" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img"
+                aria-label="组合净值与水下回撤曲线, 当前回撤 ${pct(Math.abs(last))}">
+            <text x="${L}" y="${T1 - 8}" class="ts-dd-ptitle">净值 / 高水位</text>
+            <path d="${line(c.hwm, Y1)}" class="ts-dd-hwm"/><path d="${line(c.nav, Y1)}" class="ts-dd-nav"/>
+            <text x="${L}" y="${T2 - 8}" class="ts-dd-ptitle">水下曲线 · 自高点回撤</text>
+            ${bands}<path d="${uwArea}" class="ts-dd-uw"/><path d="${line(uw, Y2)}" class="ts-dd-uwline"/>
+            ${ev}${yl}${xl}
+            <circle cx="${X(n - 1).toFixed(1)}" cy="${Y2(last).toFixed(1)}" r="3.5" class="ts-dd-last"/>
+            <text x="${(X(n - 1) - 6).toFixed(1)}" y="${(Y2(last) + 15).toFixed(1)}" class="ts-dd-now" text-anchor="end">${pct(last)}</text>
+        </svg>`;
+    }
+
+    function ddLadder(dd) {
+        const b = dd.brake || {};
+        const tiers = dd.policy?.tiers || [];
+        const cur = Math.abs(b.dd || 0);
+        const rows = [{ dd: 0, cap: 100 }].concat(tiers).map((t, k) => {
+            const on = (b.tier || 0) === k;
+            return `<li class="ts-dd-step ${on ? 'on' : ''} t${k}" ${on ? 'aria-current="step"' : ''}>
+                <span class="ts-dd-step-k">${k} 档</span>
+                <span class="ts-dd-step-trig">${k ? `回撤 ≥ ${Math.round(t.dd * 100)}%` : `回撤 < ${Math.round((tiers[0]?.dd || 0) * 100)}%`}</span>
+                <span class="ts-dd-step-cap">≤ ${t.cap}%</span>
+                ${on ? `<i>当前 −${(cur * 100).toFixed(1)}%${k ? ' · 禁止加仓' : ''}</i>` : ''}</li>`;
+        }).join('');
+        const tail = b.tier
+            ? `回撤收窄到 ${pct(Math.abs(b.rerisk_at_dd || 0))} 以内 (收复谷底以来 ${Math.round((dd.policy?.rerisk_recover || 0.5) * 100)}%) 回到 ${b.tier - 1} 档${b.next_trigger_dd ? `; 跌至 −${Math.round(Math.abs(b.next_trigger_dd) * 100)}% 进入 ${b.tier + 1} 档` : ''}`
+            : (tiers[0] ? `距一档触发还有 ${pct(Math.max(0, tiers[0].dd - cur))}` : '');
+        return `<ol class="ts-dd-ladder" aria-label="刹车档位">${rows}</ol><div class="ts-dd-note">${esc(tail)}</div>`;
+    }
+
+    function ddProgress(b) {
+        const pg = b.progress;
+        if (!pg) return '';
+        const p = Math.max(0, Math.min(1, pg.pct || 0));
+        const viol = pg.violation_count
+            ? `<div class="ts-dd-viol bad">⚠ 刹车生效后仍买入 ${pg.violation_count} 笔 · ${money(pg.violation_amount)}</div>`
+            : pg.pre_live_buys
+                ? `<div class="ts-dd-viol">回放: 若刹车自 ${esc(pg.since)} 已启用, 其后 ${pg.pre_live_buys} 笔加仓 (${money(pg.pre_live_amount)}) 本会被拦截</div>`
+                : '';
+        return `<div class="ts-dd-progress">
+            <div class="ts-dd-progress-head"><span>刹车执行 · 自 ${esc(pg.since)}</span><b>${pct(p, 0)}</b></div>
+            <div class="ts-dd-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(p * 100)}"><i style="width:${(p * 100).toFixed(1)}%"></i></div>
+            <div class="ts-dd-progress-sub">已净卖出 ${money(pg.executed)} · 剩余 ${money(pg.remaining)}</div>${viol}</div>`;
+    }
+
+    function ddPlan(p) {
+        if (!p || !(p.items || []).length) return '';
+        const STEP = { 1: ['red', '已触发'], 2: ['legacy', '遗留越线'], 3: ['amber', '超预算'], 4: ['muted', '等比'] };
+        const rows = p.items.map((i) => {
+            const [cls, tag] = STEP[i.step] || ['muted', ''];
+            return `<tr><td><span class="ts-act-tag ${cls}">${tag}</span></td>
+                <td><b>${esc(i.name)}</b> <span class="ts-muted">${esc(i.ts_code)}</span></td>
+                <td class="ts-num">${Number(i.qty).toLocaleString()}</td><td class="ts-num">${px(i.price, i.ts_code)}</td>
+                <td class="ts-num">${money(i.value)}</td><td class="ts-num">${i.remaining_qty ? Number(i.remaining_qty).toLocaleString() : '清仓'}</td>
+                <td class="ts-dd-why">${esc(i.reason)}</td></tr>`;
+        }).join('');
+        const open = store.get('ts_dd_plan', '1') === '1';
+        return `<details class="ts-dd-plan" ${open ? 'open' : ''} data-store="ts_dd_plan">
+            <summary class="ts-dd-plan-head"><b>降仓清单 · ${p.items.length} 笔</b><span>合计 ${money(p.total)} / 需 ${money(p.target)} · 执行后仓位约 ${p.after_invested_pct ?? '--'}%</span>
+                <button class="ts-mini ghost" data-act="copy-plan">复制清单</button></summary>
+            <div class="ts-table-wrap"><table class="ts-table compact ts-dd-plan-table"><thead><tr><th>依据</th><th>标的</th><th>卖出</th><th>参考价</th><th>金额</th><th>剩余</th><th>说明</th></tr></thead>
+            <tbody>${rows}</tbody></table></div>
+            <div class="ts-muted">${esc(p.note || '')}</div></details>`;
+    }
+
+    function drawdownBlock(d) {
+        const dd = d.drawdown;
+        if (!dd || dd.status !== 'ok') {
+            return dd ? `<section class="ts-block ts-dd" id="ts-dd"><div class="ts-block-title">组合回撤 (MDD)</div><div class="ts-banner ${dd.status === 'error' ? 'err' : 'info'}">${esc(dd.error || '缺少行情, 暂无法计算组合净值')}</div></section>` : '';
+        }
+        const b = dd.brake || {};
+        const re = dd.realized || {};
+        const pf = dd.proforma || {};
+        const fc = dd.forecast || {};
+        const prob = fc.prob || {};
+        const lastTier = (dd.policy?.tiers || []).slice(-1)[0];
+        const inv = num(b.invested_pct);
+        const mx = num(fc.max_exposure_for_budget);
+        const cell = (cls, k, v, sub) => `<div class="ts-dd-cell ${cls}"><span>${k}</span><b>${v}</b><em>${sub}</em></div>`;
+        const base = dd.baseline;
+        const pxy = re.proxy || {};
+        const fa = fc.assumptions || {};
+        const tcls = TIER_CLS[b.tier || 0] || 'hot';
+        const notes = [];
+        if ((pxy.codes || []).length) {
+            notes.push(`ⓘ ${pxy.codes.length} 只已清仓标的本地无行情 (${pxy.codes.map(esc).join(', ')}): 以台账成交价为锚、其余持仓收益桥接估算, 占组合市值平均 ${pct(pxy.avg_share)} / 最高 ${pct(pxy.max_share)}; 补齐真实行情后自动替换`);
+        } else if (re.missing_px_days) {
+            notes.push(`⚠ 有 ${re.missing_px_days} 天存在缺行情持仓, 当日按其余持仓收益计入`);
+        }
+        const eb = d.equity_basis || {};
+        if (eb.basis === 'broker_snapshot') notes.push('ⓘ 缺少现金字段, 总资产沿用券商快照 (与最新收盘市值可能错配)');
+        const restate = (dd.restatement || []).map((r) =>
+            `<div class="ts-banner warn">档位重述: ${esc(r.date)} 已发布 ${r.published_tier} 档 → 按当前数据重算为 ${r.restated_tier} 档 (台账或行情更新改变了历史净值; 原发布记录保留)</div>`).join('');
+        const open = store.get('ts_dd_open', '1') === '1';
+        return `<section class="ts-block ts-dd ${tcls} ${open ? '' : 'collapsed'}" id="ts-dd" aria-labelledby="ts-dd-h">
+            <header class="ts-dd-head">
+                <h4 id="ts-dd-h">组合回撤 · 分档刹车</h4>
+                <span class="ts-dd-pill ${tcls}">${b.tier ? `${esc(b.label)}` : '未触发'}</span>
+                <span class="ts-dd-headnum">−${pct(Math.abs(b.dd ?? 0))}<small> 自 ${esc(re.hwm_date || '--')} 高点</small></span>
+                <span class="ts-dd-headmeta">${base ? `基准自 ${esc(base.date)}` : '实盘高水位'} · 剔除资金进出 · 收盘确认</span>
+                <button class="ts-mini ghost ts-dd-toggle" data-act="dd-toggle" aria-expanded="${open}" aria-controls="ts-dd-body">${open ? '收起' : '展开'}</button>
+            </header>
+            <div class="ts-dd-body" id="ts-dd-body">
+                ${restate}
+                <div class="ts-dd-grid">
+                    <div class="ts-dd-chartbox" id="ts-dd-chartbox">${ddChart(dd)}</div>
+                    <aside class="ts-dd-side">${ddLadder(dd)}${ddProgress(b)}</aside>
+                </div>
+                <div class="ts-dd-cells">
+                    ${cell(inv != null && inv > (b.cap_pct ?? 100) ? 'bad' : '', '仓位 / 上限', `${inv ?? '--'}%<small> / ${b.cap_pct ?? 100}%</small>`,
+                        b.reduce_value ? `需降仓 ${money(b.reduce_value)}` : '在上限内')}
+                    ${cell('', '回本所需', `+${pct(re.recovery_needed, 0)}`, `水下 ${re.days_underwater ?? '--'} 个交易日 · Ulcer ${fx((re.ulcer || 0) * 100, 1)}`)}
+                    ${cell((pf.current_dd || 0) < -0.3 ? 'bad' : '', '当前持仓回看', `−${pct(Math.abs(pf.current_dd || 0))}`,
+                        `若一直持有今天的组合 · 高点 ${esc(pf.hwm_date || '--')}`)}
+                    ${cell((prob['28'] || 0) > 0.5 ? 'bad' : (prob['20'] || 0) > 0.5 ? 'warn' : '', '未来一年最大回撤', `中位 −${pct(Math.abs(fc.mdd_median || 0), 0)}`,
+                        `95% 情形 −${pct(Math.abs(fc.mdd_p95 || 0), 0)} · 触及三档 ${pct(prob['28'], 0)}<br><span title="${esc(fa.vol || '')}">${esc(fa.drift || '')}</span>`)}
+                    ${cell(mx != null && inv != null && inv / 100 > mx + 0.05 ? 'warn' : '', `预算 ${lastTier ? Math.round(lastTier.dd * 100) : '--'}% 下仓位`, `≤ ${pct(mx, 0)}`,
+                        `年化波动 ${pct(fc.ann_vol, 0)} · 95% 情形不破预算`)}
+                </div>
+                ${notes.map((x) => `<div class="ts-muted ts-dd-note2">${x}</div>`).join('')}
+                ${ddPlan(b.plan)}
+                <footer class="ts-dd-foot">
+                    <span class="ts-muted">${base ? `回撤基准 ${esc(base.date)}: ${esc(base.reason)}` : '重设基准 = 放弃本次刹车, 只在大额追加/撤出资金或投资政策变更时使用; 需写明理由并留痕。'}</span>
+                    ${base ? '<button class="ts-mini ghost" data-act="dd-baseline-clear">撤销基准</button>'
+                           : '<button class="ts-mini ghost" data-act="dd-baseline">重设回撤基准</button>'}
+                </footer>
+            </div>
+        </section>`;
     }
 
     // ═══════════════ ④ 持仓: 走势 + 止损路径 ═══════════════
@@ -371,7 +559,8 @@
         const a = d.audit || [];
         if (!a.length) return '<div class="ts-empty">暂无人工操作记录</div>';
         const L = { start_tracking: '开始跟踪', rebaseline: '重新承保', set_anchor: '设定建仓日', clear_anchor: '恢复自动锚点',
-            set_sleeve: '底仓/卫星', ack_stage: '确认分批已执行' };
+            set_sleeve: '底仓/卫星', ack_stage: '确认分批已执行', drawdown_baseline: '重设回撤基准',
+            drawdown_baseline_clear: '撤销回撤基准' };
         return `<div class="ts-muted">所有人工推翻都留痕; 重新承保与建仓日设定必须填写理由</div><ul class="ts-audit">${a.map((x) =>
             `<li><time>${esc((x.at || '').replace('T', ' '))}</time><b>${esc(L[x.action] || x.action)}</b><span>${esc(x.ts_code === '*' ? '' : x.ts_code)}</span><em>${esc(x.detail || '')}</em></li>`).join('')}</ul>`;
     }
@@ -500,6 +689,38 @@
                     tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     tr.classList.add('flash'); setTimeout(() => tr.classList.remove('flash'), 1600);
                 }
+            } else if (act === 'copy-plan') {
+                ev.preventDefault();
+                const p = _last?.drawdown?.brake?.plan;
+                const text = (p?.items || []).map((i) => `${i.name}(${i.ts_code})\t卖出\t${i.qty}\t${i.reason}`).join('\n');
+                await navigator.clipboard?.writeText(text);
+                btn.textContent = '已复制';
+            } else if (act === 'goto-dd') {
+                const sec = document.getElementById('ts-dd');
+                if (sec?.classList.contains('collapsed')) sec.querySelector('[data-act="dd-toggle"]')?.click();
+                sec?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } else if (act === 'dd-toggle') {
+                const sec = document.getElementById('ts-dd');
+                const open = sec.classList.toggle('collapsed') === false;
+                btn.textContent = open ? '收起' : '展开';
+                btn.setAttribute('aria-expanded', String(open));
+                store.set('ts_dd_open', open ? '1' : '0');
+                if (open) fitDdChart();
+            } else if (act === 'dd-baseline') {
+                const b = _last?.drawdown?.brake || {};
+                const today = (_last?.as_of || '').slice(0, 10);
+                const date = prompt(`重设组合回撤基准 (YYYY-MM-DD)\n\n自该日起重新计算高水位, 当前 ${b.label || '刹车'} 将随之解除。\n这是对风控规则的人工推翻, 将写入审计日志; 机构做法是只在资本重新承保 (如追加/撤出大额资金、投资政策变更) 时使用。`, today);
+                if (!date || !date.trim()) return;
+                const reason = prompt('重设理由 (≥4 字):') || '';
+                if (!reason.trim()) return;
+                const r = await postJson(`${BASE}/drawdown/baseline`, { date: date.trim(), reason });
+                msg(r.status === 'success' ? `✅ ${esc(r.message)}` : `❌ ${esc(r.message)}`, r.status === 'success' ? 'ok' : 'err');
+                await load(true);
+            } else if (act === 'dd-baseline-clear') {
+                if (!confirm('撤销回撤基准, 恢复按实盘高水位计算?')) return;
+                const r = await postJson(`${BASE}/drawdown/baseline`, { date: '', reason: '' });
+                msg(r.status === 'success' ? `✅ ${esc(r.message)}` : `❌ ${esc(r.message)}`, r.status === 'success' ? 'ok' : 'err');
+                await load(true);
             } else if (act === 'rebaseline') {
                 const r0 = (_last?.positions || []).find((x) => x.ts_code === code) || {};
                 const ru = r0.reunderwrite || {};
@@ -539,7 +760,9 @@
 
     function summaryChips(d) {
         const s = d.summary || {};
-        const chips = Object.keys(ST).filter((k) => s[k] && k !== 'GREEN')
+        const bk = d.drawdown?.brake;
+        const chips = (bk?.tier ? `<span class="ts-chip ${bk.tier >= 2 ? 'red' : 'legacy'}">回撤 ${bk.tier} 档 −${pct(Math.abs(bk.dd), 0)}</span>` : '')
+            + Object.keys(ST).filter((k) => s[k] && k !== 'GREEN')
             .map((k) => `<span class="ts-chip ${ST[k].cls}">${ST[k].tag} ${s[k]}</span>`).join('');
         return chips || '<span class="ts-chip green">全部在线内</span>';
     }
@@ -559,10 +782,11 @@
             _last = d;
             const s = d.summary || {};
             const worst = Object.keys(ST).find((k) => s[k]) || 'GREEN';
-            $panel.dataset.level = ST[worst].cls;
+            $panel.dataset.level = (d.drawdown?.brake?.tier >= 2 && worst !== 'RED') ? 'red' : ST[worst].cls;
             if ($sum) $sum.innerHTML = summaryChips(d);
             $body.innerHTML = `${verdict(d)}<div class="ts-banner" id="ts-msg" hidden></div>${syncNote(d)}
-                ${kpis(d)}${actions(d)}${positions(d)}${tabs(d)}`;
+                ${kpis(d)}${actions(d)}${drawdownBlock(d)}${positions(d)}${tabs(d)}`;
+            fitDdChart();
             if (prevHtml) { const m = document.getElementById('ts-msg'); m.innerHTML = prevHtml[0]; m.className = prevHtml[1]; m.hidden = false; }
             document.getElementById('ts-file')?.addEventListener('change', (e) => {
                 const fs = Array.from(e.target.files || []);
@@ -580,7 +804,22 @@
         }
     }
 
+    function fitDdChart() {
+        const box = document.getElementById('ts-dd-chartbox');
+        if (!box || !_last?.drawdown || !box.clientWidth) return;
+        const w = Math.round(box.clientWidth);
+        if (box.dataset.w === String(w)) return;
+        box.dataset.w = String(w);
+        box.innerHTML = ddChart(_last.drawdown, w);
+    }
+    let _fitTimer = null;
+    window.addEventListener('resize', () => { clearTimeout(_fitTimer); _fitTimer = setTimeout(fitDdChart, 150); });
+
     document.addEventListener('click', onClick);
+    document.addEventListener('toggle', (e) => {
+        const el = e.target;
+        if (el instanceof HTMLDetailsElement && el.dataset.store && el.closest('#trailing-stop-panel')) store.set(el.dataset.store, el.open ? '1' : '0');
+    }, true);
     window.loadTrailingStopPanel = load;
     document.addEventListener('DOMContentLoaded', () => setTimeout(() => load(false), 800));
 })();

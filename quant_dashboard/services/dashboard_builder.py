@@ -39,18 +39,34 @@ def _get_global_aiae_ttl_compat() -> int:
     return _get_global_aiae_ttl()
 
 
+_MACRO_MEMO = {"ts": 0.0, "value": None}
+_MACRO_REFRESH_SECONDS = 300   # VIX/CNY 为日频或低频数据, 盘中 5 分钟刷新足够; 避免每 30 秒请求外部源
+
+
+def _hot_macro_snapshot():
+    """热数据循环使用的宏观快照 (节流), 失败时不缓存。"""
+    from dashboard_modules.fetch_macro import fetch_vix_for_dashboard, fetch_cny_for_dashboard
+    if _MACRO_MEMO["value"] is not None and time.time() - _MACRO_MEMO["ts"] < _MACRO_REFRESH_SECONDS:
+        return _MACRO_MEMO["value"]
+    hot_vix, prev_vix = fetch_vix_for_dashboard()
+    cny = fetch_cny_for_dashboard()
+    _MACRO_MEMO.update(ts=time.time(), value=(hot_vix, prev_vix, cny))
+    return _MACRO_MEMO["value"]
+
+
 def _hot_data_reactor_tick():
     """后台高频预热循环：盘中提取 VIX/CNY，主动写入缓存"""
     from dashboard_modules.fetch_macro import fetch_vix_for_dashboard, fetch_cny_for_dashboard
     try:
+        from services.market_clock import CN_TZ
         now_dt = datetime.now()
-        is_trading_hours = now_dt.weekday() < 5 and ((now_dt.hour == 9 and now_dt.minute >= 30) or (10 <= now_dt.hour < 15))
+        cn_dt = datetime.now(CN_TZ).replace(tzinfo=None)  # A 股时段必须按北京时间判断 (服务器可能不在 UTC+8)
+        is_trading_hours = cn_dt.weekday() < 5 and ((cn_dt.hour == 9 and cn_dt.minute >= 30) or (10 <= cn_dt.hour < 15))
         with _STRATEGY_LOCK:
             has_strategy_cache = cache_manager.get_json("dashboard_data") is not None
 
         if is_trading_hours and has_strategy_cache:
-            hot_vix, prev_vix = fetch_vix_for_dashboard()
-            cny_result = fetch_cny_for_dashboard()
+            hot_vix, prev_vix, cny_result = _hot_macro_snapshot()
 
             hot_vix_change = ((hot_vix - prev_vix) / prev_vix * 100) if prev_vix > 0 else 0
             hot_vix_status = "down" if hot_vix_change < 0 else "up"

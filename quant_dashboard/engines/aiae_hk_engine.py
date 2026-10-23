@@ -116,6 +116,46 @@ def _log(msg: str, level: str = "INFO"):
         safe_msg = msg.encode('ascii', errors='replace').decode('ascii')
         print(f"[{ts_str}] [{level}] [HK-AIAE] {safe_msg}")
 
+# ===== 汇率 (2026-10-23: 替代硬编码 0.92 / 7.25) =====
+_HKD_USD_PEG = 7.80
+
+
+def _load_usd_cny() -> Optional[float]:
+    """读取 fetch_macro 写入的 USD/CNY 磁盘缓存 (ECB 参考价)"""
+    try:
+        with open(os.path.join(CACHE_DIR, "cny_cache.json"), 'r', encoding='utf-8') as f:
+            v = float(json.load(f).get("rate"))
+        return v if 6.0 <= v <= 8.0 else None
+    except Exception:
+        return None
+
+
+def _usd_cny_rate() -> float:
+    v = _load_usd_cny()
+    return v if v else 7.10
+
+
+def _hkd_cny_rate() -> tuple:
+    """返回 (1港元兑人民币, 来源). 原代码硬编码 0.92, 而实际约 0.85~0.86,
+    使 H 股人民币价格被高估约 7%, AH 溢价被系统性低估约 9 个点。"""
+    try:
+        import yfinance as yf
+        df = yf.download("HKDCNY=X", period="5d", progress=False, auto_adjust=False)
+        close = df["Close"]
+        if hasattr(close, "columns"):
+            close = close.iloc[:, 0]
+        v = float(close.dropna().iloc[-1])
+        if 0.78 <= v <= 0.98:
+            return v, "yfinance"
+    except Exception:
+        pass
+    usd_cny = _load_usd_cny()
+    if usd_cny:
+        return usd_cny / _HKD_USD_PEG, "ecb_usdcny/peg"
+    _log("HKD/CNY 汇率获取失败, 使用保守默认 0.87", "WARN")
+    return 0.87, "default"
+
+
 def _cached(key: str, ttl_seconds: int, fetcher):
     """统一缓存接口 (委托给 EngineCache)"""
     return _engine_cache.get(key, ttl_seconds, fetcher)
@@ -236,38 +276,15 @@ class AIAEHKEngine:
                 except Exception:
                     pass
 
-            # Tier 1: Tushare 自动拉取
+            # Tier 1: Tushare 自动拉取 (2026-10-23: 统一源, 修复原 "/100" 百倍单位错误)
             try:
-                import tushare as ts
-                pro = ts.pro_api()
-                today = datetime.now().strftime('%Y%m%d')
-                start_1y = (datetime.now() - timedelta(days=365)).strftime('%Y%m%d')
-
-                df = pro.moneyflow_hsgt(start_date=start_1y, end_date=today)
-                if df is not None and not df.empty:
-                    df = df.copy()
-                    df['south_money'] = pd.to_numeric(df['south_money'], errors='coerce')
-                    df = df.sort_values('trade_date').dropna(subset=['south_money'])
-
-                    # 日净买入 = 累计余额的日变化量
-                    df['daily_net'] = df['south_money'].diff()
-
-                    weekly_net = df.tail(5)['daily_net'].sum() / 100   # 百万→亿
-                    monthly_net = df.tail(20)['daily_net'].sum() / 100
-                    cum_12m = df['daily_net'].dropna().sum() / 100
-                    latest_date = df['trade_date'].iloc[-1]
-
-                    result = {
-                        "weekly_net_buy_billion_rmb": round(weekly_net, 1),
-                        "monthly_net_buy_billion_rmb": round(monthly_net, 1),
-                        "cumulative_12m_billion_rmb": round(cum_12m, 1),
-                        "direction": "inflow" if weekly_net > 0 else "outflow",
-                        "date": latest_date,
-                        "source": "tushare_auto",
-                        "data_points": len(df),
-                    }
+                from services.southbound_flow import fetch_southbound_flow
+                result = fetch_southbound_flow()
+                if result:
                     atomic_write_json(result, SOUTHBOUND_AUTO_CACHE)
-                    _log(f"南向资金(自动): 周={weekly_net:.1f}亿 月={monthly_net:.1f}亿 12M={cum_12m:.1f}亿")
+                    _log(f"南向资金(自动): 周={result['weekly_net_buy_billion_rmb']:.1f}亿 "
+                         f"月={result['monthly_net_buy_billion_rmb']:.1f}亿 "
+                         f"12M={result['cumulative_12m_billion_rmb']:.1f}亿")
                     return result
             except Exception as e:
                 _log(f"Tushare 南向资金拉取失败: {e}", "WARN")
@@ -276,8 +293,12 @@ class AIAEHKEngine:
             if os.path.exists(SOUTHBOUND_AUTO_CACHE):
                 try:
                     with open(SOUTHBOUND_AUTO_CACHE, 'r', encoding='utf-8') as f:
+                        cached = json.load(f)
+                    # 旧版缓存 (无 unit 字段) 带有 /100 单位错误, 不可复用
+                    if cached.get("unit") == "亿元RMB":
                         _log("南向资金: 自动缓存", "WARN")
-                        return json.load(f)
+                        return cached
+                    _log("南向资金: 旧版自动缓存单位不可信, 已跳过", "WARN")
                 except Exception:
                     pass
 
@@ -324,13 +345,14 @@ class AIAEHKEngine:
                 today = datetime.now().strftime('%Y%m%d')
                 start = (datetime.now() - timedelta(days=10)).strftime('%Y%m%d')
 
-                # 汇率: RMB/HKD
-                rmb_hkd = 0.92  # 1 HKD ≈ 0.92 RMB
+                # 汇率: RMB/HKD (动态; 原硬编码 0.92 已废弃)
+                rmb_hkd, fx_src = _hkd_cny_rate()
+                _log(f"AH篮子: HKD/CNY={rmb_hkd:.4f} ({fx_src})")
 
                 # Step 1: yfinance 一次性批量取全部 H 股收盘价
                 h_tickers = [h_code for _, h_code, _, _ in AH_BASKET]
                 _log(f"AH篮子: yfinance批量取H股 {len(h_tickers)}只...")
-                h_data = yf.download(h_tickers, period="5d", progress=False, threads=True)
+                h_data = yf.download(h_tickers, period="5d", progress=False, threads=True, auto_adjust=False)
                 h_prices = {}
                 if h_data is not None and not h_data.empty:
                     close = h_data.get("Close", h_data)
@@ -367,21 +389,28 @@ class AIAEHKEngine:
                     premium = a_price / (h_price * rmb_hkd)
                     return {"name": name, "weight": weight, "a": a_price, "h": h_price, "premium": round(premium * 100, 1)}
 
-                with ThreadPoolExecutor(max_workers=3, thread_name_prefix="ah") as pool:
-                    futures = {
-                        pool.submit(_fetch_a_price, a_code, h_code, weight, name): name
-                        for a_code, h_code, weight, name in AH_BASKET
-                    }
-                    for future in as_completed(futures, timeout=30):
-                        try:
-                            result_item = future.result()
-                            if result_item:
-                                weighted_premium += result_item["weight"] * (result_item["premium"] / 100.0)
-                                total_weight += result_item["weight"]
-                                details.append({"name": result_item["name"], "a": result_item["a"], "h": result_item["h"], "premium": result_item["premium"]})
-                        except Exception as e:
-                            _log(f"AH篮子 {futures[future]} 失败: {e}", "DEBUG")
-                            continue
+                # 2026-10-23: 超时只丢弃未完成的个股, 不再让整篮计算失败
+                # (原实现 as_completed 超时抛错 → 全篮作废 → 外层再整体重跑一遍)
+                from concurrent.futures import wait as _fwait
+                pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="ah")
+                futures = {
+                    pool.submit(_fetch_a_price, a_code, h_code, weight, name): name
+                    for a_code, h_code, weight, name in AH_BASKET
+                }
+                done, not_done = _fwait(futures, timeout=40)
+                if not_done:
+                    _log(f"AH篮子: {len(not_done)}只A股取价超时, 按已完成部分计算", "WARN")
+                pool.shutdown(wait=False, cancel_futures=True)
+                for future in done:
+                    try:
+                        result_item = future.result()
+                        if result_item:
+                            weighted_premium += result_item["weight"] * (result_item["premium"] / 100.0)
+                            total_weight += result_item["weight"]
+                            details.append({"name": result_item["name"], "a": result_item["a"], "h": result_item["h"], "premium": result_item["premium"]})
+                    except Exception as e:
+                        _log(f"AH篮子 {futures[future]} 失败: {e}", "DEBUG")
+                        continue
 
                 if total_weight > 0.3:  # 至少30%权重的股票有数据
                     ah_index = round(weighted_premium / total_weight * 100, 1)
@@ -393,6 +422,8 @@ class AIAEHKEngine:
                         "interpretation": interp,
                         "basket_coverage": round(total_weight * 100, 0),
                         "basket_count": len(details),
+                        "rmb_per_hkd": round(rmb_hkd, 4),
+                        "fx_source": fx_src,
                         "details": details,
                     }
                     atomic_write_json(result, AH_PREMIUM_AUTO_CACHE)
@@ -407,8 +438,12 @@ class AIAEHKEngine:
             if os.path.exists(AH_PREMIUM_AUTO_CACHE):
                 try:
                     with open(AH_PREMIUM_AUTO_CACHE, 'r', encoding='utf-8') as f:
+                        cached = json.load(f)
+                    # 旧版缓存用硬编码汇率 0.92 计算, 系统性偏低, 不可复用
+                    if cached.get("fx_source"):
                         _log("AH溢价: 自动缓存", "WARN")
-                        return json.load(f)
+                        return cached
+                    _log("AH溢价: 旧版自动缓存(硬编码汇率)已跳过", "WARN")
                 except Exception:
                     pass
 
@@ -618,7 +653,7 @@ class AIAEHKEngine:
         """
         if mktcap_usd <= 0:
             return 1.0
-        cumulative_usd = cumulative_12m / 7.25  # 亿RMB→亿USD
+        cumulative_usd = cumulative_12m / _usd_cny_rate()  # 亿RMB→亿USD (动态汇率)
         heat = round(cumulative_usd / (mktcap_usd * 10000) * 100, 2)  # 万亿→亿, 单位统一
         # clamp: 防止 MktCap 异常导致热度暴涨
         if heat > SB_HEAT_CLAMP_MAX:
@@ -991,21 +1026,30 @@ class AIAEHKEngine:
         try:
             # P2-7 优化: 4路并行数据获取 (原来 2路并行 + 2路串行 → 全并行)
             # MktCap, M2, Southbound, AH Premium 同时发起, 整体 I/O 时间从 ~20s → ~8s
+            # 2026-10-23: 逐路等待. 某一路超时只等待/补救该路, 不再四路全部同步重跑
+            _tasks = [
+                ("mkt", self._fetch_hsi_market_cap),
+                ("m2", self._fetch_cn_m2_proxy),
+                ("sb", self._fetch_southbound_auto),
+                ("ah", self._compute_ah_premium_auto),
+            ]
             try:
-                f_mkt = _bg_executor.submit(self._fetch_hsi_market_cap)
-                f_m2 = _bg_executor.submit(self._fetch_cn_m2_proxy)
-                f_sb = _bg_executor.submit(self._fetch_southbound_auto)
-                f_ah = _bg_executor.submit(self._compute_ah_premium_auto)
-                mkt_data = f_mkt.result(timeout=45)
-                m2_data = f_m2.result(timeout=45)
-                sb_data = f_sb.result(timeout=45)
-                ah_data = f_ah.result(timeout=45)
-            except (RuntimeError, TimeoutError):
-                _log("并行获取超时或线程池不可用, 降级同步获取", "WARN")
-                mkt_data = self._fetch_hsi_market_cap()
-                m2_data = self._fetch_cn_m2_proxy()
-                sb_data = self._fetch_southbound_auto()
-                ah_data = self._compute_ah_premium_auto()
+                _futs = {k: _bg_executor.submit(fn) for k, fn in _tasks}
+            except RuntimeError:
+                _futs = {}
+            _res = {}
+            _deadline = time.time() + 90
+            for k, fn in _tasks:
+                fut = _futs.get(k)
+                if fut is None:
+                    _res[k] = fn()
+                    continue
+                try:
+                    _res[k] = fut.result(timeout=max(1.0, _deadline - time.time()))
+                except TimeoutError:
+                    _log(f"并行获取 [{k}] 超时, 该路降级同步获取", "WARN")
+                    _res[k] = fn()
+            mkt_data, m2_data, sb_data, ah_data = _res["mkt"], _res["m2"], _res["sb"], _res["ah"]
             _log(f"数据获取完成 ({time.time()-t0:.1f}s)")
 
             mktcap_usd = mkt_data.get("mktcap_usd_trillion", 4.3)

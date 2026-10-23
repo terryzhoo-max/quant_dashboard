@@ -149,30 +149,16 @@ class HFProxyEngine:
             end_date = datetime.now().strftime("%Y%m%d")
             start_date = (datetime.now() - timedelta(days=TURNOVER_LOOKBACK * 2 + 10)).strftime("%Y%m%d")
 
-            daily_avgs = []
-            # 逐日获取会触发 API 限频, 改用 start_date/end_date 批量
-            # daily_basic 按 trade_date 批量获取代价太大 (全市场5000+股)
-            # 改用更高效的方式: 获取指数日线换手率作为市场代理
-            # 方案B: 直接获取最近若干天, 每天取一次市场均值
-            for offset in range(TURNOVER_LOOKBACK + 5):
-                try_date = (datetime.now() - timedelta(days=offset)).strftime("%Y%m%d")
-                try:
-                    df = pro.daily_basic(
-                        trade_date=try_date,
-                        fields="ts_code,turnover_rate_f"
-                    )
-                    if df is not None and not df.empty:
-                        # 全市场中位数换手率 (中位数比均值更抗极端股干扰)
-                        median_tr = df['turnover_rate_f'].dropna().median()
-                        daily_avgs.append({
-                            "date": try_date,
-                            "median_turnover": float(median_tr)
-                        })
-                        if len(daily_avgs) >= TURNOVER_LOOKBACK + 1:
-                            break
-                except Exception as e:
-                    _log(f"daily_basic {try_date} 获取失败: {e}", "WARN")
-                time.sleep(0.3)  # Tushare 限频
+            # 2026-10-23: 改为 交易日历 + 按日持久化缓存 + 并行补齐.
+            # 原实现按自然日逐日串行拉全市场 daily_basic (含周末), 启动耗时约 4 分钟;
+            # 现在历史日只拉一次, 日常启动通常只需补 0~1 天.
+            from services.tushare_daily_cache import recent_trade_dates, get_turnover_medians
+            _dates = recent_trade_dates(TURNOVER_LOOKBACK + 3)
+            _series = get_turnover_medians(pro, _dates)
+            daily_avgs = [
+                {"date": d, "median_turnover": _series[d]["turnover_rate_f"]}
+                for d in _dates if d in _series
+            ][:TURNOVER_LOOKBACK + 1]
 
             if len(daily_avgs) < 5:
                 _log(f"换手率数据不足: 仅获取 {len(daily_avgs)} 天", "WARN")
@@ -234,23 +220,30 @@ class HFProxyEngine:
             all_flows = []  # 每个交易日的合计 flow_proxy
 
             etf_dfs = {}
-            for etf in ETF_TARGETS:
+
+            def _fetch_etf(etf):
                 try:
-                    df = pro.fund_daily(
+                    return etf, pro.fund_daily(
                         ts_code=etf["ts_code"],
                         start_date=start_date,
                         end_date=end_date,
                         fields="trade_date,close,pre_close,amount"
                     )
-                    if df is not None and not df.empty:
-                        df = df.sort_values("trade_date").reset_index(drop=True)
-                        # flow_proxy = amount × sign(涨跌)
-                        df["direction"] = np.sign(df["close"] - df["pre_close"])
-                        df["flow_proxy"] = df["amount"] * df["direction"]
-                        etf_dfs[etf["ts_code"]] = df[["trade_date", "flow_proxy"]].copy()
-                    time.sleep(0.3)
                 except Exception as e:
                     _log(f"ETF {etf['ts_code']} 数据获取失败: {e}", "WARN")
+                    return etf, None
+
+            # 2026-10-23: 3 只 ETF 并行获取 (原串行 + sleep, 约 37s → 约 13s)
+            from concurrent.futures import ThreadPoolExecutor as _TPE
+            with _TPE(max_workers=3, thread_name_prefix="hf-etf") as _pool:
+                _etf_results = list(_pool.map(_fetch_etf, ETF_TARGETS))
+            for etf, df in _etf_results:
+                if df is not None and not df.empty:
+                    df = df.sort_values("trade_date").reset_index(drop=True)
+                    # flow_proxy = amount × sign(涨跌)
+                    df["direction"] = np.sign(df["close"] - df["pre_close"])
+                    df["flow_proxy"] = df["amount"] * df["direction"]
+                    etf_dfs[etf["ts_code"]] = df[["trade_date", "flow_proxy"]].copy()
 
             if not etf_dfs:
                 _log("ETF 资金流数据全部获取失败", "WARN")
@@ -316,24 +309,14 @@ class HFProxyEngine:
           4. 映射到 [-1, +1]: delta_pct / MARGIN_DELTA_NORM_CAP, clamp
         """
         try:
-            margin_history = []
-
-            # 优先从 Tushare 获取最近多天数据
-            for offset in range(MARGIN_DELTA_DAYS + 10):
-                try_date = (datetime.now() - timedelta(days=offset)).strftime("%Y%m%d")
-                try:
-                    df = pro.margin(trade_date=try_date)
-                    if df is not None and not df.empty:
-                        total_rzye = df['rzye'].sum() if 'rzye' in df.columns else 0
-                        margin_history.append({
-                            "date": try_date,
-                            "rzye": total_rzye / 100000000  # → 亿元
-                        })
-                        if len(margin_history) >= MARGIN_DELTA_DAYS + 1:
-                            break
-                except Exception as e:
-                    _log(f"margin {try_date}: {e}", "WARN")
-                time.sleep(0.3)
+            # 2026-10-23: 交易日历 + 按日缓存 (融资数据 T+1 发布, 历史日不变)
+            from services.tushare_daily_cache import recent_trade_dates, get_margin_totals
+            _dates = recent_trade_dates(MARGIN_DELTA_DAYS + 3)
+            _series = get_margin_totals(pro, _dates)
+            margin_history = [
+                {"date": d, "rzye": _series[d]["rzye_yi"]}
+                for d in _dates if d in _series
+            ][:MARGIN_DELTA_DAYS + 1]
 
             if len(margin_history) < 2:
                 # 降级: 仅用缓存单点, 无法计算 delta

@@ -97,8 +97,12 @@ def test_swr_stale_on_error():
     assert "Tushare API rate limit" in res["_cache"]["error"]
 
 
-def test_cny_disk_cache_behavior():
+def test_cny_disk_cache_behavior(monkeypatch, tmp_path):
     """测试 4: CNY 离岸人民币汇率磁盘降级缓存功能"""
+    # 2026-10-23: 重定向到临时文件. 原测试把 7.2458 写进生产 data_lake/cny_cache.json,
+    # 若之后真实汇率源全部失败, 看板会用这个假汇率.
+    import dashboard_modules.fetch_macro as _fm
+    monkeypatch.setattr(_fm, "_CNY_CACHE_PATH", str(tmp_path / "cny_cache.json"))
     # 模拟写入和读取
     test_rate = 7.2458
     _save_cny_disk(test_rate)

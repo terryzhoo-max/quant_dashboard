@@ -13,6 +13,7 @@ AlphaCore P3-B · 自适应实时轮询器
 import time
 import threading
 from datetime import datetime
+from services.market_clock import CN_TZ
 from typing import Callable, Optional
 
 from services.logger import get_logger
@@ -31,7 +32,7 @@ class MarketSession:
     @staticmethod
     def is_a_share_session(dt: datetime = None) -> bool:
         """A 股盘中: 周一至周五 09:25 - 15:05"""
-        dt = dt or datetime.now()
+        dt = dt or datetime.now(CN_TZ).replace(tzinfo=None)
         if dt.weekday() >= 5:
             return False
         t = dt.hour * 60 + dt.minute
@@ -40,7 +41,7 @@ class MarketSession:
     @staticmethod
     def is_us_session(dt: datetime = None) -> bool:
         """美股盘中 (北京时间): 21:30 - 04:00 次日 (夏令) / 22:30 - 05:00 (冬令)"""
-        dt = dt or datetime.now()
+        dt = dt or datetime.now(CN_TZ).replace(tzinfo=None)
         if dt.weekday() >= 5:  # 简化: 周末不开盘
             return False
         h = dt.hour
@@ -48,7 +49,7 @@ class MarketSession:
 
     @staticmethod
     def is_any_session(dt: datetime = None) -> bool:
-        dt = dt or datetime.now()
+        dt = dt or datetime.now(CN_TZ).replace(tzinfo=None)
         return MarketSession.is_a_share_session(dt) or MarketSession.is_us_session(dt)
 
     @staticmethod
@@ -60,7 +61,7 @@ class MarketSession:
           盘后:      300s (5min)
           周末:      900s (15min)
         """
-        dt = dt or datetime.now()
+        dt = dt or datetime.now(CN_TZ).replace(tzinfo=None)
         if dt.weekday() >= 5:
             return 900
         if MarketSession.is_a_share_session(dt):
@@ -148,7 +149,7 @@ class AdaptivePoller:
 
     def tick(self):
         """APScheduler 调用入口 (固定 30s 间隔, 内部自适应跳过)"""
-        now = datetime.now()
+        now = datetime.now(CN_TZ).replace(tzinfo=None)
         now_ts = time.time()
 
         # 1. 自适应间隔: 根据市场状态决定是否执行
@@ -206,7 +207,7 @@ class AdaptivePoller:
                 logger.error("[Poller] 紧急刷新失败: %s", e)
 
     def get_status(self) -> dict:
-        now = datetime.now()
+        now = datetime.now(CN_TZ).replace(tzinfo=None)
         return {
             "current_interval": self.session.get_polling_interval(now),
             "session": {

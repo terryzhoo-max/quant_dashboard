@@ -260,6 +260,58 @@ class _StopBreachRule(ComplianceRule):
         return super().check(snapshot, positions, context)
 
 
+def _drawdown_brake_state(snapshot, ctx):
+    b = (ctx or {}).get("drawdown_brake") or snapshot.get("drawdown_brake")
+    if b is None:
+        try:
+            from services.cache_service import cache_manager
+            b = cache_manager.get_json("drawdown_brake")
+        except Exception:
+            b = None
+    return b if isinstance(b, dict) and b.get("tier") is not None else None
+
+
+def _dd_lag(b):
+    try:
+        from services.drawdown_service import is_stale
+        return is_stale(b)
+    except Exception:
+        return None
+
+
+class _DrawdownBrakeRule(ComplianceRule):
+    """档位 ≥1 → 硬阻断; 数据过期 (>3 个交易日) → 软警告 (不因数据缺失而静默放行, 也不因此硬阻断)。"""
+
+    def check(self, snapshot: dict, positions: list = None, context: dict = None) -> dict:
+        b = None
+        try:
+            b = _drawdown_brake_state(snapshot, context)
+        except Exception:
+            pass
+        lag = _dd_lag(b) if b else None
+        self.severity = "soft_warn" if (lag is not None and lag > 3) else "hard_block"
+        return super().check(snapshot, positions, context)
+
+
+def _check_drawdown_brake(snapshot, positions, ctx):
+    """组合级回撤刹车: 剔除资金进出的组合净值自高点回撤 ≥ 12% 起分档降仓上限, 期间禁止新增买入。"""
+    if ctx and ctx.get("direction") in ("sell", "reduce"):
+        return True, "减仓操作, 不受限制"
+    b = _drawdown_brake_state(snapshot, ctx)
+    if b is None:
+        return True, "无组合回撤数据, 跳过检查"
+    lag = _dd_lag(b)
+    if lag is not None and lag > 3:
+        return False, f"组合回撤数据已 {lag} 个交易日未更新 (截至 {b.get('as_of')}), 刹车状态不可信 — 请先「同步并重算」"
+    dd = abs(b.get("dd") or 0)
+    if not b.get("tier"):
+        return True, f"组合回撤 {dd:.1%}, 未触发刹车"
+    msg = f"组合回撤 {dd:.1%} · {b.get('label')} — 仓位上限 {b.get('cap_pct')}%, 回撤恢复前禁止新增买入"
+    if b.get("reduce_value"):
+        msg += f"; 当前 {b.get('invested_pct')}%, 需先降仓约 ¥{b['reduce_value']:,.0f}"
+    return False, msg
+
+
 # ── 规则集 ──
 COMPLIANCE_RULES = [
     ComplianceRule("single_stock_cap", "单票仓位上限", "hard_block",
@@ -280,6 +332,8 @@ COMPLIANCE_RULES = [
                    "当前仓位不得超过目标波动对应的最大仓位 10pp", _check_vol_budget),
     _StopBreachRule("stop_breach_no_add", "越线禁止加仓", "soft_warn",
                     "跌破跟踪止损线的持仓, 执行或决策前禁止加仓", _check_stop_breach_no_add),
+    _DrawdownBrakeRule("drawdown_brake", "组合回撤刹车", "hard_block",
+                   "组合净值回撤 ≥12/20/28% 分档降仓上限至 75/50/25%, 期间禁止加仓", _check_drawdown_brake),
 ]
 
 
@@ -290,7 +344,7 @@ COMPLIANCE_RULES = [
 def run_compliance_check(snapshot: dict, positions: list = None,
                          context: dict = None) -> dict:
     """
-    执行全部合规规则检查 (当前 9 条)。
+    执行全部合规规则检查 (当前 10 条)。
 
     参数:
       snapshot: 当前市场快照

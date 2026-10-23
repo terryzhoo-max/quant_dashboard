@@ -222,7 +222,7 @@ class AIAEUSEngine:
             for sym, is_index in [("^W5000", True), ("VTI", False)]:
                 try:
                     import yfinance as yf
-                    df = yf.download(sym, period="3mo", progress=False)
+                    df = yf.download(sym, period="3mo", progress=False, auto_adjust=False)
                     if df is not None and not df.empty:
                         close_col = df["Close"]
                         if hasattr(close_col, "columns"):
@@ -540,6 +540,32 @@ class AIAEUSEngine:
 
         return None
 
+    def _effective_aaii_spread(self) -> float:
+        """2026-10-23: 情绪因子可信度加权.
+
+        effective = 中性先验(+5) + (原始spread - 5) × 可信度
+          来源可信度: AAII 实爬/手动 = 1.0; UMich 代理 = 0.5 (消费者信心 ≠ 投资者情绪)
+          新鲜度衰减: ≤30天 = 1.0, 30~90天线性降到 0, >90天 = 0 (完全回归中性)
+        例: 2026-08-01 的 UMich 代理 (-23.0), 83 天后 → 可信度 0.06 → 有效 spread ≈ +3.4
+        """
+        d = self._aaii_data or {}
+        raw = float(d.get("spread", 5.0))
+        src = d.get("source", "default")
+        src_w = {"aaii_crawl": 1.0, "manual": 1.0, "fred_umcsent": 0.5}.get(src, 0.0)
+        try:
+            age = (datetime.now() - datetime.strptime(d.get("date", ""), "%Y-%m-%d")).days
+        except Exception:
+            age = 999
+        fresh_w = 1.0 if age <= 30 else max(0.0, 1.0 - (age - 30) / 60.0)
+        rel = src_w * fresh_w
+        eff = 5.0 + (raw - 5.0) * rel
+        d["effective_spread"] = round(eff, 1)
+        d["reliability"] = round(rel, 2)
+        d["age_days"] = age
+        if rel < 0.999:
+            _log(f"AAII 情绪可信度={rel:.2f} (source={src}, {age}天前) → 有效spread {raw:.1f}→{eff:.1f}", "WARN")
+        return eff
+
     def update_aaii_sentiment(self, bull_pct: float, bear_pct: float, neutral_pct: float = None):
         """手动更新 AAII 情绪数据"""
         if neutral_pct is None:
@@ -725,7 +751,7 @@ class AIAEUSEngine:
                           "text": f"Margin Debt 占比 {margin_heat:.1f}% 极低, 杠杆出清", "color": "#10b981"})
 
         aaii = self._aaii_data
-        spread = aaii.get("spread", 0)
+        spread = aaii.get("effective_spread", aaii.get("spread", 0))
         if spread > 20:
             signals.append({"type": "sentiment", "level": "warning",
                           "text": f"AAII 极度乐观 spread={spread:.0f}%, 警惕回调", "color": "#ef4444"})
@@ -826,7 +852,7 @@ class AIAEUSEngine:
 
             aiae_core = self.compute_aiae_core(mktcap, m2)
             margin_heat = self.compute_margin_heat(margin_t, mktcap)
-            aaii_spread = self._aaii_data.get("spread", 5.0)
+            aaii_spread = self._effective_aaii_spread()
             aiae_v1 = self.compute_us_aiae_v1(aiae_core, margin_heat, aaii_spread)
 
             regime = self.classify_regime(aiae_v1)

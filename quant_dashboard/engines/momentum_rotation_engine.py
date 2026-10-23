@@ -227,8 +227,32 @@ def fetch_hs300_data(days: int = 150) -> pd.DataFrame:
     return None
 
 
+def _load_live_vix_cache(max_age_hours: float = 12.0):
+    """读取 fetch_macro 写入的实时 VIX 缓存 (TradingView 等盘中源)."""
+    try:
+        import json as _json
+        _p = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data_lake", "vix_cache.json")
+        with open(_p, "r", encoding="utf-8") as f:
+            d = _json.load(f)
+        age_h = (datetime.now() - datetime.fromisoformat(d["timestamp"])).total_seconds() / 3600
+        v = float(d["latest"])
+        if age_h <= max_age_hours and 5 <= v <= 90:
+            return v, d.get("source", "cache"), age_h
+    except Exception:
+        pass
+    return None
+
+
 def fetch_vix() -> float:
-    """获取VIX恐慌指数 (FRED VIXCLS → CNBC 爬虫 → 默认值)"""
+    """获取VIX恐慌指数 (实时缓存 → FRED VIXCLS → CNBC 爬虫 → 默认值)
+
+    2026-10-23: FRED VIXCLS 至少滞后 1 个交易日 (日志: FRED 16.68 vs TradingView 19.03),
+    L2 仓位系数对 VIX 档位敏感, 故优先使用 12 小时内的实时缓存.
+    """
+    _live = _load_live_vix_cache()
+    if _live:
+        print(f"  [OK] VIX from {_live[1]} cache: {_live[0]:.2f} ({_live[2]:.1f}h old)")
+        return _live[0]
     # Tier 1: FRED VIXCLS
     try:
         from fredapi import Fred
