@@ -618,14 +618,15 @@ def _week_key_from_url(url: str) -> Optional[str]:
     return None
 
 
-_JPX_FOREIGN_SEED = os.path.join(CACHE_DIR, "jpx_foreign_history_seed.json")
+# 种子放在 data/ (随代码入库, 部署到服务器也可用); data_lake/ 被 .gitignore 忽略
+_JPX_FOREIGN_SEED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "jpx_foreign_history_seed.json")
 
 
 def load_foreign_history() -> Dict[str, float]:
     """{週末日: 海外投資家 二市場 週次差引 (億円)} 旧→新 排序.
     种子 (2023-01 ~ 2026-10, 164 周, 已与年度合计及 JPX 原表交叉验证) + 实时记录 (覆盖种子)."""
     weeks = {}
-    for fp in (_JPX_FOREIGN_SEED, _JPX_FOREIGN_HIST):
+    for fp in (os.path.join(CACHE_DIR, "jpx_foreign_history_seed.json"), _JPX_FOREIGN_SEED, _JPX_FOREIGN_HIST):
         try:
             with open(fp, 'r', encoding='utf-8') as f:
                 weeks.update(json.load(f).get("weeks", {}))

@@ -29,3 +29,5 @@ nginx/ssl/
 
 # 系统文件
 Thumbs.db
+# 修复前的本地备份 (git 历史已有原版, 不入库)
+_backup_*/
