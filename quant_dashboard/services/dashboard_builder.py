@@ -15,7 +15,7 @@ from services.logger import get_logger
 logger = get_logger("dashboard")
 from services.cache_service import cache_manager
 from services.cache_store import get_cache_ttl as _get_cache_ttl, get_global_aiae_ttl as _get_global_aiae_ttl
-from services.aiae_safety import build_aiae_context
+from services.aiae_safety import build_aiae_context, apply_vol_overlay
 from services.position_engine import (
     get_vix_analysis, get_position_path, get_tomorrow_plan,
     get_institutional_mindset,
@@ -163,6 +163,20 @@ async def _build_dashboard_data_full():
 
         # 处理 AIAE
         _full_aiae_ctx = build_aiae_context(aiae_report)
+        # Vol overlay V2: 市场尾部刹车 → 有效上限; 组合波动预算 → 风险面板
+        try:
+            from services.vol_regime import current_overlay
+            _full_aiae_ctx = apply_vol_overlay(_full_aiae_ctx, current_overlay())
+        except Exception as e:
+            logger.warning("波动率系数应用失败 (保持原上限): %s", e)
+        try:
+            from services.portfolio_vol import compute_from_store, summarize
+            _vb_summary = summarize(compute_from_store())
+            if _vb_summary:
+                _full_aiae_ctx["vol_budget"] = _vb_summary
+                cache_manager.set_json("vol_budget", _vb_summary, ttl_seconds=_get_cache_ttl())
+        except Exception as e:
+            logger.warning("组合波动预算计算失败 (非致命): %s", e)
         if _full_aiae_ctx.get("decision_locked") is not False:
             logger.error("AIAE 上下文未通过状态、质量或仓位校验，停止发布 Dashboard")
             raise RuntimeError("AIAE_CONTEXT_UNUSABLE")

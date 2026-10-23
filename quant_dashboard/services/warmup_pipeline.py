@@ -9,6 +9,7 @@ AlphaCore · 预热流水线 (从 main.py 提取)
 
 import time
 import asyncio
+import threading
 from datetime import datetime, timedelta
 
 from services.cache_service import cache_manager
@@ -16,7 +17,8 @@ from services.fred_guard import should_retry_fred_error
 from services.locks import AIAE_GLOBAL_LOCK as _AIAE_GLOBAL_LOCK
 from services.logger import get_logger
 from services.aiae_normalizer import normalize_temp, get_region_thresholds, compute_global_position, REGION_NAMES
-from services.aiae_safety import build_aiae_context
+from services.aiae_safety import build_aiae_context, apply_vol_overlay
+from services.vol_regime import current_overlay
 from services.cache_store import get_cache_ttl
 
 logger = get_logger("warmup")
@@ -62,9 +64,34 @@ def warmup_erp_cache():
     logger.info(f"ERP 预热完成 · status={status} · ERP={erp}%")
 
 
+# 市场指数日线: 波动刹车 (vol_regime, 锚 000300.SH) + 因子归因引擎共用
+MARKET_INDEX_CODES = ["000300.SH", "000852.SH", "000015.SH", "399006.SZ"]
+_INDEX_SYNC_LOCK = threading.Lock()
+
+
+def sync_market_indices() -> bool:
+    """增量同步市场指数日线 (幂等, 失败非致命).
+
+    2026-10 修复: 指数原先只在 15:35 Factor 任务里同步; 服务器不在 15:35 运行时
+    000300.SH 会一直停在旧日期 → vol_regime 判定 stale → 上限被强制 ×0.80。
+    现在 AIAE 预热 (启动 / 08:30 早间补偿 / 15:35) 都会先补齐指数, 再计算波动系数。
+    """
+    from data_manager import FactorDataManager
+    with _INDEX_SYNC_LOCK:
+        try:
+            FactorDataManager().sync_daily_prices(MARKET_INDEX_CODES, start_date="20210101", asset='I')
+            logger.info("市场指数同步完成: %s", MARKET_INDEX_CODES)
+            return True
+        except Exception as e:
+            logger.warning("市场指数同步失败 (非致命, 波动系数将按新鲜度保守处理): %s", e)
+            return False
+
+
 def warmup_aiae_cache():
     """预热 AIAE 引擎缓存 (V7.0/V8.1)"""
     from aiae_engine import get_aiae_engine
+    # 先补齐沪深300等指数, 保证随后 current_overlay() 用的是最新波动数据
+    sync_market_indices()
     engine = get_aiae_engine()
     engine.refresh()  # V8.1: 强制劈开 L1 缓存锁
     report = engine.generate_report()
@@ -73,9 +100,10 @@ def warmup_aiae_cache():
         raise Exception(f"AIAE report failed with status: {status}")
     # Publish the canonical safety context immediately. Industry and risk
     # consumers must not wait for the much slower full-dashboard build.
+    # Vol overlay V2: the published cap is the volatility-adjusted cap.
     cache_manager.set_json(
         "aiae_ctx",
-        build_aiae_context(report),
+        apply_vol_overlay(build_aiae_context(report), current_overlay()),
         ttl_seconds=get_cache_ttl(),
     )
     logger.info(f"AIAE 预热完成 · status={status}")
@@ -106,13 +134,8 @@ def warmup_factor_data():
     from data_manager import FactorDataManager
     dm = FactorDataManager()
 
-    # V24.1: 同步三因子归因引擎依赖的指数行情 (asset='I')
-    FACTOR_PROXY_INDICES = ["000300.SH", "000852.SH", "000015.SH", "399006.SZ"]
-    try:
-        dm.sync_daily_prices(FACTOR_PROXY_INDICES, start_date="20210101", asset='I')
-        logger.info("因子代理指数同步完成: %s", FACTOR_PROXY_INDICES)
-    except Exception as e:
-        logger.warning("因子代理指数同步失败 (非致命): %s", e)
+    # V24.1: 同步三因子归因引擎依赖的指数行情 (asset='I'); 与 AIAE 预热共用同一把锁
+    sync_market_indices()
 
     stocks = dm.get_all_stocks()
     # 默认同步 Top 30 样本池 (与因子分析默认配置一致)

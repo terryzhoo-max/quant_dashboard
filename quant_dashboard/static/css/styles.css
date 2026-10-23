@@ -4412,3 +4412,45 @@ body.industry-scope .badge-beta {
     height: 70px;
     margin: 8px 0 4px;
 }
+
+/* ═══ P0 仓位上限瀑布 (2026-10) ═══ */
+.seg-gem { background: linear-gradient(135deg, #a78bfa, #7c3aed); }
+.dot-gem { background: #a78bfa; box-shadow: 0 0 6px rgba(167,139,250,0.4); }
+.pos-stack {
+    display: flex; flex-direction: column; gap: 4px;
+    margin: -8px 0 14px; padding: 10px 12px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06); border-radius: 8px;
+    font-size: 0.78rem;
+}
+.pos-stack[hidden], .ps-data-warn[hidden] { display: none; }
+.ps-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; color: var(--text-muted); }
+.ps-row small { font-size: 0.68rem; opacity: 0.75; margin-left: 4px; }
+.ps-val { font-family: 'JetBrains Mono', 'Inter', monospace; font-weight: 700; color: var(--text-main, #e2e8f0); white-space: nowrap; }
+.ps-vol[data-kind="data"] .ps-val, .ps-vol[data-kind="data"] .ps-label { color: #f59e0b; }
+.ps-vol[data-kind="risk"] .ps-val, .ps-vol[data-kind="risk"] .ps-label { color: #ef4444; }
+.ps-exec { border-top: 1px dashed rgba(255,255,255,0.10); padding-top: 4px; margin-top: 2px; }
+.ps-exec .ps-val { color: #fbbf24; font-size: 0.92rem; }
+.ps-actual[data-level="danger"] .ps-val { color: #ef4444; }
+.ps-actual[data-level="warning"] .ps-val { color: #f97316; }
+.ps-actual[data-level="ok"] .ps-val { color: #10b981; }
+.ps-actual[data-level="room"] .ps-val { color: #3b82f6; }
+.ps-instruction { font-size: 0.72rem; color: var(--text-muted); line-height: 1.4; margin-top: 2px; }
+.ps-data-warn {
+    font-size: 0.7rem; line-height: 1.4; color: #f59e0b;
+    background: rgba(245,158,11,0.08); border-radius: 6px; padding: 5px 8px; margin-top: 4px;
+}
+.factors-note { font-size: 0.68rem; color: var(--text-muted); opacity: 0.8; margin: 0 0 -10px; text-align: center; letter-spacing: 0.3px; }
+
+/* ═══ P1 主题集中度 + 调仓门槛 (2026-10) ═══ */
+.ps-conc { border-top: 1px dashed rgba(255,255,255,0.10); padding-top: 4px; margin-top: 2px; }
+.ps-conc[hidden], .ps-conc-bar[hidden], .ps-gate[hidden] { display: none; }
+.ps-conc[data-level="danger"] .ps-val { color: #ef4444; }
+.ps-conc[data-level="warning"] .ps-val { color: #f97316; }
+.ps-conc[data-level="ok"] .ps-val { color: #10b981; }
+.ps-conc-bar { position: relative; display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: rgba(255,255,255,0.06); }
+.ps-conc-bar span { display: block; height: 100%; }
+.ps-conc-limit-mark { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #f1f5f9; opacity: 0.85; transform: translateX(-1px); }
+.ps-gate { font-size: 0.72rem; line-height: 1.4; border-radius: 6px; padding: 5px 8px; margin-top: 4px; }
+.ps-gate[data-open="yes"] { color: #10b981; background: rgba(16,185,129,0.08); }
+.ps-gate[data-open="no"] { color: #94a3b8; background: rgba(148,163,184,0.10); }

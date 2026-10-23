@@ -1,0 +1,59 @@
+{
+  "_comment": "持仓跟踪止盈参数 (覆盖 services/trailing_stop.py DEFAULT_CONFIG; 删除某项即回落默认值)。当前数值来自 2026-10 本机行情校准, 见 docs/trailing_stop_calibration.md。改参数前请重跑 strategies/trailing_stop_calibration.py, 选表现平稳的区间, 不要追单点最优。",
+  "_calibration": {
+    "version": "2026-10-22",
+    "universe": "104 只 (个股 56 / 主题 ETF 33 / 宽基 ETF 10 / QDII 5), data_lake/daily_prices",
+    "split": "样本内 < 2024-10-01 ≤ 样本外",
+    "method": "逐资产连续持有模拟 (止损 → 再入场), 对比买入持有; 另以每 10 日随机入场检验分布",
+    "execution": "收盘确认, 次日开盘成交, 一字跌停顺延, 往返 0.2%, 空仓年化 1.5%"
+  },
+  "atr_period": 20,
+  "breakeven_r": 1.0,
+  "breakeven_buffer_pct": 0.003,
+  "classes": {
+    "theme_etf": {
+      "init_atr_mult": 2.0,
+      "trail_atr_mult": 5.0,
+      "trail_start_r": 3.0,
+      "partial_fraction": 0.3333333333333333,
+      "reentry": "breakout20"
+    },
+    "broad_etf": {
+      "init_atr_mult": 3.0,
+      "trail_atr_mult": 5.0,
+      "trail_start_r": 0.5,
+      "partial_fraction": 0.3333333333333333,
+      "reentry": "ma60"
+    },
+    "stock": {
+      "init_atr_mult": 5.0,
+      "trail_atr_mult": 4.0,
+      "trail_start_r": 1.0,
+      "partial_fraction": 0.3333333333333333,
+      "reentry": "ma60"
+    }
+  },
+  "core": {
+    "init_atr_mult": 5.0,
+    "trail_atr_mult": 6.0,
+    "trail_start_r": 1.0,
+    "partial_fraction": 0.0
+  },
+  "regime_trail_adj": {
+    "BULL": 0.0,
+    "RANGE": 0.0,
+    "BEAR": 0.0,
+    "CRASH": 0.0
+  },
+  "aiae_tighten_regime": 4,
+  "aiae_tighten_step": 0.0,
+  "near_stop_atr": 0.5,
+  "min_r_pct": 0.03,
+  "disaster_stop_atr": 1.0,
+  "lot_size": 100,
+  "round_trip_cost": 0.002,
+  "risk": {
+    "per_position_pct": 0.02,
+    "heat_limit_pct": 0.12
+  }
+}

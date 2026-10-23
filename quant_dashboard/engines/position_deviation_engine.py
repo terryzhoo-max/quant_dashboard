@@ -104,9 +104,29 @@ class PositionDeviationEngine:
         # 2. AIAE 建议仓位
         suggested_position = None
         regime = None
+        base_suggested = None
+        vol_overlay = None
         if aiae_report and aiae_report.get("position"):
-            suggested_position = aiae_report["position"].get("matrix_position")
+            base_suggested = aiae_report["position"].get("matrix_position")
+            suggested_position = base_suggested
             regime = aiae_report.get("current", {}).get("regime")
+            # Vol overlay V2: 建议仓位 = AIAE 矩阵 × 市场尾部刹车系数
+            try:
+                from services.vol_regime import get_vol_overlay, apply_vol_overlay_to_cap
+                vol_overlay = get_vol_overlay()
+                adj = apply_vol_overlay_to_cap(base_suggested, vol_overlay)
+                if adj is not None:
+                    suggested_position = adj
+            except Exception as e:
+                _log(f"波动率系数不可用, 建议仓位保持 AIAE 原值: {e}", "WARN")
+
+        # 2b. 组合波动预算 (按持仓结构, 非择时)
+        vol_budget = None
+        try:
+            from services.portfolio_vol import compute_portfolio_vol, load_portfolio_vol_config
+            vol_budget = compute_portfolio_vol(positions, total_asset, cfg=load_portfolio_vol_config())
+        except Exception as e:
+            _log(f"组合波动预算计算失败 (非致命): {e}", "WARN")
 
         # 3. 仓位偏差
         position_gap = None
@@ -150,6 +170,14 @@ class PositionDeviationEngine:
             "position_deviation": {
                 "actual_pct": round(actual_position_pct, 1),
                 "suggested_pct": suggested_position,
+                "base_suggested_pct": base_suggested,
+                "vol_factor": (vol_overlay or {}).get("factor"),
+                "vol_status": (vol_overlay or {}).get("status"),
+                "effective_cap_pct": (
+                    round(min(float(suggested_position), float(vol_budget["max_equity_pct"])), 1)
+                    if suggested_position is not None and vol_budget and vol_budget.get("max_equity_pct") is not None
+                    else suggested_position
+                ),
                 "gap": position_gap,
                 "gap_severity": self._classify_gap_severity(position_gap),
                 "regime": regime,
@@ -160,6 +188,7 @@ class PositionDeviationEngine:
             "reduction_candidates": reduction_candidates,
             "structure": structure,
             "health_score": health,
+            "vol_budget": vol_budget,
         }
 
         _log(f"偏差分析完成: 仓位={actual_position_pct:.1f}% "
@@ -454,6 +483,14 @@ class PositionDeviationEngine:
                     stop_loss_score = 90  # 近期无止损事件 = 正常
         except Exception as e:
             pass  # 降级为默认值
+        # 持仓跟踪止盈闭环: 有触发事件时, 以 "触发后 T+1 内执行率" 为准 (由成交台账自动核对)
+        try:
+            from services.trailing_stop_service import get_discipline_score
+            _ts_score = get_discipline_score()
+            if _ts_score is not None:
+                stop_loss_score = _ts_score
+        except Exception:
+            pass
         scores["stop_loss"] = min(100, max(0, stop_loss_score))
 
         # ⑥ 数据新鲜度 (10%)

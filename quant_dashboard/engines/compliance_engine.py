@@ -169,6 +169,97 @@ def _check_min_holdings(snapshot, positions, ctx):
     return True, f"{count} 只持仓, 分散化满足要求"
 
 
+def _vol_budget_enforced() -> bool:
+    try:
+        from services.portfolio_vol import load_portfolio_vol_config
+        return bool(load_portfolio_vol_config().get("enforce_in_compliance", False))
+    except Exception:
+        return False
+
+
+def _check_vol_budget(snapshot, positions, ctx):
+    """组合波动预算: 当前权益仓位 vs 目标波动对应的最大仓位.
+
+    数据来自 Dashboard 构建时缓存的 vol_budget (或 context/snapshot 直接传入)。
+    超出 10pp 以上判为不通过; 严重级别由 vol_targeting.portfolio.enforce_in_compliance 决定。
+    """
+    vb = (ctx or {}).get("vol_budget") or snapshot.get("vol_budget")
+    if vb is None:
+        try:
+            from services.cache_service import cache_manager
+            vb = cache_manager.get_json("vol_budget")
+        except Exception:
+            vb = None
+    if not isinstance(vb, dict) or vb.get("max_equity_pct") is None or vb.get("invested_pct") is None:
+        return True, "无组合波动预算数据, 跳过检查"
+    try:
+        invested = float(vb["invested_pct"])
+        max_eq = float(vb["max_equity_pct"])
+        pvol = float(vb.get("portfolio_vol") or 0) * 100
+        tvol = float(vb.get("target_vol") or 0) * 100
+    except (TypeError, ValueError):
+        return True, "组合波动预算数据无效, 跳过检查"
+    excess = invested - max_eq
+    if excess > 10:
+        return False, (f"组合年化波动 {pvol:.0f}% > 目标 {tvol:.0f}%: 当前仓位 {invested:.0f}% "
+                       f"超出波动预算上限 {max_eq:.0f}% 达 {excess:.0f}pp. 禁止加仓, 按减仓草案分批降低.")
+    if excess > 0:
+        return True, f"仓位 {invested:.0f}% 略超波动预算上限 {max_eq:.0f}% ({excess:.0f}pp), 不宜加仓"
+    return True, f"组合年化波动 {pvol:.0f}% 在目标 {tvol:.0f}% 以内"
+
+
+class _VolBudgetRule(ComplianceRule):
+    """严重级别随配置切换: 用户确认目标波动后 (enforce_in_compliance=true) 升级为硬阻断."""
+
+    def check(self, snapshot: dict, positions: list = None, context: dict = None) -> dict:
+        self.severity = "hard_block" if _vol_budget_enforced() else "soft_warn"
+        return super().check(snapshot, positions, context)
+
+
+def _trailing_breaches(snapshot, ctx):
+    rep = (ctx or {}).get("trailing_stop") or snapshot.get("trailing_stop")
+    if rep is None:
+        try:
+            from services.cache_service import cache_manager
+            rep = cache_manager.get_json("trailing_stop_report")
+        except Exception:
+            rep = None
+    if not isinstance(rep, dict) or not isinstance(rep.get("positions"), list):
+        return None
+    red = [p for p in rep["positions"] if p.get("status") == "RED"]
+    legacy = [p for p in rep["positions"] if p.get("status") == "LEGACY"]
+    return red, legacy
+
+
+def _check_stop_breach_no_add(snapshot, positions, ctx):
+    """越过止损线的持仓禁止加仓 (跟踪止盈引擎: RED 已触发未执行 / LEGACY 跟踪前越线未决策)。"""
+    if ctx and ctx.get("direction") in ("sell", "reduce"):
+        return True, "减仓操作, 不受限制"
+    res = _trailing_breaches(snapshot, ctx)
+    if res is None:
+        return True, "无跟踪止盈数据, 跳过检查"
+    red, legacy = res
+    names = lambda xs: ", ".join(p.get("name", p.get("ts_code", "?")) for p in xs[:4])
+    if red:
+        return False, f"已触发止损未执行: {names(red)} — 先执行卖出, 禁止对其加仓"
+    if legacy:
+        return False, f"跟踪前已越线、尚未决策: {names(legacy)} — 先止损或重新基准化, 期间禁止加仓"
+    return True, "无越线持仓"
+
+
+class _StopBreachRule(ComplianceRule):
+    """有已触发未执行 (RED) → 硬阻断; 仅有遗留待决 (LEGACY) → 软警告。"""
+
+    def check(self, snapshot: dict, positions: list = None, context: dict = None) -> dict:
+        res = None
+        try:
+            res = _trailing_breaches(snapshot, context)
+        except Exception:
+            pass
+        self.severity = "hard_block" if (res and res[0]) else "soft_warn"
+        return super().check(snapshot, positions, context)
+
+
 # ── 规则集 ──
 COMPLIANCE_RULES = [
     ComplianceRule("single_stock_cap", "单票仓位上限", "hard_block",
@@ -185,6 +276,10 @@ COMPLIANCE_RULES = [
                    "VIX > 30 时仓位强制上限 30%", _check_vix_emergency),
     ComplianceRule("min_holdings", "最低分散持仓", "info",
                    "持仓标的数 ≥ 5 只以分散尾部风险", _check_min_holdings),
+    _VolBudgetRule("vol_budget", "组合波动预算", "soft_warn",
+                   "当前仓位不得超过目标波动对应的最大仓位 10pp", _check_vol_budget),
+    _StopBreachRule("stop_breach_no_add", "越线禁止加仓", "soft_warn",
+                    "跌破跟踪止损线的持仓, 执行或决策前禁止加仓", _check_stop_breach_no_add),
 ]
 
 
@@ -195,7 +290,7 @@ COMPLIANCE_RULES = [
 def run_compliance_check(snapshot: dict, positions: list = None,
                          context: dict = None) -> dict:
     """
-    执行全部 6 条合规规则检查。
+    执行全部合规规则检查 (当前 9 条)。
 
     参数:
       snapshot: 当前市场快照
@@ -240,7 +335,7 @@ def run_compliance_check(snapshot: dict, positions: list = None,
             r["rule_name"] for r in soft_warns[:3])
     else:
         status = "passed"
-        summary = "🟢 全部 7 条合规规则审查通过"
+        summary = f"🟢 全部 {len(results)} 条合规规则审查通过"
 
     return {
         "status": status,

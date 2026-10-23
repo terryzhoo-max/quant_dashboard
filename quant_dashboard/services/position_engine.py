@@ -4,7 +4,7 @@ AlphaCore · 仓位决策引擎 (从 main.py 提取)
 包含:
   - get_vix_analysis: VIX 四级分析
   - get_position_path: 5日仓位路径预测
-  - _synthesize_directives: AIAE×ERP×VIX 三因子指令合成
+  - _synthesize_directives: AIAE×ERP×波动 三因子指令合成 (VIX 仅作海外参考)
   - get_tomorrow_plan: 明日交易计划 (V2.0 五档主轴)
   - get_institutional_mindset: 实战对策心态矩阵
   - get_tactical_label: V3.6 仓位标签
@@ -199,6 +199,36 @@ def get_position_path(current_pos: float, vix_analysis: dict,
 #  三因子指令合成
 # ═══════════════════════════════════════════════════
 
+def _risk_directive(vol_overlay, vix_val):
+    """第三行风控指令: 文案只描述真正生效的规则, 不再出现未执行的 "Cap×0.75"."""
+    factor = vol_overlay.get("factor", 1.0)
+    status = vol_overlay.get("status")
+    ratio = vol_overlay.get("ratio")
+    trig = vol_overlay.get("trigger_ratio") or 2.0
+    if status == "disabled":
+        a_part = "A股波动刹车已关闭 (配置) → 上限不变"
+    elif status in ("stale", "missing"):
+        a_part = f"A股波动数据{'过期' if status == 'stale' else '缺失'} → 上限×{factor:.2f} (保守)"
+    elif (vol_overlay.get("brake_on") or (isinstance(factor, (int, float)) and factor < 1)) and ratio is None:
+        a_part = f"A股波动刹车 上限×{factor:.2f}"
+    elif vol_overlay.get("brake_on") or (isinstance(factor, (int, float)) and factor < 1):
+        a_part = f"A股波动 {ratio:.1f}倍基准 ≥ {trig:.1f}倍 → 尾部刹车 上限×{factor:.2f}"
+    elif ratio is not None:
+        a_part = f"A股波动 {ratio:.1f}倍基准 (刹车线 {trig:.1f}倍) → 上限不变"
+    else:
+        a_part = "A股波动未接入 → 上限不变"
+
+    if vix_val >= 35:
+        icon, color, v_part = "🚨", "#ef4444", f"VIX {vix_val} 海外极端恐慌, 停手观望"
+    elif vix_val >= 25:
+        icon, color, v_part = "⚠️", "#f97316", f"VIX {vix_val} 海外紧张, 警惕传染"
+    else:
+        icon, color, v_part = "🛡️", "#94a3b8", f"VIX {vix_val} 正常"
+    if (vol_overlay.get("brake_on") or status in ("stale", "missing")) and icon == "🛡️":
+        icon, color = "⚠️", "#f97316"
+    return {"priority": "risk", "icon": icon, "text": f"{a_part} · {v_part}", "color": color}
+
+
 def _synthesize_directives(aiae_ctx, vix_analysis):
     """V2.0 三因子决策树 → 3行可执行指令"""
     regime = aiae_ctx["regime"]
@@ -207,10 +237,12 @@ def _synthesize_directives(aiae_ctx, vix_analysis):
     vix_val = vix_analysis.get("vix_val", 20)
     regime_info = aiae_ctx["regime_info"]
 
-    # Line 1: AIAE 主指令 (永远来自 regime)
+    # Line 1: AIAE 主指令 (永远来自 regime); 有效上限已含市场波动刹车
+    base_cap = aiae_ctx.get("base_cap", cap)
+    cap_text = f"Cap{cap}%" if base_cap == cap else f"Cap{base_cap}%→{cap}% (波动刹车)"
     d1 = {
         "priority": "primary", "icon": "🎯",
-        "text": f"AIAE {regime_info['emoji']} {regime_info['cn']} Cap{cap}% → {regime_info['action']}",
+        "text": f"AIAE {regime_info['emoji']} {regime_info['cn']} {cap_text} → {regime_info['action']}",
         "color": regime_info["color"],
     }
 
@@ -231,19 +263,8 @@ def _synthesize_directives(aiae_ctx, vix_analysis):
         d2_icon = "📊"
     d2 = {"priority": "confirm", "icon": d2_icon, "text": d2_text, "color": d2_color}
 
-    # Line 3: VIX 风控 (通过 or 警报)
-    if vix_val >= 35:
-        d3 = {"priority": "risk", "icon": "🚨",
-              "text": f"VIX {vix_val} 极端恐慌 → 风控降级Cap×0.5, 停手观望",
-              "color": "#ef4444"}
-    elif vix_val >= 25:
-        d3 = {"priority": "risk", "icon": "⚠️",
-              "text": f"VIX {vix_val} 高度紧张 → 风控边际Cap×0.75, 增配红利",
-              "color": "#f97316"}
-    else:
-        d3 = {"priority": "risk", "icon": "🛡️",
-              "text": f"VIX {vix_val} 正常 → 风控不触发",
-              "color": "#94a3b8"}
+    # Line 3: 风控 — A 股实际波动 (已计入上限) + VIX (海外参考, 不直接改上限)
+    d3 = _risk_directive(aiae_ctx.get("vol_overlay") or {}, vix_val)
 
     return [d1, d2, d3]
 
@@ -279,6 +300,9 @@ def get_tomorrow_plan(vix_analysis, temp_score, aiae_ctx=None):
             "cn": regime_info["cn"],
             "aiae_v1": aiae_ctx.get("aiae_v1", 0),
             "cap": cap,
+            "base_cap": aiae_ctx.get("base_cap", cap),
+            "vol_factor": (aiae_ctx.get("vol_overlay") or {}).get("factor", 1.0),
+            "vol_status": (aiae_ctx.get("vol_overlay") or {}).get("status", "not_applied"),
             "cap_range": regime_info.get("position", "50-65%"),
             "action": regime_info["action"],
             "action_detail": regime_info.get("desc", ""),
@@ -302,7 +326,9 @@ def get_tomorrow_plan(vix_analysis, temp_score, aiae_ctx=None):
                 "label": vix_analysis.get("label", ""),
                 "risk_override": risk_override,
                 "multiplier": vix_mult,
+                "advisory_only": True,  # 海外参考; A 股上限只受 vol_overlay 影响
             },
+            "a_share_vol": dict(aiae_ctx.get("vol_overlay") or {"status": "not_applied", "factor": 1.0}),
         }
 
         # 3. regime_matrix: 五档操作矩阵
@@ -332,8 +358,8 @@ def get_tomorrow_plan(vix_analysis, temp_score, aiae_ctx=None):
             {"condition": f"AIAE上行至{'Ⅴ' if regime == 4 else 'Ⅳ'}级" if regime <= 4 else "AIAE维持Ⅴ级",
              "action": "启动系统减仓至40%以下" if regime <= 3 else ("3天清仓无例外" if regime >= 5 else "继续每周减仓5%"),
              "type": "aiae_upgrade"},
-            {"condition": "VIX突破30+",
-             "action": f"风控降级Cap×0.75 + 增配红利" if v_val < 30 else "维持风控降级状态",
+            {"condition": "A股波动升至2倍基准以上",
+             "action": "尾部刹车自动生效: 上限按波动比例下调 (当日收盘计算, 次日执行)",
              "type": "vix_alert"},
             {"condition": "ERP跌破3%",
              "action": "估值吸引力下降·降低进攻权重",
@@ -365,6 +391,22 @@ def get_tomorrow_plan(vix_analysis, temp_score, aiae_ctx=None):
                 "medium" if margin_heat_val > 2.5 or fund_pos_val > 85 else "low"
             ),
         }
+        vol_budget = aiae_ctx.get("vol_budget")
+        if isinstance(vol_budget, Mapping) and vol_budget.get("max_equity_pct") is not None:
+            excess = vol_budget.get("equity_excess_pp") or 0
+            risk_panel["vol_budget"] = {
+                "target_vol": vol_budget.get("target_vol"),
+                "portfolio_vol": vol_budget.get("portfolio_vol"),
+                "invested_pct": vol_budget.get("invested_pct"),
+                "max_equity_pct": vol_budget.get("max_equity_pct"),
+                "equity_excess_pp": excess,
+                "effective_bets": vol_budget.get("effective_bets"),
+                "breach_count": vol_budget.get("breach_count"),
+                "status": "danger" if excess > 10 else ("warning" if excess > 0 else "safe"),
+            }
+            risk_panel["effective_position_cap"] = round(min(float(cap), float(vol_budget["max_equity_pct"])), 1)
+            if excess > 10:
+                risk_panel["overall_risk"] = "high"
 
         # 7. 兼容旧字段
         framework_compat = [d["text"] for d in directives]

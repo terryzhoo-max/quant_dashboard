@@ -32,8 +32,9 @@ class TestRuntimeParameterContract(unittest.TestCase):
         validate_runtime_config(DEFAULT_RUNTIME_CONFIG)
 
         self.assertEqual(get_regime_rules()["ma_period"], 120)
-        self.assertEqual(get_position_cap("mr", "RANGE"), 80)
-        self.assertEqual(get_position_cap("mr", "RANGE", as_ratio=True), 0.8)
+        # 静态配置值 (波动率刹车单独测试, 见 test_vol_overlay.py)
+        self.assertEqual(get_position_cap("mr", "RANGE", apply_vol_adj=False), 80)
+        self.assertEqual(get_position_cap("mr", "RANGE", as_ratio=True, apply_vol_adj=False), 0.8)
         self.assertEqual(get_stop_loss("momentum", "BEAR"), 0.05)
         self.assertEqual(get_score_gate("momentum", "BEAR"), 75)
         self.assertEqual(get_single_position_cap("momentum", "BEAR"), 12)

@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "revision": 7,
-  "published_at": "2026-10-14T23:46:24.336310+08:00",
-  "published_by": "ci_outcome:7d62f73d-1ab",
+  "revision": 8,
+  "published_at": "2026-10-23T02:30:00+08:00",
+  "published_by": "manual:vol_targeting_v2",
   "regime": {
     "ma_period": 120,
     "slope_days": 5,
@@ -195,6 +195,35 @@
         "w_vol": 0.08,
         "w_credit": 0.07
       }
+    }
+  },
+  "vol_targeting": {
+    "_doc": "市场层=尾部保险刹车(不是择时), 组合层=按持仓结构的波动预算。校准依据见 docs/vol_overlay_calibration.md",
+    "market": {
+      "enabled": true,
+      "index_code": "000300.SH",
+      "trigger_ratio": 2.0,
+      "alpha": 0.5,
+      "floor": 0.5,
+      "ceiling": 1.0,
+      "ewma_lambda": 0.94,
+      "slow_window": 60,
+      "baseline_window": 756,
+      "max_data_age_days": 10,
+      "stale_factor_cap": 0.8
+    },
+    "portfolio": {
+      "enabled": true,
+      "target_vol": 0.15,
+      "vol_window": 250,
+      "shrinkage": 0.3,
+      "k_stock": 0.03,
+      "k_etf": 0.08,
+      "static_cap_stock": 8.0,
+      "static_cap_etf": 25.0,
+      "gap_loss_budget": 0.02,
+      "gap_limit_days": 2,
+      "enforce_in_compliance": false
     }
   }
 }

@@ -17,6 +17,8 @@
     <link rel="stylesheet" href="./static/css/visual_excellence.css?v=4">
     <link rel="stylesheet" href="./static/css/mobile.css?v=1">
     <link rel="stylesheet" href="./static/css/brinson.css?v=1">
+    <link rel="stylesheet" href="./static/css/vol_budget.css?v=3">
+    <link rel="stylesheet" href="./static/css/trailing_stop.css?v=4">
     <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
     <script>window.echarts || document.write('<script src="./static/vendor/echarts.min.js"><\/script>')</script>
@@ -118,7 +120,7 @@
                         </div>
                     </div>
                 </div>
-                <button class="btn btn-primary" onclick="initDecisionHub()">刷新决策数据</button>
+                <button class="btn btn-primary" onclick="initDecisionHub(); window.loadVolBudgetPanel && loadVolBudgetPanel()">刷新决策数据</button>
             </div>
         </header>
         <!-- Toast 容器 -->
@@ -169,6 +171,20 @@
                             <div class="aiae-hub-regime-strip" id="aiae-hub-regime-strip"></div>
                             <div class="aiae-hub-section-label aiae-hub-section-gap">警示指标</div>
                             <div class="aiae-hub-warnings" id="aiae-hub-warnings"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 波动率仓位预算 (机构风控视角: 先看约束, 再看信号) -->
+                <div class="dh-collapsible glass-decision vb-panel" id="vol-budget-panel">
+                    <div class="dh-collapsible-header" onclick="toggleDHPanel('vol-budget-panel')">
+                        <span class="dh-collapsible-title">🧭 波动率仓位预算<span class="vb-sub">风险预算 · 约束先于信号</span></span>
+                        <span class="dh-collapsible-summary" id="vb-summary">加载中...</span>
+                        <span class="dh-collapsible-arrow">▶</span>
+                    </div>
+                    <div class="dh-collapsible-body">
+                        <div class="vb-body" id="vb-body">
+                            <div class="vb-loading">⏳ 计算组合波动与约束...</div>
                         </div>
                     </div>
                 </div>
@@ -330,10 +346,11 @@
                                         <div class="sop-col sop-col-reduce">
                                             <div class="sop-col-title">🟡 减仓 / 止盈</div>
                                             <ul class="sop-rules">
-                                                <li>波段守卫 <b class="danger-text">RED</b> → 对应标的<b>立即止盈</b></li>
+                                                <li>跟踪止盈 <b class="danger-text">RED</b> (收盘跌破) → <b>次日开盘卖出</b></li>
+                                                <li>浮盈 ≥ <b>1R</b> → 止损上移至保本</li>
+                                                <li>主题ETF ≥<b>3R</b> / 宽基 ≥<b>0.5R</b> / 个股 ≥<b>1R</b> → 卖 <b>1/3</b>，止损 = 最高收盘 − 5/5/4×ATR</li>
+                                                <li>止损离场后按信号回补：主题 <b>20 日新高</b> / 宽基·个股 <b>上穿 MA60</b></li>
                                                 <li>AIAE 升至 <b>R4+</b> → 全组合减至建议仓位</li>
-                                                <li>单票浮盈 > <b>20%</b> → 移动止盈至成本+10%</li>
-                                                <li>单票浮盈 > <b>30%</b> → 减半锁定利润</li>
                                                 <li>JCS 连续 <b>3 日</b> &lt; 50 → 整体减仓 20%</li>
                                             </ul>
                                         </div>
@@ -341,7 +358,8 @@
                                             <div class="sop-col-title">🔴 紧急止损</div>
                                             <ul class="sop-rules">
                                                 <li>VIX > <b>30</b> → 降仓至 <b>30%</b>，仅留防御</li>
-                                                <li>单票浮亏 > <b>8%</b> → 无共振信号则<b>止损</b></li>
+                                                <li>收盘跌破初始止损 (主题 2 / 宽基 3 / 个股 5×ATR) → <b>次日止损</b>，不等共振</li>
+                                                <li>越线后<b>禁止加仓</b>；加仓只加在盈利仓位，单票止损风险 ≤ 总资产 <b>2%</b></li>
                                                 <li>JCS 连续 3 日 &lt; <b>40</b> → 全组合 ≤ <b>20%</b></li>
                                                 <li>尾部风险 > <b>60</b> → 降至建议仓位 <b>70%</b></li>
                                                 <li>组合回撤 > <b>-10%</b> → 暂停操作 1 日冷静</li>
@@ -369,10 +387,24 @@
                     </div>
                 </div>
 
+                <!-- 持仓跟踪止盈 · 执行闭环 (吊灯止损 + R 分层 + 成交台账核对) -->
+                <div class="dh-collapsible glass-decision ts-panel" id="trailing-stop-panel">
+                    <div class="dh-collapsible-header" onclick="toggleDHPanel('trailing-stop-panel')">
+                        <span class="dh-collapsible-title">🎯 持仓跟踪止盈<span class="ts-sub">收盘确认 · 次日执行 · 只升不降</span></span>
+                        <span class="dh-collapsible-summary" id="ts-summary">加载中...</span>
+                        <span class="dh-collapsible-arrow">▶</span>
+                    </div>
+                    <div class="dh-collapsible-body">
+                        <div class="ts-body" id="ts-body">
+                            <div class="ts-empty">⏳ 重放持仓止损线...</div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 全球宽基波段守卫 (Swing Guard) -->
                 <div class="swing-guard-dashboard glass-decision" id="swing-guard-dashboard">
                     <div class="swing-guard-header">
-                        <h3 class="swing-guard-title">🎯 全球宽基波段守卫 <span class="swing-guard-subtitle">— 生产级跟踪止盈机制</span></h3>
+                        <h3 class="swing-guard-title">🎯 全球宽基波段守卫 <span class="swing-guard-subtitle">— 指数择时参考 · 持仓止盈以「持仓跟踪止盈」面板为准</span></h3>
                         <button class="sg-refresh-btn" onclick="fetchSwingGuard()">↻ 刷新</button>
                     </div>
                     <div class="swing-guard-grid" id="swing-guard-grid">
@@ -862,6 +894,8 @@
     <script src="./static/js/decision/optimizer.js?v=52"></script>
     <script src="./static/js/decision/rebalance_panel.js?v=53"></script>
     <script src="./static/js/decision/brinson.js?v=1"></script>
+    <script src="./static/js/decision/vol_budget_panel.js?v=3"></script>
+    <script src="./static/js/decision/trailing_stop_panel.js?v=4"></script>
     <script src="./static/js/decision.js?v=52"></script>
     <script>
     if ('serviceWorker' in navigator) {

@@ -1,7 +1,7 @@
 """
 AlphaCore P3-A · 合规引擎单元测试
 ==================================
-覆盖全部 7 条 COMPLIANCE_RULES 的 hard_block / soft_warn / info 路径。
+覆盖全部 9 条 COMPLIANCE_RULES 的 hard_block / soft_warn / info 路径。
 """
 
 import pytest
@@ -267,7 +267,7 @@ class TestRunComplianceCheck:
             result = run_compliance_check(snap, positions=[], context=ctx)
         assert result["status"] == "passed"
         assert result["failed_count"] == 0
-        assert len(result["checks"]) == 7
+        assert len(result["checks"]) == 9
 
     def test_vix_crisis_returns_blocked(self):
         """VIX 危机 → 硬阻断"""
@@ -295,5 +295,28 @@ class TestRunComplianceCheck:
         assert "summary" in result
         assert isinstance(result["summary"], str)
 
-    def test_rule_count_is_7(self):
-        assert len(COMPLIANCE_RULES) == 7
+    def test_rule_count_is_9(self):
+        assert len(COMPLIANCE_RULES) == 9
+
+
+# ═══════════════════════════════════════════════════
+#  R9: 越线禁止加仓 (跟踪止盈引擎联动)
+# ═══════════════════════════════════════════════════
+
+class TestStopBreachNoAdd:
+    def _run(self, statuses, direction="buy"):
+        rep = {"positions": [{"ts_code": f"{i}", "name": f"N{i}", "status": s} for i, s in enumerate(statuses)]}
+        rule = [r for r in COMPLIANCE_RULES if r.id == "stop_breach_no_add"][0]
+        return rule.check(_snap(), [], {"direction": direction, "trailing_stop": rep})
+
+    def test_red_is_hard_block(self):
+        r = self._run(["GREEN", "RED"])
+        assert r["passed"] is False and r["severity"] == "hard_block"
+
+    def test_legacy_only_is_soft_warn(self):
+        r = self._run(["LEGACY", "GREEN"])
+        assert r["passed"] is False and r["severity"] == "soft_warn"
+
+    def test_clean_or_selling_passes(self):
+        assert self._run(["GREEN", "YELLOW"])["passed"] is True
+        assert self._run(["RED"], direction="sell")["passed"] is True

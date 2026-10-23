@@ -85,3 +85,39 @@ def build_aiae_context(report: Mapping[str, Any] | None) -> dict:
         "data_quality_score": quality_score,
         "decision_locked": locked,
     }
+
+
+def apply_vol_overlay(context: Mapping[str, Any], overlay: Mapping[str, Any] | None) -> dict:
+    """Return a copy of an AIAE context whose ``cap`` is the volatility-adjusted cap.
+
+    ``base_cap`` keeps the raw AIAE matrix position; ``cap`` becomes
+    ``min(95, base_cap × factor)``. Locked or invalid contexts are returned
+    unchanged (they never emit tactics anyway). The overlay is recorded under
+    ``vol_overlay`` so every consumer can show why the cap moved.
+    """
+    ctx = dict(context or {})
+    if ctx.get("decision_locked") is not False or ctx.get("cap") is None:
+        return ctx
+    from services.vol_regime import apply_vol_overlay_to_cap
+
+    base_cap = ctx.get("base_cap", ctx["cap"])
+    effective = apply_vol_overlay_to_cap(base_cap, overlay)
+    if effective is None:
+        return ctx
+    if isinstance(effective, float) and effective.is_integer():
+        effective = int(effective)
+    ov = dict(overlay or {})
+    ctx["base_cap"] = base_cap
+    ctx["cap"] = effective
+    ctx["vol_overlay"] = {
+        "status": ov.get("status", "unknown"),
+        "factor": ov.get("factor", 1.0),
+        "brake_on": bool(ov.get("brake_on", False)),
+        "sigma_hat": ov.get("sigma_hat"),
+        "baseline": ov.get("baseline"),
+        "ratio": ov.get("ratio"),
+        "trigger_ratio": ov.get("trigger_ratio"),
+        "trade_date": ov.get("trade_date"),
+        "reason": ov.get("reason", ""),
+    }
+    return ctx

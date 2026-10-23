@@ -13,7 +13,7 @@
     <title>AlphaCore 投研量化终端</title>
     <!-- 引入外部样式 -->
     <link rel="stylesheet" href="./static/css/fonts.css?v=1">
-    <link rel="stylesheet" href="./static/css/styles.css?v=22">
+    <link rel="stylesheet" href="./static/css/styles.css?v=24">
     <link rel="stylesheet" href="./static/css/visual_excellence.css?v=5">
     <link rel="stylesheet" href="./static/css/mobile.css?v=3">
     <!-- 引入高级无衬线字体 Inter -->
@@ -457,8 +457,23 @@
                                 </div>
                             </div>
                         </div>
+                        <!-- P0: 仓位上限瀑布 (后端 market_temp.position_stack, 与决策页 build_decision_view 同源) -->
+                        <div class="pos-stack" id="pos-stack" hidden>
+                            <div class="ps-row"><span class="ps-label">AIAE 矩阵上限</span><span class="ps-val" id="ps-base">--</span></div>
+                            <div class="ps-row ps-vol" id="ps-vol-row" data-kind="none"><span class="ps-label" id="ps-vol-label">× 波动系数</span><span class="ps-val" id="ps-vol">--</span></div>
+                            <div class="ps-row"><span class="ps-label">∧ 组合波动预算</span><span class="ps-val" id="ps-budget">--</span></div>
+                            <div class="ps-row ps-exec"><span class="ps-label">= 可执行上限 <small id="ps-binding"></small></span><span class="ps-val" id="ps-exec">--</span></div>
+                            <div class="ps-row ps-actual" id="ps-actual-row" data-level="unknown"><span class="ps-label">实际仓位 <small id="ps-asof"></small></span><span class="ps-val"><span id="ps-actual">--</span> <small id="ps-gap"></small></span></div>
+                            <div class="ps-instruction" id="ps-instruction"></div>
+                            <div class="ps-row ps-conc" id="ps-conc-row" data-level="unknown" hidden><span class="ps-label">主题集中度 <small id="ps-conc-limit"></small></span><span class="ps-val" id="ps-conc">--</span></div>
+                            <div class="ps-conc-bar" id="ps-conc-bar" hidden></div>
+                            <div class="ps-instruction" id="ps-conc-instruction"></div>
+                            <div class="ps-gate" id="ps-gate" data-open="unknown" hidden></div>
+                            <div class="ps-data-warn" id="ps-data-warn" hidden></div>
+                        </div>
+                        <div class="factors-note">因子体检 · 仅供参考，不参与仓位计算</div>
                         <div class="confidence-row">
-                            <span class="conf-label">数据置信度</span>
+                            <span class="conf-label">因子一致度</span>
                             <div class="conf-gauge">
                                 <div class="conf-fill" id="conf-fill" style="width: 50%;"></div>
                             </div>
@@ -504,7 +519,7 @@
                         <div class="hub-col-header">
                             <span class="icon">📊</span>
                             <h3>策略配置</h3>
-                            <span class="alloc-total-badge" id="val-alloc-total">总仓位: --%</span>
+                            <span class="alloc-total-badge" id="val-alloc-total">仓位上限: --%</span>
                         </div>
                         <div class="alloc-stacked-bar">
                             <div class="alloc-seg seg-div" id="bar-div" style="width:25%">
@@ -515,6 +530,9 @@
                             </div>
                             <div class="alloc-seg seg-mom" id="bar-mom" style="width:15%">
                                 <span>动量 --%</span>
+                            </div>
+                            <div class="alloc-seg seg-gem" id="bar-gem" style="width:10%">
+                                <span>GEM --%</span>
                             </div>
                             <div class="alloc-seg seg-erp" id="bar-erp" style="width:15%">
                                 <span>ERP --%</span>
@@ -541,6 +559,11 @@
                                 <span class="alloc-name">动量轮动</span>
                                 <strong id="val-pos-mom">--%</strong>
                                 <span class="filter-badge" id="filter-mom"></span>
+                            </div>
+                            <div class="alloc-item">
+                                <span class="dot dot-gem"></span>
+                                <span class="alloc-name">双重动量</span>
+                                <strong id="val-pos-gem">--%</strong>
                             </div>
                             <div class="alloc-item">
                                 <span class="dot dot-erp"></span>
@@ -809,7 +832,7 @@
     </main>
 
     <script src="./static/js/ui_utils.js?v=5"></script>
-    <script src="./static/js/renderers.js?v=5"></script>
+    <script src="./static/js/renderers.js?v=7"></script>
     <script src="./static/js/data_fetch.js?v=5"></script>
     <script src="./static/js/script.js?v=21"></script>
     <script>

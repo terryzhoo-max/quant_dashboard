@@ -86,10 +86,58 @@ def _validate_mr_lifecycle(mr: Mapping[str, Any]) -> None:
             )
 
 
+_VOL_MARKET_RANGES = {
+    "trigger_ratio": (1.0, 5.0),
+    "alpha": (0.1, 2.0),
+    "floor": (0.2, 1.0),
+    "ceiling": (1.0, 1.5),
+    "ewma_lambda": (0.80, 0.995),
+    "slow_window": (20, 250),
+    "baseline_window": (120, 2520),
+    "max_data_age_days": (1, 60),
+    "stale_factor_cap": (0.2, 1.0),
+}
+_VOL_PORTFOLIO_RANGES = {
+    "target_vol": (0.05, 0.60),
+    "vol_window": (60, 756),
+    "shrinkage": (0.0, 1.0),
+    "k_stock": (0.005, 0.20),
+    "k_etf": (0.01, 0.50),
+    "static_cap_stock": (1.0, 30.0),
+    "static_cap_etf": (1.0, 60.0),
+    "gap_loss_budget": (0.002, 0.10),
+    "gap_limit_days": (1, 5),
+}
+
+
+def _validate_vol_targeting(section: Any) -> None:
+    """Optional section; when present every numeric knob must stay in a sane range."""
+    if section is None:
+        return
+    if not isinstance(section, Mapping):
+        raise ValueError("vol_targeting must be an object")
+    for part, ranges in (("market", _VOL_MARKET_RANGES), ("portfolio", _VOL_PORTFOLIO_RANGES)):
+        block = section.get(part)
+        if block is None:
+            continue
+        if not isinstance(block, Mapping):
+            raise ValueError(f"vol_targeting.{part} must be an object")
+        for key, (lower, upper) in ranges.items():
+            if key in block:
+                _validate_range(block[key], f"vol_targeting.{part}.{key}", lower, upper)
+        for flag in ("enabled", "enforce_in_compliance"):
+            if flag in block and not isinstance(block[flag], bool):
+                raise ValueError(f"vol_targeting.{part}.{flag} must be boolean")
+    market = section.get("market") or {}
+    if "floor" in market and "ceiling" in market and float(market["floor"]) > float(market["ceiling"]):
+        raise ValueError("vol_targeting.market.floor must not exceed ceiling")
+
+
 def validate_runtime_config(config: Mapping[str, Any]) -> None:
     """Validate the complete runtime parameter document or raise ValueError."""
     if not isinstance(config, Mapping):
         raise ValueError("runtime config must be an object")
+    _validate_vol_targeting(config.get("vol_targeting"))
     if config.get("schema_version") != 1:
         raise ValueError("unsupported runtime config schema")
     revision = config.get("revision")
@@ -343,9 +391,38 @@ def get_regime_rules() -> dict:
     return load_runtime_config()["regime"]
 
 
-def get_position_cap(strategy: str, regime: str, *, as_ratio: bool = False) -> float:
+def get_position_cap(strategy: str, regime: str, *, as_ratio: bool = False,
+                     apply_vol_adj: bool = True) -> float:
+    """Get position cap for a strategy under a given regime.
+
+    Vol overlay V2: when apply_vol_adj=True, multiply by the market tail-brake factor
+    (services.vol_regime). The factor is 1.0 unless A-share volatility exceeds
+    2x its adaptive baseline, or the volatility data is stale/missing (fail-conservative).
+    Backtests must pass apply_vol_adj=False or use compute_vol_factor_frame() point-in-time.
+
+    Args:
+        strategy: Strategy name (mr/momentum/gem/dividend)
+        regime: Market state (BEAR/RANGE/BULL/CRASH)
+        as_ratio: True returns 0-1 decimal, False returns 0-100 percent
+        apply_vol_adj: Apply vol adjustment (set False for backtests)
+    """
     caps = load_runtime_config()["strategies"][strategy]["position_caps"]
     value = float(caps[regime.upper()])
+
+    # P0-1: Volatility-adaptive position cap adjustment
+    # CRASH regime (cap=0) needs no adjustment
+    if apply_vol_adj and value > 0:
+        try:
+            from services.vol_regime import get_vol_adjustment_factor
+            vol_factor = get_vol_adjustment_factor()
+            if vol_factor != 1.0:
+                adjusted = value * vol_factor
+                # Hard ceiling: never exceed 95% (audit red-line)
+                value = round(min(95.0, adjusted), 1)
+        except Exception:
+            # 模块本身异常 (非数据问题) 时不改变上限; 数据缺失/过期由 vol_regime 内部保守处理
+            pass
+
     return value / 100.0 if as_ratio else value
 
 

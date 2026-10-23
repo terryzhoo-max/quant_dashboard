@@ -31,6 +31,43 @@ def _invalidate_portfolio_caches(full: bool = False):
             swr_clear(key)
         logger.info("[Cache] 全量持仓变更: 已失效 %d 个 SWR 缓存",
                     len(_PORTFOLIO_SWR_KEYS) + len(_DECISION_SWR_KEYS))
+        # 持仓结构变了, 组合波动预算 (合规规则 vol_budget 的数据源) 立即重算
+        try:
+            from services.cache_service import cache_manager
+            from services.cache_store import get_cache_ttl
+            from services.portfolio_vol import compute_from_store, summarize
+            vb = summarize(compute_from_store())
+            if vb:
+                cache_manager.set_json("vol_budget", vb, ttl_seconds=get_cache_ttl())
+            else:
+                cache_manager.delete("vol_budget")
+        except Exception as e:
+            logger.warning("[Cache] 组合波动预算重算失败 (非致命): %s", e)
+
+
+@router.get("/portfolio/vol-budget")
+async def get_portfolio_vol_budget(refresh: bool = False):
+    """波动率仓位预算决策视图: 上限瀑布 + 约束来源 + 结论 + 减仓草案 (只读, 不下单).
+
+    结果按输入指纹缓存 (持仓 + 参数 + 行情文件 mtime); refresh=true 强制重算。
+    """
+    try:
+        from services.cache_service import cache_manager
+        from services.vol_regime import get_vol_regime_info
+        from services.portfolio_vol import compute_from_store, build_decision_view
+        market, portfolio = await asyncio.gather(
+            asyncio.to_thread(get_vol_regime_info),
+            asyncio.to_thread(compute_from_store, None, None, not refresh),
+        )
+        try:
+            aiae_ctx = cache_manager.get_json("aiae_ctx")
+        except Exception:
+            aiae_ctx = None
+        view = build_decision_view(market, portfolio, aiae_ctx)
+        return R.ok(view)
+    except Exception as e:
+        logger.error("vol-budget 计算失败: %s", e)
+        return R.error(f"波动预算计算失败: {e}")
 
 
 @router.get("/portfolio/valuation")

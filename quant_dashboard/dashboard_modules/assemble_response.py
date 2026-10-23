@@ -16,6 +16,101 @@ except ImportError:
     _ERP_BEARISH_THRESH = 3.5
 
 
+# P1: 调仓门槛 — 因子一致度只决定 "能不能主动调仓", 不缩放仓位
+#   (用一致度去乘仓位, 会让信号分歧时系统性偏向低仓位, 这是偏差而不是风控)
+REBALANCE_GATE_THRESHOLD = 40
+
+
+def _build_rebalance_gate(confidence, risk_level, conc_level):
+    """一致度门槛 × 风控状态 → 本周期允许的动作.
+
+    风控类减仓 (超波动预算 / 主题超限) 永远放行: 门槛只约束主动加仓与信号驱动的调仓。
+    """
+    try:
+        conf = float(confidence)
+    except (TypeError, ValueError):
+        conf = None
+    gate_open = conf is not None and conf >= REBALANCE_GATE_THRESHOLD
+    must_reduce = risk_level in ("danger", "warning") or conc_level == "danger"
+    conf_txt = "一致度不可用" if conf is None else (
+        f"一致度 {conf:.0f} {'≥' if gate_open else '<'} {REBALANCE_GATE_THRESHOLD}")
+    if must_reduce:
+        text = f"{conf_txt} · 当前超出风控限额 → 只允许风控减仓, 禁止加仓 (减仓不受门槛限制)"
+    elif gate_open:
+        text = f"{conf_txt} → 允许按信号调仓"
+    else:
+        text = f"{conf_txt} → 冻结主动加仓/调仓"
+    return {
+        "threshold": REBALANCE_GATE_THRESHOLD,
+        "confidence": conf,
+        "open": gate_open,
+        "allow_add": gate_open and not must_reduce,  # 主题超限只封该主题, 见 concentration.instruction
+        "allow_risk_reduce": True,
+        "must_reduce": must_reduce,
+        "text": text,
+    }
+
+
+def _build_position_stack(aiae_ctx, confidence=None, concentration_fn=None):
+    """仓位研判面板的上限瀑布 (复用 portfolio_vol.build_decision_view, 与决策页同源).
+
+    AIAE 矩阵上限 → × 市场波动系数 → ∧ 组合波动预算 → 可执行上限 vs 实际仓位
+    + P1: 主题集中度 (≤ 权益 40%) + 一致度调仓门槛.
+    任何异常返回 None, 前端回退旧显示, 不影响 Dashboard 发布.
+    """
+    try:
+        from services.portfolio_vol import build_decision_view
+        ctx = dict(aiae_ctx or {})
+        market = dict(ctx.get("vol_overlay") or {})
+        portfolio = dict(ctx.get("vol_budget") or {})
+        view = build_decision_view(market, portfolio, ctx)
+        steps = {s["key"]: s for s in view.get("waterfall", [])}
+        status = market.get("status") or "not_applied"
+        factor = market.get("factor", 1.0)
+        # 折扣性质: 数据故障导致的保守折扣 ≠ 市场风险刹车, 前端需区分显示
+        if status in ("stale", "missing"):
+            discount_kind = "data"
+        elif market.get("brake_on") or (isinstance(factor, (int, float)) and factor < 1):
+            discount_kind = "risk"
+        else:
+            discount_kind = "none"
+
+        executable = view.get("effective_cap_pct")
+        risk_level = view.get("verdict", {}).get("level")
+        concentration = None
+        try:
+            if concentration_fn is None:
+                from services.concentration import compute_from_store as _conc, summarize as _conc_sum
+                concentration_fn = lambda cap: _conc_sum(_conc(target_equity_pct=cap))
+            concentration = concentration_fn(executable)
+        except Exception:
+            concentration = None
+        conc_level = (concentration or {}).get("level")
+
+        return {
+            "base_cap": steps.get("aiae", {}).get("value"),
+            "vol_factor": factor,
+            "vol_status": status,
+            "vol_reason": market.get("reason", ""),
+            "vol_trade_date": market.get("trade_date"),
+            "discount_kind": discount_kind,
+            "vol_adj_cap": steps.get("market", {}).get("value"),
+            "budget_cap": steps.get("portfolio", {}).get("value"),
+            "executable_cap": executable,
+            "binding_label": view.get("verdict", {}).get("binding_label"),
+            "actual_pct": view.get("actual_pct"),
+            "actual_as_of": portfolio.get("as_of"),
+            "gap_pp": view.get("gap_pp"),
+            "level": risk_level,
+            "verdict": view.get("verdict", {}).get("text"),
+            "instruction": view.get("verdict", {}).get("instruction"),
+            "concentration": concentration,
+            "gate": _build_rebalance_gate(confidence, risk_level, conc_level),
+        }
+    except Exception:
+        return None
+
+
 # ===== V10.0: 五策略加权共振系统 =====
 # 设计理念: 宏观定方向，微观定强度 — 分层加权连续评分
 _SIGNAL_WEIGHTS = {
@@ -400,6 +495,7 @@ def assemble_dashboard_response(
                     "hub_signal_detail": hub_result["signal_detail"],
                     "z_capital": round(total_money_z, 2),
                     "degraded_modules": temp_data.get("degraded_modules", []),
+                    "position_stack": _build_position_stack(aiae_ctx, confidence=hub_result.get("confidence")),
                 },
                 "erp": {
                     "value": f"{round(erp_val, 2)}%",

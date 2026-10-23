@@ -393,10 +393,11 @@ function renderPositionHubUnavailable() {
         'val-erp-tag': 'ERP 不可用',
         'val-pos-advice': '执行仓位 0% · 决策锁定',
         'val-confidence': '--',
-        'val-alloc-total': '总仓位: --',
+        'val-alloc-total': '仓位上限: --',
         'val-pos-div': '--',
         'val-pos-mr': '--',
         'val-pos-mom': '--',
+        'val-pos-gem': '--',
         'val-pos-erp': '--',
         'val-pos-aiae': '--',
     };
@@ -404,7 +405,8 @@ function renderPositionHubUnavailable() {
         const node = el(id);
         if (node) node.textContent = value;
     });
-    ['bar-pos-advice', 'conf-fill', 'bar-div', 'bar-mr', 'bar-mom', 'bar-erp', 'bar-aiae'].forEach(id => {
+    if (el('pos-stack')) el('pos-stack').hidden = true;
+    ['bar-pos-advice', 'conf-fill', 'bar-div', 'bar-mr', 'bar-mom', 'bar-gem', 'bar-erp', 'bar-aiae'].forEach(id => {
         const node = el(id);
         if (node) node.style.width = '0%';
     });
@@ -556,6 +558,7 @@ function renderPositionHub(temp) {
         updateBar('bar-div', 'div', '红利');
         updateBar('bar-mr',  'mr',  '均值');
         updateBar('bar-mom', 'mom', '动量');
+        updateBar('bar-gem', 'gem', 'GEM');
         updateBar('bar-erp', 'erp', 'ERP');
         updateBar('bar-aiae', 'aiae_etf', 'AIAE');
     }
@@ -563,11 +566,13 @@ function renderPositionHub(temp) {
     // 各策略名义仓位
     if (temp.strategy_positions) {
         const sp = temp.strategy_positions;
-        if (el('val-alloc-total')) el('val-alloc-total').innerText = `总仓位: ${sp.total}%`;
+        // "仓位上限" 而非 "总仓位": 这是 AIAE×波动后的天花板, 不是目标仓位, 也不是实际仓位
+        if (el('val-alloc-total')) el('val-alloc-total').innerText = `仓位上限: ${sp.total}%`;
         const setPos = (id, val) => { const e = el(id); if (e) e.innerText = `${val}%`; };
         setPos('val-pos-div', sp.div_pos);
         setPos('val-pos-mr',  sp.mr_pos);
         setPos('val-pos-mom', sp.mom_pos);
+        setPos('val-pos-gem', sp.gem_pos || 0);
         setPos('val-pos-erp', sp.erp_pos || 0);
         setPos('val-pos-aiae', sp.aiae_pos || 0);
     }
@@ -584,6 +589,99 @@ function renderPositionHub(temp) {
     // N5: 持仓周期标签联动后端 holding_cycle_a
     if (temp.holding_cycle_a && el('val-cycle-a')) {
         el('val-cycle-a').innerText = temp.holding_cycle_a;
+    }
+
+    renderPositionStack(temp.position_stack);
+}
+
+/**
+ * P0: 仓位上限瀑布 — AIAE上限 → ×波动系数 → ∧组合预算 → 可执行上限 vs 实际
+ * 区分 "数据过期保守折扣" 与 "市场风险刹车", 避免把运维故障误读为风险信号
+ */
+function renderPositionStack(ps) {
+    const box = el('pos-stack');
+    if (!box) return;
+    if (!ps || ps.base_cap == null) { box.hidden = true; return; }
+    box.hidden = false;
+    const fmt = v => (v == null || isNaN(v)) ? '--' : `${Math.round(v * 10) / 10}%`;
+    const set = (id, txt) => { const n = el(id); if (n) n.textContent = txt; };
+
+    set('ps-base', fmt(ps.base_cap));
+    const f = typeof ps.vol_factor === 'number' ? ps.vol_factor : 1;
+    const volRow = el('ps-vol-row');
+    const kindText = { data: '数据过期折扣', risk: '波动刹车', none: '未触发' }[ps.discount_kind] || '波动系数';
+    set('ps-vol-label', `× ${kindText}`);
+    set('ps-vol', `×${f.toFixed(2)} → ${fmt(ps.vol_adj_cap)}`);
+    if (volRow) {
+        volRow.dataset.kind = ps.discount_kind || 'none';
+        volRow.title = ps.vol_reason || (ps.vol_trade_date ? `数据日 ${ps.vol_trade_date}` : '');
+    }
+    set('ps-budget', ps.budget_cap == null ? '无持仓数据' : fmt(ps.budget_cap));
+    set('ps-exec', fmt(ps.executable_cap));
+    set('ps-binding', ps.binding_label ? `约束: ${ps.binding_label}` : '');
+
+    const actRow = el('ps-actual-row');
+    if (ps.actual_pct == null) {
+        set('ps-actual', '--');
+        set('ps-gap', '');
+    } else {
+        set('ps-actual', fmt(ps.actual_pct));
+        const g = ps.gap_pp;
+        set('ps-gap', g == null ? '' : `${g > 0 ? '+' : ''}${g.toFixed(1)}pp`);
+    }
+    if (actRow) actRow.dataset.level = ps.level || 'unknown';
+    set('ps-asof', ps.actual_as_of ? `持仓截至 ${ps.actual_as_of}` : '');
+    set('ps-instruction', ps.instruction || '');
+
+    // P1: 主题集中度 (≤ 权益 40%)
+    const conc = ps.concentration;
+    const concRow = el('ps-conc-row');
+    const concBar = el('ps-conc-bar');
+    if (concRow) concRow.hidden = !conc;
+    if (concBar) concBar.hidden = !conc;
+    if (conc) {
+        set('ps-conc', conc.top_theme ? `${conc.top_theme} ${fmt(conc.top_pct)}` : '--');
+        set('ps-conc-limit', `上限 ${conc.limit_pct}% · 有效主题 ${conc.effective_themes ?? '--'}`);
+        if (concRow) {
+            concRow.dataset.level = conc.level || 'unknown';
+            concRow.title = (conc.caveats || []).join('\n');
+        }
+        set('ps-conc-instruction', conc.level === 'ok' ? '' : (conc.instruction || ''));
+        if (concBar) {
+            const palette = ['#ef4444', '#f59e0b', '#3b82f6', '#10b981', '#a78bfa'];
+            concBar.innerHTML = '';
+            (conc.themes || []).filter(t => t.pct_of_equity != null).forEach((t, i) => {
+                const seg = document.createElement('span');
+                seg.style.width = `${Math.max(0, t.pct_of_equity)}%`;
+                seg.style.background = palette[i % palette.length];
+                seg.title = `${t.theme} ${t.pct_of_equity}%: ${(t.names || []).join('、')}`;
+                concBar.appendChild(seg);
+            });
+            const mark = document.createElement('i');
+            mark.className = 'ps-conc-limit-mark';
+            mark.style.left = `${conc.limit_pct}%`;
+            concBar.appendChild(mark);
+        }
+    } else {
+        set('ps-conc-instruction', '');
+    }
+
+    // P1: 一致度调仓门槛 (只决定能否主动调仓, 不缩放仓位)
+    const gate = el('ps-gate');
+    if (gate) {
+        gate.hidden = !ps.gate;
+        if (ps.gate) {
+            gate.dataset.open = ps.gate.open ? 'yes' : 'no';
+            gate.textContent = `${ps.gate.open ? '🟢' : '⏸'} ${ps.gate.text}`;
+        }
+    }
+
+    const warn = el('ps-data-warn');
+    if (warn) {
+        warn.hidden = ps.discount_kind !== 'data';
+        if (ps.discount_kind === 'data') {
+            warn.textContent = `⚠ ${ps.vol_reason || '波动数据过期'} · 这是数据故障的保守折扣, 不是市场风险信号; 指数数据补齐后自动解除`;
+        }
     }
 }
 

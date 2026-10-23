@@ -534,11 +534,12 @@ def compute_market_temperature(pro, today_str, latest_vix, latest_cny, liquidity
     )
     regime_weights = filtered_weights
 
-    # 各策略名义仓位 (5策略)
+    # 各策略名义仓位 (6策略: JOINT_WEIGHTS 含 gem 双重动量, 之前未输出导致前端合计只有 90%)
     strategy_positions = {
         "mr_pos":  round(final_pos_val * regime_weights.get("mr", 0), 1),
         "mom_pos": round(final_pos_val * regime_weights.get("mom", 0), 1),
         "div_pos": round(final_pos_val * regime_weights.get("div", 0), 1),
+        "gem_pos": round(final_pos_val * regime_weights.get("gem", 0), 1),
         "erp_pos": round(final_pos_val * regime_weights.get("erp", 0), 1),
         "aiae_pos": round(final_pos_val * regime_weights.get("aiae_etf", 0), 1),
         "total":   round(final_pos_val, 1)

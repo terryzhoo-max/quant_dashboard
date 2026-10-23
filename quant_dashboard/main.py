@@ -261,6 +261,20 @@ async def lifespan(app: FastAPI):
         id="industry_universe_refresh",
     )
 
+    # 17. 持仓跟踪止盈日终: 同步持仓日线 → 重放止损线 → 推送 RED/分批止盈 (晚于 15:35 预热与 15:45 行业任务)
+    def _trailing_stop_callback():
+        try:
+            from services.trailing_stop_service import daily_job
+            daily_job()
+        except Exception as exc:
+            _logger.error("跟踪止盈日终任务异常: %s", exc)
+
+    scheduler.add_job(
+        _trailing_stop_callback,
+        CronTrigger(day_of_week='mon-fri', hour=15, minute=50),
+        id="trailing_stop_daily",
+    )
+
     scheduler.start()
     app.state.scheduler = scheduler
 
@@ -639,6 +653,7 @@ async def get_dashboard_data():
 from routers import portfolio, audit, aiae, market, industry, strategy, decision, slippage, ci, intelligence, assistant
 from routers import params_api  # V5.2: 参数同步 API
 from routers import system as system_router  # V26.1: 系统健康检查
+from routers import trailing as trailing_router  # 持仓跟踪止盈 + 历史成交导入
 app.include_router(portfolio.router)
 app.include_router(audit.router)
 app.include_router(aiae.router)
@@ -652,6 +667,7 @@ app.include_router(intelligence.router)
 app.include_router(assistant.router)
 app.include_router(params_api.router)  # V5.2: 参数同步
 app.include_router(system_router.router)  # V26.1: 系统监控
+app.include_router(trailing_router.router)  # 持仓跟踪止盈 + 历史成交导入
 
 
 

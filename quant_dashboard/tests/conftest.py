@@ -59,3 +59,22 @@ def mock_aiae_ctx():
         "slope_direction": "flat",
         "fund_position": 78,
     }
+
+
+@pytest.fixture(autouse=True)
+def _neutral_market_vol_overlay(monkeypatch):
+    """测试隔离: 默认把市场波动刹车设为中性, 避免读取本机真实行情/状态文件。
+
+    需要验证刹车行为的测试直接调用 services.vol_regime 的纯函数,
+    或自行 monkeypatch current_overlay / get_vol_overlay。
+    """
+    try:
+        from services import vol_regime
+    except Exception:
+        yield
+        return
+    neutral = {"status": "ok", "factor": 1.0, "brake_on": False}
+    monkeypatch.setattr(vol_regime, "get_vol_overlay", lambda today=None: dict(neutral))
+    monkeypatch.setattr(vol_regime, "get_vol_adjustment_factor", lambda: 1.0)
+    monkeypatch.setattr(vol_regime, "current_overlay", lambda: dict(neutral))
+    yield
