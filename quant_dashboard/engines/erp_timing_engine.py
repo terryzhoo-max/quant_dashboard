@@ -1122,10 +1122,56 @@ class ERPTimingEngine:
                 {"date": min_row['trade_date'].strftime('%Y-%m-%d'), "value": round(erp_min_val, 2), "type": "min"},
             ]
 
+            # V4.0: 时点一致的滚动分位五档区间 (与 D2 同口径, 无后视) — 图表/卡片的唯一区间来源
+            bands_out, pit = None, None
+            try:
+                from engines.erp_zones import compute_erp_pit_bands, zone_episodes
+                floor = float(getattr(erp_params, "CHART_DANGER_ABS_FLOOR", 3.0))
+                bands = compute_erp_pit_bands(erp_df['erp'], window=erp_params.ERP_WINDOW, abs_floor=floor)
+                b_s = bands.loc[erp_sampled.index]
+
+                def _clean(series, nd):
+                    return [None if pd.isna(v) else round(float(v), nd) for v in series]
+
+                zones = [z if isinstance(z, str) else None for z in b_s['zone']]
+                bands_out = {
+                    "pct": _clean(b_s['pct'], 1),
+                    "danger": _clean(b_s['danger'], 2), "under": _clean(b_s['under'], 2),
+                    "over": _clean(b_s['over'], 2), "strong": _clean(b_s['strong'], 2),
+                    "anchor": _clean(b_s['anchor'], 2),
+                    "zone": zones,
+                }
+                last = bands.iloc[-1]
+                valid_z = bands['zone'].dropna()
+                share = {k: round(float((valid_z == k).mean() * 100), 1) for k in ("strong", "over", "neutral", "under", "danger")} if len(valid_z) else {}
+                pit = {
+                    "window_days": int(erp_params.ERP_WINDOW),
+                    "window_years": round(erp_params.ERP_WINDOW / 252, 1),
+                    "abs_floor": floor,
+                    "floor_binding": bool(pd.notna(last['danger']) and round(float(last['danger']), 4) == round(floor, 4)),
+                    "current_zone": last['zone'] if isinstance(last['zone'], str) else None,
+                    "current_pct": None if pd.isna(last['pct']) else round(float(last['pct']), 1),
+                    "danger_line": None if pd.isna(last['danger']) else round(float(last['danger']), 2),
+                    "underweight_line": None if pd.isna(last['under']) else round(float(last['under']), 2),
+                    "overweight_line": None if pd.isna(last['over']) else round(float(last['over']), 2),
+                    "strong_buy_line": None if pd.isna(last['strong']) else round(float(last['strong']), 2),
+                    "anchor": None if pd.isna(last['anchor']) else round(float(last['anchor']), 2),
+                    "zone_share_pct": share,
+                    "danger_episodes": zone_episodes(zones, dates, "danger"),
+                    "under_episodes": zone_episodes(zones, dates, "under"),
+                    "strong_episodes": zone_episodes(zones, dates, "strong"),
+                }
+                if pit["danger_line"] is not None:
+                    pit["buffer_to_danger_pp"] = round(erp_current - pit["danger_line"], 2)
+                    pit["buffer_to_under_pp"] = round(erp_current - pit["underweight_line"], 2)
+            except Exception as e:
+                logger.warning("ERP PIT bands failed: %s", e)
+
             return {
                 "status": "success", "dates": dates,
                 "erp": erp_vals, "pe_ttm": pe_vals, "yield_10y": yield_vals,
                 "m1_yoy": m1_vals,
+                "bands": bands_out, "pit": pit,
                 "stats": {
                     "mean": round(erp_mean, 2), "std": round(erp_std, 2),
                     "overweight_line": overweight, "underweight_line": underweight,
