@@ -818,7 +818,8 @@ class ERPTimingEngine:
 
     # ========== 警示系统 ==========
 
-    def _generate_alerts(self, score: float, erp: float, pct: float, m1_info: dict, vol_info: dict) -> list:
+    def _generate_alerts(self, score: float, erp: float, pct: float, m1_info: dict, vol_info: dict,
+                         zone: Optional[str] = None) -> list:
         """生成4级警示"""
         alerts = []
         m1_val = m1_info.get("current", 0)
@@ -827,6 +828,8 @@ class ERPTimingEngine:
         # 🔴 危险
         if erp < 3.0:
             alerts.append({"level": "danger", "icon": "🔴", "text": f"ERP仅{erp:.2f}%，股票相对债券无吸引力", "pulse": True})
+        if zone == "danger" and erp >= 3.0:
+            alerts.append({"level": "danger", "icon": "🔴", "text": f"ERP {erp:.2f}% 进入危险区 (近4年<P20 且低于长期中枢)", "pulse": True})
         if m1_val < -3:
             alerts.append({"level": "danger", "icon": "🔴", "text": f"M1同比{m1_val:.1f}%深度负增长，流动性危机", "pulse": True})
         if score < 30:
@@ -841,8 +844,9 @@ class ERPTimingEngine:
             alerts.append({"level": "warning", "icon": "🟡", "text": "M1虽为正增长但趋势下滑，动能减弱"})
 
         # 🟢 机会
-        if erp >= 6.0:
-            alerts.append({"level": "opportunity", "icon": "🟢", "text": f"ERP {erp:.2f}% ≥ 6%，极度低估！黄金窗口", "pulse": True})
+        # V4.1: 机会预警与估值区间统一 (强买区 = 近4年≥P80 且高于长期中枢); 区间不可用时回退旧绝对阈值
+        if zone == "strong" or (zone is None and erp >= 6.0):
+            alerts.append({"level": "opportunity", "icon": "🟢", "text": f"ERP {erp:.2f}% 进入强买区 (近4年≥P80 且高于长期中枢)", "pulse": True})
         if pct >= 80:
             alerts.append({"level": "opportunity", "icon": "🟢", "text": f"分位{pct:.1f}% → 历史级低估区间"})
         if score >= 80:
@@ -914,6 +918,17 @@ class ERPTimingEngine:
                 "earnings_yield": round(1.0 / pe_ttm * 100, 2), "erp_value": round(erp_val, 2),
                 "erp_percentile": round(d2_pct, 1), "trade_date": latest['trade_date'].strftime('%Y-%m-%d')
             }
+            # V4.1: 全系统统一估值区间 (与图表同一算法: 近4年滚动分位 + 长期中枢双重确认 + 绝对下限)
+            try:
+                from engines.erp_zones import current_zone
+                _cz = current_zone(erp_df['erp'], window=erp_params.ERP_WINDOW,
+                                   abs_floor=float(getattr(erp_params, "CHART_DANGER_ABS_FLOOR", 3.0)))
+                snap["valuation_zone"] = _cz["zone"]
+                snap["valuation_zone_label"] = _cz["label"]
+            except Exception as _e:
+                logger.warning("ERP valuation zone failed: %s", _e)
+                snap["valuation_zone"] = None
+                snap["valuation_zone_label"] = None
 
             dims = {
                 "erp_abs":    {"score": d1_score, "weight": self.W["erp_abs"], "label": "ERP绝对值", "desc": d1_desc},
@@ -957,7 +972,7 @@ class ERPTimingEngine:
             self._save_history()
 
             # 警示
-            alerts = self._generate_alerts(composite, erp_val, d2_pct, m1_info, vol_info)
+            alerts = self._generate_alerts(composite, erp_val, d2_pct, m1_info, vol_info, zone=snap.get("valuation_zone"))
 
             # 诊断
             diagnosis = self._build_diagnosis(erp_val, pe_ttm, yield_10y, d2_pct, m1_info, vol_info, credit_info, trade)

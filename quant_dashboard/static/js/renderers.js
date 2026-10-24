@@ -196,8 +196,8 @@ function renderErpCard(erpData) {
         absLabel.textContent = absText;
         // 颜色: 根据绝对值标签判定
         absLabel.className = 'erp-abs-label';
-        if (/低估|极度低估/.test(absText)) absLabel.classList.add('erp-val-bull');
-        else if (/高估|极度高估/.test(absText)) absLabel.classList.add('erp-val-bear');
+        if (/低估|强买|超配/.test(absText)) absLabel.classList.add('erp-val-bull');
+        else if (/高估|低配|危险/.test(absText)) absLabel.classList.add('erp-val-bear');
     }
 
     // 3. 分位标签 + 进度条
@@ -853,6 +853,11 @@ async function fetchAndRenderERPChart() {
 function renderERPDashboardChart(chart, signalData) {
     const dom = document.getElementById('erp-history-chart');
     if (!dom || typeof echarts === 'undefined') return;
+    // V4.1: 与策略页共用同一份区间渲染 (static/js/erp_zone_chart.js), 旧后端无 bands 时回退到下方静态实现
+    if (chart.bands && chart.pit && Array.isArray(chart.bands.zone) && typeof renderERPZoneChart === 'function') {
+        _erpDashboardChart = renderERPZoneChart(chart, signalData, _erpDashboardChart);
+        return;
+    }
     
     if (_erpDashboardChart) _erpDashboardChart = AC.disposeChart(_erpDashboardChart);
     _erpDashboardChart = AC.registerChart(echarts.init(dom));

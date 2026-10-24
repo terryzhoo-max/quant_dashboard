@@ -500,7 +500,8 @@ def assemble_dashboard_response(
                 "erp": {
                     "value": f"{round(erp_val, 2)}%",
                     "trend": valuation_label,
-                    "desc": f"{erp_data.get('abs_label', '')} · 4Y分位{erp_data.get('erp_pct', '--')}%",
+                    # V4.1: 描述与估值区间统一 (旧 abs_label 的 "≥6% 极度低估" 与区间口径冲突)
+                    "desc": f"{erp_data.get('valuation_label') if erp_data.get('valuation_zone') else erp_data.get('abs_label', '')} · 4Y分位{erp_data.get('erp_pct', '--')}%",
                     "status": "up" if erp_z > 0.5 else ("down" if erp_z < -0.5 else "neutral"),
                     "erp_pct": erp_data.get('erp_pct', 50),
                     "signal_label": erp_data.get('signal_label', '--'),

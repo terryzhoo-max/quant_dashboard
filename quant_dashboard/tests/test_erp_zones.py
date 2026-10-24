@@ -82,3 +82,13 @@ def test_episodes_count_trading_days_on_daily_zones():
     dates = [f"d{i}" for i in range(len(zones))]
     eps = zone_episodes(zones, dates, "danger", merge_gap=5)
     assert len(eps) == 1 and eps[0]["points"] == 15 and eps[0]["ongoing"] is True
+
+
+def test_current_zone_matches_chart_bands():
+    from engines.erp_zones import current_zone, ZONE_LABELS
+    s = _series()
+    b = compute_erp_pit_bands(s, window=1008, abs_floor=3.0).iloc[-1]
+    cz = current_zone(s, window=1008, abs_floor=3.0)
+    assert cz["zone"] == b["zone"]
+    assert cz["label"] == ZONE_LABELS[b["zone"]]
+    assert abs(cz["pct"] - round(b["pct"], 1)) < 1e-9

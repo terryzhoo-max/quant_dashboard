@@ -20,6 +20,16 @@ import numpy as np
 import pandas as pd
 
 ZONE_KEYS = ("strong", "over", "neutral", "under", "danger")
+# 全系统统一的估值区间中文标签 (首页标签 / 策略页图表 / 预警文案共用)
+ZONE_LABELS = {"strong": "强买区", "over": "超配区", "neutral": "中性区", "under": "低配区", "danger": "危险区"}
+
+
+def current_zone(erp: pd.Series, window: int = 1008, abs_floor: float = 3.0) -> dict:
+    """最新一日的估值区间 (与图表同一算法)。历史不足时 zone=None。"""
+    last = compute_erp_pit_bands(erp, window=window, abs_floor=abs_floor).iloc[-1]
+    zone = last["zone"] if isinstance(last["zone"], str) else None
+    return {"zone": zone, "label": ZONE_LABELS.get(zone),
+            "pct": None if pd.isna(last["pct"]) else round(float(last["pct"]), 1)}
 
 
 def compute_erp_pit_bands(erp: pd.Series, window: int = 1008, abs_floor: float = 3.0,

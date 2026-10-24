@@ -226,6 +226,11 @@ def get_real_erp_data():
             elif blended_tier >= 1.8:  vlabel = "偏高估"
             else:                      vlabel = "极度高估"
 
+            # V4.1: 展示标签统一为估值区间 (与 ERP 图表/策略页同一算法); 区间不可用时保留旧双维度混合标签
+            valuation_zone = snap.get('valuation_zone')
+            if valuation_zone and snap.get('valuation_zone_label'):
+                vlabel = snap['valuation_zone_label']
+
             erp_score = min(100, max(0, erp_pct))
             _blend_note = f" [PCT_EXTREME w=0.3/0.7]" if pct_extreme else ""
             _conflict_note = f" [DIM_CONFLICT abs={abs_tier} pct={pct_tier}]" if dimension_conflict else ""
@@ -239,6 +244,8 @@ def get_real_erp_data():
                 'signal_label': sig['label'], 'composite_score': sig['score'],
                 'pct_extreme': pct_extreme,
                 'dimension_conflict': dimension_conflict,
+                'valuation_zone': valuation_zone,
+                'valuation_source': 'pit_zone' if valuation_zone else 'legacy_blend',
                 'status': 'success'
             }
     except Exception as e:
